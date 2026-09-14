@@ -175,7 +175,7 @@
                 android:textColor="@color/secondary_text_color"
                 android:textSize="12sp"
                 android:lineSpacingExtra="3dp"
-                android:text="Приложение: v1.8.6\nУстройство: -\nОС: Android -"
+                android:text="Приложение: v1.8.7\nУстройство: -\nОС: Android -"
                 android:layout_marginBottom="18dp" />
 
             <!-- Action Buttons -->

@@ -146,11 +146,11 @@
         <item name="borderColor">@color/lt_border_color</item>
         <item name="alphaBorderColor">@color/lt_alpha_border_color</item>
         <item name="lineColor">@color/lt_line_color</item>
-        <item name="primaryTextColor">@color/app_text_primary</item>
-        <item name="secondaryTextColor">@color/app_text_secondary</item>
-        <item name="accentTextColor">@color/app_text_secondary</item>
+        <item name="primaryTextColor">@color/dt_primary_text_color</item>
+        <item name="secondaryTextColor">@color/dt_secondary_text_color</item>
+        <item name="accentTextColor">@color/dt_accent_text_color</item>
         <item name="brandButtonTextColor">@color/app_text_brand_button</item>
-        <item name="accentBlueTextColor">@color/app_text_accent_blue</item>
+        <item name="accentBlueTextColor">#79A5D8</item>
         <item name="cardBackgroundColor">@color/lt_card_background</item>
         <item name="cardElevationColor">@color/lt_card_elevation</item>
         <item name="ratingStarColor">@color/lt_rating_star</item>

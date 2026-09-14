@@ -793,7 +793,7 @@
                 android:paddingBottom="8dp"
                 android:textColor="@color/secondary_text_color"
                 android:textSize="13sp"
-                android:text="Версия v1.8.6" />
+                android:text="Версия v1.8.7" />
 
         </LinearLayout>
     </LinearLayout>
