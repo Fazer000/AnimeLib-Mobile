@@ -1776,7 +1776,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
 
             if (playerAnimeInfoController != null) {
+                playerAnimeInfoController.setOfflineMode(true);
                 playerAnimeInfoController.hideSkeletons(animeTitle);
+            }
+            if (portraitStatusDropdownButton != null) {
+                portraitStatusDropdownButton.setVisibility(View.GONE);
             }
         });
     }
@@ -1809,8 +1813,16 @@ public class VideoPlayerActivity extends AppCompatActivity {
         portraitRelatedTitlesContainer = findViewById(R.id.portraitRelatedTitlesContainer);
         portraitRelatedTitlesRecyclerView = findViewById(R.id.portraitRelatedTitlesRecyclerView);
 
-        if (isOfflineMode && portraitRelatedTitlesContainer != null) {
-            portraitRelatedTitlesContainer.setVisibility(View.GONE);
+        if (isOfflineMode) {
+            if (portraitRelatedTitlesContainer != null) {
+                portraitRelatedTitlesContainer.setVisibility(View.GONE);
+            }
+            if (portraitStatusDropdownButton != null) {
+                portraitStatusDropdownButton.setVisibility(View.GONE);
+            }
+            if (playerAnimeInfoController != null) {
+                playerAnimeInfoController.setOfflineMode(true);
+            }
         }
 
         if (portraitDownloadProgressCard != null) {
@@ -4030,6 +4042,12 @@ public class VideoPlayerActivity extends AppCompatActivity {
         }
         if (ivPortraitVoiceoverChevron != null) {
             ivPortraitVoiceoverChevron.setVisibility(View.GONE);
+        }
+        if (portraitStatusDropdownButton != null) {
+            portraitStatusDropdownButton.setVisibility(View.GONE);
+        }
+        if (playerAnimeInfoController != null) {
+            playerAnimeInfoController.setOfflineMode(true);
         }
 
         hideLoading();

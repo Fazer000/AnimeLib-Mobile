@@ -64,6 +64,7 @@ public class PlayerAnimeInfoController {
 
     private Runnable onRetryListener;
 
+    private boolean isOfflineMode = false;
     private boolean hasShownInitialAnimeInfo = false;
     private String currentPosterUrl = "";
     private AnimeInfoResponse currentAnimeInfo;
@@ -125,13 +126,40 @@ public class PlayerAnimeInfoController {
         }
 
         if (portraitTitleContainer != null) {
-            portraitTitleContainer.setOnClickListener(v -> togglePortraitInfoExpanded());
+            portraitTitleContainer.setOnClickListener(v -> {
+                if (!isOfflineMode) {
+                    togglePortraitInfoExpanded();
+                }
+            });
         }
 
         View btnPortraitCloseExpanded = rootView.findViewById(R.id.btnPortraitCloseExpanded);
         if (btnPortraitCloseExpanded != null) {
-            btnPortraitCloseExpanded.setOnClickListener(v -> togglePortraitInfoExpanded());
+            btnPortraitCloseExpanded.setOnClickListener(v -> {
+                if (!isOfflineMode) {
+                    togglePortraitInfoExpanded();
+                }
+            });
         }
+    }
+
+    public void setOfflineMode(boolean offlineMode) {
+        this.isOfflineMode = offlineMode;
+        if (portraitTitleContainer != null) {
+            portraitTitleContainer.setEnabled(!offlineMode);
+            portraitTitleContainer.setClickable(!offlineMode);
+            portraitTitleContainer.setFocusable(!offlineMode);
+        }
+        if (ivPortraitAnimeTitleChevron != null) {
+            ivPortraitAnimeTitleChevron.setVisibility(offlineMode ? View.GONE : View.VISIBLE);
+        }
+        if (offlineMode && portraitExpandedAnimeInfoContainer != null) {
+            portraitExpandedAnimeInfoContainer.setVisibility(View.GONE);
+        }
+    }
+
+    public boolean isOfflineMode() {
+        return isOfflineMode;
     }
 
     public void setOnRetryListener(Runnable listener) {
@@ -274,7 +302,7 @@ public class PlayerAnimeInfoController {
     }
 
     public void togglePortraitInfoExpanded() {
-        if (portraitExpandedAnimeInfoContainer == null) return;
+        if (isOfflineMode || portraitExpandedAnimeInfoContainer == null) return;
 
         android.view.ViewGroup parent = (android.view.ViewGroup) portraitExpandedAnimeInfoContainer.getParent();
         if (parent != null) {

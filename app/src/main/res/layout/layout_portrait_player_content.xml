@@ -559,6 +559,8 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:layout_marginBottom="16dp"
+            android:clipChildren="false"
+            android:clipToPadding="false"
             android:visibility="gone">
 
             <com.google.android.material.progressindicator.CircularProgressIndicator
@@ -577,7 +579,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:paddingHorizontal="16dp"
+                android:paddingVertical="8dp"
                 android:clipToPadding="false"
+                android:clipChildren="false"
                 android:scrollbars="none"
                 android:overScrollMode="never"
                 android:visibility="gone">
@@ -739,7 +743,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:paddingHorizontal="16dp"
+                android:paddingVertical="8dp"
                 android:clipToPadding="false"
+                android:clipChildren="false"
                 android:orientation="horizontal"
                 android:overScrollMode="never" />
         </LinearLayout>
