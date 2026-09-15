@@ -69,6 +69,7 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
     private int currentResizeMode = 0; // RESIZE_MODE_FIT
     private OnResizeModeChangedListener onResizeModeChangedListener;
     private boolean isOfflineMode = false;
+    private boolean isDownloadedVideo = false;
 
     private boolean subtitlesEnabled = true;
     private String subtitleFormat = "ass";
@@ -150,6 +151,18 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
 
     public void setOfflineMode(boolean offlineMode) {
         this.isOfflineMode = offlineMode;
+        View view = getWindow() != null ? getWindow().getDecorView() : null;
+        if (view != null) {
+            setupVideoServerOption(view);
+        }
+    }
+
+    public void setDownloadedVideo(boolean downloadedVideo) {
+        this.isDownloadedVideo = downloadedVideo;
+        View view = getWindow() != null ? getWindow().getDecorView() : null;
+        if (view != null) {
+            setupVideoServerOption(view);
+        }
     }
 
     public SettingsBottomSheet(Context context,
@@ -168,7 +181,7 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
                                OnSkipDurationChangedListener onSkipDurationChangedListener,
                                int currentTheme,
                                OnThemeChangedListener onThemeChangedListener) {
-        super(context, com.google.android.material.R.style.ThemeOverlay_Material3_BottomSheetDialog);
+        super(context, com.example.animelib.R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
         this.qualities = qualities;
         this.currentQuality = currentQuality;
         this.listener = listener;
@@ -205,6 +218,8 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
         LinearLayout autoPlayOption = view.findViewById(R.id.autoPlayOption);
         LinearLayout skipDurationOption = view.findViewById(R.id.skipDurationOption);
         LinearLayout themeOption = view.findViewById(R.id.themeOption);
+        LinearLayout faqOption = view.findViewById(R.id.faqOption);
+        LinearLayout bugReportOption = view.findViewById(R.id.bugReportOption);
         LinearLayout resizeModeOption = view.findViewById(R.id.resizeModeOption);
 
         TextView currentQualityText = view.findViewById(R.id.currentQualityText);
@@ -274,25 +289,7 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
         }
 
         // Video Server option click
-        LinearLayout videoServerOption = view.findViewById(R.id.videoServerOption);
-        TextView currentVideoServerText = view.findViewById(R.id.currentVideoServerText);
-        if (currentVideoServerText != null) {
-            currentVideoServerText.setText(VideoUrlHelper.getDomainDisplayName(currentVideoDomain));
-        }
-        if (videoServerOption != null) {
-            if (isKodikPlayer) {
-                videoServerOption.setAlpha(0.5f);
-                videoServerOption.setOnClickListener(v -> {
-                    com.example.animelib.util.CustomToast.showInfo(getContext(), "Выбор сервера недоступен для плеера Kodik");
-                });
-            } else {
-                videoServerOption.setAlpha(1.0f);
-                videoServerOption.setOnClickListener(v -> {
-                    dismiss();
-                    showVideoServerDialog();
-                });
-            }
-        }
+        setupVideoServerOption(view);
 
         // 4K option click
         fourKOption.setOnClickListener(v -> fourKSwitch.setChecked(!fourKSwitch.isChecked()));
@@ -371,6 +368,22 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
             dismiss();
             showThemeDialog();
         });
+
+        // FAQ option click
+        if (faqOption != null) {
+            faqOption.setOnClickListener(v -> {
+                dismiss();
+                showFaqDialog();
+            });
+        }
+
+        // Bug Report option click
+        if (bugReportOption != null) {
+            bugReportOption.setOnClickListener(v -> {
+                dismiss();
+                showBugReportDialog();
+            });
+        }
 
         // Resize mode option click
         if (resizeModeOption != null) {
@@ -477,6 +490,44 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
             }
         }
         return activity;
+    }
+
+    private void setupVideoServerOption(View view) {
+        if (view == null) return;
+        LinearLayout videoServerOption = view.findViewById(R.id.videoServerOption);
+        TextView currentVideoServerText = view.findViewById(R.id.currentVideoServerText);
+        if (currentVideoServerText != null) {
+            currentVideoServerText.setText(VideoUrlHelper.getDomainDisplayName(currentVideoDomain));
+        }
+        if (videoServerOption != null) {
+            boolean isDownloaded = isOfflineMode || isDownloadedVideo || isDownloadedQuality(currentQuality);
+            if (isKodikPlayer) {
+                videoServerOption.setAlpha(0.5f);
+                videoServerOption.setOnClickListener(v -> {
+                    com.example.animelib.util.CustomToast.showInfo(getContext(), "Выбор сервера недоступен для плеера Kodik");
+                });
+            } else if (isOfflineMode) {
+                videoServerOption.setAlpha(0.5f);
+                videoServerOption.setOnClickListener(v -> {
+                    com.example.animelib.util.CustomToast.showInfo(getContext(), "Смена сервера недоступна в офлайн режиме");
+                });
+            } else if (isDownloaded) {
+                videoServerOption.setAlpha(0.5f);
+                videoServerOption.setOnClickListener(v -> {
+                    com.example.animelib.util.CustomToast.showInfo(getContext(), "Смена сервера недоступна для скачанного видео");
+                });
+            } else {
+                videoServerOption.setAlpha(1.0f);
+                videoServerOption.setOnClickListener(v -> {
+                    dismiss();
+                    showVideoServerDialog();
+                });
+            }
+        }
+    }
+
+    private boolean isDownloadedQuality(String quality) {
+        return quality != null && (quality.startsWith("Скачанный файл") || quality.startsWith("Загруженное"));
     }
 
     private void showVideoServerDialog() {
@@ -649,6 +700,10 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
 
         // Update UI
         updateQualityViews(newCurrentQuality);
+        View view = getWindow() != null ? getWindow().getDecorView() : null;
+        if (view != null) {
+            setupVideoServerOption(view);
+        }
 
         // Update quality dialog if it exists - обновляем весь список, а не только текущее качество
         if (currentQualityBottomSheet != null) {
@@ -796,6 +851,18 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
         // Show main settings when back button is pressed
         bottomSheet.setOnBackPressedListener(this::show);
 
+        bottomSheet.show();
+    }
+
+    private void showFaqDialog() {
+        FaqBottomSheet bottomSheet = new FaqBottomSheet(getContext());
+        bottomSheet.setOnBackPressedListener(this::show);
+        bottomSheet.show();
+    }
+
+    private void showBugReportDialog() {
+        BugReportBottomSheet bottomSheet = new BugReportBottomSheet(getContext());
+        bottomSheet.setOnBackPressedListener(this::show);
         bottomSheet.show();
     }
 

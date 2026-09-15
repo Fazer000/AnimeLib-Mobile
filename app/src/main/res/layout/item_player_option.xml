@@ -37,7 +37,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="Дубляжная"
-            android:textColor="#E2E8F0"
+            android:textColor="@color/app_text_primary"
             android:textSize="15sp"
             android:fontFamily="@font/open_sans_bold"
             android:maxLines="1"
@@ -57,7 +57,7 @@
                 android:text="SUB"
                 android:textStyle="bold"
                 android:textSize="12sp"
-                android:textColor="#7CAAE8"
+                android:textColor="@color/app_text_accent_blue"
                 android:visibility="gone"
                 android:layout_marginStart="8dp"/>
 
@@ -68,7 +68,7 @@
                 android:text="FHD"
                 android:textStyle="bold"
                 android:textSize="12sp"
-                android:textColor="#7CAAE8"
+                android:textColor="@color/app_text_accent_blue"
                 android:visibility="visible"
                 android:layout_marginStart="8dp"/>
 
@@ -79,7 +79,7 @@
                 android:text="4K"
                 android:textStyle="bold"
                 android:textSize="12sp"
-                android:textColor="#7CAAE8"
+                android:textColor="@color/app_text_accent_blue"
                 android:visibility="gone"
                 android:layout_marginStart="8dp"/>
 

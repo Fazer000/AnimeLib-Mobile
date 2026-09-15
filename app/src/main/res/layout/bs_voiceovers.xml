@@ -23,17 +23,44 @@
         android:paddingHorizontal="16dp"
         android:paddingVertical="4dp">
 
-        <TextView
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:fontFamily="@font/open_sans_bold"
-            android:textStyle="bold"
-            android:letterSpacing="0.01"
-            android:text="@string/bs_title_voiceovers"
-            android:textColor="@color/primary_text_color"
-            android:textSize="@dimen/bs_title_text_size"
-            android:paddingVertical="8dp" />
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/open_sans_bold"
+                android:letterSpacing="0.01"
+                android:text="@string/bs_title_voiceovers"
+                android:textColor="@color/primary_text_color"
+                android:textSize="@dimen/bs_title_text_size"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvVoiceoverSubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:text="Выберите плеер или озвучку"
+                android:textColor="@color/accent_text_color"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/btnDownloadFromMenu"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/button_ripple_effect"
+            android:contentDescription="Download Episodes"
+            android:padding="7dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_download"
+            android:visibility="gone"
+            app:tint="@color/secondary_text_color" />
 
         <ImageButton
             android:id="@+id/closeMenuButton"
@@ -48,25 +75,123 @@
 
     </LinearLayout>
 
-    <!-- Player Selector TabLayout -->
-    <com.google.android.material.tabs.TabLayout
-        android:id="@+id/tabLayout"
+    <!-- Segmented Control Container for TabLayout -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="16dp"
         android:layout_marginTop="4dp"
-        android:layout_marginBottom="0dp"
-        android:background="@android:color/transparent"
-        app:tabIndicatorColor="@color/purple_primary"
-        app:tabSelectedTextColor="@color/purple_primary"
-        app:tabTextColor="@color/accent_text_color"
-        app:tabMode="fixed"
-        app:tabGravity="fill" />
+        android:layout_marginBottom="8dp"
+        android:background="@drawable/bg_segmented_control"
+        android:padding="3dp">
 
-    <!-- Line under tabs -->
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/tabLayout"
+            android:layout_width="match_parent"
+            android:layout_height="38dp"
+            android:background="@android:color/transparent"
+            app:tabGravity="fill"
+            app:tabIndicator="@drawable/bg_segmented_tab_indicator"
+            app:tabIndicatorAnimationMode="elastic"
+            app:tabIndicatorColor="@color/purple_primary"
+            app:tabIndicatorFullWidth="true"
+            app:tabIndicatorGravity="stretch"
+            app:tabIndicatorHeight="38dp"
+            app:tabMode="fixed"
+            app:tabRippleColor="@null"
+            app:tabBackground="@drawable/bg_segmented_tab_ripple"
+            app:tabUnboundedRipple="false"
+            app:tabSelectedTextColor="@color/white_color"
+            app:tabTextColor="@color/primary_text_color" />
+    </FrameLayout>
+
+    <!-- Search & Filter Bar -->
+    <LinearLayout
+        android:id="@+id/voiceoverFilterBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="8dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="34dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_comment_input"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="10dp">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:contentDescription="Search Icon"
+                android:src="@drawable/ic_search"
+                app:tint="@color/accent_text_color" />
+
+            <EditText
+                android:id="@+id/etSearchVoiceovers"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@null"
+                android:hint="Поиск озвучки..."
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:paddingStart="8dp"
+                android:paddingEnd="4dp"
+                android:textColor="@color/primary_text_color"
+                android:textColorHint="@color/accent_text_color"
+                android:textSize="12sp" />
+
+            <ImageButton
+                android:id="@+id/btnClearVoiceoversSearch"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Clear search"
+                android:src="@drawable/ic_close"
+                android:visibility="gone"
+                app:tint="@color/accent_text_color" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/btnSortVoiceovers"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_comment_header_button"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="10dp">
+
+            <ImageView
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:contentDescription="Sort"
+                android:src="@drawable/ic_sort_arrows"
+                app:tint="@color/primary_text_color" />
+
+            <TextView
+                android:id="@+id/tvSortVoiceovers"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:fontFamily="@font/open_sans_semibold"
+                android:text="По названию (А-Я)"
+                android:textColor="@color/primary_text_color"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Line under filter bar -->
     <View
         android:layout_width="match_parent"
-        android:layout_height="1dp"
+        android:layout_height="0.5dp"
         android:background="@color/bs_divider_color" />
 
     <!-- Players List Container with loading overlay -->

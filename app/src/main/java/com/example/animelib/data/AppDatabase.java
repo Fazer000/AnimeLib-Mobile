@@ -17,7 +17,7 @@ import com.example.animelib.data.entity.DownloadedEpisodeEntity;
 import com.example.animelib.data.entity.OfflineBookmarkEntity;
 import com.example.animelib.data.entity.PendingSyncTaskEntity;
 
-@Database(entities = {AppSettings.class, TokenEntity.class, PlayerPreferences.class, DownloadedAnimeEntity.class, DownloadedEpisodeEntity.class, OfflineBookmarkEntity.class, PendingSyncTaskEntity.class}, version = 25, exportSchema = false)
+@Database(entities = {AppSettings.class, TokenEntity.class, PlayerPreferences.class, DownloadedAnimeEntity.class, DownloadedEpisodeEntity.class, OfflineBookmarkEntity.class, PendingSyncTaskEntity.class}, version = 26, exportSchema = false)
 public abstract class AppDatabase extends RoomDatabase {
     private static volatile AppDatabase INSTANCE;
 

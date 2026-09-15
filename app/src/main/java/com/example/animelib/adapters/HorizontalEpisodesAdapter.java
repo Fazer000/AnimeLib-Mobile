@@ -160,10 +160,10 @@ public class HorizontalEpisodesAdapter extends RecyclerView.Adapter<HorizontalEp
             }
         }
 
-        // Smooth transition for active vs inactive state without scaling
+        // Ensure stable view state during scrolling
         holder.itemView.setScaleX(1.0f);
         holder.itemView.setScaleY(1.0f);
-        com.example.animelib.util.ItemAnimationUtils.animateItemStateTransition(holder.itemView, isCurrentEpisode);
+        holder.itemView.setAlpha(1.0f);
 
         // Set click listener
         holder.itemView.setOnClickListener(v -> {

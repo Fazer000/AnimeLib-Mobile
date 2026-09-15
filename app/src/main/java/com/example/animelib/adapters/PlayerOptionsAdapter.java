@@ -119,13 +119,8 @@ public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdap
             holder.fourKTag.setVisibility(hasFourK ? View.VISIBLE : View.GONE);
         }
 
-        int translationTypeId = 0;
-        if (player.getTranslationType() != null) {
-            translationTypeId = player.getTranslationType().getId();
-        }
-
-        if (holder.subTag != null && translationTypeId != 0) {
-            holder.subTag.setVisibility(translationTypeId == 1 ? View.VISIBLE : View.GONE);
+        if (holder.subTag != null) {
+            holder.subTag.setVisibility(player.isSubtitles() ? View.VISIBLE : View.GONE);
         }
 
         // Show current player indicator

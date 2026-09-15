@@ -96,6 +96,10 @@ public class OfflineSyncManager {
     }
 
     public void enqueueBookmarkTask(String mediaSlug, int episodeId, int teamId, int episodeNumber, String timecode) {
+        enqueueBookmarkTask(mediaSlug, episodeId, teamId, episodeNumber, timecode, null);
+    }
+
+    public void enqueueBookmarkTask(String mediaSlug, int episodeId, int teamId, int episodeNumber, String timecode, Object statusId) {
         if (mediaSlug == null || mediaSlug.isEmpty()) {
             Log.e(TAG, "Cannot enqueue BOOKMARK task with null/empty mediaSlug");
             return;
@@ -105,13 +109,13 @@ public class OfflineSyncManager {
             boolean success = false;
             if (isNetworkAvailable(context)) {
                 Log.d(TAG, "Network available, trying to send BOOKMARK request immediately");
-                success = apiService.addBookmarkSync(mediaSlug, episodeId, teamId, episodeNumber, timecode);
+                success = apiService.addBookmarkSync(mediaSlug, episodeId, teamId, episodeNumber, timecode, statusId);
             }
 
             if (!success) {
                 Log.w(TAG, "BOOKMARK request offline or failed. Queueing pending task in database");
                 PendingSyncTaskEntity task = PendingSyncTaskEntity.createBookmarkTask(
-                        mediaSlug, episodeId, teamId, episodeNumber, timecode
+                        mediaSlug, episodeId, teamId, episodeNumber, timecode, statusId != null ? String.valueOf(statusId) : null
                 );
                 databaseManager.savePendingSyncTask(task);
                 scheduleWorkManagerSync();
@@ -146,7 +150,8 @@ public class OfflineSyncManager {
                                 task.getEpisodeId(),
                                 task.getTeamId(),
                                 task.getEpisodeNumber(),
-                                task.getTimecode()
+                                task.getTimecode(),
+                                task.getStatusId()
                         );
                     }
                 } catch (Exception e) {

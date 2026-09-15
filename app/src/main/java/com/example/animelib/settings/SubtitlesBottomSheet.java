@@ -69,7 +69,7 @@ public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
                                 List<EpisodeResponse.SubtitleData> availableSubtitles,
                                 OnSubtitlesToggledListener toggledListener,
                                 OnSubtitleFormatChangedListener formatListener) {
-        super(context, com.google.android.material.R.style.ThemeOverlay_Material3_BottomSheetDialog);
+        super(context, com.example.animelib.R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
         this.subtitlesEnabled = subtitlesEnabled;
         this.currentFormat = currentFormat != null ? currentFormat : "ass";
         this.availableSubtitles = availableSubtitles;

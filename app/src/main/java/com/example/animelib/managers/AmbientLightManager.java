@@ -1,15 +1,19 @@
 package com.example.animelib.managers;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
 import android.graphics.RenderEffect;
 import android.graphics.Shader;
+import android.graphics.SurfaceTexture;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.view.TextureView;
 import android.view.View;
+import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -20,6 +24,7 @@ import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
 import androidx.media3.common.TrackSelectionParameters;
 import androidx.media3.datasource.DataSource;
+import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.ui.AspectRatioFrameLayout;
@@ -29,19 +34,22 @@ import com.example.animelib.ui.AmbientVignetteOverlayView;
 import com.example.animelib.util.MediaCacheManager;
 
 /**
- * Менеджер фоновой подсветки (Ambilight) на основе второго легковесного ExoPlayer,
- * расположенного непосредственно под основным видеоплеером.
+ * Высокопроизводительный менеджер фоновой подсветки (Ambilight).
+ *
+ * Принципиальная архитектура:
+ * 1. Direct GPU Surface Sampling: Считывает кадры напрямую с TextureView основного плеера
+ *    в режиме реального времени (0мс задержки, 0 элементов рассинхрона, 0 доп. сетевого трафика).
+ * 2. Аппаратный GPU-блюр (RenderEffect) с повышенной насыщенностью цветов (+40%).
+ * 3. Fallback на второй легковесный ExoPlayer, если основной View не является TextureView.
  */
 public class AmbientLightManager {
     private static final String TAG = "AmbientLightManager";
-    private static final long HARD_SEEK_THRESHOLD_MS = 1200; // Жёсткая подгонка кадра через seekTo только при разрыве >1.2с
-    private static final long SPEED_ADJUST_MIN_DELTA_MS = 15; // Минимальный порог подстройки скорости (sub-frame sync)
-    private static final long SYNC_INTERVAL_MS = 150; // Высокочастотный плавный цикл синхронизации (150 мс)
 
     private final Context context;
     private final PlayerView mainPlayerView;
     private final View ambientContainer;
     private final PlayerView ambientPlayerView;
+    private final ImageView ambientImageView;
     private final AmbientVignetteOverlayView ambientVignetteOverlay;
     private final Handler mainHandler;
 
@@ -57,19 +65,11 @@ public class AmbientLightManager {
     private boolean isErrorState = false;
     private boolean isSuspended = false;
     private boolean isFrozen = false;
+    private boolean isDirectSamplerActive = false;
 
+    private Bitmap sampleBitmap;
     private Player.Listener mainPlayerListener;
     private Player.Listener ambientPlayerListener;
-
-    private final Runnable syncRunnable = new Runnable() {
-        @Override
-        public void run() {
-            syncPositionAndSpeed();
-            if (isEnabled && !isSuspended && !isFrozen && mainPlayer != null && mainPlayer.isPlaying() && !isErrorState) {
-                mainHandler.postDelayed(this, SYNC_INTERVAL_MS);
-            }
-        }
-    };
 
     public AmbientLightManager(@NonNull Context context,
                                @NonNull PlayerView mainPlayerView,
@@ -86,6 +86,7 @@ public class AmbientLightManager {
         this.mainPlayerView = mainPlayerView;
         this.ambientContainer = ambientContainer;
         this.ambientPlayerView = ambientPlayerView;
+        this.ambientImageView = ambientContainer != null ? ambientContainer.findViewById(com.example.animelib.R.id.ambientImageView) : null;
         this.ambientVignetteOverlay = ambientVignetteOverlay;
         this.mainHandler = new Handler(Looper.getMainLooper());
 
@@ -93,38 +94,158 @@ public class AmbientLightManager {
     }
 
     /**
-     * Первичная настройка второго плеера (сохранение пропорций FIT, масштаб и блюр)
+     * Стилизация и настройка отображения слоев подсветки
      */
     private void setupAmbientViewStyle() {
         if (ambientContainer != null) {
             ambientContainer.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         }
 
-        if (ambientPlayerView == null) return;
+        if (ambientImageView != null) {
+            ambientImageView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+            ambientImageView.setScaleType(ImageView.ScaleType.FIT_XY);
 
-        ambientPlayerView.setUseController(false);
-        ambientPlayerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FILL);
-        ambientPlayerView.setAlpha(1.0f);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try {
+                    RenderEffect blurEffect = RenderEffect.createBlurEffect(120f, 120f, Shader.TileMode.CLAMP);
+                    ColorMatrix colorMatrix = new ColorMatrix();
+                    colorMatrix.setSaturation(1.4f);
 
-        // Аппаратный размытый краевой блюр GPU (Android 12+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            try {
-                RenderEffect blurEffect = RenderEffect.createBlurEffect(75f, 75f, Shader.TileMode.CLAMP);
-                ColorMatrix colorMatrix = new ColorMatrix();
-                colorMatrix.setSaturation(1.25f); // Насыщенность +25%
-                ColorMatrix scaleMatrix = new ColorMatrix();
-                scaleMatrix.setScale(1.0f, 1.0f, 1.0f, 1.0f); // Естественная яркость без завышения темных фонов
-                colorMatrix.postConcat(scaleMatrix);
+                    ColorMatrix scaleMatrix = new ColorMatrix(new float[] {
+                            1.1f, 0,    0,    0, 0,
+                            0,    1.1f, 0,    0, 0,
+                            0,    0,    1.1f, 0, 0,
+                            0,    0,    0,    1, 0
+                    });
+                    colorMatrix.postConcat(scaleMatrix);
 
-                RenderEffect colorEffect = RenderEffect.createColorFilterEffect(new ColorMatrixColorFilter(colorMatrix));
-                RenderEffect combinedEffect = RenderEffect.createChainEffect(blurEffect, colorEffect);
-                ambientPlayerView.setRenderEffect(combinedEffect);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to apply RenderEffect blur", e);
+                    RenderEffect colorEffect = RenderEffect.createColorFilterEffect(new ColorMatrixColorFilter(colorMatrix));
+                    RenderEffect combinedEffect = RenderEffect.createChainEffect(blurEffect, colorEffect);
+                    ambientImageView.setRenderEffect(combinedEffect);
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to apply RenderEffect to ambientImageView", e);
+                }
+            } else {
+                ambientImageView.setAlpha(0.95f);
             }
-        } else {
-            ambientPlayerView.setAlpha(0.95f);
         }
+
+        if (ambientPlayerView != null) {
+            ambientPlayerView.setUseController(false);
+            ambientPlayerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM);
+            ambientPlayerView.setAlpha(1.0f);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try {
+                    RenderEffect blurEffect = RenderEffect.createBlurEffect(120f, 120f, Shader.TileMode.CLAMP);
+                    ColorMatrix colorMatrix = new ColorMatrix();
+                    colorMatrix.setSaturation(1.4f);
+                    RenderEffect colorEffect = RenderEffect.createColorFilterEffect(new ColorMatrixColorFilter(colorMatrix));
+                    RenderEffect combinedEffect = RenderEffect.createChainEffect(blurEffect, colorEffect);
+                    ambientPlayerView.setRenderEffect(combinedEffect);
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to apply RenderEffect blur to ambientPlayerView", e);
+                }
+            }
+        }
+    }
+
+    private int textureAttachRetryCount = 0;
+    private final Runnable retryAttachRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!isDirectSamplerActive && mainPlayerView != null && textureAttachRetryCount < 10) {
+                textureAttachRetryCount++;
+                attachMainTextureViewListener();
+            }
+        }
+    };
+
+    private void attachMainTextureViewListener() {
+        if (mainPlayerView == null) return;
+        View surfaceView = mainPlayerView.getVideoSurfaceView();
+        if (surfaceView instanceof TextureView) {
+            TextureView mainTextureView = (TextureView) surfaceView;
+            if (sampleBitmap == null || sampleBitmap.isRecycled()) {
+                sampleBitmap = Bitmap.createBitmap(48, 27, Bitmap.Config.ARGB_8888);
+            }
+
+            TextureView.SurfaceTextureListener previousListener = mainTextureView.getSurfaceTextureListener();
+            mainTextureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+                @Override
+                public void onSurfaceTextureAvailable(@NonNull SurfaceTexture surface, int width, int height) {
+                    if (previousListener != null) previousListener.onSurfaceTextureAvailable(surface, width, height);
+                    sampleMainFrame(mainTextureView);
+                }
+
+                @Override
+                public void onSurfaceTextureSizeChanged(@NonNull SurfaceTexture surface, int width, int height) {
+                    if (previousListener != null) previousListener.onSurfaceTextureSizeChanged(surface, width, height);
+                    sampleMainFrame(mainTextureView);
+                }
+
+                @Override
+                public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture surface) {
+                    if (previousListener != null) return previousListener.onSurfaceTextureDestroyed(surface);
+                    return true;
+                }
+
+                @Override
+                public void onSurfaceTextureUpdated(@NonNull SurfaceTexture surface) {
+                    if (previousListener != null) previousListener.onSurfaceTextureUpdated(surface);
+                    if (isEnabled && !isSuspended && !isFrozen) {
+                        sampleMainFrame(mainTextureView);
+                    }
+                }
+            });
+
+            isDirectSamplerActive = true;
+            if (ambientImageView != null) ambientImageView.setVisibility(View.VISIBLE);
+            if (ambientPlayerView != null) ambientPlayerView.setVisibility(View.GONE);
+            releaseAmbientPlayer();
+            sampleMainFrame(mainTextureView);
+        } else {
+            isDirectSamplerActive = false;
+            if (ambientImageView != null) ambientImageView.setVisibility(View.GONE);
+            if (ambientPlayerView != null) ambientPlayerView.setVisibility(View.VISIBLE);
+            mainHandler.removeCallbacks(retryAttachRunnable);
+            if (textureAttachRetryCount < 10) {
+                mainHandler.postDelayed(retryAttachRunnable, 200);
+            }
+        }
+    }
+
+    private long lastSampleTimeMs = 0;
+    private static final long SAMPLE_INTERVAL_MS = 33; // ~30 FPS: плавный мгновенный акаратный синхрон с видео без рассинхрона
+
+    private void sampleMainFrame(TextureView mainTextureView) {
+        if (ambientImageView == null || mainTextureView == null || !mainTextureView.isAvailable()) return;
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (now - lastSampleTimeMs < SAMPLE_INTERVAL_MS) {
+            return;
+        }
+        lastSampleTimeMs = now;
+        try {
+            if (sampleBitmap == null || sampleBitmap.isRecycled()) {
+                sampleBitmap = Bitmap.createBitmap(48, 27, Bitmap.Config.ARGB_8888);
+            }
+            mainTextureView.getBitmap(sampleBitmap);
+            ambientImageView.setImageBitmap(sampleBitmap);
+        } catch (Exception e) {
+            Log.e(TAG, "Error in sampleMainFrame", e);
+        }
+    }
+
+    public void refreshAmbientFrame() {
+        mainHandler.post(() -> {
+            if (mainPlayerView != null) {
+                View surfaceView = mainPlayerView.getVideoSurfaceView();
+                if (surfaceView instanceof TextureView) {
+                    lastSampleTimeMs = 0;
+                    sampleMainFrame((TextureView) surfaceView);
+                }
+            }
+        });
     }
 
     public void setDataSourceFactory(DataSource.Factory dataSourceFactory) {
@@ -146,38 +267,42 @@ public class AmbientLightManager {
         if (mediaItem != null) this.currentMediaItem = mediaItem;
         if (videoUrl != null) this.currentVideoUrl = videoUrl;
 
+        this.isErrorState = false;
+        this.isPrepared = false;
+
         if (mainPlayer == null) {
             releaseAmbientPlayer();
             return;
         }
 
         setupMainPlayerListener();
+        attachMainTextureViewListener();
 
-        if (isEnabled && !isSuspended) {
-            ensureAmbientPlayerInitialized();
+        if (isEnabled && !isSuspended && !isFrozen) {
+            showAmbientContainer(true);
+            if (!isDirectSamplerActive) {
+                ensureAmbientPlayerInitialized();
+            }
         }
     }
 
     public void setEnabled(boolean enabled) {
         this.isEnabled = enabled;
-
         mainHandler.post(() -> {
-            boolean visible = enabled && !isErrorState && !isSuspended;
-            if (ambientContainer != null) {
-                ambientContainer.setVisibility(visible ? View.VISIBLE : View.GONE);
-            } else if (ambientPlayerView != null) {
-                ambientPlayerView.setVisibility(visible ? View.VISIBLE : View.GONE);
-            }
-
-            if (enabled && !isSuspended) {
-                ensureAmbientPlayerInitialized();
-                syncWithMainPlayerState();
+            if (enabled) {
+                if (!isSuspended && !isFrozen) {
+                    showAmbientContainer(true);
+                    attachMainTextureViewListener();
+                    if (!isDirectSamplerActive) {
+                        ensureAmbientPlayerInitialized();
+                    }
+                    refreshAmbientFrame();
+                }
             } else {
-                pauseAmbientPlayer();
+                hideAmbientContainer(true);
+                releaseAmbientPlayer();
             }
         });
-
-        Log.d(TAG, "Ambient light " + (enabled ? "enabled" : "disabled"));
     }
 
     public boolean isEnabled() {
@@ -187,11 +312,7 @@ public class AmbientLightManager {
     public void suspend() {
         this.isSuspended = true;
         mainHandler.post(() -> {
-            if (ambientContainer != null) {
-                ambientContainer.setVisibility(View.GONE);
-            } else if (ambientPlayerView != null) {
-                ambientPlayerView.setVisibility(View.GONE);
-            }
+            hideAmbientContainer(false);
             pauseAmbientPlayer();
         });
     }
@@ -199,13 +320,7 @@ public class AmbientLightManager {
     public void freeze() {
         this.isFrozen = true;
         mainHandler.post(() -> {
-            if (isEnabled && !isErrorState && !isSuspended) {
-                if (ambientContainer != null) {
-                    ambientContainer.setVisibility(View.VISIBLE);
-                } else if (ambientPlayerView != null) {
-                    ambientPlayerView.setVisibility(View.VISIBLE);
-                }
-            }
+            hideAmbientContainer(false);
             pauseAmbientPlayer();
         });
     }
@@ -214,13 +329,12 @@ public class AmbientLightManager {
         this.isFrozen = false;
         mainHandler.post(() -> {
             if (isEnabled && !isErrorState && !isSuspended) {
-                if (ambientContainer != null) {
-                    ambientContainer.setVisibility(View.VISIBLE);
-                } else if (ambientPlayerView != null) {
-                    ambientPlayerView.setVisibility(View.VISIBLE);
+                showAmbientContainer(true);
+                attachMainTextureViewListener();
+                if (!isDirectSamplerActive) {
+                    ensureAmbientPlayerInitialized();
                 }
-                ensureAmbientPlayerInitialized();
-                syncWithMainPlayerState();
+                refreshAmbientFrame();
             }
         });
     }
@@ -230,26 +344,29 @@ public class AmbientLightManager {
         this.isFrozen = false;
         mainHandler.post(() -> {
             if (isEnabled && !isErrorState) {
-                if (ambientContainer != null) {
-                    ambientContainer.setVisibility(View.VISIBLE);
-                } else if (ambientPlayerView != null) {
-                    ambientPlayerView.setVisibility(View.VISIBLE);
+                showAmbientContainer(true);
+                attachMainTextureViewListener();
+                if (!isDirectSamplerActive) {
+                    ensureAmbientPlayerInitialized();
                 }
-                ensureAmbientPlayerInitialized();
-                syncWithMainPlayerState();
+                refreshAmbientFrame();
             }
         });
     }
 
-    /**
-     * Инициализация второго плеера с ультра-низким энергопотреблением
-     */
     private void ensureAmbientPlayerInitialized() {
-        if (!isEnabled || mainPlayer == null || isErrorState || isSuspended || ambientPlayerView == null) return;
+        if (!isEnabled || mainPlayer == null || isErrorState || isSuspended || ambientPlayerView == null || isDirectSamplerActive) return;
 
         if (ambientPlayer == null) {
             try {
-                ExoPlayer.Builder builder = new ExoPlayer.Builder(context);
+                DefaultLoadControl ambientLoadControl = new DefaultLoadControl.Builder()
+                        .setBufferDurationsMs(1_000, 3_000, 200, 400)
+                        .setPrioritizeTimeOverSizeThresholds(true)
+                        .build();
+
+                ExoPlayer.Builder builder = new ExoPlayer.Builder(context)
+                        .setLoadControl(ambientLoadControl);
+
                 if (cacheDataSourceFactory != null) {
                     builder.setMediaSourceFactory(new DefaultMediaSourceFactory(cacheDataSourceFactory));
                 }
@@ -257,25 +374,20 @@ public class AmbientLightManager {
                 ambientPlayer = builder.build();
                 ambientPlayerView.setPlayer(ambientPlayer);
 
-                // ОПТИМИЗАЦИЯ ДЛЯ МИНИМАЛЬНОГО ПОТРЕБЛЕНИЯ РЕСУРСОВ:
-                // 1. Отключаем звук полностью
                 ambientPlayer.setVolume(0f);
-
-                // 2. Отключаем аудио и текстовые треки, ограничиваем максимальное качество до 240p/360p
                 TrackSelectionParameters parameters = ambientPlayer.getTrackSelectionParameters()
                         .buildUpon()
                         .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                        .setMaxVideoSize(360, 240)
-                        .setMaxVideoBitrate(350_000)
+                        .setMaxVideoBitrate(1_000_000)
                         .build();
                 ambientPlayer.setTrackSelectionParameters(parameters);
 
                 setupAmbientPlayerListener();
             } catch (Exception e) {
-                Log.e(TAG, "Failed to create ambient ExoPlayer", e);
+                Log.e(TAG, "Failed to create fallback ambient ExoPlayer", e);
                 isErrorState = true;
-                if (ambientPlayerView != null) ambientPlayerView.setVisibility(View.GONE);
+                hideAmbientContainer(false);
                 return;
             }
         }
@@ -284,7 +396,7 @@ public class AmbientLightManager {
     }
 
     private void prepareAmbientMedia() {
-        if (ambientPlayer == null || mainPlayer == null || isErrorState) return;
+        if (ambientPlayer == null || mainPlayer == null || isErrorState || isDirectSamplerActive) return;
 
         try {
             MediaItem mediaItemToUse = currentMediaItem;
@@ -295,6 +407,7 @@ public class AmbientLightManager {
             if (mediaItemToUse != null) {
                 ambientPlayer.setMediaItem(mediaItemToUse);
                 ambientPlayer.prepare();
+                ambientPlayer.setPlaybackParameters(mainPlayer.getPlaybackParameters());
                 ambientPlayer.seekTo(mainPlayer.getCurrentPosition());
                 if (mainPlayer.isPlaying()) {
                     ambientPlayer.play();
@@ -308,59 +421,93 @@ public class AmbientLightManager {
         }
     }
 
+    private final Runnable syncRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (isEnabled && !isSuspended && !isFrozen && mainPlayer != null && ambientPlayer != null && !isDirectSamplerActive) {
+                try {
+                    long mainPos = mainPlayer.getCurrentPosition();
+                    long ambPos = ambientPlayer.getCurrentPosition();
+                    long diff = Math.abs(mainPos - ambPos);
+
+                    if (diff > 150) {
+                        ambientPlayer.seekTo(mainPos);
+                    }
+
+                    if (ambientPlayer.getPlaybackParameters().speed != mainPlayer.getPlaybackParameters().speed) {
+                        ambientPlayer.setPlaybackParameters(mainPlayer.getPlaybackParameters());
+                    }
+
+                    if (mainPlayer.isPlaying() && !ambientPlayer.isPlaying()) {
+                        ambientPlayer.play();
+                    } else if (!mainPlayer.isPlaying() && ambientPlayer.isPlaying()) {
+                        ambientPlayer.pause();
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Error in ambient sync loop", e);
+                }
+            }
+            if (isEnabled && !isSuspended && !isFrozen && ambientPlayer != null && !isDirectSamplerActive) {
+                mainHandler.postDelayed(this, 1000);
+            }
+        }
+    };
+
     private void setupMainPlayerListener() {
         if (mainPlayer == null) return;
 
         mainPlayerListener = new Player.Listener() {
             @Override
             public void onIsPlayingChanged(boolean isPlaying) {
-                if (!isEnabled || isSuspended || isFrozen || ambientPlayer == null) return;
-                mainHandler.removeCallbacks(syncRunnable);
-                if (isPlaying) {
-                    syncPositionAndSpeed();
-                    ambientPlayer.play();
-                    mainHandler.post(syncRunnable);
-                } else {
-                    ambientPlayer.pause();
+                if (!isEnabled || isSuspended || isFrozen) return;
+                refreshAmbientFrame();
+                if (ambientPlayer != null && !isDirectSamplerActive) {
+                    if (isPlaying) {
+                        ambientPlayer.play();
+                        mainHandler.removeCallbacks(syncRunnable);
+                        mainHandler.post(syncRunnable);
+                    } else {
+                        ambientPlayer.pause();
+                    }
                 }
             }
 
             @Override
             public void onPlaybackStateChanged(int playbackState) {
-                if (!isEnabled || isSuspended || isFrozen || ambientPlayer == null) return;
-                if (playbackState == Player.STATE_READY) {
-                    if (!isPrepared || isErrorState) {
-                        isErrorState = false;
-                        prepareAmbientMedia();
-                    } else {
-                        syncPositionAndSpeed();
-                        if (mainPlayer.isPlaying()) {
-                            ambientPlayer.play();
-                            mainHandler.removeCallbacks(syncRunnable);
-                            mainHandler.post(syncRunnable);
-                        }
+                if (!isEnabled || isSuspended || isFrozen) return;
+                refreshAmbientFrame();
+                if (!isDirectSamplerActive) {
+                    attachMainTextureViewListener();
+                }
+            }
+
+            @Override
+            public void onPlaybackParametersChanged(@NonNull PlaybackParameters playbackParameters) {
+                if (!isEnabled || isSuspended || isFrozen) return;
+                if (ambientPlayer != null && !isDirectSamplerActive) {
+                    ambientPlayer.setPlaybackParameters(playbackParameters);
+                }
+            }
+
+            @Override
+            public void onRenderedFirstFrame() {
+                if (!isEnabled || isSuspended || isFrozen) return;
+                refreshAmbientFrame();
+                if (ambientPlayer != null && !isDirectSamplerActive && mainPlayer != null) {
+                    ambientPlayer.seekTo(mainPlayer.getCurrentPosition());
+                    if (mainPlayer.isPlaying()) {
+                        ambientPlayer.play();
                     }
-                } else if (playbackState == Player.STATE_BUFFERING) {
-                    ambientPlayer.pause();
-                    mainHandler.removeCallbacks(syncRunnable);
                 }
             }
 
             @Override
-            public void onPositionDiscontinuity(Player.PositionInfo oldPosition, Player.PositionInfo newPosition, int reason) {
-                if (!isEnabled || isSuspended || isFrozen || ambientPlayer == null) return;
-                ambientPlayer.seekTo(mainPlayer.getCurrentPosition());
-                syncPositionAndSpeed();
-                if (mainPlayer.isPlaying()) {
-                    mainHandler.removeCallbacks(syncRunnable);
-                    mainHandler.post(syncRunnable);
+            public void onPositionDiscontinuity(@NonNull Player.PositionInfo oldPosition, @NonNull Player.PositionInfo newPosition, int reason) {
+                if (!isEnabled || isSuspended || isFrozen) return;
+                refreshAmbientFrame();
+                if (ambientPlayer != null && !isDirectSamplerActive) {
+                    ambientPlayer.seekTo(mainPlayer.getCurrentPosition());
                 }
-            }
-
-            @Override
-            public void onPlaybackParametersChanged(PlaybackParameters playbackParameters) {
-                if (!isEnabled || isSuspended || isFrozen || ambientPlayer == null) return;
-                syncPositionAndSpeed();
             }
         };
 
@@ -373,9 +520,8 @@ public class AmbientLightManager {
         ambientPlayerListener = new Player.Listener() {
             @Override
             public void onPlayerError(PlaybackException error) {
-                Log.w(TAG, "Ambient player encountered playback error: " + error.getMessage() + ". Retrying softly.");
+                Log.w(TAG, "Fallback ambient player error: " + error.getMessage());
                 isErrorState = true;
-                mainHandler.removeCallbacks(syncRunnable);
                 pauseAmbientPlayer();
             }
         };
@@ -383,75 +529,39 @@ public class AmbientLightManager {
         ambientPlayer.addListener(ambientPlayerListener);
     }
 
-    private void syncPositionAndSpeed() {
-        if (!isEnabled || isSuspended || isFrozen || mainPlayer == null || ambientPlayer == null || isErrorState) return;
-        try {
-            if (!mainPlayer.isPlaying()) {
-                if (ambientPlayer.isPlaying()) {
-                    ambientPlayer.pause();
-                }
-                return;
-            }
+    private void showAmbientContainer(boolean animate) {
+        View targetView = ambientContainer != null ? ambientContainer : (isDirectSamplerActive ? ambientImageView : ambientPlayerView);
+        if (targetView == null) return;
 
-            int mainState = mainPlayer.getPlaybackState();
-            if (mainState == Player.STATE_BUFFERING) {
-                if (ambientPlayer.isPlaying()) {
-                    ambientPlayer.pause();
-                }
-                return;
-            } else if (mainState == Player.STATE_READY && !ambientPlayer.isPlaying()) {
-                ambientPlayer.play();
-            }
+        targetView.removeCallbacks(null);
+        if (targetView.getVisibility() != View.VISIBLE) {
+            targetView.setVisibility(View.VISIBLE);
+            targetView.setAlpha(0f);
+        }
 
-            long mainPos = mainPlayer.getCurrentPosition();
-            long ambientPos = ambientPlayer.getCurrentPosition();
-            long deltaMs = mainPos - ambientPos;
-
-            float mainSpeed = mainPlayer.getPlaybackParameters().speed;
-            if (mainSpeed <= 0.1f) mainSpeed = 1.0f;
-
-            if (Math.abs(deltaMs) > HARD_SEEK_THRESHOLD_MS) {
-                ambientPlayer.seekTo(mainPos);
-                ambientPlayer.setPlaybackParameters(new PlaybackParameters(mainSpeed));
-            } else if (Math.abs(deltaMs) > SPEED_ADJUST_MIN_DELTA_MS) {
-                // Бесшовное динамическое микро-выравнивание скорости воспроизведения (NTP-Style)
-                // Без рестартов, скачков и фризов декодера!
-                float adjustFactor;
-                if (deltaMs > 0) {
-                    // ambientPlayer отстает от главного -> плавно ускоряем на 1..15%
-                    adjustFactor = 1.0f + Math.min(0.15f, (deltaMs / 400.0f) * 0.08f);
-                } else {
-                    // ambientPlayer ушел вперед главного -> плавно замедляем на 1..15%
-                    adjustFactor = 1.0f - Math.min(0.15f, (Math.abs(deltaMs) / 400.0f) * 0.08f);
-                }
-                float targetSpeed = mainSpeed * adjustFactor;
-                ambientPlayer.setPlaybackParameters(new PlaybackParameters(targetSpeed));
-            } else {
-                // Идеальная субкадровая синхронизация (< 15 мс)
-                PlaybackParameters currentParams = ambientPlayer.getPlaybackParameters();
-                if (Math.abs(currentParams.speed - mainSpeed) > 0.001f) {
-                    ambientPlayer.setPlaybackParameters(new PlaybackParameters(mainSpeed));
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error in syncPositionAndSpeed", e);
+        if (animate) {
+            targetView.animate()
+                    .alpha(1.0f)
+                    .setDuration(250)
+                    .start();
+        } else {
+            targetView.setAlpha(1.0f);
         }
     }
 
-    private void syncWithMainPlayerState() {
-        if (!isEnabled || isSuspended || isFrozen || mainPlayer == null || ambientPlayer == null || isErrorState) return;
-        try {
-            ambientPlayer.setPlaybackParameters(mainPlayer.getPlaybackParameters());
-            ambientPlayer.seekTo(mainPlayer.getCurrentPosition());
-            if (mainPlayer.isPlaying()) {
-                ambientPlayer.play();
-                mainHandler.removeCallbacks(syncRunnable);
-                mainHandler.post(syncRunnable);
-            } else {
-                ambientPlayer.pause();
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error syncing with main player state", e);
+    private void hideAmbientContainer(boolean animate) {
+        View targetView = ambientContainer != null ? ambientContainer : (isDirectSamplerActive ? ambientImageView : ambientPlayerView);
+        if (targetView == null) return;
+
+        if (animate) {
+            targetView.animate()
+                    .alpha(0f)
+                    .setDuration(200)
+                    .withEndAction(() -> targetView.setVisibility(View.GONE))
+                    .start();
+        } else {
+            targetView.setAlpha(0f);
+            targetView.setVisibility(View.GONE);
         }
     }
 
@@ -461,11 +571,12 @@ public class AmbientLightManager {
                 ambientPlayer.pause();
             } catch (Exception ignored) {}
         }
-        mainHandler.removeCallbacks(syncRunnable);
     }
 
     public void releaseAmbientPlayer() {
         mainHandler.removeCallbacks(syncRunnable);
+        mainHandler.removeCallbacks(retryAttachRunnable);
+
         if (mainPlayer != null && mainPlayerListener != null) {
             mainPlayer.removeListener(mainPlayerListener);
             mainPlayerListener = null;
@@ -490,6 +601,19 @@ public class AmbientLightManager {
 
     public void cleanup() {
         releaseAmbientPlayer();
+        if (sampleBitmap != null && !sampleBitmap.isRecycled()) {
+            sampleBitmap.recycle();
+            sampleBitmap = null;
+        }
+    }
+
+    public void onConfigurationChanged() {
+        mainHandler.postDelayed(() -> {
+            if (isEnabled && !isSuspended && !isFrozen) {
+                attachMainTextureViewListener();
+                refreshAmbientFrame();
+            }
+        }, 150);
     }
 
     public void onPause() {

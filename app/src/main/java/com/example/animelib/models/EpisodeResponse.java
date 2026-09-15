@@ -168,6 +168,38 @@ public class EpisodeResponse {
             this.subtitles = subtitles;
         }
 
+        public boolean isSubtitles() {
+            if (subtitles != null && !subtitles.isEmpty()) {
+                return true;
+            }
+            if (translationType != null) {
+                if (translationType.getId() == 1) {
+                    return true;
+                }
+                String label = translationType.getLabel();
+                if (label != null) {
+                    String lower = label.toLowerCase();
+                    if (lower.contains("субтитр") || lower.contains("sub")) {
+                        return true;
+                    }
+                }
+            }
+            Team t = getTeam();
+            if (t != null && t.getName() != null) {
+                String teamLower = t.getName().toLowerCase();
+                if (teamLower.contains("субтитр") || teamLower.contains("subtitles") || teamLower.contains("(sub)")) {
+                    return true;
+                }
+            }
+            if (player != null && player.toLowerCase().contains("sub")) {
+                return true;
+            }
+            if (src != null && src.toLowerCase().contains("sub")) {
+                return true;
+            }
+            return false;
+        }
+
         public String getVideoDomain() {
             return videoDomain;
         }

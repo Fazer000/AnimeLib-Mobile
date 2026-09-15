@@ -50,7 +50,8 @@ public class OfflineSyncWorker extends Worker {
                             task.getEpisodeId(),
                             task.getTeamId(),
                             task.getEpisodeNumber(),
-                            task.getTimecode()
+                            task.getTimecode(),
+                            task.getStatusId()
                     );
                 }
             } catch (Exception e) {

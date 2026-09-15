@@ -46,7 +46,7 @@ public class VideoFiltersBottomSheet extends FlexibleBottomSheetDialog {
     private Slider sliderHue;
 
     public VideoFiltersBottomSheet(Context context, float brightness, float contrast, float saturation, float gamma, float hue, OnFiltersChangedListener listener) {
-        super(context, com.google.android.material.R.style.ThemeOverlay_Material3_BottomSheetDialog);
+        super(context, com.example.animelib.R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
         this.brightness = brightness;
         this.contrast = contrast;
         this.saturation = saturation;

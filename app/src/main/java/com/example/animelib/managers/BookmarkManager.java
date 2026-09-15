@@ -35,8 +35,15 @@ public class BookmarkManager {
     public void addBookmark(String mediaSlug, EpisodeResponse.PlayerData currentPlayer, 
                            EpisodesListResponse.EpisodeItem currentEpisode, long currentPosition,
                            BookmarkAddCallback callback, boolean showSuccessToast) {
+        addBookmark(mediaSlug, currentPlayer, currentEpisode, currentPosition, null, callback, showSuccessToast);
+    }
+
+    public void addBookmark(String mediaSlug, EpisodeResponse.PlayerData currentPlayer, 
+                           EpisodesListResponse.EpisodeItem currentEpisode, long currentPosition,
+                           Object statusId,
+                           BookmarkAddCallback callback, boolean showSuccessToast) {
         
-        Log.d(TAG, "Adding bookmark for episode: " + currentEpisode.getNumber());
+        Log.d(TAG, "Adding bookmark for episode: " + currentEpisode.getNumber() + " with statusId: " + statusId);
 
         if (apiService != null && !apiService.isAuthorized()) {
             Log.w(TAG, "User is not authorized, cannot add bookmark");
@@ -77,7 +84,8 @@ public class BookmarkManager {
                    ", episodeId: " + currentEpisode.getId() +
                    ", teamId: " + teamId +
                    ", episodeNumber: " + episodeNumber +
-                   ", timecode: " + timecode);
+                   ", timecode: " + timecode +
+                   ", statusId: " + statusId);
         
         // Передаем в OfflineSyncManager, который выполнит запрос или добавит в офлайн-очередь с ретраями
         OfflineSyncManager.getInstance(context).enqueueBookmarkTask(
@@ -85,7 +93,8 @@ public class BookmarkManager {
             currentEpisode.getId(),
             teamId,
             episodeNumber,
-            timecode
+            timecode,
+            statusId
         );
 
         if (showSuccessToast) {

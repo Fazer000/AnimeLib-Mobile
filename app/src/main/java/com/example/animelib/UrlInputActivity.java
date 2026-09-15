@@ -5,13 +5,14 @@ import android.os.Bundle;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
-import android.widget.ImageView;
+import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.lifecycle.ViewModelProvider;
 
 import com.example.animelib.data.DatabaseManager;
 import com.example.animelib.util.CustomToast;
+import com.example.animelib.util.SiteUtils;
 import com.example.animelib.util.ThemeUtils;
 import com.example.animelib.viewmodel.AppSettingsViewModel;
 import com.google.android.material.button.MaterialButton;
@@ -28,11 +29,17 @@ public class UrlInputActivity extends AppCompatActivity {
     private View unselectedIndicatorCis;
     private View selectedPillOther;
     private View unselectedIndicatorOther;
+    private TextView tvCisBadge;
+    private TextView tvOtherBadge;
     private MaterialButton saveButton;
 
     private DatabaseManager databaseManager;
     private AppSettingsViewModel viewModel;
+
+    private String urlCis = URL_CIS;
+    private String urlOther = URL_OTHER;
     private String selectedUrl = URL_CIS;
+    private boolean selectedIsOther = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -76,17 +83,33 @@ public class UrlInputActivity extends AppCompatActivity {
         unselectedIndicatorCis = findViewById(R.id.unselectedIndicatorCis);
         selectedPillOther = findViewById(R.id.selectedPillOther);
         unselectedIndicatorOther = findViewById(R.id.unselectedIndicatorOther);
+        tvCisBadge = findViewById(R.id.tvCisBadge);
+        tvOtherBadge = findViewById(R.id.tvOtherBadge);
         saveButton = findViewById(R.id.saveButton);
 
         new Thread(() -> {
-            String currentUrl = databaseManager.getSiteUrl();
-            if (currentUrl != null && currentUrl.contains("animelib.org") && !currentUrl.contains("v5.animelib.org")) {
-                selectedUrl = URL_OTHER;
-            } else {
-                selectedUrl = URL_CIS;
+            String currentUrl = getIntent().getStringExtra("current_url");
+            if (currentUrl == null || currentUrl.isEmpty()) {
+                currentUrl = databaseManager.getSiteUrl();
             }
 
-            runOnUiThread(this::updateSelectionUi);
+            String siteKey = SiteUtils.getSiteKey(currentUrl);
+            selectedIsOther = SiteUtils.isOtherRegion(currentUrl, this);
+
+            urlCis = SiteUtils.getUrlForSiteAndRegion(siteKey, false);
+            urlOther = SiteUtils.getUrlForSiteAndRegion(siteKey, true);
+
+            selectedUrl = selectedIsOther ? urlOther : urlCis;
+
+            runOnUiThread(() -> {
+                if (tvCisBadge != null) {
+                    tvCisBadge.setText(SiteUtils.getDomainHost(urlCis));
+                }
+                if (tvOtherBadge != null) {
+                    tvOtherBadge.setText(SiteUtils.getDomainHost(urlOther));
+                }
+                updateSelectionUi();
+            });
         }).start();
 
         saveButton.setEnabled(true);
@@ -95,14 +118,16 @@ public class UrlInputActivity extends AppCompatActivity {
     private void setupListeners() {
         if (cardCis != null) {
             cardCis.setOnClickListener(v -> {
-                selectedUrl = URL_CIS;
+                selectedIsOther = false;
+                selectedUrl = urlCis;
                 updateSelectionUi();
             });
         }
 
         if (cardOther != null) {
             cardOther.setOnClickListener(v -> {
-                selectedUrl = URL_OTHER;
+                selectedIsOther = true;
+                selectedUrl = urlOther;
                 updateSelectionUi();
             });
         }
@@ -116,7 +141,7 @@ public class UrlInputActivity extends AppCompatActivity {
         int secondaryColor = getThemeColor(R.attr.secondaryColor);
         int borderColor = getThemeColor(R.attr.borderColor);
 
-        boolean isCis = URL_CIS.equals(selectedUrl);
+        boolean isCis = !selectedIsOther;
         int strokeWidthPx = Math.max(1, Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 0.5f, getResources().getDisplayMetrics())));
 
         if (cardCis != null && cardOther != null) {
@@ -152,16 +177,17 @@ public class UrlInputActivity extends AppCompatActivity {
 
     private void saveUrl() {
         try {
+            SiteUtils.setSavedRegionOther(this, selectedIsOther);
             viewModel.saveSettings(selectedUrl);
             databaseManager.saveSiteUrl(selectedUrl);
 
-            Log.d("UrlInputActivity", "Region domain saved: " + selectedUrl);
+            Log.d("UrlInputActivity", "Region domain saved: " + selectedUrl + ", selectedIsOther=" + selectedIsOther);
 
             Intent resultIntent = new Intent();
             resultIntent.putExtra("site_url", selectedUrl);
             setResult(RESULT_OK, resultIntent);
 
-            CustomToast.showSuccess(this, "Сервер сохранен: " + (selectedUrl.contains("v5") ? "СНГ" : "Остальные страны"));
+            CustomToast.showSuccess(this, "Сервер сохранен: " + (selectedIsOther ? "Остальные страны" : "СНГ"));
             finish();
 
         } catch (Exception e) {

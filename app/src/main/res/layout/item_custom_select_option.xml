@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:id="@+id/itemContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="18dp"
+        android:paddingVertical="14dp"
+        android:layout_marginBottom="3dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:background="@drawable/bg_m3_item_single"
+        android:clickable="true"
+        android:focusable="true">
+
+        <TextView
+            android:id="@+id/optionText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="?attr/primaryTextColor"
+            android:textSize="15.5sp"
+            android:fontFamily="@font/open_sans_bold"/>
+
+        <!-- Selected Pill Indicator -->
+        <FrameLayout
+            android:id="@+id/selectedPill"
+            android:layout_width="38dp"
+            android:layout_height="26dp"
+            android:layout_marginStart="12dp"
+            android:background="@drawable/bg_m3_selected_pill"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_check"
+                app:tint="#FFFFFF"
+                android:contentDescription="Selected"/>
+        </FrameLayout>
+
+        <!-- Unselected Indicator -->
+        <View
+            android:id="@+id/unselectedIndicator"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_marginStart="12dp"
+            android:background="@drawable/bg_m3_unselected_circle"
+            android:visibility="visible"/>
+
+    </LinearLayout>
+
+</LinearLayout>

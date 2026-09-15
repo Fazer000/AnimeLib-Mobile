@@ -31,7 +31,7 @@ public class QualityBottomSheet extends FlexibleBottomSheetDialog {
     }
 
     public QualityBottomSheet(Context context, List<String> qualities, String currentQuality, QualityAdapter.OnQualitySelectedListener listener) {
-        super(context, com.google.android.material.R.style.ThemeOverlay_Material3_BottomSheetDialog);
+        super(context, com.example.animelib.R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
         this.listener = listener;
         
         // Create adapter immediately with the provided data and dismiss dialog on selection

@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true"
+    android:overScrollMode="never"
+    android:background="@android:color/transparent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingBottom="24dp">
+
+        <View
+            android:layout_width="36dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bottom_sheet_handle" />
+
+        <!-- Header Row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="4dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ImageButton
+                android:id="@+id/bs_bug_report_back"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:padding="6dp"
+                app:tint="@color/accent_text_color"
+                android:background="@drawable/button_close_background"
+                android:src="@drawable/ic_arrow_back"
+                android:scaleType="fitCenter"
+                android:contentDescription="Назад"/>
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Сообщить об ошибке"
+                android:gravity="center_vertical"
+                android:textColor="@color/primary_text_color"
+                android:textStyle="bold"
+                android:fontFamily="@font/open_sans_bold"
+                android:paddingVertical="8dp"
+                android:layout_marginStart="8dp"
+                android:textSize="@dimen/bs_title_text_size"/>
+
+            <ImageButton
+                android:id="@+id/bs_bug_report_close"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:padding="6dp"
+                app:tint="@color/accent_text_color"
+                android:background="@drawable/button_close_background"
+                android:src="@drawable/ic_close"
+                android:scaleType="fitCenter"
+                android:contentDescription="Закрыть"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:layout_marginTop="8dp">
+
+            <!-- Information Card -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_ignore_info_card"
+                android:padding="12dp"
+                android:layout_marginBottom="14dp">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_bug_report"
+                    app:tint="@color/purple_primary"
+                    android:layout_marginEnd="10dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Опишите проблему и нажмите «Создать issue на GitHub». Информация об устройстве и версии приложения добавится автоматически."
+                    android:textColor="@color/primary_text_color"
+                    android:textSize="13sp"
+                    android:fontFamily="@font/open_sans"
+                    android:lineSpacingExtra="2dp" />
+            </LinearLayout>
+
+            <!-- Bug Title Input -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Краткое название проблемы"
+                android:textColor="@color/primary_text_color"
+                android:textSize="14sp"
+                android:fontFamily="@font/open_sans_bold"
+                android:layout_marginBottom="6dp" />
+
+            <EditText
+                android:id="@+id/etBugTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:background="@drawable/bg_ignore_info_card"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp"
+                android:hint="Например: Ошибка воспроизведения серии"
+                android:textColorHint="@color/app_text_secondary"
+                android:textColor="@color/primary_text_color"
+                android:textSize="14sp"
+                android:fontFamily="@font/open_sans"
+                android:inputType="textCapSentences"
+                android:maxLines="2"
+                android:layout_marginBottom="14dp" />
+
+            <!-- Bug Description Input -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Подробности / Шаги воспроизведения"
+                android:textColor="@color/primary_text_color"
+                android:textSize="14sp"
+                android:fontFamily="@font/open_sans_bold"
+                android:layout_marginBottom="6dp" />
+
+            <EditText
+                android:id="@+id/etBugDescription"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="100dp"
+                android:gravity="top|start"
+                android:background="@drawable/bg_ignore_info_card"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp"
+                android:hint="Опишите, что произошло и при каких действиях..."
+                android:textColorHint="@color/app_text_secondary"
+                android:textColor="@color/primary_text_color"
+                android:textSize="14sp"
+                android:fontFamily="@font/open_sans"
+                android:inputType="textMultiLine"
+                android:layout_marginBottom="14dp" />
+
+            <!-- Diagnostic Info Card -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Системная информация"
+                android:textColor="@color/primary_text_color"
+                android:textSize="14sp"
+                android:fontFamily="@font/open_sans_bold"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:id="@+id/tvDeviceInfo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_ignore_info_card"
+                android:padding="12dp"
+                android:fontFamily="monospace"
+                android:textColor="@color/secondary_text_color"
+                android:textSize="12sp"
+                android:lineSpacingExtra="3dp"
+                android:text="Приложение: v1.8.7\nУстройство: -\nОС: Android -"
+                android:layout_marginBottom="18dp" />
+
+            <!-- Action Buttons -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnOpenGithub"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:text="Создать issue на GitHub"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                android:fontFamily="@font/open_sans_bold"
+                app:icon="@drawable/ic_github"
+                app:iconGravity="textStart"
+                app:iconTint="#FFFFFF"
+                app:iconSize="20dp"
+                android:backgroundTint="@color/purple_primary"
+                app:cornerRadius="12dp"
+                android:layout_marginBottom="8dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCopyReport"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="Скопировать отчет в буфер"
+                android:textColor="@color/primary_text_color"
+                android:textSize="14sp"
+                android:fontFamily="@font/open_sans_bold"
+                app:icon="@drawable/ic_copy"
+                app:iconGravity="textStart"
+                app:iconTint="@color/primary_text_color"
+                app:iconSize="18dp"
+                android:backgroundTint="@color/dialog_btn_neutral_bg"
+                app:cornerRadius="12dp" />
+
+        </LinearLayout>
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

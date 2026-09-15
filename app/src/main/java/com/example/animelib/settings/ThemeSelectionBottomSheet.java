@@ -35,7 +35,7 @@ public class ThemeSelectionBottomSheet extends FlexibleBottomSheetDialog {
     private View themeDarkUnselected;
     
     public ThemeSelectionBottomSheet(@NonNull Context context, int currentTheme, OnThemeChangedListener listener) {
-        super(context, com.google.android.material.R.style.ThemeOverlay_Material3_BottomSheetDialog);
+        super(context, com.example.animelib.R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
         this.currentTheme = currentTheme;
         this.listener = listener;
     }

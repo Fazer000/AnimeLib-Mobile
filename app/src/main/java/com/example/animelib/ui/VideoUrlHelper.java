@@ -47,7 +47,7 @@ public class VideoUrlHelper {
     }
 
     public static String getDomainFullDescription(String domain) {
-        if (domain == null) return "Основной (video1.cdnlibs.org)";
+        if (domain == null) return "Основной (video1.cdnlibs.org/.%D0%B0s)";
         switch (domain) {
             case DOMAIN_SECONDARY_1:
                 return "Резервный 1 (video2.cdnlibs.org)";
@@ -55,7 +55,7 @@ public class VideoUrlHelper {
                 return "Резервный 2 (video1.imglib.info)";
             case DOMAIN_MAIN:
             default:
-                return "Основной (video1.cdnlibs.org)";
+                return "Основной (video1.cdnlibs.org/.%D0%B0s)";
         }
     }
 
@@ -102,6 +102,8 @@ public class VideoUrlHelper {
         String[] prefixes = new String[] {
             "https://video1.cdnlibs.org/.%D0%B0s",
             "https://video1.cdnlibs.org/.\u0430s",
+            "http://video1.cdnlibs.org/.%D0%B0s",
+            "http://video1.cdnlibs.org/.\u0430s",
             "https://video1.cdnlibs.org",
             "http://video1.cdnlibs.org",
             "https://video2.cdnlibs.org",
@@ -117,6 +119,8 @@ public class VideoUrlHelper {
                     path = path.substring("/.%D0%B0s".length());
                 } else if (path.startsWith("/.\u0430s")) {
                     path = path.substring("/.\u0430s".length());
+                } else if (path.startsWith("/.%D0%B0")) {
+                    path = path.substring("/.%D0%B0".length());
                 }
                 return path;
             }

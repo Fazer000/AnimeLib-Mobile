@@ -2,8 +2,11 @@ package com.example.animelib.ui;
 
 import android.content.Context;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.TextView;
@@ -57,7 +60,7 @@ public class VoiceoverBottomSheet extends FlexibleBottomSheetDialog {
                                 boolean isLoading,
                                 OnPlayerSelectedListener selectionListener,
                                 OnDownloadRequestedListener downloadListener) {
-        super(context, com.google.android.material.R.style.ThemeOverlay_Material3_BottomSheetDialog);
+        super(context, com.example.animelib.R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
         this.animelibPlayers = animelibPlayers != null ? animelibPlayers : new ArrayList<>();
         this.kodikPlayers = kodikPlayers != null ? kodikPlayers : new ArrayList<>();
         this.currentPlayerData = currentPlayerData;
@@ -98,9 +101,55 @@ public class VoiceoverBottomSheet extends FlexibleBottomSheetDialog {
             });
         }
 
-        setupViewPager();
+        setupViewPager(view);
+        setupSearchAndSort(view);
         setLoading(isLoading);
         setupBottomSheetBehavior();
+    }
+
+    private void setupSearchAndSort(View view) {
+        if (view == null) return;
+        EditText etSearch = view.findViewById(R.id.etSearchVoiceovers);
+        ImageButton btnClear = view.findViewById(R.id.btnClearVoiceoversSearch);
+        View btnSort = view.findViewById(R.id.btnSortVoiceovers);
+        TextView tvSortText = view.findViewById(R.id.tvSortVoiceovers);
+
+        if (tvSortText != null && tabsAdapter != null) {
+            tvSortText.setText(com.example.animelib.util.VoiceoverSortHelper.getSortLabel(tabsAdapter.getSortType()));
+        }
+
+        if (etSearch != null) {
+            etSearch.addTextChangedListener(new TextWatcher() {
+                @Override
+                public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+                @Override
+                public void onTextChanged(CharSequence s, int start, int before, int count) {
+                    String q = s.toString();
+                    if (btnClear != null) {
+                        btnClear.setVisibility(q.trim().isEmpty() ? View.GONE : View.VISIBLE);
+                    }
+                    if (tabsAdapter != null) {
+                        tabsAdapter.setFilterQuery(q);
+                    }
+                }
+
+                @Override
+                public void afterTextChanged(Editable s) {}
+            });
+        }
+
+        if (btnClear != null && etSearch != null) {
+            btnClear.setOnClickListener(v -> etSearch.setText(""));
+        }
+
+        if (btnSort != null) {
+            btnSort.setOnClickListener(v -> {
+                if (tabsAdapter != null && getContext() != null) {
+                    com.example.animelib.util.VoiceoverSortHelper.showSortPopup(btnSort, getContext(), tabsAdapter);
+                }
+            });
+        }
     }
 
     public void updateDownloadButtonState(boolean isDownloading) {
@@ -128,7 +177,7 @@ public class VoiceoverBottomSheet extends FlexibleBottomSheetDialog {
         }
     }
 
-    private void setupViewPager() {
+    private void setupViewPager(View view) {
         if (viewPager == null) return;
 
         if (playersContainer instanceof MaxHeightFrameLayout) {
@@ -160,6 +209,13 @@ public class VoiceoverBottomSheet extends FlexibleBottomSheetDialog {
                     tab.setText("Kodik");
                 }
             }).attach();
+
+            for (int i = 0; i < tabLayout.getTabCount(); i++) {
+                com.google.android.material.tabs.TabLayout.Tab tab = tabLayout.getTabAt(i);
+                if (tab != null && tab.view != null) {
+                    tab.view.setClipToOutline(true);
+                }
+            }
         }
 
         int targetPage = "kodik".equals(activeTab) ? 1 : 0;

@@ -30,6 +30,7 @@
         </androidx.cardview.widget.CardView>
         <!-- Контент без скролла -->
         <LinearLayout
+            android:id="@+id/animeInfoContentLayout"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="horizontal"
@@ -296,6 +297,44 @@
                 </LinearLayout>
             </LinearLayout>
 
+        </LinearLayout>
+
+        <!-- Ошибка загрузки инфо -->
+        <LinearLayout
+            android:id="@+id/animeInfoErrorLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="24dp"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@drawable/ic_exclamation_mark"
+                app:tint="@color/secondary_text_color"
+                android:layout_marginBottom="12dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Не удалось загрузить информацию об аниме"
+                android:textColor="@color/secondary_text_color"
+                android:textSize="15sp"
+                android:gravity="center" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnRetryAnimeInfoPlaceholder"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Повторить"
+                android:textColor="@color/purple_primary"
+                app:icon="@drawable/ic_refresh"
+                app:iconTint="@color/purple_primary"
+                app:strokeColor="@color/purple_primary" />
         </LinearLayout>
     </LinearLayout>
 </androidx.cardview.widget.CardView>

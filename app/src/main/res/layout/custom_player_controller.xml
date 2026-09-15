@@ -295,14 +295,18 @@
                 android:id="@+id/timeCodeContainer"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:gravity="center_vertical"
                 android:background="@drawable/video_time_background"
-                android:paddingVertical="2dp"
-                android:paddingHorizontal="6dp"
+                android:paddingVertical="3dp"
+                android:paddingHorizontal="8dp"
                 android:orientation="horizontal">
                 <TextView
                     android:id="@+id/exo_position"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:includeFontPadding="false"
                     android:text="00:00"
                     android:textColor="@color/player_item_inactive_text"
                     android:textSize="10.5sp" />
@@ -310,6 +314,8 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:includeFontPadding="false"
                     android:text=" / "
                     android:textColor="@color/player_item_inactive_text"
                     android:textSize="10.5sp" />
@@ -318,11 +324,29 @@
                     android:id="@+id/exo_duration"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:includeFontPadding="false"
                     android:text="00:00"
                     android:textColor="@color/player_item_inactive_text"
                     android:textSize="10.5sp" />
 
             </LinearLayout>
+
+            <!-- Current Segment Indicator Badge -->
+            <TextView
+                android:id="@+id/currentSegmentBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:gravity="center_vertical"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/video_time_background"
+                android:paddingVertical="3dp"
+                android:paddingHorizontal="8dp"
+                android:textColor="@color/white_color"
+                android:textSize="10.5sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
 
             <Space
                 android:layout_width="0dp"
@@ -333,8 +357,9 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/skipSegmentButton"
                 android:layout_width="wrap_content"
-                android:layout_height="32dp"
+                android:layout_height="28dp"
                 android:layout_gravity="center_vertical"
+                android:gravity="center"
                 android:layout_marginEnd="8dp"
                 android:paddingVertical="0dp"
                 android:paddingHorizontal="10dp"
@@ -359,9 +384,8 @@
                 android:id="@+id/skipForwardButton"
                 android:layout_width="36dp"
                 android:layout_height="36dp"
-                android:paddingTop="9dp"
-                android:paddingHorizontal="8dp"
-                android:paddingBottom="8dp"
+                android:layout_gravity="center_vertical"
+                android:padding="8dp"
                 android:layout_marginEnd="8dp"
                 android:background="@android:color/transparent"
                 android:foreground="@drawable/ripple_circle"
@@ -374,10 +398,9 @@
                 android:id="@+id/bookmarkButton"
                 android:layout_width="36dp"
                 android:layout_height="36dp"
+                android:layout_gravity="center_vertical"
                 android:layout_marginEnd="8dp"
-                android:paddingTop="5dp"
-                android:paddingHorizontal="7dp"
-                android:paddingBottom="2dp"
+                android:padding="8dp"
                 android:background="@android:color/transparent"
                 android:foreground="@drawable/ripple_circle"
                 android:src="@drawable/ic_bookmark"
@@ -390,10 +413,9 @@
                 android:id="@+id/commentsButton"
                 android:layout_width="36dp"
                 android:layout_height="36dp"
+                android:layout_gravity="center_vertical"
                 android:layout_marginEnd="8dp"
-                android:paddingTop="7dp"
-                android:paddingHorizontal="5dp"
-                android:paddingBottom="5dp"
+                android:padding="6dp"
                 android:background="@android:color/transparent"
                 android:foreground="@drawable/ripple_circle"
                 android:src="@drawable/ic_comments_2"
@@ -406,6 +428,7 @@
                 android:id="@+id/episodesMenuButton"
                 android:layout_width="36dp"
                 android:layout_height="36dp"
+                android:layout_gravity="center_vertical"
                 android:layout_marginEnd="8dp"
                 android:background="@android:color/transparent"
                 android:foreground="@drawable/ripple_circle"
@@ -419,21 +442,21 @@
                 android:id="@+id/menuToggleButton"
                 android:layout_width="36dp"
                 android:layout_height="36dp"
+                android:layout_gravity="center_vertical"
+                android:layout_marginEnd="8dp"
                 android:background="@android:color/transparent"
                 android:foreground="@drawable/ripple_circle"
                 android:src="@drawable/ic_voice"
                 android:scaleType="fitCenter"
-                android:layout_marginEnd="8dp"
                 android:contentDescription="Players Menu"
                 android:padding="6dp" />
 
             <ImageButton
                 android:id="@+id/menuToggleFullscreen"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:paddingTop="9dp"
-                android:paddingBottom="8dp"
-                android:paddingHorizontal="8dp"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:layout_gravity="center_vertical"
+                android:padding="6dp"
                 android:background="@android:color/transparent"
                 android:foreground="@drawable/ripple_circle"
                 app:tint="@color/white_color"
@@ -443,23 +466,39 @@
 
         </LinearLayout>
 
-        <androidx.media3.ui.DefaultTimeBar
-            android:id="@+id/exo_progress"
+        <FrameLayout
+            android:id="@+id/timeBarContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginLeft="8dp"
             android:layout_marginRight="8dp"
-            android:layout_marginBottom="12dp"
-            app:played_color="?attr/secondaryColor"
-            app:scrubber_color="?attr/secondaryColor"
-            app:bar_height="3dp"
-            app:touch_target_height="20dp"
-            app:buffered_color="@color/lt_alpha_border_color"
-            app:unplayed_color="@color/lt_alpha_primary_color"
-            app:scrubber_drawable="@drawable/custom_scrubber"
-            app:scrubber_enabled_size="10dp"
-            app:scrubber_dragged_size="14dp"
-            app:scrubber_disabled_size="0dp" />
+            android:layout_marginBottom="12dp">
+
+            <com.example.animelib.views.TimebarSegmentsView
+                android:id="@+id/timebarSegmentsView"
+                android:layout_width="match_parent"
+                android:layout_height="20dp"
+                android:layout_gravity="center_vertical" />
+
+            <androidx.media3.ui.DefaultTimeBar
+                android:id="@+id/exo_progress"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                app:played_color="@android:color/transparent"
+                app:scrubber_color="@color/white_color"
+                app:bar_height="4dp"
+                app:touch_target_height="24dp"
+                app:buffered_color="@android:color/transparent"
+                app:unplayed_color="@android:color/transparent"
+                app:ad_marker_color="@android:color/transparent"
+                app:played_ad_marker_color="@android:color/transparent"
+                app:scrubber_drawable="@drawable/custom_scrubber"
+                app:scrubber_enabled_size="12dp"
+                app:scrubber_dragged_size="16dp"
+                app:scrubber_disabled_size="0dp" />
+
+        </FrameLayout>
 
         <!-- Episodes List (hidden by default) -->
         <androidx.recyclerview.widget.RecyclerView

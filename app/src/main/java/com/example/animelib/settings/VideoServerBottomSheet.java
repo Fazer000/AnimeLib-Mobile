@@ -28,7 +28,7 @@ public class VideoServerBottomSheet extends FlexibleBottomSheetDialog {
     }
 
     public VideoServerBottomSheet(Context context, String currentDomain, VideoServerAdapter.OnServerSelectedListener listener) {
-        super(context, com.google.android.material.R.style.ThemeOverlay_Material3_BottomSheetDialog);
+        super(context, com.example.animelib.R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
         this.listener = listener;
 
         List<VideoServerAdapter.ServerOption> options = new ArrayList<>();

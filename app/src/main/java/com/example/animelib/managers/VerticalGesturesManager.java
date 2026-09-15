@@ -1,21 +1,27 @@
 package com.example.animelib.managers;
 
+import android.app.Activity;
 import android.content.Context;
+import android.media.AudioManager;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.MotionEvent;
+import android.view.WindowManager;
 
 /**
- * Менеджер для обработки вертикальных жестов (эпизоды и панель с информацией)
+ * Менеджер для обработки вертикальных жестов (эпизоды, яркость и громкость)
  * Работает независимо от горизонтальных жестов
  */
 public class VerticalGesturesManager {
     private static final String TAG = "VerticalGestures";
     
-    // Типы вертикальных панелей
+    // Типы вертикальных панелей и жестов
     public enum PanelType {
         NONE,
         EPISODES,
-        RELATED_INFO
+        RELATED_INFO,
+        BRIGHTNESS,
+        VOLUME
     }
     
     // Callback интерфейс
@@ -26,6 +32,10 @@ public class VerticalGesturesManager {
         void onRelatedInfoDragComplete(boolean shouldOpen);
         boolean isEpisodesOpen();
         boolean isRelatedInfoOpen();
+
+        default void onBrightnessChanged(float brightness) {}
+        default void onVolumeChanged(int currentVolume, int maxVolume) {}
+        default void onGestureCompleted() {}
     }
     
     private final Context context;
@@ -35,19 +45,24 @@ public class VerticalGesturesManager {
     // Размеры экрана
     private int screenHeight;
     private int screenWidth;
-    private int bottomZoneHeight; // Зона для эпизодов снизу
+    private int bottomZoneHeight; // Зона для эпизодов снизу (уменьшена)
     
     // Состояние drag
     private boolean isDragging = false;
     private PanelType currentPanel = PanelType.NONE;
     private float dragStartY;
     private float dragStartX;
+
+    // Начальные параметры для регулировок
+    private float initialBrightness = -1f;
+    private int initialVolume = -1;
+    private int maxVolume = 15;
     
     // Пороги
-    private static final float OPEN_THRESHOLD = 0.5f; // 50% для открытия
-    private static final float DRAG_SENSITIVITY = 0.20f; // 20% высоты экрана - чувствительность для эпизодов
-    private static final float RELATED_INFO_DRAG_SENSITIVITY = 0.6f; // 25% высоты экрана - для панели с инфо (336px на экране 1344px)
-    private static final float MIN_DRAG_DISTANCE = 20f; // Минимальное расстояние для начала drag
+    private static final float OPEN_THRESHOLD = 0.25f; // 25% движения достаточно для открытия
+    private static final float DRAG_SENSITIVITY = 0.30f; // 30% высоты экрана - чувствительность для эпизодов
+    private static final float RELATED_INFO_DRAG_SENSITIVITY = 0.6f;
+    private static final float MIN_DRAG_DISTANCE = 10f; // Мгновенный подхват драга
     
     private boolean isPortraitMode = false;
     
@@ -71,7 +86,7 @@ public class VerticalGesturesManager {
     private void initializeScreenDimensions() {
         screenHeight = context.getResources().getDisplayMetrics().heightPixels;
         screenWidth = context.getResources().getDisplayMetrics().widthPixels;
-        bottomZoneHeight = screenHeight / 3; // 33% снизу для эпизодов (увеличено с 25%)
+        bottomZoneHeight = (int) (screenHeight * 0.45f); // 45% высоты экрана снизу для легкого открытия эпизодов
         
         Log.d(TAG, "Screen: " + screenWidth + "x" + screenHeight + ", bottomZone: " + bottomZoneHeight + "px");
     }
@@ -83,10 +98,8 @@ public class VerticalGesturesManager {
     public boolean onTouchEvent(MotionEvent event) {
         if (isPortraitMode || callback == null) return false;
         
-        // ВАЖНО: Если панель с инфо уже открыта, НЕ обрабатываем события
-        // Закрытие панели обрабатывается через OnTouchListener на relatedTitlesOverlay
         if (callback.isRelatedInfoOpen()) {
-            return false; // Пропускаем событие
+            return false;
         }
         
         switch (event.getAction()) {
@@ -105,17 +118,15 @@ public class VerticalGesturesManager {
     }
     
     private boolean handleDown(MotionEvent event) {
-        // Используем getRawY/getRawX для абсолютных координат экрана
+        initializeScreenDimensions();
         dragStartY = event.getRawY();
         dragStartX = event.getRawX();
         isDragging = false;
         currentPanel = PanelType.NONE;
-        return false; // Не захватываем событие на DOWN
+        return false;
     }
     
     private boolean handleMove(MotionEvent event) {
-        // Используем getRawY/getRawX для абсолютных координат экрана
-        // Это позволяет продолжать drag даже если палец вышел за границы View
         float currentY = event.getRawY();
         float currentX = event.getRawX();
         float deltaY = currentY - dragStartY;
@@ -123,26 +134,17 @@ public class VerticalGesturesManager {
         float absDeltaY = Math.abs(deltaY);
         float absDeltaX = Math.abs(deltaX);
         
-        // Проверяем минимальное расстояние для начала drag
         if (!isDragging && absDeltaY < MIN_DRAG_DISTANCE) {
-            // Log.d(TAG, "Movement too small: " + absDeltaY + " < " + MIN_DRAG_DISTANCE);
             return false;
         }
         
-        // Определяем тип панели если еще не определен
         if (!isDragging) {
-            // ВАЖНО: Блокируем вертикальные жесты если активен горизонтальный
             if (gesturesManager != null && gesturesManager.isHorizontalGestureActive()) {
                 Log.d(TAG, "Horizontal gesture is active, blocking vertical gesture");
                 return false;
             }
             
-            Log.d(TAG, "Checking vertical gesture: deltaY=" + deltaY + ", deltaX=" + deltaX + 
-                  ", absDeltaY=" + absDeltaY + ", absDeltaX=" + absDeltaX);
-            
-            // ВАЖНО: Проверяем что это преимущественно вертикальное движение
-            // Если горизонтальный компонент слишком большой, не обрабатываем
-            if (absDeltaX > absDeltaY * 0.7f) {
+            if (absDeltaX > absDeltaY * 1.2f) {
                 Log.d(TAG, "Too much horizontal movement, ignoring: deltaX=" + deltaX + ", deltaY=" + deltaY);
                 return false;
             }
@@ -153,7 +155,6 @@ public class VerticalGesturesManager {
             }
             isDragging = true;
             
-            // ВАЖНО: Отменяем таймер hold-to-speed в GesturesManager
             if (gesturesManager != null) {
                 gesturesManager.cancelHoldToSpeedTimer();
             }
@@ -161,17 +162,19 @@ public class VerticalGesturesManager {
             Log.d(TAG, "Started dragging: " + currentPanel + ", deltaY=" + deltaY);
         }
         
-        // Вычисляем прогресс используя абсолютные координаты
-        float progress = calculateProgress(currentPanel, currentY);
-        
-        // Отправляем прогресс
         if (currentPanel == PanelType.EPISODES) {
+            float progress = calculateProgress(currentPanel, currentY);
             callback.onEpisodesDragProgress(progress);
+        } else if (currentPanel == PanelType.BRIGHTNESS) {
+            updateBrightness(currentY);
+        } else if (currentPanel == PanelType.VOLUME) {
+            updateVolume(currentY);
         } else if (currentPanel == PanelType.RELATED_INFO) {
+            float progress = calculateProgress(currentPanel, currentY);
             callback.onRelatedInfoDragProgress(progress);
         }
         
-        return true; // Захватываем событие во время drag
+        return true;
     }
     
     private boolean handleUp(MotionEvent event) {
@@ -181,17 +184,19 @@ public class VerticalGesturesManager {
             return false;
         }
         
-        // Вычисляем финальный прогресс используя getRawY() для абсолютных координат
-        float finalProgress = calculateProgress(currentPanel, event.getRawY());
-        boolean shouldOpen = finalProgress > OPEN_THRESHOLD;
-        
-        Log.d(TAG, "Drag completed: " + currentPanel + ", progress=" + finalProgress + ", shouldOpen=" + shouldOpen);
-        
-        // Отправляем событие завершения
         if (currentPanel == PanelType.EPISODES) {
+            float finalProgress = calculateProgress(currentPanel, event.getRawY());
+            boolean shouldOpen = finalProgress > OPEN_THRESHOLD;
+            Log.d(TAG, "Episodes drag completed: progress=" + finalProgress + ", shouldOpen=" + shouldOpen);
             callback.onEpisodesDragComplete(shouldOpen);
         } else if (currentPanel == PanelType.RELATED_INFO) {
+            float finalProgress = calculateProgress(currentPanel, event.getRawY());
+            boolean shouldOpen = finalProgress > OPEN_THRESHOLD;
             callback.onRelatedInfoDragComplete(shouldOpen);
+        } else if (currentPanel == PanelType.BRIGHTNESS || currentPanel == PanelType.VOLUME) {
+            if (callback != null) {
+                callback.onGestureCompleted();
+            }
         }
         
         isDragging = false;
@@ -200,86 +205,123 @@ public class VerticalGesturesManager {
     }
     
     /**
-     * Определяет тип панели на основе направления свайпа и текущего состояния
-     * РАБОТАЕТ ПО ВСЕМУ ЭКРАНУ без зон
+     * Определяет тип панели/жеста на основе координат
+     * Левая зона 25% — Яркость (на всю высоту)
+     * Правая зона 25% — Громкость (на всю высоту)
+     * Центральная зона 50% — Эпизоды (на всю высоту)
      */
     private PanelType detectPanelType(float deltaY) {
-        boolean isEpisodesOpen = callback.isEpisodesOpen();
-        boolean isRelatedOpen = callback.isRelatedInfoOpen();
-        
-        Log.d(TAG, "detectPanelType: deltaY=" + deltaY + ", dragStartY=" + dragStartY + 
-              ", isEpisodesOpen=" + isEpisodesOpen + ", isRelatedOpen=" + isRelatedOpen);
-        
-        if (deltaY > 0) {
-            // Свайп ВНИЗ по всему экрану
-            if (isRelatedOpen) {
-                // Панель с инфо открыта - НЕ закрываем свайпом вниз (только через overlay)
-                Log.d(TAG, "→ NONE (related is open, use overlay to close)");
-                return PanelType.NONE;
-            } else if (isEpisodesOpen) {
-                // Эпизоды открыты - закрываем их свайпом вниз
-                Log.d(TAG, "→ EPISODES (closing episodes)");
-                return PanelType.EPISODES;
+        // Отступ сверху (15% высоты экрана или минимум 60dp), чтобы не перехватывать свайп системной шторки
+        float topSafetyMargin = Math.max(screenHeight * 0.15f, 60 * context.getResources().getDisplayMetrics().density);
+        if (dragStartY < topSafetyMargin) {
+            Log.d(TAG, "Touch started in top safety margin (" + dragStartY + " < " + topSafetyMargin + "), ignoring gesture for system status bar");
+            return PanelType.NONE;
+        }
+
+        // Левая зона: 0%..25% ширины экрана — Яркость
+        if (dragStartX <= screenWidth * 0.25f) {
+            Log.d(TAG, "→ BRIGHTNESS (left 25% zone)");
+            initBrightnessGesture();
+            return PanelType.BRIGHTNESS;
+        }
+
+        // Правая зона: 75%..100% ширины экрана — Громкость
+        if (dragStartX >= screenWidth * 0.75f) {
+            Log.d(TAG, "→ VOLUME (right 25% zone)");
+            initVolumeGesture();
+            return PanelType.VOLUME;
+        }
+
+        // Центральная зона: 25%..75% ширины экрана (50% по центру) — Эпизоды
+        Log.d(TAG, "→ EPISODES (center 50% zone)");
+        return PanelType.EPISODES;
+    }
+
+    private void initBrightnessGesture() {
+        if (context instanceof Activity) {
+            Activity activity = (Activity) context;
+            WindowManager.LayoutParams lp = activity.getWindow().getAttributes();
+            if (lp.screenBrightness >= 0f) {
+                initialBrightness = lp.screenBrightness;
             } else {
-                // Обе закрыты - открываем панель с инфо свайпом вниз
-                Log.d(TAG, "→ RELATED_INFO (opening related)");
-                return PanelType.RELATED_INFO;
+                try {
+                    int sysBrightness = Settings.System.getInt(
+                            context.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS);
+                    initialBrightness = sysBrightness / 255f;
+                } catch (Exception e) {
+                    initialBrightness = 0.5f;
+                }
             }
         } else {
-            // Свайп ВВЕРХ по всему экрану
-            if (isRelatedOpen) {
-                // Панель с инфо открыта - НЕ обрабатываем (закрытие через overlay)
-                Log.d(TAG, "→ NONE (related is open, use overlay to close)");
-                return PanelType.NONE;
-            } else if (isEpisodesOpen) {
-                // Эпизоды уже открыты - работаем с ними
-                Log.d(TAG, "→ EPISODES (already open)");
-                return PanelType.EPISODES;
-            } else {
-                // Обе закрыты - открываем эпизоды свайпом вверх ПО ВСЕМУ ЭКРАНУ
-                Log.d(TAG, "→ EPISODES (opening episodes from anywhere)");
-                return PanelType.EPISODES;
-            }
+            initialBrightness = 0.5f;
+        }
+    }
+
+    private void initVolumeGesture() {
+        AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        if (audioManager != null) {
+            maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            initialVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+        }
+    }
+
+    private void updateBrightness(float currentY) {
+        float deltaY = dragStartY - currentY; // Свайп вверх увеличивает
+        float deltaBrightness = deltaY / (screenHeight * 0.5f);
+        float targetBrightness = Math.max(0.01f, Math.min(1.0f, initialBrightness + deltaBrightness));
+
+        if (context instanceof Activity) {
+            Activity activity = (Activity) context;
+            WindowManager.LayoutParams lp = activity.getWindow().getAttributes();
+            lp.screenBrightness = targetBrightness;
+            activity.getWindow().setAttributes(lp);
+        }
+
+        if (callback != null) {
+            callback.onBrightnessChanged(targetBrightness);
+        }
+    }
+
+    private void updateVolume(float currentY) {
+        float deltaY = dragStartY - currentY; // Свайп вверх увеличивает
+        float deltaVolumePercent = deltaY / (screenHeight * 0.5f);
+        int targetVolume = Math.max(0, Math.min(maxVolume, Math.round(initialVolume + deltaVolumePercent * maxVolume)));
+
+        AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        if (audioManager != null) {
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0);
+        }
+
+        if (callback != null) {
+            callback.onVolumeChanged(targetVolume, maxVolume);
         }
     }
     
     /**
-     * Вычисляет прогресс (0.0 - 1.0) на основе текущего положения
+     * Вычисляет прогресс (0.0 - 1.0) для панели эпизодов
      */
     private float calculateProgress(PanelType panel, float currentY) {
-        float distance;
-        float maxDistance;
-        
         if (panel == PanelType.EPISODES) {
-            // Для эпизодов используем более высокую чувствительность
-            maxDistance = screenHeight * DRAG_SENSITIVITY;
+            float maxDistance = screenHeight * DRAG_SENSITIVITY;
             boolean isOpen = callback.isEpisodesOpen();
-            distance = dragStartY - currentY; // Вверх положительное
+            float distance = dragStartY - currentY; // Вверх положительное
             
             if (isOpen) {
-                // Открыта: начинаем с 1.0, движение вниз (отрицательное) закрывает
                 float rawProgress = distance / maxDistance;
                 return Math.max(0f, Math.min(1f, 1.0f + rawProgress));
             } else {
-                // Закрыта: начинаем с 0.0, движение вверх (положительное) открывает
-                // НЕ ограничиваем максимум - позволяем overscroll для плавного drag
                 float rawProgress = distance / maxDistance;
                 return Math.max(0f, rawProgress);
             }
-            
         } else if (panel == PanelType.RELATED_INFO) {
-            // Для панели с инфо используем меньшую чувствительность (требуется больше движения)
-            maxDistance = screenHeight * RELATED_INFO_DRAG_SENSITIVITY;
+            float maxDistance = screenHeight * RELATED_INFO_DRAG_SENSITIVITY;
             boolean isOpen = callback.isRelatedInfoOpen();
-            distance = currentY - dragStartY; // Вниз положительное
+            float distance = currentY - dragStartY;
             
             if (isOpen) {
-                // Открыта: начинаем с 1.0, любое движение закрывает
                 float rawProgress = Math.abs(distance) / maxDistance;
                 return Math.max(0f, Math.min(1f, 1.0f - rawProgress));
             } else {
-                // Закрыта: начинаем с 0.0, движение вниз (положительное) открывает
-                // НЕ ограничиваем максимум - позволяем overscroll для плавного drag
                 float rawProgress = distance / maxDistance;
                 return Math.max(0f, rawProgress);
             }
@@ -288,19 +330,12 @@ public class VerticalGesturesManager {
         return 0f;
     }
     
-    /**
-     * Проверяет, обрабатывается ли сейчас вертикальный жест
-     */
     public boolean isDragging() {
         return isDragging;
     }
     
-    /**
-     * Сбрасывает состояние
-     */
     public void reset() {
         isDragging = false;
         currentPanel = PanelType.NONE;
     }
 }
-

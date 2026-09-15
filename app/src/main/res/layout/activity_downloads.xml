@@ -307,7 +307,7 @@
                                     android:text="0 / 26"
                                     android:textSize="13sp"
                                     android:fontFamily="@font/open_sans_bold"
-                                    android:textColor="#FFFFFF" />
+                                    android:textColor="@color/app_text_primary" />
 
                             </LinearLayout>
 
@@ -345,7 +345,7 @@
                                     android:text="Пауза"
                                     android:textSize="13sp"
                                     android:fontFamily="@font/open_sans_semibold"
-                                    android:textColor="#FFFFFF" />
+                                    android:textColor="@color/app_text_primary" />
 
                             </LinearLayout>
 

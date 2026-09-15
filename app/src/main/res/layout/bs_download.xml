@@ -44,14 +44,6 @@
                 android:visibility="gone"
                 android:layout_marginEnd="8dp" />
 
-            <ImageView
-                android:id="@+id/ivHeaderIcon"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:src="@drawable/ic_download"
-                app:tint="@color/secondary_text_color"
-                android:layout_marginEnd="10dp" />
-
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -366,7 +358,8 @@
                 android:layout_marginTop="16dp"
                 android:text="Далее"
                 app:icon="@drawable/ic_arrow_forward"
-                app:iconGravity="textEnd" />
+                app:iconGravity="textEnd"
+                app:iconTint="@color/white_color" />
 
         </LinearLayout>
 
@@ -461,13 +454,6 @@
                 android:nestedScrollingEnabled="false"
                 android:overScrollMode="never" />
 
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="0.5dp"
-                android:background="@color/bs_divider_color"
-                android:layout_marginTop="6dp"
-                android:layout_marginBottom="10dp" />
-
             <!-- Download action button -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDownload"
@@ -475,9 +461,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="@dimen/button_height_standard"
                 android:layout_marginHorizontal="16dp"
+                android:layout_marginTop="12dp"
                 android:text="@string/btn_download"
                 app:icon="@drawable/ic_download"
-                app:iconGravity="textStart" />
+                app:iconGravity="textStart"
+                app:iconTint="@color/white_color" />
 
         </LinearLayout>
 

@@ -27,7 +27,14 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
     private List<EpisodeResponse.PlayerData> kodikPlayers;
     private EpisodeResponse.PlayerData currentPlayer;
     private final PlayerOptionsAdapter.OnPlayerSelectedListener playerListener;
-    
+    public static final String SORT_NAME_ASC = "name_asc";
+    public static final String SORT_NAME_DESC = "name_desc";
+    public static final String SORT_QUALITY_DESC = "quality_desc";
+    public static final String SORT_SUBTITLES_FIRST = "subtitles_first";
+
+    private String filterQuery = "";
+    private String sortType = SORT_NAME_ASC;
+
     // Список активных вкладок (только с озвучками)
     private List<String> activeTabs;
 
@@ -127,14 +134,101 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
         }
     }
 
+    @SuppressLint("NotifyDataSetChanged")
+    public void setFilterQuery(String query) {
+        this.filterQuery = query != null ? query : "";
+        notifyDataSetChanged();
+    }
+
+    @SuppressLint("NotifyDataSetChanged")
+    public void setSortType(String sortType) {
+        if (sortType != null) {
+            this.sortType = sortType;
+            notifyDataSetChanged();
+        }
+    }
+
+    public String getSortType() {
+        return sortType != null ? sortType : SORT_NAME_ASC;
+    }
+
+    private String getPlayerName(EpisodeResponse.PlayerData p) {
+        if (p == null) return "";
+        if (p.getTeam() != null && p.getTeam().getName() != null && !p.getTeam().getName().trim().isEmpty()) {
+            return p.getTeam().getName().trim();
+        }
+        if (p.getTranslationType() != null && p.getTranslationType().getLabel() != null && !p.getTranslationType().getLabel().trim().isEmpty()) {
+            return p.getTranslationType().getLabel().trim();
+        }
+        return "";
+    }
+
+    private int getMaxQuality(EpisodeResponse.PlayerData p) {
+        if (p == null || p.getVideo() == null || p.getVideo().getQuality() == null) return 0;
+        int max = 0;
+        for (EpisodeResponse.QualityData qd : p.getVideo().getQuality()) {
+            if (qd != null && qd.getQuality() > max) {
+                max = qd.getQuality();
+            }
+        }
+        return max;
+    }
+
+    private boolean hasSubtitles(EpisodeResponse.PlayerData p) {
+        return p != null && p.isSubtitles();
+    }
+
+    private List<EpisodeResponse.PlayerData> filterAndSortPlayers(List<EpisodeResponse.PlayerData> originalList) {
+        if (originalList == null) return new java.util.ArrayList<>();
+        List<EpisodeResponse.PlayerData> result = new java.util.ArrayList<>();
+        String query = filterQuery != null ? filterQuery.trim().toLowerCase() : "";
+
+        for (EpisodeResponse.PlayerData player : originalList) {
+            if (player == null) continue;
+            if (query.isEmpty()) {
+                result.add(player);
+            } else {
+                String teamName = (player.getTeam() != null && player.getTeam().getName() != null) ? player.getTeam().getName().toLowerCase() : "";
+                String transLabel = (player.getTranslationType() != null && player.getTranslationType().getLabel() != null) ? player.getTranslationType().getLabel().toLowerCase() : "";
+                if (teamName.contains(query) || transLabel.contains(query)) {
+                    result.add(player);
+                }
+            }
+        }
+
+        if (SORT_NAME_DESC.equals(sortType)) {
+            java.util.Collections.sort(result, (p1, p2) -> getPlayerName(p2).compareToIgnoreCase(getPlayerName(p1)));
+        } else if (SORT_QUALITY_DESC.equals(sortType)) {
+            java.util.Collections.sort(result, (p1, p2) -> Integer.compare(getMaxQuality(p2), getMaxQuality(p1)));
+        } else if (SORT_SUBTITLES_FIRST.equals(sortType)) {
+            java.util.Collections.sort(result, (p1, p2) -> {
+                boolean sub1 = hasSubtitles(p1);
+                boolean sub2 = hasSubtitles(p2);
+                if (sub1 != sub2) return sub1 ? -1 : 1;
+                return getPlayerName(p1).compareToIgnoreCase(getPlayerName(p2));
+            });
+        } else { // default SORT_NAME_ASC
+            java.util.Collections.sort(result, (p1, p2) -> getPlayerName(p1).compareToIgnoreCase(getPlayerName(p2)));
+        }
+
+        return result;
+    }
+
     @SuppressLint("SetTextI18n")
     private void setupPlayerTab(PlayerTabViewHolder holder,
                                 List<EpisodeResponse.PlayerData> players,
                                 String playerType) {
         Log.d(TAG, "setupPlayerTab for " + playerType + " with " + (players != null ? players.size() : "null") + " players");
         
-        boolean isEmpty = players == null || players.isEmpty();
+        List<EpisodeResponse.PlayerData> processedPlayers = filterAndSortPlayers(players);
+        boolean isEmpty = processedPlayers.isEmpty();
+
         if (holder.tvEmptyVoiceovers != null) {
+            if (players != null && !players.isEmpty() && processedPlayers.isEmpty() && !filterQuery.isEmpty()) {
+                holder.tvEmptyVoiceovers.setText("Ничего не найдено по запросу \"" + filterQuery + "\"");
+            } else {
+                holder.tvEmptyVoiceovers.setText("Нет доступных озвучек");
+            }
             holder.tvEmptyVoiceovers.setVisibility(isEmpty ? View.VISIBLE : View.GONE);
         }
         if (holder.playersRecyclerView != null) {
@@ -145,7 +239,7 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
                         new androidx.recyclerview.widget.LinearLayoutManager(holder.itemView.getContext())
                     );
                 }
-                PlayerOptionsAdapter adapter = new PlayerOptionsAdapter(players, currentPlayer, playerListener);
+                PlayerOptionsAdapter adapter = new PlayerOptionsAdapter(processedPlayers, currentPlayer, playerListener);
                 holder.playersRecyclerView.setAdapter(adapter);
             }
         }

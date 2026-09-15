@@ -16,9 +16,15 @@
     <color name="bookmark_color">#ff9b40</color>
     <color name="secondary_color">@color/purple_primary</color>
 
+    <!-- Text Colors (Unified - Light Theme Default) -->
+    <color name="app_text_primary">#1E1B26</color>
+    <color name="app_text_secondary">#6B7280</color>
+    <color name="app_text_brand_button">@color/purple_primary</color>
+    <color name="app_text_accent_blue">#1D4ED8</color>
+
     <!-- Dark Theme -->
     <!-- General Colors -->
-    <color name="dt_primary_color">#1c1c1c</color>
+    <color name="dt_primary_color">#131316</color>
     <color name="dt_secondary_color">@color/purple_primary</color>
     <color name="dt_blue_color">#2196f3</color>
     <color name="dt_alpha_primary_color">#30000000</color>
@@ -28,26 +34,26 @@
 
     <color name="dt_line_color">#464649</color>
 
-    <color name="dt_header_color">#252527</color>
+    <color name="dt_header_color">#1C1C1E</color>
 
     <!-- Text Colors -->
-    <color name="dt_primary_text_color">#bfbfbf</color>
-    <color name="dt_secondary_text_color">@color/purple_primary</color>
-    <color name="dt_accent_text_color">#80F5F5FA</color>
+    <color name="dt_primary_text_color">#BFBFBF</color>
+    <color name="dt_secondary_text_color">#8A8A8E</color>
+    <color name="dt_accent_text_color">#8A8A8E</color>
     
     <!-- Anime Info Colors -->
-    <color name="dt_card_background">#1F1F24</color>
-    <color name="dt_bookmark_card_bg">#36363B</color>
+    <color name="dt_card_background">#1C1C1E</color>
+    <color name="dt_bookmark_card_bg">#1C1C1E</color>
     <color name="dt_card_elevation">#40000000</color>
     <color name="dt_rating_star">#FFD700</color>
     
     <!-- Player Item Background -->
-    <color name="dt_player_item_background">#222222</color>
+    <color name="dt_player_item_background">#1C1C1E</color>
     
     <!-- Related Titles Panel -->
-    <color name="dt_related_panel_background">#1A1A1A</color>
-    <color name="dt_related_title_color">#E0E0E0</color>
-    <color name="dt_related_subtitle_color">#999999</color>
+    <color name="dt_related_panel_background">#131316</color>
+    <color name="dt_related_title_color">#BFBFBF</color>
+    <color name="dt_related_subtitle_color">#8A8A8E</color>
 
 
     <!-- Light Theme -->
@@ -67,9 +73,9 @@
     <color name="toolbar_header_bg">#ede7f6</color>
 
     <!-- Text Colors -->
-    <color name="lt_primary_text_color">#1F2937</color>
-    <color name="lt_secondary_text_color">@color/purple_primary</color>
-    <color name="lt_accent_text_color">#6B7280</color>
+    <color name="lt_primary_text_color">@color/app_text_primary</color>
+    <color name="lt_secondary_text_color">@color/app_text_secondary</color>
+    <color name="lt_accent_text_color">@color/app_text_secondary</color>
     
     <!-- Anime Info Colors -->
     <color name="lt_card_background">#F3F4F6</color>
@@ -81,8 +87,8 @@
     
     <!-- Related Titles Panel -->
     <color name="lt_related_panel_background">#F9FAFB</color>
-    <color name="lt_related_title_color">#1F2937</color>
-    <color name="lt_related_subtitle_color">#6B7280</color>
+    <color name="lt_related_title_color">@color/app_text_primary</color>
+    <color name="lt_related_subtitle_color">@color/app_text_secondary</color>
 
     <!-- Resize mode cards -->
     <color name="resize_card_selected_bg">@color/purple_secondary</color>
@@ -91,13 +97,13 @@
     <color name="resize_card_unselected_stroke">#E5E7EB</color>
     <color name="resize_preview_inner_bg">#2A323D</color>
 
-    <!-- Semantic Theme Colors (Light Default) -->
+    <!-- Semantic Theme Colors (Default Unified) -->
     <color name="bs_bg_color">#FFFFFF</color>
     <color name="bs_divider_color">#E5E7EB</color>
     <color name="card_bg_color">#F3F4F6</color>
-    <color name="primary_text_color">#1F2937</color>
-    <color name="secondary_text_color">@color/purple_primary</color>
-    <color name="accent_text_color">#6B7280</color>
+    <color name="primary_text_color">@color/app_text_primary</color>
+    <color name="secondary_text_color">@color/app_text_secondary</color>
+    <color name="accent_text_color">@color/app_text_secondary</color>
     <color name="comment_input_bg">#F3F4F6</color>
     <color name="comment_input_stroke">#E5E7EB</color>
     <color name="chip_selected_bg">@color/purple_secondary</color>
@@ -114,32 +120,32 @@
 
     <!-- Player Episodes, Timecode, and Player Download Progress Colors -->
     <color name="player_glass_bg">#4D0F121A</color>
-    <color name="player_item_inactive_text">#CBD5E1</color>
+    <color name="player_item_inactive_text">@color/app_text_secondary</color>
     <color name="player_item_inactive_stroke">#33FFFFFF</color>
     <color name="player_item_active_text">#FFFFFF</color>
     <color name="player_item_active_stroke">@color/purple_primary</color>
 
-    <!-- Dialog Colors (Light Theme Defaults) -->
+    <!-- Dialog Colors (Unified Defaults) -->
     <color name="dialog_bg">#FFFFFF</color>
     <color name="dialog_card_bg">#12000000</color>
     <color name="dialog_input_bg">#F9FAFB</color>
     <color name="dialog_input_stroke">#E5E7EB</color>
-    <color name="dialog_text_title">#1F2937</color>
-    <color name="dialog_text_body">#4B5563</color>
-    <color name="dialog_text_muted">#6B7280</color>
-    <color name="dialog_text_hint">#9CA3AF</color>
+    <color name="dialog_text_title">@color/app_text_primary</color>
+    <color name="dialog_text_body">@color/app_text_secondary</color>
+    <color name="dialog_text_muted">@color/app_text_secondary</color>
+    <color name="dialog_text_hint">@color/app_text_secondary</color>
     <color name="dialog_icon_close">#6B7280</color>
 
     <color name="dialog_danger_bg">#FEE2E2</color>
     <color name="dialog_danger_text">#DC2626</color>
-    <color name="dialog_cancel_text">#4B5563</color>
+    <color name="dialog_cancel_text">@color/app_text_secondary</color>
 
     <color name="dialog_btn_neutral_bg">#E5E7EB</color>
-    <color name="dialog_btn_neutral_text">#1F2937</color>
+    <color name="dialog_btn_neutral_text">@color/app_text_primary</color>
 
     <color name="dialog_btn_secondary_bg">#F9FAFB</color>
     <color name="dialog_btn_secondary_stroke">#E5E7EB</color>
-    <color name="dialog_btn_secondary_text">#4B5563</color>
+    <color name="dialog_btn_secondary_text">@color/app_text_secondary</color>
 
     <color name="dialog_ripple_color">#1A000000</color>
     <color name="dialog_rules_num_bg">@color/purple_primary</color>

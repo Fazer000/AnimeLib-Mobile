@@ -334,7 +334,7 @@
                 android:paddingHorizontal="12dp"
                 android:paddingVertical="4dp"
                 android:text="@string/bs_subtitle_style_preview_text"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/app_text_primary"
                 android:textSize="18sp"
                 android:fontFamily="@font/open_sans_bold"
                 android:textStyle="bold"/>

@@ -196,12 +196,12 @@ public class CustomToast {
             // Темная тема: темный плавающий пилл с изящной контрастной рамкой
             pillBg.setColor(android.graphics.Color.parseColor("#25242D"));
             pillBg.setStroke(strokeWidth, android.graphics.Color.parseColor("#3D3C48"));
-            textView.setTextColor(android.graphics.Color.parseColor("#F3F3F7"));
+            textView.setTextColor(androidx.core.content.ContextCompat.getColor(activity, R.color.app_text_primary));
         } else {
             // Светлая тема: чистый белый пилл с мягкой рамкой и темным текстом
             pillBg.setColor(android.graphics.Color.parseColor("#FFFFFF"));
             pillBg.setStroke(strokeWidth, android.graphics.Color.parseColor("#E2E8F0"));
-            textView.setTextColor(android.graphics.Color.parseColor("#0F172A"));
+            textView.setTextColor(androidx.core.content.ContextCompat.getColor(activity, R.color.app_text_primary));
         }
         toastView.setBackground(pillBg);
 
@@ -406,12 +406,12 @@ public class CustomToast {
             // Темная тема: темный плавающий пилл с изящной контрастной рамкой
             pillBg.setColor(android.graphics.Color.parseColor("#25242D"));
             pillBg.setStroke(strokeWidth, android.graphics.Color.parseColor("#3D3C48"));
-            textView.setTextColor(android.graphics.Color.parseColor("#F3F3F7"));
+            textView.setTextColor(androidx.core.content.ContextCompat.getColor(activity, R.color.app_text_primary));
         } else {
             // Светлая тема: чистый белый пилл с мягкой рамкой и темным текстом
             pillBg.setColor(android.graphics.Color.parseColor("#FFFFFF"));
             pillBg.setStroke(strokeWidth, android.graphics.Color.parseColor("#E2E8F0"));
-            textView.setTextColor(android.graphics.Color.parseColor("#0F172A"));
+            textView.setTextColor(androidx.core.content.ContextCompat.getColor(activity, R.color.app_text_primary));
         }
         toastView.setBackground(pillBg);
 

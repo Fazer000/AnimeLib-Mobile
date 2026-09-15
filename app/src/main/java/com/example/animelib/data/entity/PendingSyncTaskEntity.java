@@ -15,6 +15,7 @@ public class PendingSyncTaskEntity {
     private int teamId;
     private int episodeNumber;
     private String timecode;
+    private String statusId;
     private long createdAt;
     private int retryCount;
 
@@ -32,6 +33,10 @@ public class PendingSyncTaskEntity {
     }
 
     public static PendingSyncTaskEntity createBookmarkTask(String mediaSlug, int episodeId, int teamId, int episodeNumber, String timecode) {
+        return createBookmarkTask(mediaSlug, episodeId, teamId, episodeNumber, timecode, null);
+    }
+
+    public static PendingSyncTaskEntity createBookmarkTask(String mediaSlug, int episodeId, int teamId, int episodeNumber, String timecode, String statusId) {
         PendingSyncTaskEntity task = new PendingSyncTaskEntity();
         task.setTaskType("BOOKMARK");
         task.setMediaSlug(mediaSlug);
@@ -39,6 +44,7 @@ public class PendingSyncTaskEntity {
         task.setTeamId(teamId);
         task.setEpisodeNumber(episodeNumber);
         task.setTimecode(timecode);
+        task.setStatusId(statusId);
         task.setCreatedAt(System.currentTimeMillis());
         task.setRetryCount(0);
         return task;
@@ -114,6 +120,14 @@ public class PendingSyncTaskEntity {
 
     public void setTimecode(String timecode) {
         this.timecode = timecode;
+    }
+
+    public String getStatusId() {
+        return statusId;
+    }
+
+    public void setStatusId(String statusId) {
+        this.statusId = statusId;
     }
 
     public long getCreatedAt() {

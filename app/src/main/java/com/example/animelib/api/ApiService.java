@@ -12,6 +12,8 @@ import com.google.gson.Gson;
 import java.io.IOException;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import okhttp3.Call;
@@ -203,6 +205,36 @@ public class ApiService {
     private String getSiteUrlFromDb() {
         return databaseManager.getSiteUrl();
     }
+
+    /**
+     * Возвращает основные заголовки для видеозапросов (Referer, Authorization и базовые HTTP)
+     */
+    public Map<String, String> getVideoRequestHeaders() {
+        Map<String, String> headers = new HashMap<>();
+
+        String token = getBearerToken();
+        if (token != null && !token.trim().isEmpty()) {
+            if (token.toLowerCase().startsWith("bearer ")) {
+                headers.put("Authorization", token);
+            } else {
+                headers.put("Authorization", "Bearer " + token);
+            }
+        }
+
+        headers.put("Referer", "https://animelib.org/");
+        headers.put("Origin", "https://animelib.org");
+        headers.put("Content-Type", "video");
+        headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36");
+        headers.put("accept", "video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5");
+        headers.put("accept-language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7");
+        headers.put("sec-ch-ua", "\"Not=A?Brand\";v=\"99\", \"Android WebView\";v=\"151\", \"Chromium\";v=\"151\"");
+        headers.put("sec-ch-ua-mobile", "?1");
+        headers.put("sec-ch-ua-platform", "\"Android\"");
+        headers.put("sec-fetch-dest", "video");
+        headers.put("sec-fetch-mode", "cors");
+        headers.put("sec-fetch-site", "cross-site");
+        return headers;
+    }
     
     /**
      * Получает токен авторизации из базы данных или возвращает fallback токен
@@ -304,7 +336,7 @@ public class ApiService {
     public void fetchAnimeInfo(String animeSlugOrId, AnimeInfoCallback callback) {
         safeExecute(() -> {
             try {
-                String apiUrl = "https://api.cdnlibs.org/api/anime/" + animeSlugOrId + "?fields[]=rate&fields[]=rate_avg&fields[]=releaseDate&fields[]=episodes&fields[]=episodes_count&fields[]=close_view&fields[]=userRating";
+                String apiUrl = "https://api.cdnlibs.org/api/anime/" + animeSlugOrId + "?fields[]=background&fields[]=eng_name&fields[]=otherNames&fields[]=summary&fields[]=releaseDate&fields[]=type_id&fields[]=caution&fields[]=views&fields[]=close_view&fields[]=rate_avg&fields[]=rate&fields[]=genres&fields[]=tags&fields[]=teams&fields[]=authors&fields[]=publisher&fields[]=userRating&fields[]=anime_status_id&fields[]=episodes&fields[]=episodes_count&fields[]=shiki_rate";
                 Request request = buildApiRequest(apiUrl).build();
 
                 httpClient.newCall(request).enqueue(new Callback() {
@@ -325,7 +357,8 @@ public class ApiService {
                             AnimeInfoResponse info = gson.fromJson(body, AnimeInfoResponse.class);
                             callback.onAnimeInfoReceived(info);
                         } catch (Exception ex) {
-                            callback.onError("Ошибка парсинга");
+                            Log.e("ApiService", "Failed to parse anime info JSON: " + ex.getMessage(), ex);
+                            callback.onError("Ошибка парсинга: " + ex.getMessage());
                         }
                     }
                 });
@@ -1418,10 +1451,14 @@ public class ApiService {
      * Добавляет серию в закладки (Синхронно)
      */
     public boolean addBookmarkSync(String mediaSlug, int episodeId, int teamId, int episodeNumber, String currentTimecode) {
+        return addBookmarkSync(mediaSlug, episodeId, teamId, episodeNumber, currentTimecode, null);
+    }
+
+    public boolean addBookmarkSync(String mediaSlug, int episodeId, int teamId, int episodeNumber, String currentTimecode, Object statusId) {
         if (mediaSlug == null || mediaSlug.isEmpty()) return false;
         try {
             com.google.gson.JsonObject requestBody = createBookmarkRequestBody(
-                    mediaSlug, episodeId, teamId, episodeNumber, currentTimecode
+                    mediaSlug, episodeId, teamId, episodeNumber, currentTimecode, statusId
             );
             String jsonString = gson.toJson(requestBody);
             okhttp3.RequestBody body = okhttp3.RequestBody.create(jsonString, okhttp3.MediaType.get("application/json; charset=utf-8"));
@@ -1450,18 +1487,24 @@ public class ApiService {
      */
     public void addBookmark(String mediaSlug, int episodeId, int teamId, int episodeNumber, 
                            String currentTimecode, BookmarkCallback callback) {
+        addBookmark(mediaSlug, episodeId, teamId, episodeNumber, currentTimecode, null, callback);
+    }
+
+    public void addBookmark(String mediaSlug, int episodeId, int teamId, int episodeNumber, 
+                           String currentTimecode, Object statusId, BookmarkCallback callback) {
         
         Log.d("ApiService", "Adding bookmark - mediaSlug: " + mediaSlug + 
                    ", episodeId: " + episodeId + 
                    ", teamId: " + teamId + 
                    ", episodeNumber: " + episodeNumber + 
-                   ", timecode: " + currentTimecode);
+                   ", timecode: " + currentTimecode +
+                   ", statusId: " + statusId);
         
         safeExecute(() -> {
             try {
                 // Создаем JSON объект для запроса
                 com.google.gson.JsonObject requestBody = createBookmarkRequestBody(
-                    mediaSlug, episodeId, teamId, episodeNumber, currentTimecode
+                    mediaSlug, episodeId, teamId, episodeNumber, currentTimecode, statusId
                 );
                 
                 String jsonString = gson.toJson(requestBody);
@@ -1513,10 +1556,101 @@ public class ApiService {
     }
     
     /**
+     * Обновляет статус просмотра аниме (POST https://hapi.hentaicdn.org/api/bookmarks)
+     * @param mediaSlug Слаг медиа (например: "26610--nijusseiki-denki-mokuroku-eureka-evrika-anime")
+     * @param statusId ID статуса (например: 21, 22, 23, 24, 25, 26, 27 или "other")
+     * @param callback Колбэк для результата операции
+     */
+    public void updateWatchStatus(String mediaSlug, Object statusId, BookmarkCallback callback) {
+        if (mediaSlug == null || mediaSlug.trim().isEmpty()) {
+            Log.e("ApiService", "updateWatchStatus: mediaSlug is null or empty");
+            if (callback != null) {
+                safeRunOnUiThread(() -> callback.onError("Слаг аниме не определен"));
+            }
+            return;
+        }
+
+        Log.d("ApiService", "Updating watch status - mediaSlug: " + mediaSlug + ", statusId: " + statusId);
+
+        safeExecute(() -> {
+            try {
+                com.google.gson.JsonObject requestBody = new com.google.gson.JsonObject();
+                requestBody.addProperty("media_type", "anime");
+                requestBody.addProperty("media_slug", mediaSlug);
+
+                com.google.gson.JsonObject bookmark = new com.google.gson.JsonObject();
+                if (statusId instanceof Number) {
+                    bookmark.addProperty("status", ((Number) statusId).intValue());
+                } else if (statusId instanceof String) {
+                    try {
+                        int parsedInt = Integer.parseInt((String) statusId);
+                        bookmark.addProperty("status", parsedInt);
+                    } catch (NumberFormatException e) {
+                        bookmark.addProperty("status", (String) statusId);
+                    }
+                } else if (statusId != null) {
+                    bookmark.addProperty("status", statusId.toString());
+                }
+                requestBody.add("bookmark", bookmark);
+                requestBody.add("meta", new com.google.gson.JsonObject());
+
+                String jsonString = gson.toJson(requestBody);
+                Log.d("ApiService", "updateWatchStatus request body: " + jsonString);
+
+                okhttp3.RequestBody body = okhttp3.RequestBody.create(
+                        jsonString,
+                        okhttp3.MediaType.get("application/json; charset=utf-8")
+                );
+
+                Request request = buildApiRequest("https://api.cdnlibs.org/api/bookmarks")
+                        .post(body)
+                        .build();
+
+                httpClient.newCall(request).enqueue(new Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        Log.e("ApiService", "updateWatchStatus request failed", e);
+                        if (callback != null) {
+                            safeRunOnUiThread(() -> callback.onError("Ошибка сети: " + e.getMessage()));
+                        }
+                    }
+
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                        try (response) {
+                            String responseBody = response.body() != null ? response.body().string() : "";
+                            Log.d("ApiService", "updateWatchStatus response (" + response.code() + "): " + responseBody);
+                            if (response.isSuccessful()) {
+                                if (callback != null) {
+                                    safeRunOnUiThread(() -> callback.onSuccess("Статус обновлен"));
+                                }
+                            } else {
+                                if (callback != null) {
+                                    safeRunOnUiThread(() -> callback.onError("Ошибка при обновлении статуса: " + response.code()));
+                                }
+                            }
+                        } catch (Exception e) {
+                            Log.e("ApiService", "Error reading updateWatchStatus response", e);
+                            if (callback != null) {
+                                safeRunOnUiThread(() -> callback.onError("Ошибка обработки ответа"));
+                            }
+                        }
+                    }
+                });
+            } catch (Exception e) {
+                Log.e("ApiService", "Unexpected error in updateWatchStatus", e);
+                if (callback != null) {
+                    safeRunOnUiThread(() -> callback.onError("Неожиданная ошибка: " + e.getMessage()));
+                }
+            }
+        });
+    }
+
+    /**
      * Создает JSON объект для запроса добавления закладки
      */
     private com.google.gson.JsonObject createBookmarkRequestBody(String mediaSlug, int episodeId, int teamId, 
-                                               int episodeNumber, String currentTimecode) {
+                                               int episodeNumber, String currentTimecode, Object statusId) {
         
         com.google.gson.JsonObject requestBody = new com.google.gson.JsonObject();
         requestBody.addProperty("media_type", "anime");
@@ -1525,7 +1659,22 @@ public class ApiService {
         // Создаем объект bookmark
         com.google.gson.JsonObject bookmark = new com.google.gson.JsonObject();
         bookmark.addProperty("item_id", episodeId);
-        bookmark.addProperty("status", 21);
+        
+        if (statusId instanceof Number) {
+            bookmark.addProperty("status", ((Number) statusId).intValue());
+        } else if (statusId instanceof String) {
+            try {
+                int parsedInt = Integer.parseInt((String) statusId);
+                bookmark.addProperty("status", parsedInt);
+            } catch (NumberFormatException e) {
+                bookmark.addProperty("status", (String) statusId);
+            }
+        } else if (statusId != null) {
+            bookmark.addProperty("status", statusId.toString());
+        } else {
+            bookmark.addProperty("status", 21);
+        }
+        
         bookmark.addProperty("progress", currentTimecode);
         requestBody.add("bookmark", bookmark);
         

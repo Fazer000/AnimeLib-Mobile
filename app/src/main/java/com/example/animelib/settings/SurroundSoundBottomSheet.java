@@ -62,7 +62,7 @@ public class SurroundSoundBottomSheet extends FlexibleBottomSheetDialog {
                                     float bassBoost,
                                     float trebleBoost,
                                     OnSurroundChangedListener listener) {
-        super(context, com.google.android.material.R.style.ThemeOverlay_Material3_BottomSheetDialog);
+        super(context, com.example.animelib.R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
         this.isEnabled = isEnabled;
         this.currentMode = mode;
         this.currentSpatialWidth = spatialWidth;

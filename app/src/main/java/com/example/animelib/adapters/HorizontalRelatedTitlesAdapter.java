@@ -170,13 +170,13 @@ public class HorizontalRelatedTitlesAdapter extends RecyclerView.Adapter<Horizon
             }
         }
 
-        boolean isOtherCountries = mainSiteUrl.contains("animelib.org") && !mainSiteUrl.contains("v5.animelib.org");
+        boolean isOtherCountries = com.example.animelib.util.SiteUtils.isOtherRegion(mainSiteUrl, context);
 
         String baseUrl;
         if (isManga) {
             baseUrl = isOtherCountries ? "https://mangalib.org" : "https://mangalib.me";
         } else if (isRanobe) {
-            baseUrl = isOtherCountries ? "https://ranobelib.org" : "https://ranobelib.me";
+            baseUrl = "https://ranobelib.me";
         } else {
             baseUrl = mainSiteUrl;
         }

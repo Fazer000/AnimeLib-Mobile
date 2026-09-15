@@ -166,7 +166,7 @@ public class UpdateActivity extends AppCompatActivity {
 
         isDownloading = true;
         btnDownload.setEnabled(false);
-        btnDownload.setText("Загрузка...");
+        btnDownload.setText("ЗАГРУЗКА...");
         progressDownload.setVisibility(View.VISIBLE);
         progressDownload.setIndeterminate(true);
         tvDownloadStatus.setVisibility(View.VISIBLE);
@@ -184,7 +184,7 @@ public class UpdateActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     isDownloading = false;
                     btnDownload.setEnabled(true);
-                    btnDownload.setText("Скачать и установить APK");
+                    btnDownload.setText("СКАЧАТЬ И УСТАНОВИТЬ APK");
                     progressDownload.setVisibility(View.GONE);
                     tvDownloadStatus.setText(" Ошибка скачивания");
                     CustomToast.showWarning(UpdateActivity.this, "Ошибка скачивания: " + e.getMessage());
@@ -197,7 +197,7 @@ public class UpdateActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         isDownloading = false;
                         btnDownload.setEnabled(true);
-                        btnDownload.setText("Скачать и установить APK");
+                        btnDownload.setText("СКАЧАТЬ И УСТАНОВИТЬ APK");
                         progressDownload.setVisibility(View.GONE);
                         tvDownloadStatus.setText("Ошибка сервера HTTP " + response.code());
                         CustomToast.showWarning(UpdateActivity.this, " Ошибка загрузки APK (" + response.code() + ")");
@@ -222,7 +222,7 @@ public class UpdateActivity extends AppCompatActivity {
                         runOnUiThread(() -> {
                             isDownloading = false;
                             btnDownload.setEnabled(true);
-                            btnDownload.setText("Скачать и установить APK");
+                            btnDownload.setText("СКАЧАТЬ И УСТАНОВИТЬ APK");
                             progressDownload.setVisibility(View.GONE);
                             CustomToast.showWarning(UpdateActivity.this, "Не удалось получить файл");
                         });
@@ -266,7 +266,7 @@ public class UpdateActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         isDownloading = false;
                         btnDownload.setEnabled(true);
-                        btnDownload.setText("Установить повторно");
+                        btnDownload.setText("УСТАНОВИТЬ ПОВТОРНО");
                         progressDownload.setProgress(100);
                         tvDownloadStatus.setText(" Загрузка завершена!");
                         CustomToast.showSuccess(UpdateActivity.this, "Файл загружен! Запуск установки...");
@@ -278,7 +278,7 @@ public class UpdateActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         isDownloading = false;
                         btnDownload.setEnabled(true);
-                        btnDownload.setText("Скачать и установить APK");
+                        btnDownload.setText("СКАЧАТЬ И УСТАНОВИТЬ APK");
                         progressDownload.setVisibility(View.GONE);
                         tvDownloadStatus.setText(" Ошибка сохранения файла");
                         CustomToast.showWarning(UpdateActivity.this, "Ошибка сохранения файла: " + e.getMessage());

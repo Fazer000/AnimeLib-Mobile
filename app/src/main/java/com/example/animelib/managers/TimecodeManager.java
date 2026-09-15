@@ -7,22 +7,26 @@ import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 
+import android.widget.TextView;
+
+import androidx.annotation.NonNull;
 import androidx.media3.common.Player;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.ui.DefaultTimeBar;
 import androidx.media3.ui.PlayerView;
+import androidx.media3.ui.TimeBar;
 
 import com.example.animelib.R;
 import com.example.animelib.models.EpisodeResponse;
+import com.example.animelib.views.TimebarSegmentsView;
 import com.google.android.material.button.MaterialButton;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Менеджер для обработки таймкодов и сегментов видео
- * Показывает одну кнопку для пропуска текущего сегмента
- * - Короткое нажатие: переход к концу сегмента (to)
- * - Кнопка показывается только если текущее время в интервале [from, to]
+ * Менеджер для обработки таймкодов и сегментов видео.
+ * Делит таймбар на визуальные сегменты и управляет кнопкой пропуска.
  */
 public class TimecodeManager {
     private static final String TAG = "TimecodeManager";
@@ -30,12 +34,17 @@ public class TimecodeManager {
     private final Context context;
     private ExoPlayer player;
     private PlayerView playerView;
+    private TimebarSegmentsView timebarSegmentsView;
+    private DefaultTimeBar timeBar;
+    private TextView currentSegmentBadge;
     private List<EpisodeResponse.TimecodeData> timecodes = new ArrayList<>();
     private Player.Listener playerListener;
+    private TimeBar.OnScrubListener scrubListener;
     private Handler updateHandler;
     private Runnable updateRunnable;
     private MaterialButton skipSegmentButton;
     private boolean isControllerVisible = false;
+    private boolean isScrubbing = false;
     
     public TimecodeManager(Context context) {
         this.context = context;
@@ -49,8 +58,17 @@ public class TimecodeManager {
         this.player = player;
         this.playerView = playerView;
         this.skipSegmentButton = skipSegmentButton;
+
+        if (playerView != null) {
+            View controllerView = playerView.findViewById(R.id.exo_controller);
+            if (controllerView != null) {
+                timebarSegmentsView = controllerView.findViewById(R.id.timebarSegmentsView);
+                timeBar = controllerView.findViewById(R.id.exo_progress);
+                currentSegmentBadge = controllerView.findViewById(R.id.currentSegmentBadge);
+            }
+        }
         
-        // Настраиваем обработчик нажатия
+        // Настраиваем обработчик нажатия кнопки пропуска
         if (skipSegmentButton != null) {
             skipSegmentButton.setOnClickListener(v -> {
                 if (player != null) {
@@ -63,6 +81,9 @@ public class TimecodeManager {
                             currentPositionSeconds <= timecode.getTo()) {
                             long seekPosition = timecode.getTo() * 1000L; // Конвертируем секунды в миллисекунды
                             player.seekTo(seekPosition);
+                            if (timebarSegmentsView != null) {
+                                timebarSegmentsView.setProgress(seekPosition, player.getBufferedPosition(), player.getDuration());
+                            }
                             Log.d(TAG, "Skipping segment: " + timecode.getType() + " from " + timecode.getFrom() + "s to " + timecode.getTo() + "s at " + seekPosition + "ms");
                             break;
                         }
@@ -70,28 +91,77 @@ public class TimecodeManager {
                 }
             });
         }
+
+        if (timeBar != null) {
+            scrubListener = new TimeBar.OnScrubListener() {
+                @Override
+                public void onScrubStart(@NonNull TimeBar timeBar, long position) {
+                    isScrubbing = true;
+                    if (timebarSegmentsView != null && player != null) {
+                        timebarSegmentsView.setProgress(position, player.getBufferedPosition(), player.getDuration());
+                    }
+                    updateSegmentBadgeForPosition(position);
+                }
+
+                @Override
+                public void onScrubMove(@NonNull TimeBar timeBar, long position) {
+                    isScrubbing = true;
+                    if (timebarSegmentsView != null && player != null) {
+                        timebarSegmentsView.setProgress(position, player.getBufferedPosition(), player.getDuration());
+                    }
+                    updateSegmentBadgeForPosition(position);
+                }
+
+                @Override
+                public void onScrubStop(@NonNull TimeBar timeBar, long position, boolean canceled) {
+                    isScrubbing = false;
+                    if (timebarSegmentsView != null && player != null) {
+                        timebarSegmentsView.setProgress(position, player.getBufferedPosition(), player.getDuration());
+                    }
+                    updateTimecodeButtonsVisibility();
+                }
+            };
+            timeBar.addListener(scrubListener);
+        }
         
         // Добавляем слушатель для отслеживания позиции воспроизведения
         if (player != null) {
             playerListener = new Player.Listener() {
                 @Override
                 public void onPositionDiscontinuity(Player.PositionInfo oldPosition, Player.PositionInfo newPosition, int reason) {
+                    updateProgress();
                     updateTimecodeButtonsVisibility();
                 }
                 
                 @Override
                 public void onIsPlayingChanged(boolean isPlaying) {
-                    if (isPlaying) {
-                        // Запускаем периодическое обновление видимости кнопок
-                        startPeriodicUpdate();
-                    } else {
-                        stopPeriodicUpdate();
-                    }
-                    // Обновляем видимость кнопки при изменении состояния воспроизведения
+                    updateProgress();
                     updateTimecodeButtonsVisibility();
+                }
+
+                @Override
+                public void onPlaybackStateChanged(int state) {
+                    updateProgress();
+                    if (state == Player.STATE_READY) {
+                        updateTimecodeSegmentsOnBar();
+                    }
+                }
+
+                @Override
+                public void onEvents(Player player, Player.Events events) {
+                    updateProgress();
                 }
             };
             player.addListener(playerListener);
+        }
+
+        updateTimecodeSegmentsOnBar();
+        startPeriodicUpdate();
+    }
+    
+    public void updateProgress() {
+        if (player != null && timebarSegmentsView != null && !isScrubbing) {
+            timebarSegmentsView.setProgress(player.getCurrentPosition(), player.getBufferedPosition(), player.getDuration());
         }
     }
     
@@ -108,15 +178,37 @@ public class TimecodeManager {
             hideTimecodeButtons();
             Log.d(TAG, "No timecodes found");
         }
+        updateTimecodeSegmentsOnBar();
+    }
+
+    /**
+     * Обновляет отображение сегментов на самом таймбаре и устанавливает маркера
+     */
+    public void updateTimecodeSegmentsOnBar() {
+        if (timebarSegmentsView != null) {
+            long duration = (player != null && player.getDuration() > 0) ? player.getDuration() : 0;
+            timebarSegmentsView.setTimecodes(timecodes, duration);
+            if (player != null && duration > 0) {
+                timebarSegmentsView.setProgress(player.getCurrentPosition(), player.getBufferedPosition(), duration);
+            }
+        }
+
+        if (timeBar != null) {
+            timeBar.setAdGroupTimesMs(null, null, 0);
+        }
     }
     
     /**
-     * Обновляет видимость кнопки пропуска сегмента в зависимости от текущей позиции
+     * Обновляет видимость кнопки пропуска сегмента и бейджа текущего сегмента
      */
     private void updateTimecodeButtonsVisibility() {
         if (player == null || timecodes.isEmpty()) {
+            if (currentSegmentBadge != null) currentSegmentBadge.setVisibility(View.GONE);
+            if (skipSegmentButton != null) skipSegmentButton.setVisibility(View.GONE);
             return;
         }
+
+        if (isScrubbing) return;
         
         long currentPositionMs = player.getCurrentPosition();
         int currentPositionSeconds = (int) (currentPositionMs / 1000);
@@ -131,34 +223,66 @@ public class TimecodeManager {
             }
         }
         
-        if (activeSegment != null && skipSegmentButton != null) {
-            // Обновляем текст кнопки
-            String buttonText = getSkipButtonText(activeSegment);
-            skipSegmentButton.setText(buttonText);
-            
-            // Показываем кнопку только если контроллер видимый
-            if (isControllerVisible) {
-                if (skipSegmentButton.getVisibility() != View.VISIBLE) {
-                    skipSegmentButton.setVisibility(View.VISIBLE);
-                    skipSegmentButton.setAlpha(0f);
-                    skipSegmentButton.animate().alpha(1f).setDuration(200).start();
-                } else if (skipSegmentButton.getAlpha() < 1f) {
-                    skipSegmentButton.setAlpha(1f);
-                }
-            } else {
-                if (skipSegmentButton.getVisibility() == View.VISIBLE) {
-                    skipSegmentButton.animate().alpha(0f).setDuration(150)
-                            .withEndAction(() -> skipSegmentButton.setVisibility(View.GONE))
-                            .start();
+        if (activeSegment != null) {
+            // Обновляем бейдж текущего сегмента
+            if (currentSegmentBadge != null) {
+                currentSegmentBadge.setText("• " + getSegmentDisplayName(activeSegment.getType()));
+                if (isControllerVisible) {
+                    currentSegmentBadge.setVisibility(View.VISIBLE);
                 } else {
-                    skipSegmentButton.setVisibility(View.GONE);
+                    currentSegmentBadge.setVisibility(View.GONE);
+                }
+            }
+
+            if (skipSegmentButton != null) {
+                String buttonText = getSkipButtonText(activeSegment);
+                skipSegmentButton.setText(buttonText);
+                
+                if (isControllerVisible) {
+                    if (skipSegmentButton.getVisibility() != View.VISIBLE) {
+                        skipSegmentButton.setVisibility(View.VISIBLE);
+                        skipSegmentButton.setAlpha(0f);
+                        skipSegmentButton.animate().alpha(1f).setDuration(200).start();
+                    } else if (skipSegmentButton.getAlpha() < 1f) {
+                        skipSegmentButton.setAlpha(1f);
+                    }
+                } else {
+                    if (skipSegmentButton.getVisibility() == View.VISIBLE) {
+                        skipSegmentButton.animate().alpha(0f).setDuration(150)
+                                .withEndAction(() -> skipSegmentButton.setVisibility(View.GONE))
+                                .start();
+                    } else {
+                        skipSegmentButton.setVisibility(View.GONE);
+                    }
                 }
             }
         } else {
-            // Скрываем кнопку
             if (skipSegmentButton != null) {
                 skipSegmentButton.setVisibility(View.GONE);
             }
+            if (currentSegmentBadge != null) {
+                currentSegmentBadge.setVisibility(View.GONE);
+            }
+        }
+    }
+
+    private void updateSegmentBadgeForPosition(long positionMs) {
+        if (currentSegmentBadge == null || timecodes.isEmpty()) return;
+
+        int posSeconds = (int) (positionMs / 1000);
+        EpisodeResponse.TimecodeData targetSegment = null;
+        for (EpisodeResponse.TimecodeData tc : timecodes) {
+            if (posSeconds >= tc.getFrom() && posSeconds <= tc.getTo()) {
+                targetSegment = tc;
+                break;
+            }
+        }
+
+        if (targetSegment != null) {
+            currentSegmentBadge.setText("• " + getSegmentDisplayName(targetSegment.getType()) + " (" + formatTime(targetSegment.getFrom()) + " - " + formatTime(targetSegment.getTo()) + ")");
+            currentSegmentBadge.setVisibility(View.VISIBLE);
+        } else {
+            currentSegmentBadge.setVisibility(View.GONE);
         }
     }
     
@@ -179,8 +303,12 @@ public class TimecodeManager {
         updateRunnable = new Runnable() {
             @Override
             public void run() {
+                updateProgress();
                 updateTimecodeButtonsVisibility();
-                updateHandler.postDelayed(this, 1000); // Обновляем каждую секунду
+                if (updateHandler != null) {
+                    boolean playing = player != null && player.isPlaying();
+                    updateHandler.postDelayed(this, playing ? 100 : 200);
+                }
             }
         };
         updateHandler.post(updateRunnable);
@@ -214,6 +342,22 @@ public class TimecodeManager {
         Log.d(TAG, "Skip segment button ready");
     }
     
+    private String getSegmentDisplayName(String type) {
+        if (type == null) return "Сегмент";
+        switch (type.toLowerCase()) {
+            case "opening":
+                return "Оппенинг";
+            case "ending":
+                return "Эндинг";
+            case "splashscreen":
+                return "Заставка";
+            case "compilation":
+                return "Компиляция";
+            default:
+                return type;
+        }
+    }
+
     /**
      * Возвращает текст для кнопки пропуска сегмента
      */

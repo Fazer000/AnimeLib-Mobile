@@ -42,7 +42,7 @@ public class SpeedBottomSheet extends FlexibleBottomSheetDialog {
     private final Map<Float, TextView> presetButtons = new HashMap<>();
 
     public SpeedBottomSheet(@NonNull Context context, float currentSpeed, OnSpeedChangedListener listener) {
-        super(context, com.google.android.material.R.style.ThemeOverlay_Material3_BottomSheetDialog);
+        super(context, com.example.animelib.R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
         this.currentSpeed = currentSpeed;
         this.listener = listener;
     }

@@ -25,7 +25,7 @@ public class SkipDurationBottomSheet extends FlexibleBottomSheetDialog {
     private TextView preset30, preset60, preset85, preset90, preset110, preset120;
 
     public SkipDurationBottomSheet(Context context, int currentDuration, OnDurationChangedListener listener) {
-        super(context, com.google.android.material.R.style.ThemeOverlay_Material3_BottomSheetDialog);
+        super(context, com.example.animelib.R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
         this.currentDuration = currentDuration;
         this.listener = listener;
     }

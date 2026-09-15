@@ -661,7 +661,83 @@
                         android:text="Авто"/>
                 </LinearLayout>
 
-                <!-- 2. Check for Updates -->
+                <!-- 2. FAQ & Help -->
+                <LinearLayout
+                    android:id="@+id/faqOption"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="52dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/bg_m3_item_middle"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingHorizontal="18dp"
+                    android:paddingVertical="14dp"
+                    android:layout_marginBottom="3dp">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:src="@drawable/ic_faq"
+                        app:tint="@color/primary_text_color"
+                        android:layout_marginEnd="12dp"/>
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="FAQ и справка"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="15.5sp"
+                        android:fontFamily="@font/open_sans_bold"/>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_chevron_right"
+                        app:tint="@color/accent_text_color"/>
+                </LinearLayout>
+
+                <!-- 3. Bug Report (GitHub) -->
+                <LinearLayout
+                    android:id="@+id/bugReportOption"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="52dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/bg_m3_item_middle"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingHorizontal="18dp"
+                    android:paddingVertical="14dp"
+                    android:layout_marginBottom="3dp">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:src="@drawable/ic_bug_report"
+                        app:tint="@color/primary_text_color"
+                        android:layout_marginEnd="12dp"/>
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Сообщить об ошибке"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="15.5sp"
+                        android:fontFamily="@font/open_sans_bold"/>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_chevron_right"
+                        app:tint="@color/accent_text_color"/>
+                </LinearLayout>
+
+                <!-- 3. Check for Updates -->
                 <LinearLayout
                     android:id="@+id/checkForUpdatesOption"
                     android:layout_width="match_parent"
@@ -717,7 +793,7 @@
                 android:paddingBottom="8dp"
                 android:textColor="@color/secondary_text_color"
                 android:textSize="13sp"
-                android:text="Версия v1.8.6" />
+                android:text="Версия v1.8.7" />
 
         </LinearLayout>
     </LinearLayout>

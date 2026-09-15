@@ -98,7 +98,7 @@
                     android:text="0 MB"
                     android:textSize="12sp"
                     android:fontFamily="@font/open_sans"
-                    android:textColor="#9CA3AF"
+                    android:textColor="@color/app_text_secondary"
                     android:visibility="visible" />
 
             </LinearLayout>

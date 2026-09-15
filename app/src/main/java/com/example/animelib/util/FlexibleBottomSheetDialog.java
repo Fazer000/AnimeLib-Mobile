@@ -7,16 +7,17 @@ import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 
+import com.example.animelib.R;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 
 public class FlexibleBottomSheetDialog extends BottomSheetDialog {
 
     public FlexibleBottomSheetDialog(@NonNull Context context) {
-        super(context, com.google.android.material.R.style.ThemeOverlay_Material3_BottomSheetDialog);
+        super(context, R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
     }
 
     public FlexibleBottomSheetDialog(@NonNull Context context, int theme) {
-        super(context, theme != 0 ? theme : com.google.android.material.R.style.ThemeOverlay_Material3_BottomSheetDialog);
+        super(context, theme != 0 ? theme : R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
     }
 
     @Override

@@ -50,8 +50,8 @@ public class DatabaseManager {
     public String getSiteUrl() {
         try {
             AppSettings settings = db.appSettingsDao().getSettingsSync();
-            if (settings != null && settings.getSiteUrl() != null) {
-                String url = settings.getSiteUrl();
+            if (settings != null && settings.getSiteUrl() != null && !settings.getSiteUrl().trim().isEmpty()) {
+                String url = settings.getSiteUrl().trim();
                 if (url.endsWith("/")) {
                     url = url.substring(0, url.length() - 1);
                 }
@@ -63,7 +63,7 @@ public class DatabaseManager {
         } catch (Exception e) {
             Log.e(TAG, "Failed to get site URL from DB", e);
         }
-        return "https://" + context.getString(R.string.site_url);
+        return null;
     }
 
     /**

@@ -29,7 +29,7 @@
             android:layout_height="wrap_content"
             android:gravity="center"
             android:text="Загрузка видео..."
-            android:textColor="#FFFFFF"
+            android:textColor="@color/app_text_primary"
             android:textSize="16sp" />
 
     </LinearLayout>
@@ -43,15 +43,23 @@
         android:clipToPadding="false"
         android:visibility="gone">
 
-        <!-- Secondary Ambient Player View (blurred edge glow) -->
+        <!-- Live Real-Time Texture View Sampler (Zero-lag Ambilight) -->
+        <ImageView
+            android:id="@+id/ambientImageView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitXY"
+            android:importantForAccessibility="no" />
+
+        <!-- Secondary Ambient Player View (blurred edge glow fallback) -->
         <androidx.media3.ui.PlayerView
             android:id="@+id/ambientPlayerView"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_gravity="top|start"
+            android:layout_gravity="center"
             app:use_controller="false"
             app:surface_type="texture_view"
-            app:resize_mode="fit"
+            app:resize_mode="zoom"
             app:show_buffering="never"
             app:shutter_background_color="@android:color/transparent" />
 
@@ -73,20 +81,18 @@
         android:orientation="vertical">
 
         <!-- Video Player Container -->
-        <FrameLayout
+        <com.example.animelib.ui.RoundedCornerFrameLayout
             android:id="@+id/playerContainer"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:clipChildren="false"
-            android:clipToPadding="false"
             android:layout_gravity="top|start">
 
             <androidx.media3.ui.PlayerView
                 android:id="@+id/playerView"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:clipChildren="false"
-                android:clipToPadding="false"
+                android:background="@android:color/transparent"
+                app:shutter_background_color="@android:color/transparent"
                 app:surface_type="texture_view"
                 app:animation_enabled="false"
                 app:controller_layout_id="@layout/custom_player_controller"
@@ -215,7 +221,50 @@
                     android:textStyle="bold" />
             </LinearLayout>
 
-        </FrameLayout>
+            <!-- Unified vertical gesture indicator plaque (Brightness & Volume) -->
+            <LinearLayout
+                android:id="@+id/gestureIndicatorPlaque"
+                android:layout_width="160dp"
+                android:layout_height="36dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="80dp"
+                android:background="@drawable/video_time_background"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="12dp"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/gestureIndicatorIcon"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:src="@drawable/ic_brightness"
+                    app:tint="@color/white_color" />
+
+                <ProgressBar
+                    android:id="@+id/gestureIndicatorProgress"
+                    style="@android:style/Widget.ProgressBar.Horizontal"
+                    android:layout_width="0dp"
+                    android:layout_height="4dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginEnd="8dp"
+                    android:max="100"
+                    android:progress="50"
+                    android:progressDrawable="@drawable/bg_gesture_progress_bar" />
+
+                <TextView
+                    android:id="@+id/gestureIndicatorText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical|start"
+                    android:text="100%"
+                    android:textColor="@color/player_item_inactive_text"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+        </com.example.animelib.ui.RoundedCornerFrameLayout>
 
         <!-- Container for Portrait Mode (below player) -->
         <FrameLayout
@@ -223,7 +272,7 @@
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:background="#121212"
+            android:background="@color/bs_bg_color"
             android:visibility="gone">
 
             <include layout="@layout/layout_portrait_player_content" />
@@ -360,7 +409,7 @@
                             android:id="@+id/relatedAnimeTitle"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:textColor="#FFFFFF"
+                            android:textColor="@color/app_text_primary"
                             android:textSize="19sp"
                             android:textStyle="bold"
                             android:maxLines="3"
@@ -373,7 +422,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
-                            android:textColor="#94A3B8"
+                            android:textColor="@color/app_text_secondary"
                             android:textSize="13sp"
                             android:maxLines="2"
                             android:ellipsize="end"
@@ -396,9 +445,9 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:textSize="12sp"
-                                android:textColor="#FFFFFF"
-                                app:chipBackgroundColor="#252834"
-                                app:chipStrokeColor="#3A3F50"
+                                android:textColor="@color/primary_text_color"
+                                app:chipBackgroundColor="@color/chip_unselected_bg"
+                                app:chipStrokeColor="@color/chip_unselected_stroke"
                                 app:chipStrokeWidth="0.5dp"
                                 app:chipMinHeight="28dp"
                                 app:ensureMinTouchTargetSize="false" />
@@ -410,9 +459,9 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:textSize="12sp"
-                                android:textColor="#FFFFFF"
-                                app:chipBackgroundColor="#252834"
-                                app:chipStrokeColor="#3A3F50"
+                                android:textColor="@color/primary_text_color"
+                                app:chipBackgroundColor="@color/chip_unselected_bg"
+                                app:chipStrokeColor="@color/chip_unselected_stroke"
                                 app:chipStrokeWidth="0.5dp"
                                 app:chipMinHeight="28dp"
                                 app:ensureMinTouchTargetSize="false" />
@@ -424,9 +473,9 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:textSize="12sp"
-                                android:textColor="#FFFFFF"
-                                app:chipBackgroundColor="#252834"
-                                app:chipStrokeColor="#3A3F50"
+                                android:textColor="@color/primary_text_color"
+                                app:chipBackgroundColor="@color/chip_unselected_bg"
+                                app:chipStrokeColor="@color/chip_unselected_stroke"
                                 app:chipStrokeWidth="0.5dp"
                                 app:chipMinHeight="28dp"
                                 app:ensureMinTouchTargetSize="false"
@@ -439,9 +488,9 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:textSize="12sp"
-                                android:textColor="#FFFFFF"
-                                app:chipBackgroundColor="#252834"
-                                app:chipStrokeColor="#3A3F50"
+                                android:textColor="@color/primary_text_color"
+                                app:chipBackgroundColor="@color/chip_unselected_bg"
+                                app:chipStrokeColor="@color/chip_unselected_stroke"
                                 app:chipStrokeWidth="0.5dp"
                                 app:chipMinHeight="28dp"
                                 app:ensureMinTouchTargetSize="false"
@@ -467,7 +516,7 @@
                                 android:id="@+id/relatedAnimeRating"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/app_text_primary"
                                 android:textSize="17sp"
                                 android:textStyle="bold" />
 
@@ -476,7 +525,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginStart="8dp"
-                                android:textColor="#94A3B8"
+                                android:textColor="@color/app_text_secondary"
                                 android:textSize="13sp" />
 
                         </LinearLayout>
@@ -487,7 +536,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="10dp"
-                            android:textColor="#94A3B8"
+                            android:textColor="@color/app_text_secondary"
                             android:textSize="14sp" />
 
                 </LinearLayout>
@@ -502,7 +551,7 @@
                 android:layout_marginStart="16dp"
                 android:layout_marginBottom="12dp"
                 android:text="Связанные тайтлы"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/app_text_primary"
                 android:textSize="16sp"
                 android:textStyle="bold"
                 android:alpha="0" />
@@ -511,10 +560,12 @@
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/relatedTitlesRecyclerView"
                 android:layout_width="match_parent"
-                android:layout_height="130dp"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="8dp"
                 android:clipToPadding="false"
-                android:fadeScrollbars="true"
-                android:paddingHorizontal="16dp"/>
+                android:clipChildren="false"
+                android:fadeScrollbars="true"/>
 
         </LinearLayout>
 

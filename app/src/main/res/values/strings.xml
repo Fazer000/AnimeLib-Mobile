@@ -80,7 +80,7 @@
     <string name="btn_apply">Применить</string>
     <string name="btn_close">Закрыть</string>
     <string name="btn_download">Скачать</string>
-    <string name="btn_download_apk">Скачать и установить APK</string>
+    <string name="btn_download_apk">СКАЧАТЬ И УСТАНОВИТЬ APK</string>
     <string name="btn_open_github">Открыть страницу на GitHub</string>
     <string name="btn_reset">Сбросить</string>
 </resources>

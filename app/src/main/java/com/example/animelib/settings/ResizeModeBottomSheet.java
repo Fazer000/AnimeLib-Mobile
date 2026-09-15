@@ -37,7 +37,7 @@ public class ResizeModeBottomSheet extends FlexibleBottomSheetDialog {
     private ImageView resizeFillCheck;
 
     public ResizeModeBottomSheet(@NonNull Context context, int currentResizeMode, OnResizeModeChangedListener listener) {
-        super(context, com.google.android.material.R.style.ThemeOverlay_Material3_BottomSheetDialog);
+        super(context, com.example.animelib.R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
         this.currentResizeMode = currentResizeMode;
         this.listener = listener;
     }

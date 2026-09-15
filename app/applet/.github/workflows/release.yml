@@ -1,0 +1,122 @@
+name: Build Release
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_PAT: ${{ secrets.GH_PAT }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Accept Android SDK licenses & Install Components
+      run: |
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Setup Keystores and Properties
+      run: |
+        if [ -f "debug.keystore.base64" ]; then
+          echo "Restoring debug.keystore from base64..."
+          base64 -d debug.keystore.base64 > debug.keystore
+        elif [ ! -f "debug.keystore" ]; then
+          echo "Generating new debug.keystore..."
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug, O=Android, C=US"
+        fi
+
+        if [ -f "release.keystore.base64" ]; then
+          echo "Restoring release.keystore from base64..."
+          base64 -d release.keystore.base64 > release.keystore
+        elif [ ! -f "release.keystore" ]; then
+          echo "Generating new release.keystore..."
+          keytool -genkey -v -keystore release.keystore -storepass releasepass -alias releasekey -keypass releasepass -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=AnimeLib Release, OU=Development, O=AnimeLib, L=San Francisco, ST=California, C=US"
+        fi
+        
+        if [ ! -f "keystore.properties" ]; then
+          echo "Creating keystore.properties..."
+          echo "storeFile=release.keystore" > keystore.properties
+          echo "storePassword=releasepass" >> keystore.properties
+          echo "keyAlias=releasekey" >> keystore.properties
+          echo "keyPassword=releasepass" >> keystore.properties
+        fi
+
+    - name: Set release version
+      id: versioning
+      run: |
+        NEW_TAG="release"
+        NEW_NAME="Beta v0.0.0"
+        echo "tag_name=$NEW_TAG" >> $GITHUB_OUTPUT
+        echo "release_name=$NEW_NAME" >> $GITHUB_OUTPUT
+
+    - name: Build Debug & Release APK / AAB
+      run: ./gradlew assembleDebug assembleRelease bundleRelease --no-daemon --stacktrace
+
+    - name: Upload Release Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: AnimeLib-APKs
+        path: |
+          app/build/outputs/apk/release/*.apk
+          app/build/outputs/apk/debug/*.apk
+
+    - name: Create or Update GitHub Release
+      if: github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: release
+        name: Beta v0.0.0
+        draft: false
+        prerelease: false
+        overwrite: true
+        make_latest: true
+        files: |
+          app/build/outputs/apk/release/*.apk
+          app/build/outputs/apk/debug/*.apk
+          app/build/outputs/bundle/release/*.aab
+
+    - name: Check PAT Secret for Repo
+      if: github.ref == 'refs/heads/main' && env.GH_PAT == ''
+      run: |
+        echo "::warning::Секрет GH_PAT не настроен! Автоматический деплой в репозиторий (AnimeLib-Mobile) требует Personal Access Token."
+        echo "Для исправления добавьте GH_PAT в Settings -> Secrets and variables -> Actions вашего репозитория AnimeLib-Mobile."
+
+    - name: Create GitHub Release in AnimeLib-Mobile Repo
+      if: github.ref == 'refs/heads/main' && env.GH_PAT != ''
+      uses: softprops/action-gh-release@v2
+      with:
+        repository: Fazer000/AnimeLib-Mobile
+        token: ${{ secrets.GH_PAT }}
+        tag_name: release
+        name: Beta v0.0.0
+        draft: false
+        prerelease: false
+        overwrite: true
+        make_latest: true
+        files: |
+          app/build/outputs/apk/release/*.apk
+          app/build/outputs/apk/debug/*.apk
+          app/build/outputs/bundle/release/*.aab

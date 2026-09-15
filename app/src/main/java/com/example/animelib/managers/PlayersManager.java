@@ -1,12 +1,16 @@
 package com.example.animelib.managers;
 
 import android.content.Context;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -63,6 +67,7 @@ public class PlayersManager {
     private List<EpisodeResponse.PlayerData> animelibPlayers = new ArrayList<>();
     private List<EpisodeResponse.PlayerData> kodikPlayers = new ArrayList<>();
     private EpisodeResponse.PlayerData currentPlayerData;
+    private com.example.animelib.models.KodikResponse currentKodikResponse;
     
     // Предпочтения пользователя
     private String preferredPlayerType; // "animelib" or "kodik"
@@ -124,6 +129,11 @@ public class PlayersManager {
             tabLayout = slidingMenuPanel.findViewById(R.id.tabLayout);
             sidePanelViewPager = slidingMenuPanel.findViewById(R.id.viewPager);
 
+            EditText etSearch = slidingMenuPanel.findViewById(R.id.etSearchVoiceovers);
+            ImageButton btnClear = slidingMenuPanel.findViewById(R.id.btnClearVoiceoversSearch);
+            View btnSort = slidingMenuPanel.findViewById(R.id.btnSortVoiceovers);
+            TextView tvSortText = slidingMenuPanel.findViewById(R.id.tvSortVoiceovers);
+
             if (sidePanelViewPager != null) {
                 // Изначально отключаем свайпы по ViewPager2, чтобы drag панели не сдвигал табы
                 sidePanelViewPager.setUserInputEnabled(false);
@@ -136,6 +146,10 @@ public class PlayersManager {
                 );
                 sidePanelViewPager.setAdapter(sidePanelTabsAdapter);
 
+                if (tvSortText != null) {
+                    tvSortText.setText(com.example.animelib.util.VoiceoverSortHelper.getSortLabel(sidePanelTabsAdapter.getSortType()));
+                }
+
                 if (tabLayout != null) {
                     new TabLayoutMediator(tabLayout, sidePanelViewPager, (tab, position) -> {
                         if (position == 0) {
@@ -144,6 +158,46 @@ public class PlayersManager {
                             tab.setText("Kodik");
                         }
                     }).attach();
+
+                    for (int i = 0; i < tabLayout.getTabCount(); i++) {
+                        TabLayout.Tab tab = tabLayout.getTabAt(i);
+                        if (tab != null && tab.view != null) {
+                            tab.view.setClipToOutline(true);
+                        }
+                    }
+                }
+
+                if (etSearch != null) {
+                    etSearch.addTextChangedListener(new TextWatcher() {
+                        @Override
+                        public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+                        @Override
+                        public void onTextChanged(CharSequence s, int start, int before, int count) {
+                            String q = s.toString();
+                            if (btnClear != null) {
+                                btnClear.setVisibility(q.trim().isEmpty() ? View.GONE : View.VISIBLE);
+                            }
+                            if (sidePanelTabsAdapter != null) {
+                                sidePanelTabsAdapter.setFilterQuery(q);
+                            }
+                        }
+
+                        @Override
+                        public void afterTextChanged(Editable s) {}
+                    });
+                }
+
+                if (btnClear != null && etSearch != null) {
+                    btnClear.setOnClickListener(v -> etSearch.setText(""));
+                }
+
+                if (btnSort != null) {
+                    btnSort.setOnClickListener(v -> {
+                        if (sidePanelTabsAdapter != null && context != null) {
+                            com.example.animelib.util.VoiceoverSortHelper.showSortPopup(btnSort, context, sidePanelTabsAdapter);
+                        }
+                    });
                 }
 
                 sidePanelViewPager.registerOnPageChangeCallback(new ViewPager2.OnPageChangeCallback() {
@@ -680,6 +734,10 @@ public class PlayersManager {
         return sameTeam && samePlayer;
     }
     
+    public void setCurrentKodikResponse(com.example.animelib.models.KodikResponse response) {
+        this.currentKodikResponse = response;
+    }
+
     /**
      * Получение доступных качеств для текущего плеера
      */
@@ -693,21 +751,41 @@ public class PlayersManager {
         if ("animelib".equalsIgnoreCase(currentPlayerData.getPlayer())) {
             // AnimeLib qualities are in video.quality array
             if (currentPlayerData.getVideo() != null && currentPlayerData.getVideo().getQuality() != null) {
-                for (EpisodeResponse.QualityData qualityData : currentPlayerData.getVideo().getQuality()) {
-                    String quality = String.valueOf(qualityData.getQuality());
-                    // Skip 4K if not enabled
-                    if (("2160".equals(quality) || "4K".equals(quality)) && !enable4K) {
+                List<EpisodeResponse.QualityData> qList = new ArrayList<>(currentPlayerData.getVideo().getQuality());
+                qList.sort((q1, q2) -> Integer.compare(q2.getQuality(), q1.getQuality())); // Descending
+                for (EpisodeResponse.QualityData qualityData : qList) {
+                    int res = qualityData.getQuality();
+                    if (res == 2160 && !enable4K) {
                         Log.d(TAG, "Skipping 4K quality (not enabled)");
                         continue;
                     }
-                    qualities.add(quality + "p");
+                    String qStr = res + "p";
+                    if (!qualities.contains(qStr)) {
+                        qualities.add(qStr);
+                    }
                 }
             }
         } else if ("kodik".equalsIgnoreCase(currentPlayerData.getPlayer())) {
-            // Kodik qualities are usually standard
-            qualities.add("720p");
-            qualities.add("480p");
-            qualities.add("360p");
+            if (currentKodikResponse != null && currentKodikResponse.getData() != null && !currentKodikResponse.getData().isEmpty()) {
+                List<String> rawKeys = new ArrayList<>(currentKodikResponse.getData().keySet());
+                rawKeys.sort((k1, k2) -> Integer.compare(
+                        com.example.animelib.util.AutoQualityHelper.extractResolution(k2),
+                        com.example.animelib.util.AutoQualityHelper.extractResolution(k1)
+                ));
+                for (String key : rawKeys) {
+                    int res = com.example.animelib.util.AutoQualityHelper.extractResolution(key);
+                    if (res == 2160 && !enable4K) continue;
+                    String qStr = res > 0 ? res + "p" : key;
+                    if (!qualities.contains(qStr)) {
+                        qualities.add(qStr);
+                    }
+                }
+            }
+            if (qualities.isEmpty()) {
+                qualities.add("720p");
+                qualities.add("480p");
+                qualities.add("360p");
+            }
         }
 
         return qualities;

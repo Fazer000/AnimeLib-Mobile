@@ -79,7 +79,7 @@ public class QualityAdapter extends RecyclerView.Adapter<QualityAdapter.QualityV
         }
 
         // 4. Active / Inactive selection state
-        boolean isCurrent = quality != null && quality.equalsIgnoreCase(currentQuality);
+        boolean isCurrent = (position == getSelectedIndex());
 
         if (holder.selectedPill != null) {
             holder.selectedPill.setVisibility(isCurrent ? View.VISIBLE : View.GONE);
@@ -115,22 +115,25 @@ public class QualityAdapter extends RecyclerView.Adapter<QualityAdapter.QualityV
     private static String getQualitySubtitle(String quality) {
         if (quality == null) return "Видеопоток";
         String q = quality.toLowerCase().trim();
-        if (q.contains("2160") || q.contains("4k")) {
-            return "Максимальная четкость";
-        } else if (q.contains("1440") || q.contains("2k")) {
-            return "Высокая детализация";
-        } else if (q.contains("1080") || q.contains("fhd")) {
-            return "Высокое качество";
-        } else if (q.contains("720") || q.contains("hd")) {
-            return "Оптимально для большинства";
-        } else if (q.contains("480")) {
-            return "Хороший баланс";
-        } else if (q.contains("360") || q.contains("240") || q.contains("sd")) {
-            return "Экономия трафика";
-        } else if (q.contains("auto") || q.contains("авто")) {
+        if (q.contains("auto") || q.contains("авто")) {
             return "Автоматический выбор качества";
         } else if (q.contains("скачан") || q.contains("офлайн") || q.contains("локальн")) {
             return "Загруженный медиафайл";
+        }
+
+        int res = com.example.animelib.util.AutoQualityHelper.extractResolution(quality);
+        if (res >= 2160 || q.contains("4k")) {
+            return "Максимальная четкость";
+        } else if (res >= 1440 || q.contains("2k")) {
+            return "Высокая детализация";
+        } else if (res >= 1080 || q.contains("fhd")) {
+            return "Высокое качество";
+        } else if (res >= 720 || q.contains("hd")) {
+            return "Оптимально для большинства";
+        } else if (res >= 480) {
+            return "Хороший баланс";
+        } else if (res > 0) {
+            return "Экономия трафика";
         }
         return "Стандартный видеопоток";
     }
@@ -138,6 +141,38 @@ public class QualityAdapter extends RecyclerView.Adapter<QualityAdapter.QualityV
     @Override
     public int getItemCount() {
         return qualities != null ? qualities.size() : 0;
+    }
+
+    public int getSelectedIndex() {
+        if (qualities == null || qualities.isEmpty()) return -1;
+
+        // 1. Exact or smart quality match
+        for (int i = 0; i < qualities.size(); i++) {
+            if (com.example.animelib.util.AutoQualityHelper.matchQuality(qualities.get(i), currentQuality)) {
+                return i;
+            }
+        }
+
+        // 2. Fallback if currentQuality is auto-like or null/empty
+        if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(currentQuality)) {
+            for (int i = 0; i < qualities.size(); i++) {
+                if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(qualities.get(i))) {
+                    return i;
+                }
+            }
+        }
+
+        // 3. Fallback if currentQuality is downloaded-like
+        if (com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(currentQuality)) {
+            for (int i = 0; i < qualities.size(); i++) {
+                if (com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(qualities.get(i))) {
+                    return i;
+                }
+            }
+        }
+
+        // 4. Fallback to first item if available
+        return 0;
     }
     
     @SuppressLint("NotifyDataSetChanged")

@@ -1,0 +1,504 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true"
+    android:overScrollMode="never"
+    android:background="@android:color/transparent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingBottom="24dp">
+
+        <View
+            android:layout_width="36dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bottom_sheet_handle" />
+
+        <!-- Header Row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="4dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ImageButton
+                android:id="@+id/bs_faq_back"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:padding="6dp"
+                app:tint="@color/accent_text_color"
+                android:background="@drawable/button_close_background"
+                android:src="@drawable/ic_arrow_back"
+                android:scaleType="fitCenter"
+                android:contentDescription="Back"/>
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="FAQ и справка"
+                android:gravity="center_vertical"
+                android:textColor="@color/primary_text_color"
+                android:textStyle="bold"
+                android:fontFamily="@font/open_sans_bold"
+                android:paddingVertical="8dp"
+                android:layout_marginStart="8dp"
+                android:textSize="@dimen/bs_title_text_size"/>
+        </LinearLayout>
+
+        <!-- Segmented Tab Bar -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="12dp"
+            android:background="@drawable/bg_segmented_control"
+            android:padding="3dp">
+
+            <com.google.android.material.tabs.TabLayout
+                android:id="@+id/faqTabLayout"
+                android:layout_width="match_parent"
+                android:layout_height="38dp"
+                android:background="@android:color/transparent"
+                app:tabGravity="fill"
+                app:tabIndicator="@drawable/bg_segmented_tab_indicator"
+                app:tabIndicatorAnimationMode="elastic"
+                app:tabIndicatorColor="@color/purple_primary"
+                app:tabIndicatorFullWidth="true"
+                app:tabIndicatorGravity="stretch"
+                app:tabIndicatorHeight="38dp"
+                app:tabMode="fixed"
+                app:tabRippleColor="@null"
+                app:tabBackground="@drawable/bg_segmented_tab_ripple"
+                app:tabUnboundedRipple="false"
+                app:tabSelectedTextColor="@color/white_color"
+                app:tabTextColor="@color/primary_text_color" />
+        </FrameLayout>
+
+        <!-- SECTION 1: GESTURES GUIDE -->
+        <LinearLayout
+            android:id="@+id/layoutGestures"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:visibility="visible">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Жесты в видеоплеере"
+                android:textColor="@color/primary_text_color"
+                android:textSize="14sp"
+                android:fontFamily="@font/open_sans_bold"
+                android:layout_marginBottom="8dp"
+                android:layout_marginStart="4dp"/>
+
+            <!-- Item 1: Double Tap -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_m3_item_top"
+                android:padding="14dp"
+                android:gravity="top"
+                android:layout_marginBottom="3dp">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_gesture_double_tap"
+                    app:tint="@color/purple_primary"
+                    android:layout_marginEnd="12dp"
+                    android:layout_marginTop="2dp"/>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Двойное касание (±10 сек)"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="14.5sp"
+                        android:fontFamily="@font/open_sans_bold"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Быстрая перемотка назад или вперед. Нажмите дважды в левой части экрана для перемотки назад, или в правой — вперед."
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans"
+                        android:layout_marginTop="2dp"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Item 2: Horizontal Seek -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_m3_item_middle"
+                android:padding="14dp"
+                android:gravity="top"
+                android:layout_marginBottom="3dp">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_gesture_swipe_horizontal"
+                    app:tint="@color/purple_primary"
+                    android:layout_marginEnd="12dp"
+                    android:layout_marginTop="2dp"/>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Точная перемотка (Свайп)"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="14.5sp"
+                        android:fontFamily="@font/open_sans_bold"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Плавный свайп влево или вправо по экрану плеера перемещает таймлайн в любую точку видео с предпросмотром времени."
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans"
+                        android:layout_marginTop="2dp"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Item 3: Hold to Speed -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_m3_item_middle"
+                android:padding="14dp"
+                android:gravity="top"
+                android:layout_marginBottom="3dp">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_gesture_hold"
+                    app:tint="@color/purple_primary"
+                    android:layout_marginEnd="12dp"
+                    android:layout_marginTop="2dp"/>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Зажатие экрана (Hold to Speed)"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="14.5sp"
+                        android:fontFamily="@font/open_sans_bold"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Удерживайте палец на видео для ускоренного воспроизведения (2.0x). Сдвигайте палец влево/вправо при удержании для точной настройки."
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans"
+                        android:layout_marginTop="2dp"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Item 4: Brightness & Volume -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_m3_item_middle"
+                android:padding="14dp"
+                android:gravity="top"
+                android:layout_marginBottom="3dp">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_brightness"
+                    app:tint="@color/purple_primary"
+                    android:layout_marginEnd="12dp"
+                    android:layout_marginTop="2dp"/>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Яркость и Громкость"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="14.5sp"
+                        android:fontFamily="@font/open_sans_bold"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Вертикальный свайп вверх/вниз в левой части экрана меняет яркость, а в правой части — громкость звука."
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans"
+                        android:layout_marginTop="2dp"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Item 5: Swipe Up Episodes -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_m3_item_middle"
+                android:padding="14dp"
+                android:gravity="top"
+                android:layout_marginBottom="3dp">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_gesture_swipe_up"
+                    app:tint="@color/purple_primary"
+                    android:layout_marginEnd="12dp"
+                    android:layout_marginTop="2dp"/>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Шторка эпизодов"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="14.5sp"
+                        android:fontFamily="@font/open_sans_bold"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Свайп снизу вверх внизу экрана открывает панель выбора серий прямо во время просмотра."
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans"
+                        android:layout_marginTop="2dp"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Item 6: Edge Swipe Right -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_m3_item_bottom"
+                android:padding="14dp"
+                android:gravity="top">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_gesture_edge_swipe"
+                    app:tint="@color/purple_primary"
+                    android:layout_marginEnd="12dp"
+                    android:layout_marginTop="2dp"/>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Боковые панели (Драг справа)"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="14.5sp"
+                        android:fontFamily="@font/open_sans_bold"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Свайп от правого края в верхней половине экрана открывает комментарии, а в нижней половине — список озвучек и плееров."
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans"
+                        android:layout_marginTop="2dp"/>
+                </LinearLayout>
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- SECTION 2: COPYRIGHT & LEGAL INFO -->
+        <LinearLayout
+            android:id="@+id/layoutCopyright"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:visibility="gone">
+
+            <!-- Card 1: Authorship & Resources -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_m3_item_top"
+                android:padding="16dp"
+                android:layout_marginBottom="3dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="6dp">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:src="@drawable/ic_copyright"
+                        app:tint="@color/purple_primary"
+                        android:layout_marginEnd="10dp"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Авторство и ресурсы"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="15sp"
+                        android:fontFamily="@font/open_sans_bold"/>
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Приложение AnimeLib является сторонним неофициальным клиентом. Все права на контент, бренд, логотипы, товарные знаки, сайт animelib.org и его API принадлежат их законным владельцам (ООО «Мангалиб»)."
+                    android:textColor="@color/accent_text_color"
+                    android:textSize="13sp"
+                    android:fontFamily="@font/open_sans"
+                    android:lineSpacingExtra="2dp"/>
+            </LinearLayout>
+
+            <!-- Card 2: Disclaimer -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_m3_item_middle"
+                android:padding="16dp"
+                android:layout_marginBottom="3dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="6dp">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:src="@drawable/ic_disclaimer"
+                        app:tint="@color/purple_primary"
+                        android:layout_marginEnd="10dp"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Отказ от ответственности"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="15sp"
+                        android:fontFamily="@font/open_sans_bold"/>
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Приложение создано исключительно в ознакомительных целях. Разработчик приложения не несёт ответственности за контент, предоставляемый сторонними ресурсами и сервисом animelib.org, а также за использование их публичного API."
+                    android:textColor="@color/accent_text_color"
+                    android:textSize="13sp"
+                    android:fontFamily="@font/open_sans"
+                    android:lineSpacingExtra="2dp"/>
+            </LinearLayout>
+
+            <!-- Card 3: Content usage -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_m3_item_bottom"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="6dp">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:src="@drawable/ic_api_nodes"
+                        app:tint="@color/purple_primary"
+                        android:layout_marginEnd="10dp"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Использование API и контента"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="15sp"
+                        android:fontFamily="@font/open_sans_bold"/>
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Приложение не распространяет защищённый авторским правом контент напрямую, а использует публично доступный функционал сайта animelib.org и его API для отображения каталога, личных закладок, комментариев и воспроизведения плееров."
+                    android:textColor="@color/accent_text_color"
+                    android:textSize="13sp"
+                    android:fontFamily="@font/open_sans"
+                    android:lineSpacingExtra="2dp"/>
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

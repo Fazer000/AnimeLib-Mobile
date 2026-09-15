@@ -3,6 +3,7 @@ package com.example.animelib.managers;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.animation.AccelerateInterpolator;
 import android.view.animation.AnticipateInterpolator;
@@ -11,6 +12,7 @@ import android.view.animation.OvershootInterpolator;
 import android.widget.ImageButton;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -116,7 +118,11 @@ public class EpisodesManager {
     public void setPortraitEpisodesRecyclerView(RecyclerView portraitRv) {
         this.portraitEpisodesRecyclerView = portraitRv;
         if (this.portraitEpisodesRecyclerView != null) {
+            this.portraitEpisodesRecyclerView.setHasFixedSize(true);
+            this.portraitEpisodesRecyclerView.setItemAnimator(null);
+            this.portraitEpisodesRecyclerView.setItemViewCacheSize(20);
             this.portraitEpisodesRecyclerView.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false));
+            setupTouchInterception(this.portraitEpisodesRecyclerView);
             updateEpisodesRecyclerView();
         }
     }
@@ -170,6 +176,10 @@ public class EpisodesManager {
     private void setupEpisodesRecyclerView() {
         if (episodesRecyclerView == null) return;
 
+        episodesRecyclerView.setHasFixedSize(true);
+        episodesRecyclerView.setItemAnimator(null);
+        episodesRecyclerView.setItemViewCacheSize(20);
+
         episodesAdapter = new HorizontalEpisodesAdapter(episodes, currentEpisode, true, episode -> {
             if (episodeSelectionCallback != null) {
                 episodeSelectionCallback.onEpisodeSelected(episode, true);
@@ -180,6 +190,34 @@ public class EpisodesManager {
         LinearLayoutManager layoutManager = new LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false);
         episodesRecyclerView.setLayoutManager(layoutManager);
         episodesRecyclerView.setAdapter(episodesAdapter);
+        setupTouchInterception(episodesRecyclerView);
+    }
+
+    /**
+     * Предотвращает перехват касаний родительскими контейнерами (например, NestedScrollView) во время перетаскивания карусели.
+     */
+    private void setupTouchInterception(RecyclerView rv) {
+        if (rv == null) return;
+        rv.addOnItemTouchListener(new RecyclerView.SimpleOnItemTouchListener() {
+            @Override
+            public boolean onInterceptTouchEvent(@NonNull RecyclerView rv, @NonNull MotionEvent e) {
+                switch (e.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                    case MotionEvent.ACTION_MOVE:
+                        if (rv.getParent() != null) {
+                            rv.getParent().requestDisallowInterceptTouchEvent(true);
+                        }
+                        break;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        if (rv.getParent() != null) {
+                            rv.getParent().requestDisallowInterceptTouchEvent(false);
+                        }
+                        break;
+                }
+                return false;
+            }
+        });
     }
 
     /**
@@ -520,6 +558,9 @@ public class EpisodesManager {
                             
                             // Обновляем RecyclerView с информацией о закладке
                             updateEpisodesRecyclerView();
+                            if (bookmarkLoadedListener != null) {
+                                bookmarkLoadedListener.onBookmarkLoaded(animeBookmark);
+                            }
                         }
                     });
                 }
@@ -750,6 +791,20 @@ public class EpisodesManager {
         return bookmarkManager;
     }
     
+    public interface OnBookmarkLoadedListener {
+        void onBookmarkLoaded(com.example.animelib.models.AnimeBookmarkResponse.BookmarkData bookmarkData);
+    }
+
+    private OnBookmarkLoadedListener bookmarkLoadedListener;
+
+    public void setOnBookmarkLoadedListener(OnBookmarkLoadedListener listener) {
+        this.bookmarkLoadedListener = listener;
+    }
+
+    public com.example.animelib.models.AnimeBookmarkResponse.BookmarkData getAnimeBookmark() {
+        return animeBookmark;
+    }
+
     /**
      * Обновляет закладку в адаптере
      */
@@ -760,6 +815,9 @@ public class EpisodesManager {
         }
         if (portraitEpisodesAdapter != null) {
             portraitEpisodesAdapter.setAnimeBookmark(bookmark);
+        }
+        if (bookmarkLoadedListener != null) {
+            bookmarkLoadedListener.onBookmarkLoaded(bookmark);
         }
     }
 
