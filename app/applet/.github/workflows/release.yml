@@ -2,9 +2,9 @@ name: Build Release
 
 on:
   push:
-    branches: [ main ]
+    branches: [ dev, main ]
   pull_request:
-    branches: [ main ]
+    branches: [ dev, main ]
   workflow_dispatch:
 
 concurrency:
@@ -16,8 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      GH_PAT: ${{ secrets.GH_PAT }}
 
     steps:
     - name: Checkout code
@@ -84,10 +82,9 @@ jobs:
           app/build/outputs/apk/debug/*.apk
 
     - name: Create or Update GitHub Release
-      if: github.ref == 'refs/heads/main'
+      if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
-        token: ${{ secrets.GH_PAT != '' && secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         tag_name: release
         name: Beta v0.0.0
         draft: false
