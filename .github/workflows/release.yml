@@ -102,29 +102,7 @@ jobs:
       if: github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: ${{ steps.versioning.outputs.tag_name }}
-        name: Release ${{ steps.versioning.outputs.tag_name }}
-        draft: false
-        prerelease: false
-        overwrite: true
-        make_latest: true
-        files: |
-          app/build/outputs/apk/release/*.apk
-          app/build/outputs/apk/debug/*.apk
-          app/build/outputs/bundle/release/*.aab
-
-    - name: Check PAT Secret for Repo
-      if: github.ref == 'refs/heads/main' && env.GH_PAT == ''
-      run: |
-        echo "::warning::Секрет GH_PAT не настроен! Автоматический деплой в репозиторий (AnimeLib-Mobile) требует Personal Access Token."
-        echo "Для исправления добавьте GH_PAT в Settings -> Secrets and variables -> Actions вашего репозитория AnimeLib-Mobile."
-
-    - name: Create GitHub Release in AnimeLib-Mobile Repo
-      if: github.ref == 'refs/heads/main' && env.GH_PAT != ''
-      uses: softprops/action-gh-release@v2
-      with:
-        repository: Fazer000/AnimeLib-Mobile
-        token: ${{ secrets.GH_PAT }}
+        token: ${{ secrets.GH_PAT != '' && secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         tag_name: ${{ steps.versioning.outputs.tag_name }}
         name: Release ${{ steps.versioning.outputs.tag_name }}
         draft: false
