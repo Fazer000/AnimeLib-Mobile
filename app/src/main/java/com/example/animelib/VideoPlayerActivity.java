@@ -1784,7 +1784,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 playerAnimeInfoController.hideSkeletons(animeTitle);
             }
             if (portraitStatusDropdownButton != null) {
-                portraitStatusDropdownButton.setVisibility(View.GONE);
+                portraitStatusDropdownButton.setVisibility(View.VISIBLE);
             }
         });
     }
@@ -1822,7 +1822,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 portraitRelatedTitlesContainer.setVisibility(View.GONE);
             }
             if (portraitStatusDropdownButton != null) {
-                portraitStatusDropdownButton.setVisibility(View.GONE);
+                portraitStatusDropdownButton.setVisibility(View.VISIBLE);
             }
             if (playerAnimeInfoController != null) {
                 playerAnimeInfoController.setOfflineMode(true);
@@ -4104,7 +4104,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             ivPortraitVoiceoverChevron.setVisibility(View.GONE);
         }
         if (portraitStatusDropdownButton != null) {
-            portraitStatusDropdownButton.setVisibility(View.GONE);
+            portraitStatusDropdownButton.setVisibility(View.VISIBLE);
         }
         if (playerAnimeInfoController != null) {
             playerAnimeInfoController.setOfflineMode(true);
@@ -5230,6 +5230,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     public void updatePortraitWatchStatusUI(Object statusId) {
         this.currentWatchStatusId = statusId;
+        if (portraitStatusDropdownButton != null) {
+            portraitStatusDropdownButton.setVisibility(View.VISIBLE);
+        }
         com.example.animelib.models.WatchStatusItem item = com.example.animelib.managers.WatchStatusManager.getStatusById(statusId);
         if (tvPortraitStatus == null) return;
 

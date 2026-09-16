@@ -118,14 +118,14 @@
                     android:id="@+id/currentTeamName"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="@color/dt_accent_text_color"
+                    android:textColor="#E0E0E0"
                     android:textSize="12sp"
                     android:text="Dream Cast"/>
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="@color/dt_accent_text_color"
+                    android:textColor="#E0E0E0"
                     android:textSize="12sp"
                     android:layout_marginHorizontal="10dp"
                     android:text="—"/>
@@ -134,7 +134,7 @@
                     android:id="@+id/currentEpisodeNumber"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="@color/dt_accent_text_color"
+                    android:textColor="#E0E0E0"
                     android:textSize="12sp"
                     android:text="1 серия"/>
 
@@ -142,7 +142,7 @@
                     android:id="@+id/currentEpisodeName"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="@color/dt_accent_text_color"
+                    android:textColor="#E0E0E0"
                     android:textSize="12sp"
                     android:text=""/>
             </LinearLayout>
