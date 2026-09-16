@@ -1701,6 +1701,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     private com.example.animelib.data.entity.DownloadedEpisodeEntity getCurrentOfflineEpisode() {
+        com.example.animelib.data.entity.DownloadedEpisodeEntity activeDownloaded = getDownloadedEpisodeForActive();
+        if (activeDownloaded != null) {
+            return activeDownloaded;
+        }
         if (!isOfflineMode) return null;
         EpisodesListResponse.EpisodeItem cur = episodesManager != null ? episodesManager.getCurrentEpisode() : null;
         if (cur != null) {
@@ -1938,6 +1942,24 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private void updatePortraitVoiceoverPlayerUI() {
         safeRunOnUiThread(() -> {
             if (tvPortraitVoiceover == null || tvPortraitPlayer == null) return;
+            com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+            boolean isPlayingDownloaded = isOfflineMode || isPlayingDownloadedVideo() ||
+                    (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists() &&
+                     (currentVideoUrl == null || currentVideoUrl.startsWith("file:") || currentVideoUrl.startsWith("/") || isDownloadedQuality(preferredQuality)));
+
+            if (isPlayingDownloaded && downloadedEp != null) {
+                String voiceoverName = downloadedEp.getTeamName() != null && !downloadedEp.getTeamName().trim().isEmpty()
+                        ? downloadedEp.getTeamName().trim() : getOfflineVoiceoverName();
+                String playerTypeName = downloadedEp.getPlayerType() != null && !downloadedEp.getPlayerType().trim().isEmpty()
+                        ? (downloadedEp.getPlayerType().substring(0, 1).toUpperCase() + downloadedEp.getPlayerType().substring(1))
+                        : getOfflinePlayerTypeName();
+
+                SkeletonHelper.hideSkeleton(tvPortraitVoiceover, voiceoverName);
+                SkeletonHelper.hideSkeleton(tvPortraitPlayer, playerTypeName);
+                com.example.animelib.util.ItemAnimationUtils.animateTextChange(tvPortraitVoiceover);
+                return;
+            }
+
             if (isOfflineMode) {
                 SkeletonHelper.hideSkeleton(tvPortraitVoiceover, getOfflineVoiceoverName());
                 SkeletonHelper.hideSkeleton(tvPortraitPlayer, getOfflinePlayerTypeName());
@@ -3006,6 +3028,16 @@ public class VideoPlayerActivity extends AppCompatActivity {
             @Override
             public void onPlayersError(String error) {
                 Log.e("VideoPlayer", "Error loading players: " + error);
+                com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+                if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists()) {
+                    Log.d("VideoPlayer", "Online players fetch failed, but episode is downloaded locally: " + downloadedEp.getLocalFilePath());
+                    if (menuLoadingOverlay != null) menuLoadingOverlay.setVisibility(View.GONE);
+                    hideLoading();
+                    EpisodeResponse.PlayerData syntheticData = createSyntheticPlayerDataForDownloaded(downloadedEp);
+                    playersManager.setCurrentPlayerData(syntheticData);
+                    onPlayerSelected(syntheticData);
+                    return;
+                }
                 showVideoErrorDialog("Ошибка загрузки плееров", "Не удалось загрузить список плееров:\n" + error, () -> {
                     EpisodesListResponse.EpisodeItem episode = episodesManager.getCurrentEpisode();
                     if (episode != null) {
@@ -3324,6 +3356,25 @@ public class VideoPlayerActivity extends AppCompatActivity {
             return;
         }
 
+        episodesManager.setCurrentEpisode(episode);
+        com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+        if ((isDownloadedQuality(preferredQuality) || isOfflineMode) && downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists()) {
+            Log.d("VideoPlayer", "Downloaded episode playback directly on episode change.");
+            if (playerCommentsController != null) {
+                playerCommentsController.setCurrentEpisode(episode);
+            }
+            episodesManager.updateEpisodeNavigationButtonsVisibility();
+            episodesManager.updateEpisodesRecyclerView();
+            updateEpisodeHeaderQuick();
+
+            if (menuLoadingOverlay != null) menuLoadingOverlay.setVisibility(View.GONE);
+            hideLoading();
+            EpisodeResponse.PlayerData syntheticData = createSyntheticPlayerDataForDownloaded(downloadedEp);
+            playersManager.setCurrentPlayerData(syntheticData);
+            onPlayerSelected(syntheticData);
+            return;
+        }
+
         // Show loading and load players for this episode
         runOnUiThread(() -> {
             showLoading("Загрузка плееров для эпизода...");
@@ -3350,6 +3401,15 @@ public class VideoPlayerActivity extends AppCompatActivity {
             return playerDownloadController.getDownloadedEpisodeForActive(animeId, episodesManager, playersManager, localPath);
         }
         return null;
+    }
+
+    private EpisodeResponse.PlayerData createSyntheticPlayerDataForDownloaded(com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp) {
+        EpisodeResponse.PlayerData pd = new EpisodeResponse.PlayerData();
+        pd.setPlayer(downloadedEp.getPlayerType() != null ? downloadedEp.getPlayerType() : "animelib");
+        EpisodeResponse.Team team = new EpisodeResponse.Team();
+        team.setName(downloadedEp.getTeamName() != null ? downloadedEp.getTeamName() : "Офлайн");
+        pd.setTeam(team);
+        return pd;
     }
 
     private List<String> getQualitiesWithDownloadedOption(List<String> onlineQualities) {
@@ -4611,7 +4671,15 @@ public class VideoPlayerActivity extends AppCompatActivity {
      */
     private void updateEpisodeHeaderQuick() {
         safeRunOnUiThread(() -> {
-            if (isOfflineMode) {
+            com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+            boolean isPlayingDownloaded = isOfflineMode || isPlayingDownloadedVideo() ||
+                    (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists() &&
+                     (currentVideoUrl == null || currentVideoUrl.startsWith("file:") || currentVideoUrl.startsWith("/") || isDownloadedQuality(preferredQuality)));
+
+            if (isPlayingDownloaded && downloadedEp != null) {
+                hideAllSkeletonsForOffline();
+                return;
+            } else if (isOfflineMode) {
                 hideAllSkeletonsForOffline();
                 return;
             }
@@ -4621,6 +4689,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
             
             String tm = (currentPlayerData != null && currentPlayerData.getTeam() != null)
                     ? currentPlayerData.getTeam().getName() : null;
+            if (downloadedEp != null && isPlayingDownloadedVideo()) {
+                tm = downloadedEp.getTeamName();
+            }
             String ep = (currentEpisode != null) ? currentEpisode.getNumber() : null;
             String rawEm = (currentEpisode != null && currentEpisode.getName() != null && !Objects.equals(currentEpisode.getName(), ""))
                     ? currentEpisode.getName() : null;

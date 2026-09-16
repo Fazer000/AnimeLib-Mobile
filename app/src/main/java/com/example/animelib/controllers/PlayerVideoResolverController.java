@@ -73,7 +73,7 @@ public class PlayerVideoResolverController {
         boolean isAutoAnimelib = com.example.animelib.util.AutoQualityHelper.isAutoQuality(prefQualAnimelib);
         boolean isDownloadedAnimelib = com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(prefQualAnimelib);
 
-        if (isAutoAnimelib || isDownloadedAnimelib || prefQualAnimelib == null || prefQualAnimelib.isEmpty()) {
+        if (isAutoAnimelib || isDownloadedAnimelib || prefQualAnimelib == null || prefQualAnimelib.isEmpty() || playerData == null || playerData.getVideo() == null) {
             DownloadedEpisodeEntity downloadedEp = provider.getDownloadedEpisodeForActive();
             if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
                 File file = new File(downloadedEp.getLocalFilePath());
@@ -186,7 +186,7 @@ public class PlayerVideoResolverController {
         boolean isAutoKodik = com.example.animelib.util.AutoQualityHelper.isAutoQuality(prefQualKodik);
         boolean isDownloadedKodik = com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(prefQualKodik);
 
-        if (isAutoKodik || isDownloadedKodik || prefQualKodik == null || prefQualKodik.isEmpty()) {
+        if (isAutoKodik || isDownloadedKodik || prefQualKodik == null || prefQualKodik.isEmpty() || playerData == null || playerData.getSrc() == null) {
             DownloadedEpisodeEntity downloadedEp = provider.getDownloadedEpisodeForActive();
             if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
                 File file = new File(downloadedEp.getLocalFilePath());
