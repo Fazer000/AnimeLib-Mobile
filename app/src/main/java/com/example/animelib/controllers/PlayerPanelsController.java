@@ -128,6 +128,7 @@ public class PlayerPanelsController {
                     applyPlayerSidePanelTransform(1f);
                     if (menuOverlay != null) {
                         menuOverlay.setVisibility(View.VISIBLE);
+                        menuOverlay.setAlpha(1f);
                     }
                     PlayersManager pm = callback.getPlayersManager();
                     if (pm != null) {
@@ -140,6 +141,7 @@ public class PlayerPanelsController {
                     applyPlayerSidePanelTransform(0f);
                     if (menuOverlay != null) {
                         menuOverlay.setVisibility(View.GONE);
+                        menuOverlay.setAlpha(0f);
                     }
                     PlayersManager pm = callback.getPlayersManager();
                     if (pm != null) {
@@ -151,10 +153,14 @@ public class PlayerPanelsController {
                 public void onPanelSliding(float slideOffset) {
                     applyPlayerSidePanelTransform(1f - slideOffset);
                     if (menuOverlay != null) {
-                        if (slideOffset < 1f && menuOverlay.getVisibility() != View.VISIBLE) {
-                            menuOverlay.setVisibility(View.VISIBLE);
-                        } else if (slideOffset >= 1f && menuOverlay.getVisibility() != View.GONE) {
+                        if (slideOffset < 1f) {
+                            if (menuOverlay.getVisibility() != View.VISIBLE) {
+                                menuOverlay.setVisibility(View.VISIBLE);
+                            }
+                            menuOverlay.setAlpha(1f - slideOffset);
+                        } else {
                             menuOverlay.setVisibility(View.GONE);
+                            menuOverlay.setAlpha(0f);
                         }
                     }
                 }
@@ -184,6 +190,7 @@ public class PlayerPanelsController {
                     applyPlayerSidePanelTransform(1f);
                     if (menuOverlay != null) {
                         menuOverlay.setVisibility(View.VISIBLE);
+                        menuOverlay.setAlpha(1f);
                     }
                 }
 
@@ -192,6 +199,7 @@ public class PlayerPanelsController {
                     applyPlayerSidePanelTransform(0f);
                     if (menuOverlay != null) {
                         menuOverlay.setVisibility(View.GONE);
+                        menuOverlay.setAlpha(0f);
                     }
                     CommentsManager cm = callback.getCommentsManager();
                     if (cm != null) {
@@ -203,10 +211,14 @@ public class PlayerPanelsController {
                 public void onPanelSliding(float slideOffset) {
                     applyPlayerSidePanelTransform(1f - slideOffset);
                     if (menuOverlay != null) {
-                        if (slideOffset < 1f && menuOverlay.getVisibility() != View.VISIBLE) {
-                            menuOverlay.setVisibility(View.VISIBLE);
-                        } else if (slideOffset >= 1f && menuOverlay.getVisibility() != View.GONE) {
+                        if (slideOffset < 1f) {
+                            if (menuOverlay.getVisibility() != View.VISIBLE) {
+                                menuOverlay.setVisibility(View.VISIBLE);
+                            }
+                            menuOverlay.setAlpha(1f - slideOffset);
+                        } else {
                             menuOverlay.setVisibility(View.GONE);
+                            menuOverlay.setAlpha(0f);
                         }
                     }
                 }

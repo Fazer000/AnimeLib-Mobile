@@ -5,17 +5,20 @@ import android.content.Context;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.animation.Interpolator;
 import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.interpolator.view.animation.FastOutSlowInInterpolator;
 
 /**
  * Кастомная панель с возможностью drag-to-dismiss справа налево
  */
 public class DraggableSidePanel extends FrameLayout {
     private static final float COLLAPSE_THRESHOLD = 0.3f;
-    private static final int ANIMATION_DURATION = 250;
+    private static final int ANIMATION_DURATION = 300;
+    private static final Interpolator BOTTOM_SHEET_INTERPOLATOR = new FastOutSlowInInterpolator();
     
     private View dragView; // Основная панель (slidingMenuPanel или commentsPanel)
     private View dragZone; // Зона для перетаскивания
@@ -315,15 +318,18 @@ public class DraggableSidePanel extends FrameLayout {
         }
         
         float panelWidth = getPanelWidth();
+        float currentX = animatedView.getTranslationX();
+        float remainingRatio = panelWidth > 0 ? Math.abs(currentX) / panelWidth : 1f;
+        long duration = Math.max(150, Math.min(ANIMATION_DURATION, (long) (ANIMATION_DURATION * remainingRatio)));
         
         animatedView.animate()
             .translationX(0f)
-            .setDuration(ANIMATION_DURATION)
-            .setInterpolator(new android.view.animation.DecelerateInterpolator(2.5f))
+            .setDuration(duration)
+            .setInterpolator(BOTTOM_SHEET_INTERPOLATOR)
             .setUpdateListener(animation -> {
                 if (listener != null && panelWidth > 0) {
-                    float currentX = animatedView.getTranslationX();
-                    float slideOffset = currentX / panelWidth;
+                    float curX = animatedView.getTranslationX();
+                    float slideOffset = curX / panelWidth;
                     listener.onPanelSliding(Math.max(0f, Math.min(1f, slideOffset)));
                 }
             })
@@ -337,7 +343,7 @@ public class DraggableSidePanel extends FrameLayout {
             })
             .start();
     }
-    
+
     public void forceClose() {
         isOpen = false;
         clearPendingCallbacks();
@@ -402,15 +408,18 @@ public class DraggableSidePanel extends FrameLayout {
         }
         
         float targetX = getPanelWidth();
+        float currentX = animatedView.getTranslationX();
+        float remainingRatio = targetX > 0 ? Math.abs(targetX - currentX) / targetX : 1f;
+        long duration = Math.max(150, Math.min(ANIMATION_DURATION, (long) (ANIMATION_DURATION * remainingRatio)));
 
         animatedView.animate()
             .translationX(targetX)
-            .setDuration(ANIMATION_DURATION)
-            .setInterpolator(new android.view.animation.DecelerateInterpolator(1.5f))
+            .setDuration(duration)
+            .setInterpolator(BOTTOM_SHEET_INTERPOLATOR)
             .setUpdateListener(animation -> {
                 if (listener != null && targetX > 0) {
-                    float currentX = animatedView.getTranslationX();
-                    float slideOffset = currentX / targetX;
+                    float curX = animatedView.getTranslationX();
+                    float slideOffset = curX / targetX;
                     listener.onPanelSliding(Math.max(0f, Math.min(1f, slideOffset)));
                 }
             })
