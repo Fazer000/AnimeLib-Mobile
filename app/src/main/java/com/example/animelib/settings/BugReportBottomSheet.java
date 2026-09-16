@@ -18,6 +18,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 
 import com.example.animelib.R;
+import com.example.animelib.util.CustomToast;
 import com.example.animelib.util.FlexibleBottomSheetDialog;
 import com.example.animelib.util.FloatingBottomSheetUtils;
 import com.google.android.material.button.MaterialButton;
@@ -125,7 +126,7 @@ public class BugReportBottomSheet extends FlexibleBottomSheetDialog {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     getContext().startActivity(intent);
                 } catch (Exception e) {
-                    Toast.makeText(getContext(), "Не удалось открыть браузер: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    CustomToast.showWarning(getContext(), "Не удалось открыть браузер");
                 }
             });
         }
@@ -140,10 +141,10 @@ public class BugReportBottomSheet extends FlexibleBottomSheetDialog {
                     ClipData clip = ClipData.newPlainText("Bug Report", markdownBody);
                     if (clipboard != null) {
                         clipboard.setPrimaryClip(clip);
-                        Toast.makeText(getContext(), "Отчет скопирован в буфер обмена", Toast.LENGTH_SHORT).show();
+                        CustomToast.showSuccess(getContext(), "Отчет скопирован в буфер обмена");
                     }
                 } catch (Exception e) {
-                    Toast.makeText(getContext(), "Ошибка копирования: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    CustomToast.showWarning(getContext(), "Ошибка копирования отчета");
                 }
             });
         }

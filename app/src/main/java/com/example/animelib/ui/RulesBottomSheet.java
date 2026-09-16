@@ -102,7 +102,7 @@ public class RulesBottomSheet extends FlexibleBottomSheetDialog {
             public void onError(String error) {
                 Log.e(TAG, "Failed to load rules: " + error);
                 if (pbRulesLoading != null) pbRulesLoading.setVisibility(View.GONE);
-                showError(error);
+                showError("Ошибка загрузки правил");
             }
         });
     }

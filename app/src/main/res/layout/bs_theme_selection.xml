@@ -76,6 +76,14 @@
                 android:clickable="true"
                 android:focusable="true">
 
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:src="@drawable/ic_auto"
+                    app:tint="@color/primary_text_color"
+                    android:layout_marginEnd="14dp"
+                    android:contentDescription="Auto theme"/>
+
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
@@ -125,6 +133,14 @@
                 android:clickable="true"
                 android:focusable="true">
 
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:src="@drawable/ic_light"
+                    app:tint="@color/primary_text_color"
+                    android:layout_marginEnd="14dp"
+                    android:contentDescription="Light theme"/>
+
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
@@ -172,6 +188,14 @@
                 android:background="@drawable/bg_m3_item_bottom"
                 android:clickable="true"
                 android:focusable="true">
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:src="@drawable/ic_night"
+                    app:tint="@color/primary_text_color"
+                    android:layout_marginEnd="14dp"
+                    android:contentDescription="Dark theme"/>
 
                 <TextView
                     android:layout_width="0dp"

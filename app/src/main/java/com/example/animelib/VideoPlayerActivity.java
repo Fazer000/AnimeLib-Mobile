@@ -2993,7 +2993,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             @Override
             public void onEpisodesError(String error) {
                 Log.e("VideoPlayer", "Error loading episodes: " + error);
-                showVideoErrorDialog("Ошибка загрузки озвучек", "Не удалось загрузить список эпизодов и озвучек:\n" + error, () -> {
+                showVideoErrorDialog("Ошибка загрузки озвучек", "Не удалось загрузить список эпизодов и озвучек.", error, () -> {
                     if (currentAnimeId != null) {
                         loadEpisodes(currentAnimeId);
                     }
@@ -3038,7 +3038,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     onPlayerSelected(syntheticData);
                     return;
                 }
-                showVideoErrorDialog("Ошибка загрузки плееров", "Не удалось загрузить список плееров:\n" + error, () -> {
+                showVideoErrorDialog("Ошибка загрузки плееров", "Не удалось загрузить список плееров.", error, () -> {
                     EpisodesListResponse.EpisodeItem episode = episodesManager.getCurrentEpisode();
                     if (episode != null) {
                         playersManager.loadPlayersForEpisode(episode.getId());
@@ -5320,7 +5320,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
                         @Override
                         public void onError(String error) {
-                            CustomToast.showWarning(VideoPlayerActivity.this, "Ошибка: " + error);
+                            CustomToast.showWarning(VideoPlayerActivity.this, "Не удалось изменить статус просмотра");
                         }
                     });
                 });

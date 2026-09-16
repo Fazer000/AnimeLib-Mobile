@@ -4,4 +4,5 @@
     <item name="tag_skeleton_active" type="id" />
     <item name="tag_skeleton_color" type="id" />
     <item name="tag_skeleton_bg" type="id" />
+    <item name="tag_skeleton_image_drawable" type="id" />
 </resources>

@@ -756,7 +756,7 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
                 if (isAdded() && getActivity() != null) {
                     getActivity().runOnUiThread(() -> {
                         if (pbLoading != null) pbLoading.setVisibility(View.GONE);
-                        showErrorAlertDialog("Ошибка загрузки озвучек", "Не удалось загрузить список серий и озвучек:\n" + error, () -> fetchEpisodesFromApi());
+                        showErrorAlertDialog("Ошибка загрузки озвучек", "Не удалось загрузить список серий и озвучек.", () -> fetchEpisodesFromApi());
                     });
                 }
             }

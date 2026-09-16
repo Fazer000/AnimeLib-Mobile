@@ -107,95 +107,111 @@ public class SkeletonHelper {
     }
 
     /**
-     * Показывает скелетон-анимацию на TextView
+     * Показывает скелетон-анимацию на TextView или любом другом View (ImageView, etc.)
      */
-    public static void showSkeleton(TextView textView) {
-        showSkeleton(textView, 100);
+    public static void showSkeleton(android.view.View view) {
+        showSkeleton(view, 100, 8f);
     }
 
-    public static void showSkeleton(TextView textView, int minWidthDp) {
-        if (textView == null) return;
+    public static void showSkeleton(android.view.View view, int minWidthDp) {
+        showSkeleton(view, minWidthDp, 8f);
+    }
+
+    public static void showSkeleton(android.view.View view, int minWidthDp, float cornerRadiusDp) {
+        if (view == null) return;
 
         // Если скелетон уже запущен, пропускаем
-        if (Boolean.TRUE.equals(textView.getTag(R.id.tag_skeleton_active))) {
+        if (Boolean.TRUE.equals(view.getTag(R.id.tag_skeleton_active))) {
             return;
         }
 
-        boolean isDark = CustomToast.isDarkTheme(textView.getContext());
+        boolean isDark = CustomToast.isDarkTheme(view.getContext());
 
-        // Сохраняем исходные цвет текста и фон
-        textView.setTag(R.id.tag_skeleton_color, textView.getCurrentTextColor());
-        textView.setTag(R.id.tag_skeleton_bg, textView.getBackground());
-        textView.setTag(R.id.tag_skeleton_active, true);
+        view.setTag(R.id.tag_skeleton_bg, view.getBackground());
+        view.setTag(R.id.tag_skeleton_active, true);
 
-        // Устанавливаем минимальную ширину
-        float density = textView.getResources().getDisplayMetrics().density;
+        if (view instanceof TextView) {
+            TextView tv = (TextView) view;
+            tv.setTag(R.id.tag_skeleton_color, tv.getCurrentTextColor());
+            tv.setTextColor(android.graphics.Color.TRANSPARENT);
+
+            CharSequence currentText = tv.getText();
+            if (currentText == null || currentText.length() == 0) {
+                tv.setText("                      ");
+            }
+        } else if (view instanceof android.widget.ImageView) {
+            android.widget.ImageView iv = (android.widget.ImageView) view;
+            iv.setTag(R.id.tag_skeleton_image_drawable, iv.getDrawable());
+            iv.setImageDrawable(null);
+        }
+
+        float density = view.getResources().getDisplayMetrics().density;
         int minPx = Math.round(minWidthDp * density);
-        if (textView.getWidth() < minPx) {
-            textView.setMinimumWidth(minPx);
+        if (view.getWidth() < minPx && minWidthDp > 0) {
+            view.setMinimumWidth(minPx);
         }
 
-        // Применяем анимацию мерцающего фона и прозрачность для текста
-        SkeletonShimmerDrawable drawable = new SkeletonShimmerDrawable(8f, isDark);
-        textView.setBackground(drawable);
-        textView.setTextColor(android.graphics.Color.TRANSPARENT);
-
-        // Если текст пустой, устанавливаем пробелы для заполнености скелетона по высоте/ширине
-        CharSequence currentText = textView.getText();
-        if (currentText == null || currentText.length() == 0) {
-            textView.setText("                      ");
-        }
+        SkeletonShimmerDrawable drawable = new SkeletonShimmerDrawable(cornerRadiusDp, isDark);
+        view.setBackground(drawable);
     }
 
-    public static void showSkeletons(TextView... textViews) {
-        if (textViews == null) return;
-        for (TextView tv : textViews) {
-            showSkeleton(tv);
+    public static void showSkeletons(android.view.View... views) {
+        if (views == null) return;
+        for (android.view.View v : views) {
+            showSkeleton(v);
         }
     }
 
     /**
-     * Скрывает скелетон и устанавливает финальный текст на TextView
+     * Скрывает скелетон и восстанавливает исходное состояние View
      */
-    public static void hideSkeleton(TextView textView, CharSequence actualText) {
-        if (textView == null) return;
+    public static void hideSkeleton(android.view.View view, CharSequence actualText) {
+        if (view == null) return;
 
-        if (!Boolean.TRUE.equals(textView.getTag(R.id.tag_skeleton_active))) {
-            if (actualText != null) {
-                textView.setText(actualText);
+        if (!Boolean.TRUE.equals(view.getTag(R.id.tag_skeleton_active))) {
+            if (view instanceof TextView && actualText != null) {
+                ((TextView) view).setText(actualText);
             }
             return;
         }
 
-        Drawable bg = textView.getBackground();
+        Drawable bg = view.getBackground();
         if (bg instanceof SkeletonShimmerDrawable) {
             ((SkeletonShimmerDrawable) bg).stopAnimation();
         }
 
         // Восстанавливаем фон
-        Object origBg = textView.getTag(R.id.tag_skeleton_bg);
+        Object origBg = view.getTag(R.id.tag_skeleton_bg);
         if (origBg instanceof Drawable) {
-            textView.setBackground((Drawable) origBg);
+            view.setBackground((Drawable) origBg);
         } else {
-            textView.setBackground(null);
+            view.setBackground(null);
         }
 
-        // Восстанавливаем цвет текста
-        Object origColor = textView.getTag(R.id.tag_skeleton_color);
-        if (origColor instanceof Integer) {
-            textView.setTextColor((Integer) origColor);
-        } else {
-            textView.setTextColor(0xFFFFFFFF);
+        if (view instanceof TextView) {
+            TextView tv = (TextView) view;
+            Object origColor = tv.getTag(R.id.tag_skeleton_color);
+            if (origColor instanceof Integer) {
+                tv.setTextColor((Integer) origColor);
+            } else {
+                tv.setTextColor(0xFFFFFFFF);
+            }
+            tv.setText(actualText != null ? actualText : "");
+        } else if (view instanceof android.widget.ImageView) {
+            android.widget.ImageView iv = (android.widget.ImageView) view;
+            Object origImg = iv.getTag(R.id.tag_skeleton_image_drawable);
+            if (origImg instanceof Drawable) {
+                iv.setImageDrawable((Drawable) origImg);
+            }
         }
 
         // Сбрасываем минимальную ширину и активный флаг
-        textView.setMinimumWidth(0);
-        textView.setTag(R.id.tag_skeleton_active, false);
+        view.setMinimumWidth(0);
+        view.setTag(R.id.tag_skeleton_active, false);
 
-        // Плавно подставляем текст с короткой анимацией альфа
-        textView.setAlpha(0.2f);
-        textView.setText(actualText != null ? actualText : "");
-        textView.animate()
+        // Плавно подставляем текст или рисунок с короткой анимацией альфа
+        view.setAlpha(0.2f);
+        view.animate()
                 .alpha(1.0f)
                 .setDuration(220)
                 .start();

@@ -1,7 +1,11 @@
 package com.example.animelib.ui;
 
 import android.content.Context;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
 import android.view.View;
 
@@ -58,5 +62,25 @@ public class SiteSelectionBottomSheet extends FlexibleBottomSheetDialog {
 
         setCancelable(true);
         setCanceledOnTouchOutside(true);
+
+        triggerVibration();
+    }
+
+    private void triggerVibration() {
+        try {
+            Vibrator v = (Vibrator) getContext().getSystemService(Context.VIBRATOR_SERVICE);
+            if (v != null && v.hasVibrator()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v.vibrate(VibrationEffect.createOneShot(40, VibrationEffect.DEFAULT_AMPLITUDE));
+                } else {
+                    v.vibrate(40);
+                }
+            }
+        } catch (Exception ignored) {}
+        try {
+            if (getWindow() != null && getWindow().getDecorView() != null) {
+                getWindow().getDecorView().performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+            }
+        } catch (Exception ignored) {}
     }
 }

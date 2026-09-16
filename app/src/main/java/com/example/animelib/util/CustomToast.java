@@ -300,7 +300,8 @@ public class CustomToast {
         ImageView iconView = toastView.findViewById(R.id.customToastIcon);
         TextView textView = toastView.findViewById(R.id.customToastText);
 
-        textView.setText(message);
+        String displayMessage = formatUserFriendlyMessage(message);
+        textView.setText(displayMessage);
         textView.setMaxWidth(Math.max(maxToastWidth - reservedPadding, 120));
 
         ViewGroup.LayoutParams lp;
@@ -544,6 +545,89 @@ public class CustomToast {
             context = ((ContextWrapper) context).getBaseContext();
         }
         return null;
+    }
+
+    public static String formatUserFriendlyMessage(String rawMessage) {
+        if (rawMessage == null) return "Ошибка загрузки";
+        String trimmed = rawMessage.trim();
+        if (trimmed.isEmpty()) return "Ошибка загрузки";
+
+        String lower = trimmed.toLowerCase();
+
+        boolean isTechnical = lower.contains("server error")
+                || lower.contains("request error")
+                || lower.contains("parse error")
+                || lower.contains("http ")
+                || lower.contains("404")
+                || lower.contains("500")
+                || lower.contains("502")
+                || lower.contains("503")
+                || lower.contains("504")
+                || lower.contains("exception")
+                || lower.contains("failed to connect")
+                || lower.contains("unknownhost")
+                || lower.contains("sockettimeout")
+                || lower.contains("connectexception")
+                || lower.contains("timeout")
+                || lower.contains("json")
+                || lower.contains("nullpointer")
+                || lower.contains("network error")
+                || lower.startsWith("ошибка сети:")
+                || lower.startsWith("ошибка сервера:")
+                || lower.startsWith("ошибка обработки:")
+                || lower.startsWith("ошибка запроса:")
+                || lower.startsWith("ошибка:");
+
+        if (!isTechnical) {
+            return trimmed;
+        }
+
+        if (lower.contains("comment") || lower.contains("коммент")) {
+            if (lower.contains("отправк") || lower.contains("публикац") || lower.contains("post")) {
+                return "Ошибка публикации комментария";
+            } else if (lower.contains("сохран") || lower.contains("редакт") || lower.contains("edit")) {
+                return "Ошибка сохранения комментария";
+            } else if (lower.contains("удал") || lower.contains("delete")) {
+                return "Ошибка удаления комментария";
+            } else if (lower.contains("оцен") || lower.contains("лайк") || lower.contains("like") || lower.contains("vote")) {
+                return "Не удалось оценить комментарий";
+            }
+            return "Ошибка загрузки комментариев";
+        }
+
+        if (lower.contains("episod") || lower.contains("эпизод") || lower.contains("сери")) {
+            return "Ошибка загрузки эпизодов";
+        }
+
+        if (lower.contains("player") || lower.contains("плеер") || lower.contains("озвуч")) {
+            return "Ошибка загрузки плееров";
+        }
+
+        if (lower.contains("anime") || lower.contains("аниме") || lower.contains("title") || lower.contains("тайтл")) {
+            return "Ошибка загрузки данных аниме";
+        }
+
+        if (lower.contains("rule") || lower.contains("правил")) {
+            return "Ошибка загрузки правил";
+        }
+
+        if (lower.contains("status") || lower.contains("статус")) {
+            return "Не удалось изменить статус просмотра";
+        }
+
+        if (lower.contains("bookmark") || lower.contains("закладк")) {
+            return "Не удалось сохранить закладку";
+        }
+
+        if (lower.contains("apk") || lower.contains("скачиван") || lower.contains("download") || lower.contains("обновлен")) {
+            return "Ошибка загрузки обновления";
+        }
+
+        if (lower.contains("игнор") || lower.contains("пользовател")) {
+            return "Не удалось выполнить действие с пользователем";
+        }
+
+        return "Ошибка соединения с сервером";
     }
 
     private static int autoDetectType(String message) {

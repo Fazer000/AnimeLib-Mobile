@@ -976,20 +976,20 @@ public class CommentsManager {
 
                     if (!hasComments) {
                         if (commentsErrorLayout != null) {
-                            if (tvCommentsErrorText != null && error != null && !error.isEmpty()) {
-                                tvCommentsErrorText.setText(error);
+                            if (tvCommentsErrorText != null) {
+                                tvCommentsErrorText.setText("Ошибка загрузки комментариев");
                             }
                             commentsErrorLayout.setVisibility(View.VISIBLE);
                         }
                         if (portraitCommentsErrorLayout != null) {
-                            if (tvPortraitCommentsErrorText != null && error != null && !error.isEmpty()) {
-                                tvPortraitCommentsErrorText.setText(error);
+                            if (tvPortraitCommentsErrorText != null) {
+                                tvPortraitCommentsErrorText.setText("Ошибка загрузки комментариев");
                             }
                             portraitCommentsErrorLayout.setVisibility(View.VISIBLE);
                         }
                     }
                     
-                    CustomToast.showWarning(context, error);
+                    CustomToast.showWarning(context, "Ошибка загрузки комментариев");
                     
                     // Уведомить об ошибке
                     if (dataCallback != null) {
@@ -1431,7 +1431,7 @@ public class CommentsManager {
                 @Override
                 public void onError(String error) {
                     safeRunOnUiThread(() -> {
-                        CustomToast.showWarning(context, error);
+                        CustomToast.showWarning(context, "Ошибка сохранения комментария");
                     });
                 }
             });
@@ -1473,7 +1473,7 @@ public class CommentsManager {
             @Override
             public void onError(String error) {
                 safeRunOnUiThread(() -> {
-                    CustomToast.showWarning(context, error);
+                    CustomToast.showWarning(context, "Ошибка публикации комментария");
                 });
             }
         });
@@ -1518,7 +1518,7 @@ public class CommentsManager {
             @Override
             public void onError(String error) {
                 safeRunOnUiThread(() -> {
-                    CustomToast.showWarning(context, error);
+                    CustomToast.showWarning(context, "Ошибка отправки ответа");
                 });
             }
         });
@@ -1580,7 +1580,7 @@ public class CommentsManager {
             @Override
             public void onError(String error) {
                 safeRunOnUiThread(() -> {
-                    CustomToast.showWarning(context, error);
+                    CustomToast.showWarning(context, "Не удалось оценить комментарий");
                 });
             }
         });

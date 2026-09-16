@@ -187,7 +187,7 @@ public class UpdateActivity extends AppCompatActivity {
                     btnDownload.setText("СКАЧАТЬ И УСТАНОВИТЬ APK");
                     progressDownload.setVisibility(View.GONE);
                     tvDownloadStatus.setText(" Ошибка скачивания");
-                    CustomToast.showWarning(UpdateActivity.this, "Ошибка скачивания: " + e.getMessage());
+                    CustomToast.showWarning(UpdateActivity.this, "Ошибка скачивания обновления");
                 });
             }
 
@@ -200,7 +200,7 @@ public class UpdateActivity extends AppCompatActivity {
                         btnDownload.setText("СКАЧАТЬ И УСТАНОВИТЬ APK");
                         progressDownload.setVisibility(View.GONE);
                         tvDownloadStatus.setText("Ошибка сервера HTTP " + response.code());
-                        CustomToast.showWarning(UpdateActivity.this, " Ошибка загрузки APK (" + response.code() + ")");
+                        CustomToast.showWarning(UpdateActivity.this, "Ошибка загрузки обновления");
                     });
                     return;
                 }
@@ -281,7 +281,7 @@ public class UpdateActivity extends AppCompatActivity {
                         btnDownload.setText("СКАЧАТЬ И УСТАНОВИТЬ APK");
                         progressDownload.setVisibility(View.GONE);
                         tvDownloadStatus.setText(" Ошибка сохранения файла");
-                        CustomToast.showWarning(UpdateActivity.this, "Ошибка сохранения файла: " + e.getMessage());
+                        CustomToast.showWarning(UpdateActivity.this, "Ошибка сохранения файла обновления");
                     });
                 }
             }
@@ -303,7 +303,7 @@ public class UpdateActivity extends AppCompatActivity {
             startActivity(intent);
         } catch (Exception e) {
             Log.e(TAG, "Failed to launch package installer", e);
-            CustomToast.showWarning(this, "Не удалось запустить установку: " + e.getMessage());
+            CustomToast.showWarning(this, "Не удалось запустить установку обновления");
         }
     }
 
