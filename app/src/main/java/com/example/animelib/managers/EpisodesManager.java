@@ -2,13 +2,19 @@ package com.example.animelib.managers;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.animation.AccelerateInterpolator;
 import android.view.animation.AnticipateInterpolator;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.OvershootInterpolator;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.TextView;
 
@@ -19,6 +25,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.example.animelib.adapters.HorizontalEpisodesAdapter;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.models.EpisodesListResponse;
+import com.example.animelib.util.CustomToast;
 import com.example.animelib.util.DensityUtils;
 
 import java.util.ArrayList;
@@ -41,6 +48,7 @@ public class EpisodesManager {
     private View episodesMenuPanel;
     private ImageButton episodesMenuButton;
     private RecyclerView episodesRecyclerView;
+    private View landscapeEpisodesContainer;
     private TextView episodesCountText;
     private ImageButton prevEpisodeButton;
     private ImageButton nextEpisodeButton;
@@ -55,6 +63,7 @@ public class EpisodesManager {
     private HorizontalEpisodesAdapter episodesAdapter;
     private RecyclerView portraitEpisodesRecyclerView;
     private HorizontalEpisodesAdapter portraitEpisodesAdapter;
+    private View portraitSearchContainer;
     private boolean hasInitialScrolledLandscape = false;
     private boolean hasInitialScrolledPortrait = false;
 
@@ -121,10 +130,23 @@ public class EpisodesManager {
             this.portraitEpisodesRecyclerView.setHasFixedSize(true);
             this.portraitEpisodesRecyclerView.setItemAnimator(null);
             this.portraitEpisodesRecyclerView.setItemViewCacheSize(20);
+            this.portraitEpisodesRecyclerView.setHorizontalFadingEdgeEnabled(true);
+            this.portraitEpisodesRecyclerView.setFadingEdgeLength(dpToPx(40));
             this.portraitEpisodesRecyclerView.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false));
             setupTouchInterception(this.portraitEpisodesRecyclerView);
             updateEpisodesRecyclerView();
         }
+    }
+
+    public void setLandscapeEpisodesContainer(View container) {
+        this.landscapeEpisodesContainer = container;
+    }
+
+    private View getLandscapeEpisodesView() {
+        if (landscapeEpisodesContainer != null) {
+            return landscapeEpisodesContainer;
+        }
+        return episodesRecyclerView;
     }
 
     /**
@@ -179,6 +201,8 @@ public class EpisodesManager {
         episodesRecyclerView.setHasFixedSize(true);
         episodesRecyclerView.setItemAnimator(null);
         episodesRecyclerView.setItemViewCacheSize(20);
+        episodesRecyclerView.setHorizontalFadingEdgeEnabled(true);
+        episodesRecyclerView.setFadingEdgeLength(dpToPx(40));
 
         episodesAdapter = new HorizontalEpisodesAdapter(episodes, currentEpisode, true, episode -> {
             if (episodeSelectionCallback != null) {
@@ -236,6 +260,181 @@ public class EpisodesManager {
     }
 
     /**
+     * Настройка поиска серии для портретного режима
+     */
+    public void setupPortraitSearchViews(View searchBtn, EditText inputEt) {
+        if (searchBtn != null && searchBtn.getParent() instanceof View) {
+            this.portraitSearchContainer = (View) searchBtn.getParent();
+            updatePortraitSearchVisibility();
+        }
+        setupSearchUI(searchBtn, inputEt);
+    }
+
+    private void updatePortraitSearchVisibility() {
+        if (portraitSearchContainer != null) {
+            portraitSearchContainer.setVisibility((episodes != null && !episodes.isEmpty()) ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    /**
+     * Настройка поиска серии для альбомного режима
+     */
+    public void setupLandscapeSearchViews(View searchBtn, EditText inputEt) {
+        setupSearchUI(searchBtn, inputEt);
+    }
+
+    /**
+     * Настройка функционала поиска серии по номеру (кнопка 38x38 заменяется на инпут)
+     */
+    public void setupSearchUI(View searchBtn, EditText inputEt) {
+        if (searchBtn == null || inputEt == null) return;
+
+        searchBtn.setOnClickListener(v -> {
+            searchBtn.setVisibility(View.GONE);
+            inputEt.setVisibility(View.VISIBLE);
+            inputEt.setText("");
+            inputEt.requestFocus();
+            showKeyboard(inputEt);
+        });
+
+        inputEt.setOnFocusChangeListener((v, hasFocus) -> {
+            if (!hasFocus) {
+                inputEt.setVisibility(View.GONE);
+                searchBtn.setVisibility(View.VISIBLE);
+                hideKeyboard(inputEt);
+            }
+        });
+
+        inputEt.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (s != null && s.length() > 0) {
+                    scrollToEpisodeNumber(s.toString().trim(), false);
+                }
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {}
+        });
+
+        inputEt.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_ACTION_DONE
+                    || (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_DOWN)) {
+                String query = inputEt.getText().toString().trim();
+                if (!query.isEmpty()) {
+                    boolean found = scrollToEpisodeNumber(query, true);
+                    if (found) {
+                        inputEt.clearFocus();
+                        inputEt.setVisibility(View.GONE);
+                        searchBtn.setVisibility(View.VISIBLE);
+                        hideKeyboard(inputEt);
+                    } else {
+                        CustomToast.showWarning(context, "Серия №" + query + " не найдена");
+                    }
+                } else {
+                    inputEt.clearFocus();
+                    inputEt.setVisibility(View.GONE);
+                    searchBtn.setVisibility(View.VISIBLE);
+                    hideKeyboard(inputEt);
+                }
+                return true;
+            }
+            return false;
+        });
+    }
+
+    /**
+     * Прокрутка и выбор серии по введённому номеру
+     */
+    public boolean scrollToEpisodeNumber(String queryNumber, boolean autoSelect) {
+        if (episodes == null || episodes.isEmpty() || queryNumber == null || queryNumber.isEmpty()) return false;
+
+        int foundIndex = -1;
+        // 1. Точное совпадение по номеру
+        for (int i = 0; i < episodes.size(); i++) {
+            EpisodesListResponse.EpisodeItem item = episodes.get(i);
+            if (item != null && item.getNumber() != null) {
+                String num = item.getNumber().trim();
+                if (num.equalsIgnoreCase(queryNumber)) {
+                    foundIndex = i;
+                    break;
+                }
+            }
+        }
+
+        // 2. Если не найдено, ищем по числовому значению
+        if (foundIndex == -1) {
+            try {
+                int parsedTarget = Integer.parseInt(queryNumber);
+                for (int i = 0; i < episodes.size(); i++) {
+                    EpisodesListResponse.EpisodeItem item = episodes.get(i);
+                    if (item != null && item.getNumber() != null) {
+                        try {
+                            int num = Integer.parseInt(item.getNumber().trim());
+                            if (num == parsedTarget) {
+                                foundIndex = i;
+                                break;
+                            }
+                        } catch (NumberFormatException ignored) {}
+                    }
+                }
+            } catch (NumberFormatException ignored) {}
+        }
+
+        // 3. Если не найдено, ищем по совпадению с начала
+        if (foundIndex == -1) {
+            for (int i = 0; i < episodes.size(); i++) {
+                EpisodesListResponse.EpisodeItem item = episodes.get(i);
+                if (item != null && item.getNumber() != null && item.getNumber().trim().startsWith(queryNumber)) {
+                    foundIndex = i;
+                    break;
+                }
+            }
+        }
+
+        if (foundIndex != -1) {
+            final int indexToScroll = foundIndex;
+            EpisodesListResponse.EpisodeItem foundEpisode = episodes.get(indexToScroll);
+
+            // Прокручиваем активные RecyclerView
+            if (portraitEpisodesRecyclerView != null && portraitEpisodesRecyclerView.getLayoutManager() instanceof LinearLayoutManager) {
+                ((LinearLayoutManager) portraitEpisodesRecyclerView.getLayoutManager()).scrollToPositionWithOffset(indexToScroll, 0);
+            }
+            if (episodesRecyclerView != null && episodesRecyclerView.getLayoutManager() instanceof LinearLayoutManager) {
+                ((LinearLayoutManager) episodesRecyclerView.getLayoutManager()).scrollToPositionWithOffset(indexToScroll, 0);
+            }
+
+            if (autoSelect && foundEpisode != null) {
+                if (episodeSelectionCallback != null) {
+                    episodeSelectionCallback.onEpisodeSelected(foundEpisode, true);
+                }
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    private void showKeyboard(View view) {
+        if (view == null || context == null) return;
+        InputMethodManager imm = (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT);
+        }
+    }
+
+    private void hideKeyboard(View view) {
+        if (view == null || context == null) return;
+        InputMethodManager imm = (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
+        }
+    }
+
+    /**
      * Переключение видимости меню эпизодов
      */
     public void toggleEpisodesMenu() {
@@ -260,11 +459,18 @@ public class EpisodesManager {
             playerControlsCallback.onPlayerControlsAutoHideChanged(false);
         }
 
-        // Сначала показываем RecyclerView с анимацией появления
-        episodesRecyclerView.setVisibility(View.VISIBLE);
-        episodesRecyclerView.setAlpha(0f);
-        episodesRecyclerView.setScaleX(0.95f);
-        episodesRecyclerView.setScaleY(0.95f);
+        View targetView = getLandscapeEpisodesView();
+
+        // Сначала показываем View с анимацией появления
+        if (targetView != null) {
+            targetView.setVisibility(View.VISIBLE);
+            targetView.setAlpha(0f);
+            targetView.setScaleX(0.95f);
+            targetView.setScaleY(0.95f);
+        }
+        if (episodesRecyclerView != null) {
+            episodesRecyclerView.setVisibility(View.VISIBLE);
+        }
 
         // Анимация для playersControlBar - подъем с "пружинным" эффектом
         Log.d(TAG, "EpisodesManager: Animating playersControlBar translationY to: 0px (opened)");
@@ -274,13 +480,15 @@ public class EpisodesManager {
                 .setInterpolator(new OvershootInterpolator(0.6f)) // Пружинный эффект
                 .withStartAction(() -> {
                     // Параллельная анимация появления списка эпизодов
-                    episodesRecyclerView.animate()
-                            .alpha(1f)
-                            .scaleX(1f)
-                            .scaleY(1f)
-                            .setDuration(250)
-                            .setInterpolator(new DecelerateInterpolator())
-                            .start();
+                    if (targetView != null) {
+                        targetView.animate()
+                                .alpha(1f)
+                                .scaleX(1f)
+                                .scaleY(1f)
+                                .setDuration(250)
+                                .setInterpolator(new DecelerateInterpolator())
+                                .start();
+                    }
                 })
                 .withEndAction(() -> {
                     if (visibilityCallback != null) {
@@ -301,8 +509,10 @@ public class EpisodesManager {
         Log.d(TAG, "Hiding episodes horizontal list - lowering playersControlBar");
         isEpisodesMenuVisible = false;
 
+        View targetView = getLandscapeEpisodesView();
+
         if (isPortrait()) {
-            episodesRecyclerView.setVisibility(View.GONE);
+            if (targetView != null) targetView.setVisibility(View.GONE);
             playersControlBar.animate().cancel();
             playersControlBar.setTranslationY(0f);
             updateEpisodeNavigationButtonsVisibility();
@@ -318,17 +528,19 @@ public class EpisodesManager {
         }
 
         // Анимация исчезновения списка эпизодов
-        episodesRecyclerView.animate()
-                .alpha(0f)
-                .scaleX(0.95f)
-                .scaleY(0.95f)
-                .setDuration(150)
-                .setInterpolator(new AccelerateInterpolator())
-                .withEndAction(() -> {
-                    // Устанавливаем INVISIBLE чтобы сохранить место в layout
-                    episodesRecyclerView.setVisibility(View.INVISIBLE);
-                })
-                .start();
+        if (targetView != null) {
+            targetView.animate()
+                    .alpha(0f)
+                    .scaleX(0.95f)
+                    .scaleY(0.95f)
+                    .setDuration(150)
+                    .setInterpolator(new AccelerateInterpolator())
+                    .withEndAction(() -> {
+                        // Устанавливаем INVISIBLE чтобы сохранить место в layout
+                        targetView.setVisibility(View.INVISIBLE);
+                    })
+                    .start();
+        }
 
         // Анимация для playersControlBar - опускание с "антиципацией"
         Log.d(TAG, "EpisodesManager: Animating playersControlBar translationY to: " + getClosedTranslationY() + "px (closed)");
@@ -627,6 +839,8 @@ public class EpisodesManager {
                 scrollToCurrentEpisode();
             }
         }
+
+        updatePortraitSearchVisibility();
     }
     
     /**
@@ -945,14 +1159,18 @@ public class EpisodesManager {
         // Ограничиваем progress от 0.0 до 1.0
         progress = Math.max(0f, Math.min(1f, progress));
         
+        View targetView = getLandscapeEpisodesView();
+        if (targetView == null) targetView = episodesRecyclerView;
+
         // Показываем элементы если progress > 0
-        if (progress > 0f && episodesRecyclerView.getVisibility() != View.VISIBLE) {
-            episodesRecyclerView.setVisibility(View.VISIBLE);
+        if (progress > 0f) {
+            targetView.setVisibility(View.VISIBLE);
+            if (episodesRecyclerView != null) episodesRecyclerView.setVisibility(View.VISIBLE);
         }
         
         // Останавливаем текущие анимации
         playersControlBar.animate().cancel();
-        episodesRecyclerView.animate().cancel();
+        targetView.animate().cancel();
         
         // Вычисляем смещение: 
         // progress = 0 (закрыто): translationY = totalOffsetPx (опущено вниз)
@@ -962,16 +1180,17 @@ public class EpisodesManager {
         playersControlBar.setTranslationY(translationY);
         
         // Обновляем прозрачность и масштаб списка эпизодов
-        episodesRecyclerView.setAlpha(progress);
-        episodesRecyclerView.setScaleX(0.95f + 0.05f * progress);
-        episodesRecyclerView.setScaleY(0.95f + 0.05f * progress);
+        targetView.setAlpha(progress);
+        targetView.setScaleX(0.95f + 0.05f * progress);
+        targetView.setScaleY(0.95f + 0.05f * progress);
         
         // НЕ используем GONE - это ломает layout!
         // Используем INVISIBLE чтобы сохранить место в layout
-        if (progress == 0f && episodesRecyclerView.getVisibility() == View.VISIBLE) {
-            episodesRecyclerView.setVisibility(View.INVISIBLE);
-        } else if (progress > 0f && episodesRecyclerView.getVisibility() == View.INVISIBLE) {
-            episodesRecyclerView.setVisibility(View.VISIBLE);
+        if (progress == 0f && targetView.getVisibility() == View.VISIBLE) {
+            targetView.setVisibility(View.INVISIBLE);
+        } else if (progress > 0f && targetView.getVisibility() == View.INVISIBLE) {
+            targetView.setVisibility(View.VISIBLE);
+            if (episodesRecyclerView != null) episodesRecyclerView.setVisibility(View.VISIBLE);
         }
         
         Log.d(TAG, "Episodes drag progress: " + progress + ", translationY: " + translationY + 
@@ -986,9 +1205,12 @@ public class EpisodesManager {
         
         Log.d(TAG, "Complete episodes drag: shouldOpen=" + shouldOpen + ", current isVisible=" + isEpisodesMenuVisible);
         
+        View targetView = getLandscapeEpisodesView();
+        if (targetView == null) targetView = episodesRecyclerView;
+
         // Отменяем текущие анимации
         playersControlBar.animate().cancel();
-        episodesRecyclerView.animate().cancel();
+        targetView.animate().cancel();
         
         if (shouldOpen) {
             // Открываем панель
@@ -1000,7 +1222,8 @@ public class EpisodesManager {
             }
             
             // Показываем RecyclerView если скрыт
-            if (episodesRecyclerView.getVisibility() != View.VISIBLE) {
+            targetView.setVisibility(View.VISIBLE);
+            if (episodesRecyclerView != null) {
                 episodesRecyclerView.setVisibility(View.VISIBLE);
             }
             
@@ -1016,7 +1239,7 @@ public class EpisodesManager {
                     })
                     .start();
             
-            episodesRecyclerView.animate()
+            targetView.animate()
                     .alpha(1f)
                     .scaleX(1f)
                     .scaleY(1f)
@@ -1034,15 +1257,16 @@ public class EpisodesManager {
                 playerControlsCallback.onPlayerControlsAutoHideChanged(true);
             }
             
+            View finalTarget = targetView;
             // Анимация к закрытому состоянию
-            episodesRecyclerView.animate()
+            targetView.animate()
                     .alpha(0f)
                     .scaleX(0.95f)
                     .scaleY(0.95f)
                     .setDuration(150)
                     .setInterpolator(new AccelerateInterpolator())
                     .withEndAction(() -> {
-                        episodesRecyclerView.setVisibility(View.INVISIBLE);
+                        finalTarget.setVisibility(View.INVISIBLE);
                     })
                     .start();
             
@@ -1084,10 +1308,13 @@ public class EpisodesManager {
             
             updateEpisodeNavigationButtonsVisibility();
             
+            View targetView = getLandscapeEpisodesView();
+            if (targetView == null) targetView = episodesRecyclerView;
+
             // Завершаем анимацию до конечного состояния С АНИМАЦИЕЙ
-            if (playersControlBar != null && episodesRecyclerView != null) {
+            if (playersControlBar != null && targetView != null) {
                 playersControlBar.animate().cancel();
-                episodesRecyclerView.animate().cancel();
+                targetView.animate().cancel();
                 
                 // Анимируем к конечным значениям
                 playersControlBar.animate()
@@ -1096,8 +1323,11 @@ public class EpisodesManager {
                     .setInterpolator(new DecelerateInterpolator())
                     .start();
                 
-                episodesRecyclerView.setVisibility(View.VISIBLE);
-                episodesRecyclerView.animate()
+                targetView.setVisibility(View.VISIBLE);
+                if (episodesRecyclerView != null) {
+                    episodesRecyclerView.setVisibility(View.VISIBLE);
+                }
+                targetView.animate()
                     .alpha(1f)
                     .scaleX(1f)
                     .scaleY(1f)

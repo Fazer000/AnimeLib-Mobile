@@ -501,14 +501,73 @@
         </FrameLayout>
 
         <!-- Episodes List (hidden by default) -->
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/episodesHorizontalRecyclerView"
+        <LinearLayout
+            android:id="@+id/landscapeEpisodesContainer"
             android:layout_width="match_parent"
             android:layout_height="52dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
             android:layout_marginBottom="8dp"
-            android:paddingHorizontal="20dp"
-            android:clipToPadding="false"
-            android:fadeScrollbars="true" />
+            android:clipChildren="true"
+            android:clipToPadding="true"
+            android:visibility="gone">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/episodesHorizontalRecyclerView"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_weight="1"
+                android:layout_gravity="center_vertical"
+                android:paddingStart="20dp"
+                android:paddingEnd="0dp"
+                android:clipToPadding="true"
+                android:clipChildren="true"
+                android:fadeScrollbars="true"
+                android:requiresFadingEdge="horizontal"
+                android:fadingEdgeLength="40dp" />
+
+            <!-- Фиксированная квадратная кнопка поиска 38dp x 38dp справа от карусели -->
+            <FrameLayout
+                android:id="@+id/landscapeSearchContainer"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_gravity="center_vertical"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="16dp"
+                android:background="@drawable/player_episode_item_horizontal_normal">
+
+                <!-- Иконка поиска -->
+                <ImageView
+                    android:id="@+id/btnLandscapeEpisodeSearch"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:padding="9dp"
+                    android:src="@drawable/ic_search"
+                    app:tint="@color/white_color"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Поиск серии"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <!-- Числовой инпут прямо внутри фиксированной 38x38 кнопки -->
+                <EditText
+                    android:id="@+id/etLandscapeEpisodeNumber"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:background="@null"
+                    android:hint="№"
+                    android:textColorHint="@color/player_item_inactive_text"
+                    android:textColor="@color/white_color"
+                    android:textSize="13sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:inputType="number"
+                    android:maxLength="3"
+                    android:gravity="center"
+                    android:imeOptions="actionSearch|actionDone"
+                    android:singleLine="true"
+                    android:visibility="gone" />
+            </FrameLayout>
+        </LinearLayout>
 
     </LinearLayout>
 

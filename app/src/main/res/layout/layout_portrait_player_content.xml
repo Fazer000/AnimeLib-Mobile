@@ -144,21 +144,82 @@
                 app:tint="@color/accent_text_color" />
         </LinearLayout>
 
-        <!-- 2. Карусель эпизодов -->
+        <!-- 2. Карусель эпизодов с кнопкой поиска справа -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
             android:layout_marginBottom="16dp">
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/portraitEpisodesRecyclerView"
-                android:layout_width="match_parent"
+            <!-- Карусель с градиентом в правой части от прозрачного к фону -->
+            <FrameLayout
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:paddingHorizontal="16dp"
-                android:clipToPadding="false"
-                android:orientation="horizontal"
-                android:overScrollMode="never" />
+                android:layout_weight="1">
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/portraitEpisodesRecyclerView"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="40dp"
+                    android:clipToPadding="false"
+                    android:orientation="horizontal"
+                    android:overScrollMode="never" />
+
+                <!-- Градиент в правой части карусели от прозрачного к цвету фона -->
+                <View
+                    android:layout_width="40dp"
+                    android:layout_height="match_parent"
+                    android:layout_gravity="end"
+                    android:background="@drawable/bg_carousel_gradient_right"
+                    android:clickable="false"
+                    android:focusable="false" />
+            </FrameLayout>
+
+            <!-- Фиксированная квадратная кнопка поиска 38dp x 38dp справа от карусели -->
+            <FrameLayout
+                android:id="@+id/portraitSearchContainer"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_gravity="center_vertical"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="16dp"
+                android:background="@drawable/player_episode_item_normal"
+                android:visibility="gone">
+
+                <!-- Иконка поиска -->
+                <ImageView
+                    android:id="@+id/btnPortraitEpisodeSearch"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:padding="9dp"
+                    android:src="@drawable/ic_search"
+                    app:tint="@color/accent_text_color"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Поиск серии"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <!-- Числовой инпут прямо внутри фиксированной кнопки 38x38 -->
+                <EditText
+                    android:id="@+id/etPortraitEpisodeNumber"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:background="@null"
+                    android:hint="№"
+                    android:textColorHint="@color/accent_text_color"
+                    android:textColor="@color/primary_text_color"
+                    android:textSize="13sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:inputType="number"
+                    android:maxLength="3"
+                    android:gravity="center"
+                    android:imeOptions="actionSearch|actionDone"
+                    android:singleLine="true"
+                    android:visibility="gone" />
+            </FrameLayout>
         </LinearLayout>
 
         <!-- 3. Название аниме и под ним название серии (Кликабельно для раскрытия информации) -->

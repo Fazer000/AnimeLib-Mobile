@@ -1618,6 +1618,17 @@ public class VideoPlayerActivity extends AppCompatActivity {
         // Initialize episodes manager
         episodesManager.initializeViews(null, episodesMenuButton, episodesHorizontalRecyclerView,
                 null, prevEpisodeButton, nextEpisodeButton, menuOverlay, playersControlBar);
+
+        View landscapeEpisodesContainer = findViewById(R.id.landscapeEpisodesContainer);
+        if (landscapeEpisodesContainer != null) {
+            episodesManager.setLandscapeEpisodesContainer(landscapeEpisodesContainer);
+        }
+
+        View btnLandscapeSearch = findViewById(R.id.btnLandscapeEpisodeSearch);
+        EditText etLandscapeNum = findViewById(R.id.etLandscapeEpisodeNumber);
+        if (btnLandscapeSearch != null && etLandscapeNum != null) {
+            episodesManager.setupLandscapeSearchViews(btnLandscapeSearch, etLandscapeNum);
+        }
         
         // Configure menu width
         float density = getResources().getDisplayMetrics().density;
@@ -1879,6 +1890,12 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         if (episodesManager != null && portraitEpisodesRecyclerView != null) {
             episodesManager.setPortraitEpisodesRecyclerView(portraitEpisodesRecyclerView);
+
+            View btnPortraitSearch = findViewById(R.id.btnPortraitEpisodeSearch);
+            EditText etPortraitNum = findViewById(R.id.etPortraitEpisodeNumber);
+            if (btnPortraitSearch != null && etPortraitNum != null) {
+                episodesManager.setupPortraitSearchViews(btnPortraitSearch, etPortraitNum);
+            }
         }
 
         if (playerCommentsController != null && portraitCommentsRecyclerView != null) {
@@ -5676,14 +5693,22 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     ((ImageButton) menuToggleFullscreenBtn).setImageResource(isPortrait ? R.drawable.ic_fullscreen : R.drawable.ic_fullscreen_exit);
                 }
             }
-            if (episodesHorizontalRecyclerView != null) {
+            View landscapeTargetView = controllerView.findViewById(R.id.landscapeEpisodesContainer);
+            if (landscapeTargetView == null) {
+                landscapeTargetView = episodesHorizontalRecyclerView;
+            }
+
+            if (landscapeTargetView != null) {
                 if (isPortrait) {
-                    episodesHorizontalRecyclerView.setVisibility(View.GONE);
+                    landscapeTargetView.setVisibility(View.GONE);
                 } else {
                     if (episodesManager != null && episodesManager.isEpisodesMenuVisible()) {
-                        episodesHorizontalRecyclerView.setVisibility(View.VISIBLE);
+                        landscapeTargetView.setVisibility(View.VISIBLE);
+                        if (episodesHorizontalRecyclerView != null) {
+                            episodesHorizontalRecyclerView.setVisibility(View.VISIBLE);
+                        }
                     } else {
-                        episodesHorizontalRecyclerView.setVisibility(View.INVISIBLE);
+                        landscapeTargetView.setVisibility(View.INVISIBLE);
                     }
                 }
             }
@@ -5710,8 +5735,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 if (timeAndControlsContainer.getParent() instanceof android.view.ViewGroup) {
                     ((android.view.ViewGroup) timeAndControlsContainer.getParent()).removeView(timeAndControlsContainer);
                 }
-                if (episodesHorizontalRecyclerView != null && episodesHorizontalRecyclerView.getParent() instanceof android.view.ViewGroup) {
-                    ((android.view.ViewGroup) episodesHorizontalRecyclerView.getParent()).removeView(episodesHorizontalRecyclerView);
+                if (landscapeTargetView != null && landscapeTargetView.getParent() instanceof android.view.ViewGroup) {
+                    ((android.view.ViewGroup) landscapeTargetView.getParent()).removeView(landscapeTargetView);
                 }
 
                 if (overlayBadgesContainer != null) {
@@ -5764,8 +5789,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     }
                     playersControlBarView.addView(timeAndControlsContainer);
                     playersControlBarView.addView(exoProgress);
-                    if (episodesHorizontalRecyclerView != null) {
-                        playersControlBarView.addView(episodesHorizontalRecyclerView);
+                    if (landscapeTargetView != null) {
+                        playersControlBarView.addView(landscapeTargetView);
                     }
                 } else {
                     // Landscape: timeAndControlsContainer on top, exoProgress at bottom (same order as portrait)
@@ -5797,8 +5822,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     }
                     playersControlBarView.addView(timeAndControlsContainer);
                     playersControlBarView.addView(exoProgress);
-                    if (episodesHorizontalRecyclerView != null) {
-                        playersControlBarView.addView(episodesHorizontalRecyclerView);
+                    if (landscapeTargetView != null) {
+                        playersControlBarView.addView(landscapeTargetView);
                     }
                 }
 
