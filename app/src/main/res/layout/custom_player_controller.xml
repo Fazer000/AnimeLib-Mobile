@@ -512,7 +512,7 @@
             android:clipToPadding="true"
             android:visibility="gone">
 
-            <androidx.recyclerview.widget.RecyclerView
+            <com.example.animelib.views.RightFadingRecyclerView
                 android:id="@+id/episodesHorizontalRecyclerView"
                 android:layout_width="0dp"
                 android:layout_height="38dp"
@@ -520,7 +520,7 @@
                 android:layout_gravity="center_vertical"
                 android:paddingStart="20dp"
                 android:paddingEnd="0dp"
-                android:clipToPadding="true"
+                android:clipToPadding="false"
                 android:clipChildren="true"
                 android:fadeScrollbars="true"
                 android:requiresFadingEdge="horizontal"

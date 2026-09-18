@@ -163,14 +163,14 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingStart="16dp"
-                    android:paddingEnd="40dp"
+                    android:paddingEnd="8dp"
                     android:clipToPadding="false"
                     android:orientation="horizontal"
                     android:overScrollMode="never" />
 
                 <!-- Градиент в правой части карусели от прозрачного к цвету фона -->
                 <View
-                    android:layout_width="40dp"
+                    android:layout_width="16dp"
                     android:layout_height="match_parent"
                     android:layout_gravity="end"
                     android:background="@drawable/bg_carousel_gradient_right"
