@@ -289,6 +289,8 @@ public class EpisodesManager {
     public void setupSearchUI(View searchBtn, EditText inputEt) {
         if (searchBtn == null || inputEt == null) return;
 
+        inputEt.setImeOptions(EditorInfo.IME_ACTION_SEARCH | EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+
         searchBtn.setOnClickListener(v -> {
             searchBtn.setVisibility(View.GONE);
             inputEt.setVisibility(View.VISIBLE);
