@@ -528,6 +528,18 @@ public class VideoPlayerActivity extends AppCompatActivity {
         bookmarkTimecode = 0;
         savedPlayerPosition = 0;
 
+        if (playerAnimeInfoController != null) {
+            playerAnimeInfoController.collapsePortraitInfo();
+            playerAnimeInfoController.showSkeletons();
+        }
+        if (animeTitleView != null) {
+            SkeletonHelper.showSkeleton(animeTitleView, 160);
+            updatePortraitHeaderTitlesUI();
+        }
+        if (playerCommentsController != null) {
+            playerCommentsController.resetCommentsOnEpisodeChange(true);
+        }
+
         if (localFilePath != null) {
             isOfflineMode = true;
             String animeTitle = intent.getStringExtra("EXTRA_ANIME_TITLE");
@@ -3305,6 +3317,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 currentPosterUrl = playerAnimeInfoController.getCurrentPosterUrl();
             }
         }
+
+        String rus = animeInfo.getData().getRus_name();
+        if (rus == null || rus.isEmpty()) rus = animeInfo.getData().getName();
+        if (rus != null && !rus.isEmpty() && animeTitleView != null) {
+            SkeletonHelper.hideSkeleton(animeTitleView, rus);
+            updatePortraitHeaderTitlesUI();
+        }
     }
 
     private void toggleMenu() {
@@ -5007,18 +5026,29 @@ public class VideoPlayerActivity extends AppCompatActivity {
         String animeSlug = apiService.extractAnimeSlug(url);
         if (animeSlug == null) animeSlug = currentAnimeId;
 
+        if (playerAnimeInfoController != null) {
+            playerAnimeInfoController.showSkeletons();
+        }
+
         apiService.fetchAnimeInfo(animeSlug, new ApiService.AnimeInfoCallback() {
             @Override
             public void onAnimeInfoReceived(AnimeInfoResponse response) {
                 if (response != null && response.getData() != null) {
-                    currentAnimeInfo = response;
-                    Log.d("VideoPlayer", "Fetched anime info for " + response.getData().getRus_name());
+                    safeRunOnUiThread(() -> {
+                        displayAnimeInfo(response);
+                        Log.d("VideoPlayer", "Fetched and displayed anime info for " + response.getData().getRus_name());
+                    });
                 }
             }
 
             @Override
             public void onError(String errorMessage) {
                 Log.w("VideoPlayer", "Failed to fetch anime info in loadAnimeFromUrl: " + errorMessage);
+                safeRunOnUiThread(() -> {
+                    if (playerAnimeInfoController != null && currentAnimeInfo == null) {
+                        playerAnimeInfoController.showError(() -> loadAnimeFromUrl(url));
+                    }
+                });
             }
         });
         
@@ -5354,14 +5384,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
             public void onAnimeInfoReceived(AnimeInfoResponse response) {
                 safeRunOnUiThread(() -> {
                     if (response != null && response.getData() != null) {
-                        currentAnimeInfo = response;
-                        String rus = response.getData().getRus_name();
-                        if (rus == null || rus.isEmpty()) rus = response.getData().getName();
-                        if (rus != null && !rus.isEmpty()) {
-                            SkeletonHelper.hideSkeleton(animeTitleView, rus);
-                            updatePortraitHeaderTitlesUI();
-                        }
-                        Log.d("VideoPlayer", "Full header update: anime title set");
+                        displayAnimeInfo(response);
+                        Log.d("VideoPlayer", "Full header update: anime title and info set");
                     }
                 });
             }

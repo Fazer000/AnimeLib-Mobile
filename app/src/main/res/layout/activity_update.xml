@@ -149,15 +149,17 @@
                 android:minHeight="16dp" />
 
             <!-- Progress & Status -->
-            <ProgressBar
+            <com.example.animelib.ui.M3LinearProgressIndicator
                 android:id="@+id/progressDownload"
-                style="?android:attr/progressBarStyleHorizontal"
                 android:layout_width="match_parent"
-                android:layout_height="12dp"
+                android:layout_height="14dp"
                 android:layout_marginTop="16dp"
                 android:max="100"
                 android:progress="0"
-                android:progressDrawable="@drawable/download_progress_drawable"
+                app:m3TrackHeight="8dp"
+                app:m3GapSize="4dp"
+                app:m3StopDotSize="4dp"
+                app:m3ShowStopDot="true"
                 android:visibility="gone" />
 
             <TextView

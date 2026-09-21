@@ -210,6 +210,34 @@ public class PlayerAnimeInfoController {
         if (tvPortraitInfoEpisodes != null) SkeletonHelper.showSkeleton(tvPortraitInfoEpisodes, 80);
         if (tvPortraitInfoReleaseDate != null) SkeletonHelper.showSkeleton(tvPortraitInfoReleaseDate, 100);
         if (tvPortraitInfoSummary != null) SkeletonHelper.showSkeleton(tvPortraitInfoSummary, 240);
+
+        if (llPortraitAuthorsContainer != null) {
+            llPortraitAuthorsContainer.removeAllViews();
+        }
+        if (hsvPortraitAuthors != null) {
+            hsvPortraitAuthors.setVisibility(View.GONE);
+        }
+        if (cgPortraitInfoTagsAndGenres != null) {
+            cgPortraitInfoTagsAndGenres.removeAllViews();
+            cgPortraitInfoTagsAndGenres.setVisibility(View.GONE);
+        }
+        if (btnToggleSummary != null) {
+            btnToggleSummary.setVisibility(View.GONE);
+        }
+        this.currentAnimeInfo = null;
+        this.currentPosterUrl = "";
+    }
+
+    public void collapsePortraitInfo() {
+        if (portraitExpandedAnimeInfoContainer != null && portraitExpandedAnimeInfoContainer.getVisibility() == View.VISIBLE) {
+            portraitExpandedAnimeInfoContainer.setVisibility(View.GONE);
+            if (portraitTitleContainer != null) {
+                portraitTitleContainer.setVisibility(View.VISIBLE);
+            }
+            if (ivPortraitAnimeTitleChevron != null) {
+                ivPortraitAnimeTitleChevron.setRotation(90f);
+            }
+        }
     }
 
     public void hideSkeletons(String defaultTitle) {

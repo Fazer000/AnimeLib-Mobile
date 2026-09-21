@@ -357,6 +357,13 @@ public class PlayerRelatedTitlesController {
             portraitRelatedTitlesRecyclerView.setVisibility(isPortrait ? View.GONE : View.GONE);
         }
 
+        if (relatedTitlesManager != null) {
+            relatedTitlesManager.updateRelatedTitles(new java.util.ArrayList<>());
+        }
+        if (portraitRelatedTitlesAdapter != null) {
+            portraitRelatedTitlesAdapter.updateData(new java.util.ArrayList<>());
+        }
+
         ApiService apiService = callback != null ? callback.getApiService() : null;
         if (apiService == null) {
             if (portraitRelatedSkeletonContainer != null) {

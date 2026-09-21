@@ -40,7 +40,7 @@ public class UpdateActivity extends AppCompatActivity {
     public static final String EXTRA_UPDATE_INFO = "extra_update_info";
 
     private UpdateInfo updateInfo;
-    private ProgressBar progressDownload;
+    private com.example.animelib.ui.M3LinearProgressIndicator progressDownload;
     private TextView tvDownloadStatus;
     private MaterialButton btnDownload;
     private MaterialButton btnOpenGithub;
