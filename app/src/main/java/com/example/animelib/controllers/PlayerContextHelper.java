@@ -14,7 +14,7 @@ public class PlayerContextHelper {
 
     @NonNull
     public static String getAnimeTitle(@Nullable String currentTitle, @Nullable AnimeInfoResponse animeInfo, @Nullable Intent intent) {
-        if (currentTitle != null && !currentTitle.isEmpty()) {
+        if (currentTitle != null && !currentTitle.isEmpty() && !currentTitle.equals("Аниме") && !currentTitle.equals("—")) {
             return currentTitle;
         }
         if (animeInfo != null && animeInfo.getData() != null) {
@@ -29,7 +29,7 @@ public class PlayerContextHelper {
             String titleAlt = intent.getStringExtra("anime_title");
             if (titleAlt != null && !titleAlt.isEmpty()) return titleAlt;
         }
-        return "Аниме";
+        return (currentTitle != null && !currentTitle.isEmpty()) ? currentTitle : "Аниме";
     }
 
     @Nullable

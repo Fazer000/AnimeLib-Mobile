@@ -17,7 +17,7 @@ import androidx.interpolator.view.animation.FastOutSlowInInterpolator;
  */
 public class DraggableSidePanel extends FrameLayout {
     private static final float COLLAPSE_THRESHOLD = 0.3f;
-    private static final int ANIMATION_DURATION = 300;
+    private static final int ANIMATION_DURATION = 160;
     private static final Interpolator BOTTOM_SHEET_INTERPOLATOR = new FastOutSlowInInterpolator();
     
     private View dragView; // Основная панель (slidingMenuPanel или commentsPanel)
@@ -320,7 +320,7 @@ public class DraggableSidePanel extends FrameLayout {
         float panelWidth = getPanelWidth();
         float currentX = animatedView.getTranslationX();
         float remainingRatio = panelWidth > 0 ? Math.abs(currentX) / panelWidth : 1f;
-        long duration = Math.max(150, Math.min(ANIMATION_DURATION, (long) (ANIMATION_DURATION * remainingRatio)));
+        long duration = Math.max(80, Math.min(ANIMATION_DURATION, (long) (ANIMATION_DURATION * remainingRatio)));
         
         animatedView.animate()
             .translationX(0f)
@@ -410,7 +410,7 @@ public class DraggableSidePanel extends FrameLayout {
         float targetX = getPanelWidth();
         float currentX = animatedView.getTranslationX();
         float remainingRatio = targetX > 0 ? Math.abs(targetX - currentX) / targetX : 1f;
-        long duration = Math.max(150, Math.min(ANIMATION_DURATION, (long) (ANIMATION_DURATION * remainingRatio)));
+        long duration = Math.max(80, Math.min(ANIMATION_DURATION, (long) (ANIMATION_DURATION * remainingRatio)));
 
         animatedView.animate()
             .translationX(targetX)

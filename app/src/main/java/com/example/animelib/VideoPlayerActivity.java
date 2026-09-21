@@ -310,11 +310,76 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     // Buffering monitor for MP4 and HLS streams
     private final Handler bufferingMonitorHandler = new Handler(Looper.getMainLooper());
+    private long bufferingStartTimeMs = 0;
+    private boolean isAutoQualityDowngrading = false;
+
+    private void checkAutoQualityDowngradeOnStalling() {
+        if (isAutoQualityDowngrading || !com.example.animelib.util.AutoQualityHelper.isAutoQuality(preferredQuality) || playersManager == null) {
+            return;
+        }
+
+        List<String> available = playersManager.getAvailableQualities();
+        if (available == null || available.isEmpty()) return;
+
+        EpisodeResponse.PlayerData currentPlayerData = playersManager.getCurrentPlayerData();
+        if (currentPlayerData == null) return;
+
+        int currentRes = 1080;
+        if (currentVideoUrl != null) {
+            if (currentVideoUrl.contains("360")) currentRes = 360;
+            else if (currentVideoUrl.contains("480")) currentRes = 480;
+            else if (currentVideoUrl.contains("720")) currentRes = 720;
+            else if (currentVideoUrl.contains("1080")) currentRes = 1080;
+            else if (currentVideoUrl.contains("2160")) currentRes = 2160;
+        }
+
+        int targetRes = 360;
+        if (currentRes > 1080) targetRes = 720;
+        else if (currentRes > 720) targetRes = 480;
+        else if (currentRes > 480) targetRes = 360;
+        else targetRes = 360;
+
+        String lowerQuality = null;
+        for (String q : available) {
+            if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(q) || com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(q)) continue;
+            int res = com.example.animelib.util.AutoQualityHelper.extractResolution(q);
+            if (res > 0 && res <= targetRes) {
+                if (lowerQuality == null || res > com.example.animelib.util.AutoQualityHelper.extractResolution(lowerQuality)) {
+                    lowerQuality = q;
+                }
+            }
+        }
+
+        if (lowerQuality != null) {
+            String newVideoUrl = resolveUrlForQuality(currentPlayerData, lowerQuality);
+            if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
+                isAutoQualityDowngrading = true;
+                bufferingStartTimeMs = 0;
+                Log.w("VideoPlayer", "Auto Quality: Network stalling detected! Downgrading to " + lowerQuality);
+                CustomToast.showInfo(this, "Медленный интернет: автопереключение на " + lowerQuality);
+                changeQuality(lowerQuality, preferredQuality);
+            }
+        }
+    }
+
     private final Runnable bufferingMonitorRunnable = new Runnable() {
         @Override
         public void run() {
             if (player != null && !isFinishing()) {
                 updatePlayPauseAndLoadingState(false);
+
+                boolean isBuffering = player.getPlayWhenReady() && player.getPlaybackState() == Player.STATE_BUFFERING;
+                if (isBuffering) {
+                    if (bufferingStartTimeMs == 0) {
+                        bufferingStartTimeMs = System.currentTimeMillis();
+                    } else if (System.currentTimeMillis() - bufferingStartTimeMs > 3500) {
+                        checkAutoQualityDowngradeOnStalling();
+                    }
+                } else {
+                    bufferingStartTimeMs = 0;
+                    isAutoQualityDowngrading = false;
+                }
+
                 if (player.getPlayWhenReady() && player.getPlaybackState() != Player.STATE_ENDED) {
                     bufferingMonitorHandler.postDelayed(this, 800);
                 }
@@ -736,7 +801,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
             @Override
             public String getAnimeTitle() {
-                return animeTitleView != null ? animeTitleView.getText().toString() : "Аниме";
+                return com.example.animelib.controllers.PlayerContextHelper.getAnimeTitle(
+                        animeTitleView != null ? animeTitleView.getText().toString() : null,
+                        currentAnimeInfo,
+                        getIntent()
+                );
             }
 
             @Override
@@ -2007,14 +2076,50 @@ public class VideoPlayerActivity extends AppCompatActivity {
         });
     }
 
+    private void ensureAnimeTitleSet() {
+        safeRunOnUiThread(() -> {
+            String currentText = animeTitleView != null ? animeTitleView.getText().toString() : "";
+            boolean isSkeleton = animeTitleView != null && Boolean.TRUE.equals(animeTitleView.getTag(R.id.tag_skeleton_active));
+            
+            if (currentText.isEmpty() || currentText.equals("Аниме") || isSkeleton) {
+                String realTitle = null;
+                if (currentAnimeInfo != null && currentAnimeInfo.getData() != null) {
+                    realTitle = currentAnimeInfo.getData().getRus_name();
+                    if (realTitle == null || realTitle.isEmpty()) {
+                        realTitle = currentAnimeInfo.getData().getName();
+                    }
+                }
+                if ((realTitle == null || realTitle.isEmpty()) && getIntent() != null) {
+                    realTitle = getIntent().getStringExtra("EXTRA_ANIME_TITLE");
+                    if (realTitle == null || realTitle.isEmpty()) {
+                        realTitle = getIntent().getStringExtra("anime_title");
+                    }
+                }
+                if (realTitle != null && !realTitle.isEmpty() && !realTitle.equals("Аниме")) {
+                    if (animeTitleView != null) {
+                        SkeletonHelper.hideSkeleton(animeTitleView, realTitle);
+                    }
+                    updatePortraitHeaderTitlesUI();
+                }
+            }
+        });
+    }
+
     private void updatePortraitHeaderTitlesUI() {
         safeRunOnUiThread(() -> {
             if (tvPortraitAnimeTitle != null) {
                 String animeTitleStr = animeTitleView != null ? animeTitleView.getText().toString() : "";
-                if (animeTitleStr.isEmpty() && getIntent() != null) {
-                    animeTitleStr = getIntent().getStringExtra("EXTRA_ANIME_TITLE");
+                if ((animeTitleStr.isEmpty() || animeTitleStr.equals("Аниме")) && getIntent() != null) {
+                    String extra = getIntent().getStringExtra("EXTRA_ANIME_TITLE");
+                    if (extra == null || extra.isEmpty()) {
+                        extra = getIntent().getStringExtra("anime_title");
+                    }
+                    if (extra != null && !extra.isEmpty()) {
+                        animeTitleStr = extra;
+                    }
                 }
-                if (!isOfflineMode && animeTitleView != null && Boolean.TRUE.equals(animeTitleView.getTag(R.id.tag_skeleton_active))) {
+                if (!isOfflineMode && animeTitleView != null && Boolean.TRUE.equals(animeTitleView.getTag(R.id.tag_skeleton_active))
+                        && (animeTitleStr.isEmpty() || animeTitleStr.equals("Аниме"))) {
                     SkeletonHelper.showSkeleton(tvPortraitAnimeTitle, 180);
                 } else if (animeTitleStr != null && !animeTitleStr.isEmpty()) {
                     SkeletonHelper.hideSkeleton(tvPortraitAnimeTitle, animeTitleStr);
@@ -2521,12 +2626,16 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 isSeeking = false;
                 startBufferingMonitoring();
                 updatePlayPauseAndLoadingState(true);
+                ensureAnimeTitleSet();
             }
 
             @Override
             public void onIsLoadingChanged(boolean isLoading) {
                 startBufferingMonitoring();
                 updatePlayPauseAndLoadingState(true);
+                if (!isLoading) {
+                    ensureAnimeTitleSet();
+                }
             }
 
             @Override
@@ -2542,6 +2651,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                         }
                     }
                     startViewProgressTracking();
+                    ensureAnimeTitleSet();
                 } else {
                     stopViewProgressTracking();
                 }
@@ -3404,6 +3514,14 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     private void stopCurrentPlayback() {
+        if (backgroundPlayer != null) {
+            try {
+                backgroundPlayer.stop();
+                backgroundPlayer.release();
+            } catch (Exception ignored) {}
+            backgroundPlayer = null;
+        }
+        isSeamlessSwitching = false;
         if (player != null) {
             Log.d("VideoPlayer", "Stopping current playback");
             player.stop();
@@ -3508,8 +3626,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 }
 
                 if (!quality.equals(oldQuality) && player != null) {
-                    Log.d("VideoPlayer", "Restarting player with new quality");
-                    restartPlayerWithNewQuality();
+                    Log.d("VideoPlayer", "Changing quality to " + quality);
+                    changeQuality(quality, oldQuality);
                 }
             }
 
@@ -4182,6 +4300,252 @@ public class VideoPlayerActivity extends AppCompatActivity {
         }
     }
 
+    private ExoPlayer backgroundPlayer = null;
+    private boolean isSeamlessSwitching = false;
+    private android.os.Handler seamlessTimeoutHandler = null;
+    private Runnable seamlessTimeoutRunnable = null;
+
+    private void cleanupBackgroundPlayer() {
+        if (seamlessTimeoutHandler != null && seamlessTimeoutRunnable != null) {
+            seamlessTimeoutHandler.removeCallbacks(seamlessTimeoutRunnable);
+            seamlessTimeoutHandler = null;
+            seamlessTimeoutRunnable = null;
+        }
+        isSeamlessSwitching = false;
+        if (backgroundPlayer != null) {
+            try {
+                backgroundPlayer.stop();
+                backgroundPlayer.release();
+            } catch (Exception ignored) {}
+            backgroundPlayer = null;
+        }
+    }
+
+    private String resolveUrlForQuality(EpisodeResponse.PlayerData playerData, String targetQuality) {
+        if (playerData == null) return null;
+
+        if (isDownloadedQuality(targetQuality)) {
+            com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+            if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
+                java.io.File file = new java.io.File(downloadedEp.getLocalFilePath());
+                if (file.exists() && file.length() > 0) {
+                    return Uri.fromFile(file).toString();
+                }
+            }
+        }
+
+        if ("kodik".equalsIgnoreCase(playerData.getPlayer())) {
+            if (currentKodikResponse != null && currentKodikResponse.getData() != null) {
+                String resolvedQuality = targetQuality;
+                if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(targetQuality)) {
+                    List<String> available = playersManager != null ? playersManager.getAvailableQualities() : new ArrayList<>();
+                    long estimate = 0;
+                    try {
+                        estimate = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.getSingletonInstance(this).getBitrateEstimate();
+                    } catch (Exception ignored) {}
+                    resolvedQuality = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, available, targetQuality, estimate);
+                }
+                String qualityKey = resolvedQuality != null ? resolvedQuality.replace("p", "") : null;
+                if (qualityKey != null && currentKodikResponse.getData().containsKey(qualityKey) &&
+                        Objects.requireNonNull(currentKodikResponse.getData().get(qualityKey)).length > 0) {
+                    String newHlsUrl = Objects.requireNonNull(currentKodikResponse.getData().get(qualityKey))[0].getSrc();
+                    if (newHlsUrl != null && !newHlsUrl.isEmpty()) {
+                        return newHlsUrl;
+                    }
+                }
+            }
+        } else if ("animelib".equalsIgnoreCase(playerData.getPlayer())) {
+            if (playerData.getVideo() != null && playerData.getVideo().getQuality() != null && !playerData.getVideo().getQuality().isEmpty()) {
+                String resolvedQuality = targetQuality;
+                if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(targetQuality)) {
+                    List<String> available = playersManager != null ? playersManager.getAvailableQualities() : new ArrayList<>();
+                    long estimate = 0;
+                    try {
+                        estimate = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.getSingletonInstance(this).getBitrateEstimate();
+                    } catch (Exception ignored) {}
+                    resolvedQuality = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, available, targetQuality, estimate);
+                }
+                int targetRes = com.example.animelib.util.AutoQualityHelper.extractResolution(resolvedQuality);
+                EpisodeResponse.QualityData selectedQuality = null;
+                for (EpisodeResponse.QualityData qData : playerData.getVideo().getQuality()) {
+                    if (qData.getQuality() == targetRes) {
+                        selectedQuality = qData;
+                        break;
+                    }
+                }
+                if (selectedQuality == null && !playerData.getVideo().getQuality().isEmpty()) {
+                    selectedQuality = playerData.getVideo().getQuality().get(0);
+                }
+                if (selectedQuality != null && selectedQuality.getHref() != null) {
+                    String domain = currentVideoDomain;
+                    return com.example.animelib.ui.VideoUrlHelper.toAbsoluteVideoUrl(selectedQuality.getHref(), domain);
+                }
+            }
+        }
+        return null;
+    }
+
+    private void changeQuality(String newQuality, String oldQuality) {
+        EpisodeResponse.PlayerData currentPlayerData = playersManager != null ? playersManager.getCurrentPlayerData() : null;
+        String newVideoUrl = resolveUrlForQuality(currentPlayerData, newQuality);
+
+        boolean isCurrentlyPlaying = player != null && player.isPlaying() && player.getPlaybackState() == Player.STATE_READY;
+
+        if (isCurrentlyPlaying && newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
+            switchQualitySeamlessly(newQuality, oldQuality, newVideoUrl);
+        } else {
+            restartPlayerWithNewQuality();
+        }
+    }
+
+    private void switchQualitySeamlessly(String newQuality, String oldQuality, String newVideoUrl) {
+        cleanupBackgroundPlayer();
+
+        isSeamlessSwitching = true;
+        CustomToast.showInfo(this, "Загрузка качества " + newQuality + "...");
+
+        Context playerContext = this;
+
+        // Use a separate DefaultRenderersFactory so background player doesn't interrupt or share the main player's SurroundAudioProcessor
+        androidx.media3.exoplayer.DefaultRenderersFactory rf = new androidx.media3.exoplayer.DefaultRenderersFactory(playerContext);
+
+        // Low buffer thresholds so background player reaches STATE_READY fast without starving bandwidth
+        DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
+                .setBufferDurationsMs(2_500, 10_000, 500, 1_000)
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build();
+
+        ExoPlayer.Builder builder = new ExoPlayer.Builder(playerContext, rf)
+                .setLoadControl(loadControl)
+                .setSeekBackIncrementMs(10000)
+                .setSeekForwardIncrementMs(10000);
+
+        backgroundPlayer = builder.build();
+        backgroundPlayer.setVolume(0f); // Mute background player while buffering
+
+        androidx.media3.datasource.DefaultHttpDataSource.Factory httpFactory = new androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                .setUserAgent("Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36")
+                .setConnectTimeoutMs(15000)
+                .setReadTimeoutMs(15000)
+                .setAllowCrossProtocolRedirects(true);
+
+        if (apiService != null) {
+            httpFactory.setDefaultRequestProperties(apiService.getVideoRequestHeaders());
+        }
+
+        androidx.media3.datasource.DataSource.Factory dsFactory = new androidx.media3.datasource.DefaultDataSource.Factory(playerContext, httpFactory);
+
+        androidx.media3.exoplayer.source.MediaSource mediaSource;
+        if (newVideoUrl.contains(".m3u8") || newVideoUrl.contains("hls")) {
+            mediaSource = new androidx.media3.exoplayer.hls.HlsMediaSource.Factory(dsFactory)
+                    .setAllowChunklessPreparation(true)
+                    .createMediaSource(MediaItem.fromUri(newVideoUrl));
+        } else {
+            androidx.media3.extractor.DefaultExtractorsFactory extractorsFactory =
+                    new androidx.media3.extractor.DefaultExtractorsFactory()
+                            .setConstantBitrateSeekingEnabled(true);
+            mediaSource = new androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dsFactory, extractorsFactory)
+                    .createMediaSource(MediaItem.fromUri(newVideoUrl));
+        }
+
+        backgroundPlayer.setMediaSource(mediaSource);
+
+        long currentPosition = player != null ? player.getCurrentPosition() : 0;
+        float currentSpeed = player != null ? player.getPlaybackParameters().speed : 1.0f;
+        boolean wasPlaying = player != null && player.getPlayWhenReady();
+
+        backgroundPlayer.seekTo(currentPosition);
+        backgroundPlayer.setPlaybackSpeed(currentSpeed);
+        backgroundPlayer.setPlayWhenReady(true);
+        backgroundPlayer.prepare();
+
+        seamlessTimeoutHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        seamlessTimeoutRunnable = () -> {
+            if (isSeamlessSwitching && backgroundPlayer != null) {
+                Log.w("VideoPlayer", "Seamless quality switch timed out, falling back to restart");
+                cleanupBackgroundPlayer();
+                restartPlayerWithNewQuality();
+            }
+        };
+        seamlessTimeoutHandler.postDelayed(seamlessTimeoutRunnable, 6000);
+
+        backgroundPlayer.addListener(new Player.Listener() {
+            private boolean switched = false;
+
+            @Override
+            public void onPlaybackStateChanged(int playbackState) {
+                if (playbackState == Player.STATE_READY && !switched) {
+                    switched = true;
+                    if (seamlessTimeoutHandler != null && seamlessTimeoutRunnable != null) {
+                        seamlessTimeoutHandler.removeCallbacks(seamlessTimeoutRunnable);
+                    }
+                    safeRunOnUiThread(() -> performSeamlessSwitch(newQuality, oldQuality, newVideoUrl, wasPlaying));
+                }
+            }
+
+            @Override
+            public void onPlayerError(PlaybackException error) {
+                if (seamlessTimeoutHandler != null && seamlessTimeoutRunnable != null) {
+                    seamlessTimeoutHandler.removeCallbacks(seamlessTimeoutRunnable);
+                }
+                safeRunOnUiThread(() -> {
+                    Log.e("VideoPlayer", "Failed background load for quality " + newQuality + ", falling back to restart", error);
+                    cleanupBackgroundPlayer();
+                    restartPlayerWithNewQuality();
+                });
+            }
+        });
+    }
+
+    private void performSeamlessSwitch(String newQuality, String oldQuality, String newVideoUrl, boolean wasPlaying) {
+        if (backgroundPlayer == null || isFinishing() || isDestroyed()) return;
+
+        Log.d("VideoPlayer", "Background player READY! Performing seamless switch to " + newQuality);
+
+        ExoPlayer oldPlayer = player;
+        long livePosition = oldPlayer != null ? oldPlayer.getCurrentPosition() : backgroundPlayer.getCurrentPosition();
+
+        if (playerView != null) {
+            playerView.setPlayer(backgroundPlayer);
+        }
+
+        backgroundPlayer.seekTo(livePosition);
+        backgroundPlayer.setVolume(1.0f);
+        backgroundPlayer.setPlayWhenReady(wasPlaying);
+
+        if (playerAudioController != null) {
+            playerAudioController.attachPlayer(backgroundPlayer);
+        }
+        if (gesturesManager != null) {
+            gesturesManager.updatePlayer(backgroundPlayer);
+        }
+        if (ambientLightManager != null) {
+            ambientLightManager.setPlayer(backgroundPlayer, MediaItem.fromUri(newVideoUrl), newVideoUrl);
+        }
+
+        player = backgroundPlayer;
+        backgroundPlayer = null;
+        currentVideoUrl = newVideoUrl;
+        isSeamlessSwitching = false;
+
+        setupPlayerListener();
+
+        if (oldPlayer != null) {
+            try {
+                oldPlayer.stop();
+                oldPlayer.release();
+            } catch (Exception ignored) {}
+        }
+
+        updateSettingsQualityTag();
+        EpisodeResponse.PlayerData currentPlayerData = playersManager != null ? playersManager.getCurrentPlayerData() : null;
+        if (currentPlayerData != null) {
+            playersManager.setCurrentPlayerData(currentPlayerData);
+        }
+
+        CustomToast.showSuccess(this, "Качество переключено: " + newQuality);
+    }
+
     private void restartPlayerWithNewQuality() {
         EpisodeResponse.PlayerData currentPlayerData = playersManager.getCurrentPlayerData();
         if (currentPlayerData == null) {
@@ -4754,6 +5118,16 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private void updateAnimeInfoHeaderFull() {
         // Сначала быстро обновляем эпизод
         updateEpisodeHeaderQuick();
+
+        // Показываем сначала имеющееся название из Intent или прошлых данных
+        String initialTitle = getIntent() != null ? getIntent().getStringExtra("EXTRA_ANIME_TITLE") : null;
+        if (initialTitle == null || initialTitle.isEmpty()) {
+            initialTitle = getIntent() != null ? getIntent().getStringExtra("anime_title") : null;
+        }
+        if (initialTitle != null && !initialTitle.isEmpty() && animeTitleView != null) {
+            SkeletonHelper.hideSkeleton(animeTitleView, initialTitle);
+            updatePortraitHeaderTitlesUI();
+        }
         
         // Затем асинхронно загружаем название аниме
         if (animeTitleView == null) return;
@@ -4767,8 +5141,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     if (response != null && response.getData() != null) {
                         currentAnimeInfo = response;
                         String rus = response.getData().getRus_name();
-                        SkeletonHelper.hideSkeleton(animeTitleView, rus != null ? rus : "");
-                        updatePortraitHeaderTitlesUI();
+                        if (rus == null || rus.isEmpty()) rus = response.getData().getName();
+                        if (rus != null && !rus.isEmpty()) {
+                            SkeletonHelper.hideSkeleton(animeTitleView, rus);
+                            updatePortraitHeaderTitlesUI();
+                        }
                         Log.d("VideoPlayer", "Full header update: anime title set");
                     }
                 });
@@ -4777,7 +5154,18 @@ public class VideoPlayerActivity extends AppCompatActivity {
             @Override
             public void onError(String error) {
                 safeRunOnUiThread(() -> {
-                    SkeletonHelper.hideSkeleton(animeTitleView, "Аниме");
+                    String fallback = getIntent() != null ? getIntent().getStringExtra("EXTRA_ANIME_TITLE") : null;
+                    if (fallback == null || fallback.isEmpty()) {
+                        fallback = getIntent() != null ? getIntent().getStringExtra("anime_title") : null;
+                    }
+                    if ((fallback == null || fallback.isEmpty()) && currentAnimeInfo != null && currentAnimeInfo.getData() != null) {
+                        fallback = currentAnimeInfo.getData().getRus_name();
+                    }
+                    if (fallback == null || fallback.isEmpty()) {
+                        fallback = "Аниме";
+                    }
+                    SkeletonHelper.hideSkeleton(animeTitleView, fallback);
+                    updatePortraitHeaderTitlesUI();
                     if (playerAnimeInfoController != null && currentAnimeInfo == null) {
                         playerAnimeInfoController.showError(() -> updateAnimeInfoHeaderFull());
                     }
@@ -5895,6 +6283,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
             playerDialogsController.dismissErrorDialog();
         }
 
+        if (backgroundPlayer != null) {
+            try {
+                backgroundPlayer.stop();
+                backgroundPlayer.release();
+            } catch (Exception ignored) {}
+            backgroundPlayer = null;
+        }
         if (player != null) {
             player.release();
             player = null;

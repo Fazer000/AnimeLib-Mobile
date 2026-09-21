@@ -39,7 +39,12 @@ public class MainAuthController {
                 if (hasToken) {
                     TokenEntity token = databaseManager.getToken();
                     if (token != null) {
-                        Log.d("MainAuthController", "Token found in DB: " + token.getAccessToken().substring(0, Math.min(20, token.getAccessToken().length())) + "...");
+                        String accessToken = token.getAccessToken();
+                        if (accessToken != null && !accessToken.isEmpty()) {
+                            Log.d("MainAuthController", "Token found in DB: " + accessToken.substring(0, Math.min(20, accessToken.length())) + "...");
+                        } else {
+                            Log.d("MainAuthController", "Token found in DB but accessToken is empty or null");
+                        }
                         long currentTime = System.currentTimeMillis();
                         long tokenExpiry = token.getTimestamp() + (token.getExpiresIn() * 1000);
 
