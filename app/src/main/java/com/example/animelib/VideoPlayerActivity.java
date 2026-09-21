@@ -3482,14 +3482,18 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
             if ("animelib".equalsIgnoreCase(playerData.getPlayer())) {
                 String newVideoUrl = resolveAnimelibUrl(playerData, preferredQuality);
-                if (newVideoUrl != null) {
+                if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
                     Log.d("VideoPlayer", "Seamlessly switching voiceover (Animelib) to: " + (playerData.getTeam() != null ? playerData.getTeam().getName() : ""));
-                    currentVideoUrl = newVideoUrl;
-                    if (timecodeManager != null) {
-                        timecodeManager.setTimecodes(playerData);
+                    if (isCurrentlyPlaying) {
+                        switchQualitySeamlessly(preferredQuality, preferredQuality, newVideoUrl);
+                    } else {
+                        currentVideoUrl = newVideoUrl;
+                        if (timecodeManager != null) {
+                            timecodeManager.setTimecodes(playerData);
+                        }
+                        updateAnimeInfoHeaderFull();
+                        switchMediaSource(newVideoUrl, currentPos, wasPlaying);
                     }
-                    updateAnimeInfoHeaderFull();
-                    switchMediaSource(newVideoUrl, currentPos, wasPlaying);
                     return;
                 }
             } else if ("kodik".equalsIgnoreCase(playerData.getPlayer())) {
@@ -3499,13 +3503,18 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     final String finalKodikSrc = kodikSrc;
                     final long posToRestore = currentPos;
                     final boolean playState = wasPlaying;
+                    final boolean shouldBeSeamless = isCurrentlyPlaying;
                     Log.d("VideoPlayer", "Fetching Kodik voiceover links for: " + (playerData.getTeam() != null ? playerData.getTeam().getName() : ""));
-                    showLoading("Загрузка озвучки...");
+                    if (!shouldBeSeamless) {
+                        showLoading("Загрузка озвучки...");
+                    }
                     apiService.fetchKodikVideoLinks(finalKodikSrc, new ApiService.KodikVideoCallback() {
                         @Override
                         public void onKodikVideoReceived(KodikResponse response) {
                             safeRunOnUiThread(() -> {
-                                hideLoading();
+                                if (!shouldBeSeamless) {
+                                    hideLoading();
+                                }
                                 currentKodikResponse = response;
                                 if (playerQualityController != null) {
                                     playerQualityController.setCurrentKodikResponse(response);
@@ -3514,14 +3523,18 @@ public class VideoPlayerActivity extends AppCompatActivity {
                                     playersManager.setCurrentKodikResponse(response);
                                 }
                                 String newVideoUrl = resolveKodikHlsUrl(response, preferredQuality);
-                                if (newVideoUrl != null) {
+                                if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
                                     Log.d("VideoPlayer", "Seamlessly switching voiceover (Kodik) to: " + (playerData.getTeam() != null ? playerData.getTeam().getName() : ""));
-                                    currentVideoUrl = newVideoUrl;
-                                    if (timecodeManager != null) {
-                                        timecodeManager.setTimecodes(playerData);
+                                    if (shouldBeSeamless && player != null && (player.isPlaying() || player.getPlaybackState() == Player.STATE_READY)) {
+                                        switchQualitySeamlessly(preferredQuality, preferredQuality, newVideoUrl);
+                                    } else {
+                                        currentVideoUrl = newVideoUrl;
+                                        if (timecodeManager != null) {
+                                            timecodeManager.setTimecodes(playerData);
+                                        }
+                                        updateAnimeInfoHeaderFull();
+                                        switchMediaSource(newVideoUrl, posToRestore, playState);
                                     }
-                                    updateAnimeInfoHeaderFull();
-                                    switchMediaSource(newVideoUrl, posToRestore, playState);
                                 } else {
                                     stopCurrentPlaybackAndRestartVoiceover(playerData);
                                 }
@@ -4595,7 +4608,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
         EpisodeResponse.PlayerData currentPlayerData = playersManager != null ? playersManager.getCurrentPlayerData() : null;
         String newVideoUrl = resolveUrlForQuality(currentPlayerData, newQuality);
 
-        if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
+        boolean isCurrentlyPlaying = player != null && (player.isPlaying() || player.getPlaybackState() == Player.STATE_READY) && !isSeamlessSwitching;
+
+        if (isCurrentlyPlaying && newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
+            switchQualitySeamlessly(newQuality, oldQuality, newVideoUrl);
+        } else if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
             long currentPos = player != null ? player.getCurrentPosition() : 0;
             boolean wasPlaying = player == null || player.getPlayWhenReady();
             currentVideoUrl = newVideoUrl;
@@ -4649,7 +4666,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         androidx.media3.datasource.DefaultHttpDataSource.Factory httpFactory = new androidx.media3.datasource.DefaultHttpDataSource.Factory()
                 .setUserAgent("Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36")
-                .setConnectTimeoutMs(15000)
+                .setConnectTimeoutMs(10000)
                 .setReadTimeoutMs(15000)
                 .setAllowCrossProtocolRedirects(true);
 
@@ -4659,17 +4676,18 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         androidx.media3.datasource.DataSource.Factory dsFactory = new androidx.media3.datasource.DefaultDataSource.Factory(playerContext, httpFactory);
 
+        MediaItem mediaItem = createMediaItemWithSubtitles(newVideoUrl);
         androidx.media3.exoplayer.source.MediaSource mediaSource;
         if (newVideoUrl.contains(".m3u8") || newVideoUrl.contains("hls")) {
             mediaSource = new androidx.media3.exoplayer.hls.HlsMediaSource.Factory(dsFactory)
                     .setAllowChunklessPreparation(true)
-                    .createMediaSource(MediaItem.fromUri(newVideoUrl));
+                    .createMediaSource(mediaItem);
         } else {
             androidx.media3.extractor.DefaultExtractorsFactory extractorsFactory =
                     new androidx.media3.extractor.DefaultExtractorsFactory()
                             .setConstantBitrateSeekingEnabled(true);
             mediaSource = new androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dsFactory, extractorsFactory)
-                    .createMediaSource(MediaItem.fromUri(newVideoUrl));
+                    .createMediaSource(mediaItem);
         }
 
         backgroundPlayer.setMediaSource(mediaSource);
@@ -4743,9 +4761,15 @@ public class VideoPlayerActivity extends AppCompatActivity {
             setVideoResizeMode(currentResizeMode);
         }
 
-        backgroundPlayer.seekTo(livePosition);
+        if (Math.abs(livePosition - backgroundPlayer.getCurrentPosition()) > 1000) {
+            backgroundPlayer.seekTo(livePosition);
+        }
         backgroundPlayer.setVolume(1.0f);
         backgroundPlayer.setPlayWhenReady(wasPlaying);
+
+        if (playerPlaybackController != null) {
+            playerPlaybackController.attachNewPlayer(backgroundPlayer);
+        }
 
         if (playerAudioController != null) {
             playerAudioController.attachPlayer(backgroundPlayer);
@@ -4761,10 +4785,18 @@ public class VideoPlayerActivity extends AppCompatActivity {
         backgroundPlayer = null;
         currentVideoUrl = newVideoUrl;
         isSeamlessSwitching = false;
+        hasRenderedFirstFrame = true;
+        isVideoLoading = false;
+        isSeeking = false;
+        hideLoading();
+        updatePlayPauseAndLoadingState(false);
 
         setupPlayerListener();
+        setupSubtitlePlayerListener(player);
+        applySubtitlesStateToPlayer();
+        setupPlayerControlButtons();
 
-        if (oldPlayer != null) {
+        if (oldPlayer != null && oldPlayer != player) {
             try {
                 oldPlayer.stop();
                 oldPlayer.release();

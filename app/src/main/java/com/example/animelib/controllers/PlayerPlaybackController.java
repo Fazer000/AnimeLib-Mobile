@@ -322,6 +322,22 @@ public class PlayerPlaybackController {
         });
     }
 
+    public void attachNewPlayer(ExoPlayer newPlayer) {
+        cancelBufferingWatchdog();
+        if (this.player != null && this.player != newPlayer) {
+            try {
+                this.player.stop();
+                this.player.release();
+            } catch (Exception ignored) {}
+        }
+        this.player = newPlayer;
+        if (playerView != null) {
+            playerView.setPlayer(newPlayer);
+        }
+        isFirstFrameRendered = true;
+        setupPlayerListener();
+    }
+
     public void release() {
         cancelBufferingWatchdog();
         if (player != null) {
