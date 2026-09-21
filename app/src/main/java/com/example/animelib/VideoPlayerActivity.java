@@ -2388,25 +2388,48 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 settingsQualityTag.setVisibility(View.GONE);
                 return;
             }
-            String qualityToUse = preferredQuality;
+            String qualityToUse = null;
             com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
             if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new java.io.File(downloadedEp.getLocalFilePath()).exists()) {
                 String dq = downloadedEp.getQuality();
                 if (dq == null || dq.isEmpty()) dq = "1080p";
                 qualityToUse = dq;
-            } else if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(preferredQuality) && playersManager != null) {
-                List<String> available = playersManager.getAvailableQualities();
-                if (!available.isEmpty()) {
-                    long estimate = 0;
-                    try {
-                        estimate = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.getSingletonInstance(this).getBitrateEstimate();
-                    } catch (Exception ignored) {}
-                    String resolved = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, available, preferredQuality, estimate);
-                    if (resolved != null && !resolved.isEmpty()) {
-                        qualityToUse = resolved;
+            } else if (player != null && player.getVideoFormat() != null && player.getVideoFormat().height > 0) {
+                int height = player.getVideoFormat().height;
+                if (height >= 2160) qualityToUse = "2160p";
+                else if (height >= 1440) qualityToUse = "1440p";
+                else if (height >= 1080) qualityToUse = "1080p";
+                else if (height >= 720) qualityToUse = "720p";
+                else qualityToUse = "480p";
+            } else if (currentVideoUrl != null && !currentVideoUrl.isEmpty()) {
+                if (currentVideoUrl.contains("2160") || currentVideoUrl.contains("4k")) qualityToUse = "2160p";
+                else if (currentVideoUrl.contains("1080") || currentVideoUrl.contains("fhd")) qualityToUse = "1080p";
+                else if (currentVideoUrl.contains("720") || currentVideoUrl.contains("hd")) qualityToUse = "720p";
+                else if (currentVideoUrl.contains("480") || currentVideoUrl.contains("360") || currentVideoUrl.contains("240")) qualityToUse = "480p";
+            }
+
+            if (qualityToUse == null || qualityToUse.isEmpty()) {
+                if (!com.example.animelib.util.AutoQualityHelper.isAutoQuality(preferredQuality)) {
+                    qualityToUse = preferredQuality;
+                } else if (playersManager != null) {
+                    List<String> available = playersManager.getAvailableQualities();
+                    if (available != null && !available.isEmpty()) {
+                        long estimate = 0;
+                        try {
+                            estimate = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.getSingletonInstance(this).getBitrateEstimate();
+                        } catch (Exception ignored) {}
+                        String resolved = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, available, preferredQuality, estimate);
+                        if (resolved != null && !resolved.isEmpty()) {
+                            qualityToUse = resolved;
+                        }
                     }
                 }
             }
+
+            if (qualityToUse == null || qualityToUse.isEmpty()) {
+                qualityToUse = preferredQuality;
+            }
+
             String tag = com.example.animelib.util.FloatingBottomSheetUtils.getQualityTag(qualityToUse);
             if (tag != null && !tag.isEmpty()) {
                 settingsQualityTag.setText(tag);
@@ -4467,7 +4490,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 restartPlayerWithNewQuality();
             }
         };
-        seamlessTimeoutHandler.postDelayed(seamlessTimeoutRunnable, 6000);
+        seamlessTimeoutHandler.postDelayed(seamlessTimeoutRunnable, 10000);
 
         backgroundPlayer.addListener(new Player.Listener() {
             private boolean switched = false;

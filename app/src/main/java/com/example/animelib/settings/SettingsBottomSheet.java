@@ -668,6 +668,14 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
             quality = isOfflineMode ? "Загруженное" : "1080p";
         }
 
+        if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(quality)) {
+            currentQualityText.setText("Авто");
+            if (currentQualityTagText != null) {
+                currentQualityTagText.setVisibility(View.GONE);
+            }
+            return;
+        }
+
         String tag = com.example.animelib.util.FloatingBottomSheetUtils.getQualityTag(quality);
         currentQualityText.setText(quality);
 

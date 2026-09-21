@@ -65,7 +65,7 @@ public class QualityAdapter extends RecyclerView.Adapter<QualityAdapter.QualityV
 
         String tag = com.example.animelib.util.FloatingBottomSheetUtils.getQualityTag(quality);
         if (holder.qualityTagText != null) {
-            if (tag != null && !tag.isEmpty()) {
+            if (tag != null && !tag.isEmpty() && !com.example.animelib.util.AutoQualityHelper.isAutoQuality(quality)) {
                 holder.qualityTagText.setText(tag);
                 holder.qualityTagText.setVisibility(View.VISIBLE);
             } else {
