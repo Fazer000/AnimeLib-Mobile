@@ -3373,6 +3373,57 @@ public class VideoPlayerActivity extends AppCompatActivity {
             Log.d("VideoPlayer", "Saved player position before switching to: " + playerData.getPlayer() + " (pos: " + currentPos + "ms)");
         }
 
+        boolean isCurrentlyPlaying = player != null && (player.isPlaying() || player.getPlaybackState() == Player.STATE_READY) && !isSeamlessSwitching;
+
+        if (isCurrentlyPlaying && playerData != null) {
+            playersManager.setCurrentPlayerData(playerData);
+            enableBookmarkButton();
+            updateEpisodeHeaderQuick();
+            updatePortraitVoiceoverPlayerUI();
+
+            if ("animelib".equalsIgnoreCase(playerData.getPlayer())) {
+                String newVideoUrl = resolveAnimelibUrl(playerData, preferredQuality);
+                if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
+                    Log.d("VideoPlayer", "Seamlessly switching voiceover (Animelib) to: " + (playerData.getTeam() != null ? playerData.getTeam().getName() : ""));
+                    switchQualitySeamlessly(preferredQuality, preferredQuality, newVideoUrl);
+                    return;
+                }
+            } else if ("kodik".equalsIgnoreCase(playerData.getPlayer())) {
+                String kodikSrc = playerData.getSrc();
+                if (kodikSrc != null && !kodikSrc.isEmpty()) {
+                    if (!kodikSrc.startsWith("http")) kodikSrc = "https:" + kodikSrc;
+                    final String finalKodikSrc = kodikSrc;
+                    Log.d("VideoPlayer", "Seamlessly fetching Kodik voiceover links for: " + (playerData.getTeam() != null ? playerData.getTeam().getName() : ""));
+                    apiService.fetchKodikVideoLinks(finalKodikSrc, new ApiService.KodikVideoCallback() {
+                        @Override
+                        public void onKodikVideoReceived(KodikResponse response) {
+                            safeRunOnUiThread(() -> {
+                                currentKodikResponse = response;
+                                if (playersManager != null) playersManager.setCurrentKodikResponse(response);
+                                String newVideoUrl = resolveKodikHlsUrl(response, preferredQuality);
+                                if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
+                                    Log.d("VideoPlayer", "Seamlessly switching voiceover (Kodik) to: " + (playerData.getTeam() != null ? playerData.getTeam().getName() : ""));
+                                    switchQualitySeamlessly(preferredQuality, preferredQuality, newVideoUrl);
+                                } else {
+                                    stopCurrentPlaybackAndRestartVoiceover(playerData);
+                                }
+                            });
+                        }
+
+                        @Override
+                        public void onError(String error) {
+                            safeRunOnUiThread(() -> stopCurrentPlaybackAndRestartVoiceover(playerData));
+                        }
+                    });
+                    return;
+                }
+            }
+        }
+
+        stopCurrentPlaybackAndRestartVoiceover(playerData);
+    }
+
+    private void stopCurrentPlaybackAndRestartVoiceover(EpisodeResponse.PlayerData playerData) {
         stopCurrentPlayback();
 
         List<String> onlineQualities = playersManager.getAvailableQualities();
@@ -4425,7 +4476,6 @@ public class VideoPlayerActivity extends AppCompatActivity {
         cleanupBackgroundPlayer();
 
         isSeamlessSwitching = true;
-        CustomToast.showInfo(this, "Загрузка качества " + newQuality + "...");
 
         Context playerContext = this;
 
@@ -4564,9 +4614,106 @@ public class VideoPlayerActivity extends AppCompatActivity {
         EpisodeResponse.PlayerData currentPlayerData = playersManager != null ? playersManager.getCurrentPlayerData() : null;
         if (currentPlayerData != null) {
             playersManager.setCurrentPlayerData(currentPlayerData);
+            if (timecodeManager != null) {
+                timecodeManager.setTimecodes(currentPlayerData);
+            }
+        }
+    }
+
+    @androidx.annotation.Nullable
+    private String resolveAnimelibUrl(EpisodeResponse.PlayerData playerData, String preferredQuality) {
+        if (playerData == null || playerData.getVideo() == null || playerData.getVideo().getQuality() == null || playerData.getVideo().getQuality().isEmpty()) {
+            return null;
+        }
+        List<EpisodeResponse.QualityData> qList = new ArrayList<>(playerData.getVideo().getQuality());
+        qList.sort((q1, q2) -> Integer.compare(q2.getQuality(), q1.getQuality()));
+
+        List<String> available = new ArrayList<>();
+        for (EpisodeResponse.QualityData q : qList) {
+            int res = q.getQuality();
+            if (res == 2160 && !enable4K) continue;
+            available.add(res + "p");
         }
 
-        CustomToast.showSuccess(this, "Качество переключено: " + newQuality);
+        long estimate = 0;
+        try {
+            estimate = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.getSingletonInstance(this).getBitrateEstimate();
+        } catch (Exception ignored) {}
+
+        String effectiveQuality = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, available, preferredQuality, estimate);
+        int targetRes = com.example.animelib.util.AutoQualityHelper.extractResolution(effectiveQuality);
+
+        EpisodeResponse.QualityData selectedQuality = null;
+        for (EpisodeResponse.QualityData qData : qList) {
+            if (qData.getQuality() == targetRes) {
+                selectedQuality = qData;
+                break;
+            }
+        }
+        if (selectedQuality == null && !qList.isEmpty()) {
+            selectedQuality = qList.get(0);
+        }
+        if (selectedQuality != null && selectedQuality.getHref() != null) {
+            String domain = (playerData.getVideoDomain() != null && !playerData.getVideoDomain().isEmpty())
+                    ? playerData.getVideoDomain() : currentVideoDomain;
+            return VideoUrlHelper.toAbsoluteVideoUrl(selectedQuality.getHref(), domain);
+        }
+        return null;
+    }
+
+    @androidx.annotation.Nullable
+    private String resolveKodikHlsUrl(KodikResponse kodikResponse, String preferredQuality) {
+        if (kodikResponse == null || kodikResponse.getData() == null || kodikResponse.getData().isEmpty()) {
+            return null;
+        }
+        List<String> availableQualities = new ArrayList<>();
+        List<String> rawKeys = new ArrayList<>(kodikResponse.getData().keySet());
+        rawKeys.sort((k1, k2) -> Integer.compare(
+                com.example.animelib.util.AutoQualityHelper.extractResolution(k2),
+                com.example.animelib.util.AutoQualityHelper.extractResolution(k1)
+        ));
+        for (String key : rawKeys) {
+            int res = com.example.animelib.util.AutoQualityHelper.extractResolution(key);
+            if (res == 2160 && !enable4K) continue;
+            String qStr = res > 0 ? res + "p" : key;
+            if (!availableQualities.contains(qStr)) {
+                availableQualities.add(qStr);
+            }
+        }
+        if (availableQualities.isEmpty()) {
+            availableQualities.add("720p");
+        }
+
+        long estimate = 0;
+        try {
+            estimate = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.getSingletonInstance(this).getBitrateEstimate();
+        } catch (Exception ignored) {}
+
+        String effectiveQuality = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, availableQualities, preferredQuality, estimate);
+        int targetRes = com.example.animelib.util.AutoQualityHelper.extractResolution(effectiveQuality);
+
+        String hlsUrl = null;
+        for (String key : kodikResponse.getData().keySet()) {
+            int keyRes = com.example.animelib.util.AutoQualityHelper.extractResolution(key);
+            if (keyRes == targetRes || key.equalsIgnoreCase(effectiveQuality) || (key + "p").equalsIgnoreCase(effectiveQuality)) {
+                if (kodikResponse.getData().get(key) != null && kodikResponse.getData().get(key).length > 0) {
+                    hlsUrl = kodikResponse.getData().get(key)[0].getSrc();
+                    break;
+                }
+            }
+        }
+        if (hlsUrl == null) {
+            for (String key : kodikResponse.getData().keySet()) {
+                if (kodikResponse.getData().get(key) != null && kodikResponse.getData().get(key).length > 0) {
+                    hlsUrl = kodikResponse.getData().get(key)[0].getSrc();
+                    break;
+                }
+            }
+        }
+        if (hlsUrl != null && !hlsUrl.startsWith("http")) {
+            hlsUrl = "https:" + hlsUrl;
+        }
+        return hlsUrl;
     }
 
     private void restartPlayerWithNewQuality() {
