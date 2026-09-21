@@ -356,7 +356,6 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 isAutoQualityDowngrading = true;
                 bufferingStartTimeMs = 0;
                 Log.w("VideoPlayer", "Auto Quality: Network stalling detected! Downgrading to " + lowerQuality);
-                CustomToast.showInfo(this, "Медленный интернет: автопереключение на " + lowerQuality);
                 changeQuality(lowerQuality, preferredQuality);
             }
         }
@@ -413,6 +412,16 @@ public class VideoPlayerActivity extends AppCompatActivity {
     // Fullscreen state
     private boolean isFullscreenMode = false;
     private int currentResizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT;
+    private float lastValidAspectRatio = 16f / 9f;
+
+    private void preservePlayerAspectRatio() {
+        if (playerView != null) {
+            androidx.media3.ui.AspectRatioFrameLayout contentFrame = playerView.findViewById(androidx.media3.ui.R.id.exo_content_frame);
+            if (contentFrame != null && lastValidAspectRatio > 0f) {
+                contentFrame.setAspectRatio(lastValidAspectRatio);
+            }
+        }
+    }
 
     // Player data is now managed by PlayersManager
     private boolean isOfflineMode = false;
@@ -1994,6 +2003,12 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     }
                 }
 
+                if (scrollY >= 150) {
+                    if (playerCommentsController != null && !isOfflineMode && getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
+                        playerCommentsController.loadCommentsForPortraitIfNeeded();
+                    }
+                }
+
                 if (scrollY >= (v.getChildAt(0).getMeasuredHeight() - v.getMeasuredHeight() - 200)) {
                     if (playerCommentsController != null && !isOfflineMode && getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
                         playerCommentsController.loadNextCommentsPageIfAvailable();
@@ -2603,6 +2618,14 @@ public class VideoPlayerActivity extends AppCompatActivity {
             player.removeListener(playerEventListener);
         }
         playerEventListener = new Player.Listener() {
+            @Override
+            public void onVideoSizeChanged(@NonNull androidx.media3.common.VideoSize videoSize) {
+                if (videoSize.width > 0 && videoSize.height > 0) {
+                    lastValidAspectRatio = (float) (videoSize.width * videoSize.pixelWidthHeightRatio) / (float) videoSize.height;
+                }
+                preservePlayerAspectRatio();
+            }
+
             @Override
             public void onPlaybackStateChanged(int playbackState) {
                 Log.d("PlayerControls", "Playback state changed: " + playbackState);
@@ -3424,6 +3447,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     private void stopCurrentPlaybackAndRestartVoiceover(EpisodeResponse.PlayerData playerData) {
+        preservePlayerAspectRatio();
+        applyPlayerSidePanelTransform(0f);
         stopCurrentPlayback();
 
         List<String> onlineQualities = playersManager.getAvailableQualities();
@@ -4015,6 +4040,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
         } else {
             player.stop();
             player.clearMediaItems();
+            if (playerView != null) {
+                playerView.setPlayer(player);
+                preservePlayerAspectRatio();
+                setVideoResizeMode(currentResizeMode);
+            }
             setupPlayerListener();
         }
 
@@ -4546,6 +4576,14 @@ public class VideoPlayerActivity extends AppCompatActivity {
             private boolean switched = false;
 
             @Override
+            public void onVideoSizeChanged(@NonNull androidx.media3.common.VideoSize videoSize) {
+                if (videoSize.width > 0 && videoSize.height > 0) {
+                    lastValidAspectRatio = (float) (videoSize.width * videoSize.pixelWidthHeightRatio) / (float) videoSize.height;
+                    preservePlayerAspectRatio();
+                }
+            }
+
+            @Override
             public void onPlaybackStateChanged(int playbackState) {
                 if (playbackState == Player.STATE_READY && !switched) {
                     switched = true;
@@ -4580,6 +4618,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         if (playerView != null) {
             playerView.setPlayer(backgroundPlayer);
+            preservePlayerAspectRatio();
+            setVideoResizeMode(currentResizeMode);
         }
 
         backgroundPlayer.seekTo(livePosition);
@@ -4617,6 +4657,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
             if (timecodeManager != null) {
                 timecodeManager.setTimecodes(currentPlayerData);
             }
+        }
+
+        applyPlayerSidePanelTransform(0f);
+        if (playerPanelsController != null) {
+            playerPanelsController.applyPlayerSidePanelTransform(0f);
         }
     }
 
@@ -4717,6 +4762,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     private void restartPlayerWithNewQuality() {
+        preservePlayerAspectRatio();
+        applyPlayerSidePanelTransform(0f);
         EpisodeResponse.PlayerData currentPlayerData = playersManager.getCurrentPlayerData();
         if (currentPlayerData == null) {
             return;
@@ -4934,8 +4981,6 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     initializePlayer();
                 }
             }
-
-            CustomToast.showInfo(this, "Повторная попытка загрузки видео...");
         });
     }
 
@@ -6115,9 +6160,6 @@ public class VideoPlayerActivity extends AppCompatActivity {
                             ViewCompat.setElevation(portraitBottomContainer, 0f);
                             updatePortraitVoiceoverPlayerUI();
                             updatePortraitHeaderTitlesUI();
-                            if (playerCommentsController != null) {
-                                playerCommentsController.loadCommentsForPortraitIfNeeded();
-                            }
                         }
                     } else {
                         rawParams.width = android.view.ViewGroup.LayoutParams.MATCH_PARENT;

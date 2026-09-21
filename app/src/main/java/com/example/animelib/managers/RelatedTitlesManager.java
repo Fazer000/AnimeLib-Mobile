@@ -204,6 +204,8 @@ public class RelatedTitlesManager {
     /**
      * Показывает связанные тайтлы с 🔥 ПРЕМИУМ анимацией
      */
+    private List<RelatedTitlesResponse.RelatedTitle> pendingRelatedTitles;
+
     public void showRelatedTitles() {
         if (relatedTitlesOverlay == null || relatedTitlesRecyclerView == null) return;
         
@@ -211,6 +213,10 @@ public class RelatedTitlesManager {
         if (isRelatedTitlesVisible) {
             Log.d(TAG, "Related titles already visible, skipping animation");
             return;
+        }
+
+        if (pendingRelatedTitles != null && relatedTitlesAdapter != null) {
+            relatedTitlesAdapter.updateData(pendingRelatedTitles);
         }
         
         Log.d(TAG, "Showing related titles with premium animation 🔥");
@@ -527,6 +533,9 @@ public class RelatedTitlesManager {
         
         // Показываем overlay если progress > 0
         if (progress > 0f) {
+            if (pendingRelatedTitles != null && relatedTitlesAdapter != null && relatedTitlesAdapter.getItemCount() == 0) {
+                relatedTitlesAdapter.updateData(pendingRelatedTitles);
+            }
             relatedTitlesOverlay.setVisibility(View.VISIBLE);
             if (relatedTitlesDimOverlay != null) {
                 relatedTitlesDimOverlay.setVisibility(View.VISIBLE);
@@ -736,7 +745,8 @@ public class RelatedTitlesManager {
      * Обновляет данные связанных тайтлов
      */
     public void updateRelatedTitles(List<RelatedTitlesResponse.RelatedTitle> relatedTitles) {
-        if (relatedTitlesAdapter != null) {
+        this.pendingRelatedTitles = relatedTitles;
+        if (isRelatedTitlesVisible && relatedTitlesAdapter != null) {
             relatedTitlesAdapter.updateData(relatedTitles);
         }
     }

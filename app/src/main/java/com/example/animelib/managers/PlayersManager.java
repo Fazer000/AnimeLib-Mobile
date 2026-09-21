@@ -658,21 +658,23 @@ public class PlayersManager {
     }
 
     private void updateSidePanelTabContent() {
+        boolean isPortrait = context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT;
+        if (isPortrait || !isMenuVisible) {
+            // Side panel is not visible or in portrait mode; do not layout or bind ViewPager / RecyclerView!
+            if (sidePanelViewPager != null) {
+                sidePanelViewPager.setUserInputEnabled(false);
+            }
+            return;
+        }
+
         if (sidePanelTabsAdapter != null) {
             sidePanelTabsAdapter.updateData(animelibPlayers, kodikPlayers, currentPlayerData);
         }
 
         if (sidePanelViewPager != null) {
             int selectedIndex = "kodik".equals(sidePanelActiveTab) ? 1 : 0;
-
-            if (!isMenuVisible) {
-                sidePanelViewPager.setUserInputEnabled(false);
-            } else {
-                sidePanelViewPager.setUserInputEnabled(true);
-            }
-
+            sidePanelViewPager.setUserInputEnabled(true);
             forceSelectTabAndPage(selectedIndex);
-
             sidePanelViewPager.post(() -> {
                 forceSelectTabAndPage(selectedIndex);
             });
@@ -876,6 +878,11 @@ public class PlayersManager {
      * Вызывается в начале drag жеста панели
      */
     public void onPanelDragStart() {
+        boolean isPortrait = context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT;
+        if (!isPortrait && !isMenuVisible) {
+            isMenuVisible = true;
+            updateMenuWithData();
+        }
         if (sidePanelViewPager != null) {
             sidePanelViewPager.setUserInputEnabled(false);
         }

@@ -48,14 +48,71 @@ public class HorizontalEpisodesAdapter extends RecyclerView.Adapter<HorizontalEp
     
     @SuppressLint("NotifyDataSetChanged")
     public void setAnimeBookmark(com.example.animelib.models.AnimeBookmarkResponse.BookmarkData bookmark) {
+        Integer oldBookmarkedId = (this.animeBookmark != null) ? this.animeBookmark.getItemId() : null;
         this.animeBookmark = bookmark;
-        notifyDataSetChanged();
+        Integer newBookmarkedId = (bookmark != null) ? bookmark.getItemId() : null;
+
+        if (episodes == null || episodes.isEmpty()) {
+            notifyDataSetChanged();
+            return;
+        }
+
+        int oldIndex = -1;
+        int newIndex = -1;
+        for (int i = 0; i < episodes.size(); i++) {
+            EpisodesListResponse.EpisodeItem ep = episodes.get(i);
+            if (ep != null) {
+                if (oldBookmarkedId != null && ep.getId() == oldBookmarkedId.longValue()) {
+                    oldIndex = i;
+                }
+                if (newBookmarkedId != null && ep.getId() == newBookmarkedId.longValue()) {
+                    newIndex = i;
+                }
+            }
+        }
+        if (oldIndex != -1 && newIndex != -1) {
+            notifyItemChanged(oldIndex);
+            if (oldIndex != newIndex) notifyItemChanged(newIndex);
+        } else if (newIndex != -1) {
+            notifyItemChanged(newIndex);
+        } else if (oldIndex != -1) {
+            notifyItemChanged(oldIndex);
+        } else {
+            notifyDataSetChanged();
+        }
     }
     
     @SuppressLint("NotifyDataSetChanged")
     public void setCurrentEpisode(EpisodesListResponse.EpisodeItem currentEpisode) {
+        EpisodesListResponse.EpisodeItem previousEpisode = this.currentEpisode;
         this.currentEpisode = currentEpisode;
-        notifyDataSetChanged();
+
+        if (episodes == null || episodes.isEmpty()) {
+            notifyDataSetChanged();
+            return;
+        }
+
+        int oldIndex = -1;
+        int newIndex = -1;
+        for (int i = 0; i < episodes.size(); i++) {
+            EpisodesListResponse.EpisodeItem ep = episodes.get(i);
+            if (ep != null) {
+                if (previousEpisode != null && ep.getId() == previousEpisode.getId()) {
+                    oldIndex = i;
+                }
+                if (currentEpisode != null && ep.getId() == currentEpisode.getId()) {
+                    newIndex = i;
+                }
+            }
+        }
+        if (oldIndex != -1 && newIndex != -1) {
+            notifyItemChanged(oldIndex);
+            if (oldIndex != newIndex) notifyItemChanged(newIndex);
+        } else if (newIndex != -1) {
+            notifyItemChanged(newIndex);
+        } else {
+            notifyDataSetChanged();
+        }
         android.util.Log.d("EpisodesAdapter", "Current episode updated to: " + 
             (currentEpisode != null ? currentEpisode.getNumber() + " (ID: " + currentEpisode.getId() + ")" : "null"));
     }

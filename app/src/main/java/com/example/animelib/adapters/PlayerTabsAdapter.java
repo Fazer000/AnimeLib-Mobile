@@ -239,8 +239,13 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
                         new androidx.recyclerview.widget.LinearLayoutManager(holder.itemView.getContext())
                     );
                 }
-                PlayerOptionsAdapter adapter = new PlayerOptionsAdapter(processedPlayers, currentPlayer, playerListener);
-                holder.playersRecyclerView.setAdapter(adapter);
+                RecyclerView.Adapter<?> existing = holder.playersRecyclerView.getAdapter();
+                if (existing instanceof PlayerOptionsAdapter) {
+                    ((PlayerOptionsAdapter) existing).updatePlayers(processedPlayers, currentPlayer);
+                } else {
+                    PlayerOptionsAdapter adapter = new PlayerOptionsAdapter(processedPlayers, currentPlayer, playerListener);
+                    holder.playersRecyclerView.setAdapter(adapter);
+                }
             }
         }
     }

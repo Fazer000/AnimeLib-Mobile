@@ -183,6 +183,10 @@ public class PlayerPanelsController {
             commentsPanelContainer.setOnPanelStateChangeListener(new DraggableSidePanel.OnPanelStateChangeListener() {
                 @Override
                 public void onPanelDragStart() {
+                    CommentsManager cm = callback.getCommentsManager();
+                    if (cm != null) {
+                        cm.onPanelDragStart();
+                    }
                 }
 
                 @Override
@@ -191,6 +195,10 @@ public class PlayerPanelsController {
                     if (menuOverlay != null) {
                         menuOverlay.setVisibility(View.VISIBLE);
                         menuOverlay.setAlpha(1f);
+                    }
+                    CommentsManager cm = callback.getCommentsManager();
+                    if (cm != null) {
+                        cm.onPanelOpened();
                     }
                 }
 
@@ -303,9 +311,22 @@ public class PlayerPanelsController {
             callback.updateAmbientPlayerTransform(1f, 0f, 0f, true);
             ViewGroup.LayoutParams lp = playerContainer.getLayoutParams();
             if (lp != null) {
+                if (lp instanceof ViewGroup.MarginLayoutParams) {
+                    ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
+                    mlp.leftMargin = 0;
+                    mlp.topMargin = 0;
+                    mlp.rightMargin = 0;
+                    mlp.bottomMargin = 0;
+                    if (mlp instanceof FrameLayout.LayoutParams) {
+                        ((FrameLayout.LayoutParams) mlp).gravity = Gravity.TOP | Gravity.START;
+                    } else if (mlp instanceof LinearLayout.LayoutParams) {
+                        ((LinearLayout.LayoutParams) mlp).gravity = Gravity.TOP | Gravity.START;
+                    }
+                }
                 int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
                 int targetH = screenWidth * 9 / 16;
-                if (lp.height != targetH) {
+                if (lp.height != targetH || lp.width != ViewGroup.LayoutParams.MATCH_PARENT) {
+                    lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
                     lp.height = targetH;
                     if (lp instanceof LinearLayout.LayoutParams) {
                         ((LinearLayout.LayoutParams) lp).weight = 0;
@@ -350,10 +371,25 @@ public class PlayerPanelsController {
             callback.updateAmbientPlayerTransform(1f, 0f, 0f, false);
             ViewGroup.LayoutParams rawLp = playerContainer.getLayoutParams();
             if (rawLp != null) {
+                if (rawLp instanceof ViewGroup.MarginLayoutParams) {
+                    ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) rawLp;
+                    mlp.leftMargin = 0;
+                    mlp.topMargin = 0;
+                    mlp.rightMargin = 0;
+                    mlp.bottomMargin = 0;
+                    if (mlp instanceof FrameLayout.LayoutParams) {
+                        ((FrameLayout.LayoutParams) mlp).gravity = Gravity.TOP | Gravity.START;
+                    } else if (mlp instanceof LinearLayout.LayoutParams) {
+                        ((LinearLayout.LayoutParams) mlp).gravity = Gravity.TOP | Gravity.START;
+                    }
+                }
                 if (rawLp.width != ViewGroup.LayoutParams.MATCH_PARENT ||
                         rawLp.height != ViewGroup.LayoutParams.MATCH_PARENT) {
                     rawLp.width = ViewGroup.LayoutParams.MATCH_PARENT;
                     rawLp.height = ViewGroup.LayoutParams.MATCH_PARENT;
+                    if (rawLp instanceof LinearLayout.LayoutParams) {
+                        ((LinearLayout.LayoutParams) rawLp).weight = 0;
+                    }
                     playerContainer.setLayoutParams(rawLp);
                 }
             }

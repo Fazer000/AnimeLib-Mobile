@@ -330,12 +330,22 @@ public class PlayerRelatedTitlesController {
 
         Log.d(TAG, "Loading related titles for anime: " + animeSlug);
 
-        if (portraitRelatedTitlesContainer != null) {
-            portraitRelatedTitlesContainer.setVisibility(View.VISIBLE);
-        }
-        if (portraitRelatedSkeletonContainer != null) {
-            portraitRelatedSkeletonContainer.setVisibility(View.VISIBLE);
-            startSkeletonShimmer();
+        Context ctx = callback != null ? callback.getContext() : null;
+        boolean isPortrait = ctx != null && ctx.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT;
+
+        if (isPortrait) {
+            if (portraitRelatedTitlesContainer != null) {
+                portraitRelatedTitlesContainer.setVisibility(View.VISIBLE);
+            }
+            if (portraitRelatedSkeletonContainer != null) {
+                portraitRelatedSkeletonContainer.setVisibility(View.VISIBLE);
+                startSkeletonShimmer();
+            }
+        } else {
+            if (portraitRelatedTitlesContainer != null) {
+                portraitRelatedTitlesContainer.setVisibility(View.GONE);
+            }
+            stopSkeletonShimmer();
         }
         if (portraitRelatedLoadingIndicator != null) {
             portraitRelatedLoadingIndicator.setVisibility(View.GONE);
@@ -344,7 +354,7 @@ public class PlayerRelatedTitlesController {
             portraitRelatedErrorContainer.setVisibility(View.GONE);
         }
         if (portraitRelatedTitlesRecyclerView != null) {
-            portraitRelatedTitlesRecyclerView.setVisibility(View.GONE);
+            portraitRelatedTitlesRecyclerView.setVisibility(isPortrait ? View.GONE : View.GONE);
         }
 
         ApiService apiService = callback != null ? callback.getApiService() : null;
@@ -424,7 +434,9 @@ public class PlayerRelatedTitlesController {
         if (relatedTitlesManager != null) {
             relatedTitlesManager.updateRelatedTitles(relatedTitles);
         }
-        if (portraitRelatedTitlesAdapter != null) {
+        Context ctx = callback != null ? callback.getContext() : null;
+        boolean isPortrait = ctx != null && ctx.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT;
+        if (isPortrait && portraitRelatedTitlesAdapter != null) {
             portraitRelatedTitlesAdapter.updateData(relatedTitles);
             if (portraitRelatedTitlesContainer != null) {
                 boolean isOffline = callback != null && callback.isOfflineMode();

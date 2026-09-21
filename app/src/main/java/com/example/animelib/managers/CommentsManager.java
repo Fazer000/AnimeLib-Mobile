@@ -105,6 +105,11 @@ public class CommentsManager {
     private boolean isLoadingComments = false;
     private String commentsSortType = "desc";
     
+    private CommentsResponse pendingLandscapeCommentsResponse;
+    private boolean pendingLandscapeAppend;
+    private List<CommentsResponse.CommentItem> pendingStickyComments;
+    private boolean isPortraitCommentsRequested = false;
+    
     // Контекст и сервисы
     private Context context;
     private ApiService apiService;
@@ -798,6 +803,8 @@ public class CommentsManager {
         if (context instanceof com.example.animelib.VideoPlayerActivity) {
             ((com.example.animelib.VideoPlayerActivity) context).openCommentsPanel();
         }
+
+        applyPendingLandscapeComments();
         
         // Загрузить первую страницу если комментарии пустые
         if (!isLoadingComments && (commentsAdapter == null || commentsAdapter.getItemCount() == 0)) {
@@ -809,6 +816,35 @@ public class CommentsManager {
         // Уведомить о изменении видимости
         if (visibilityCallback != null) {
             visibilityCallback.onCommentsVisibilityChanged(true);
+        }
+    }
+
+    public void onPanelDragStart() {
+        isCommentsVisible = true;
+        applyPendingLandscapeComments();
+    }
+
+    public void onPanelOpened() {
+        isCommentsVisible = true;
+        applyPendingLandscapeComments();
+        if (!isLoadingComments && (commentsAdapter == null || commentsAdapter.getItemCount() == 0)) {
+            commentsCurrentPage = 1;
+            commentsHasNextPage = true;
+            loadCommentsPage(1);
+        }
+        if (visibilityCallback != null) {
+            visibilityCallback.onCommentsVisibilityChanged(true);
+        }
+    }
+
+    private void applyPendingLandscapeComments() {
+        if (pendingStickyComments != null && commentsAdapter != null) {
+            commentsAdapter.setStickyComments(pendingStickyComments);
+            pendingStickyComments = null;
+        }
+        if (pendingLandscapeCommentsResponse != null && commentsAdapter != null) {
+            commentsAdapter.appendResponse(pendingLandscapeCommentsResponse, pendingLandscapeAppend);
+            pendingLandscapeCommentsResponse = null;
         }
     }
     
@@ -865,15 +901,21 @@ public class CommentsManager {
                 @Override
                 public void onStickyCommentsReceived(List<CommentsResponse.CommentItem> stickyComments) {
                     safeRunOnUiThread(() -> {
-                        if (commentsAdapter != null) {
-                            commentsAdapter.setStickyComments(stickyComments);
-                        }
-                        if (portraitCommentsAdapter != null) {
-                            portraitCommentsAdapter.setStickyComments(stickyComments);
+                        boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
+                        if (isPortrait) {
+                            if (portraitCommentsAdapter != null) {
+                                portraitCommentsAdapter.setStickyComments(stickyComments);
+                            }
+                        } else {
+                            if (isCommentsVisible && commentsAdapter != null) {
+                                commentsAdapter.setStickyComments(stickyComments);
+                            } else {
+                                pendingStickyComments = stickyComments;
+                            }
                         }
                     });
                 }
-
+ 
                 @Override
                 public void onError(String error) {
                     Log.d(TAG, "Sticky comments error or none: " + error);
@@ -905,11 +947,18 @@ public class CommentsManager {
                         isLoadingComments = false;
                         
                         if (response != null) {
-                            if (commentsAdapter != null) {
-                                commentsAdapter.appendResponse(response, page > 1);
-                            }
-                            if (portraitCommentsAdapter != null) {
-                                portraitCommentsAdapter.appendResponse(response, page > 1);
+                            boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
+                            if (isPortrait) {
+                                if (portraitCommentsAdapter != null) {
+                                    portraitCommentsAdapter.appendResponse(response, page > 1);
+                                }
+                            } else {
+                                if (isCommentsVisible && commentsAdapter != null) {
+                                    commentsAdapter.appendResponse(response, page > 1);
+                                } else {
+                                    pendingLandscapeCommentsResponse = response;
+                                    pendingLandscapeAppend = (page > 1);
+                                }
                             }
                             
                             // Показываем/скрываем текст пустого состояния
@@ -1008,6 +1057,9 @@ public class CommentsManager {
         commentsCurrentPage = 1;
         commentsHasNextPage = true;
         isLoadingComments = false;
+        isPortraitCommentsRequested = false;
+        pendingLandscapeCommentsResponse = null;
+        pendingStickyComments = null;
         
         if (commentsAdapter != null) {
             commentsAdapter.clearAll();
@@ -1036,9 +1088,12 @@ public class CommentsManager {
     }
 
     public boolean shouldLoadComments() {
-        return isCommentsVisible 
-            || portraitCommentsRecyclerView != null 
-            || (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
+        boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
+        if (isPortrait) {
+            return isPortraitCommentsRequested;
+        } else {
+            return isCommentsVisible;
+        }
     }
     
     /**
@@ -1217,9 +1272,6 @@ public class CommentsManager {
             applyOfflineViewsState();
             return;
         }
-        if (currentEpisode != null) {
-            loadCommentsForPortraitIfNeeded();
-        }
     }
 
     public void setOfflineMode(boolean offline) {
@@ -1277,6 +1329,7 @@ public class CommentsManager {
             applyOfflineViewsState();
             return;
         }
+        isPortraitCommentsRequested = true;
         if (currentEpisode != null && !isLoadingComments && (portraitCommentsAdapter == null || portraitCommentsAdapter.getItemCount() == 0)) {
             commentsCurrentPage = 1;
             commentsHasNextPage = true;
