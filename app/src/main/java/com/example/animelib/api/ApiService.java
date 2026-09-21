@@ -223,7 +223,6 @@ public class ApiService {
 
         headers.put("Referer", "https://animelib.org/");
         headers.put("Origin", "https://animelib.org");
-        headers.put("Content-Type", "video");
         headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36");
         headers.put("accept", "video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5");
         headers.put("accept-language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7");
@@ -336,7 +335,11 @@ public class ApiService {
     public void fetchAnimeInfo(String animeSlugOrId, AnimeInfoCallback callback) {
         safeExecute(() -> {
             try {
-                String apiUrl = "https://api.cdnlibs.org/api/anime/" + animeSlugOrId + "?fields[]=background&fields[]=eng_name&fields[]=otherNames&fields[]=summary&fields[]=releaseDate&fields[]=type_id&fields[]=caution&fields[]=views&fields[]=close_view&fields[]=rate_avg&fields[]=rate&fields[]=genres&fields[]=tags&fields[]=teams&fields[]=authors&fields[]=publisher&fields[]=userRating&fields[]=anime_status_id&fields[]=episodes&fields[]=episodes_count&fields[]=shiki_rate";
+                String cleanSlugOrId = animeSlugOrId != null ? animeSlugOrId.trim() : "";
+                if (cleanSlugOrId.contains("?")) cleanSlugOrId = cleanSlugOrId.substring(0, cleanSlugOrId.indexOf("?"));
+                if (cleanSlugOrId.contains("#")) cleanSlugOrId = cleanSlugOrId.substring(0, cleanSlugOrId.indexOf("#"));
+                while (cleanSlugOrId.endsWith("/")) cleanSlugOrId = cleanSlugOrId.substring(0, cleanSlugOrId.length() - 1);
+                String apiUrl = "https://api.cdnlibs.org/api/anime/" + cleanSlugOrId + "?fields[]=background&fields[]=eng_name&fields[]=otherNames&fields[]=summary&fields[]=releaseDate&fields[]=type_id&fields[]=caution&fields[]=views&fields[]=close_view&fields[]=rate_avg&fields[]=rate&fields[]=genres&fields[]=tags&fields[]=teams&fields[]=authors&fields[]=publisher&fields[]=userRating&fields[]=anime_status_id&fields[]=episodes&fields[]=episodes_count&fields[]=shiki_rate";
                 Request request = buildApiRequest(apiUrl).build();
 
                 httpClient.newCall(request).enqueue(new Callback() {
@@ -1104,11 +1107,20 @@ public class ApiService {
      * Extract full anime slug segment e.g. "24653--sakamoto-days-part-2-anime" from URL
      */
     public String extractAnimeSlug(String url) {
+        if (url == null || url.isEmpty()) return null;
         try {
+            String mediaSlug = extractMediaSlugFromUrl(url);
+            if (mediaSlug != null && !mediaSlug.isEmpty()) {
+                if (mediaSlug.contains("?")) mediaSlug = mediaSlug.substring(0, mediaSlug.indexOf("?"));
+                if (mediaSlug.contains("#")) mediaSlug = mediaSlug.substring(0, mediaSlug.indexOf("#"));
+                return mediaSlug.trim();
+            }
             String[] parts = url.split("/");
             for (String part : parts) {
                 if (part.contains("--")) {
-                    return part; // return full slug with id and name
+                    if (part.contains("?")) part = part.substring(0, part.indexOf("?"));
+                    if (part.contains("#")) part = part.substring(0, part.indexOf("#"));
+                    return part.trim();
                 }
             }
         } catch (Exception e) {
@@ -1919,7 +1931,11 @@ public class ApiService {
     public void getRelatedTitles(String animeSlug, RelatedTitlesCallback callback) {
         safeExecute(() -> {
             try {
-                String url = "https://api.cdnlibs.org/api/anime/" + animeSlug + "/relations";
+                String cleanSlug = animeSlug != null ? animeSlug.trim() : "";
+                if (cleanSlug.contains("?")) cleanSlug = cleanSlug.substring(0, cleanSlug.indexOf("?"));
+                if (cleanSlug.contains("#")) cleanSlug = cleanSlug.substring(0, cleanSlug.indexOf("#"));
+                while (cleanSlug.endsWith("/")) cleanSlug = cleanSlug.substring(0, cleanSlug.length() - 1);
+                String url = "https://api.cdnlibs.org/api/anime/" + cleanSlug + "/relations";
                 Log.d("ApiService", "Fetching related titles from: " + url);
 
                 Request request = buildApiRequest(url).build();

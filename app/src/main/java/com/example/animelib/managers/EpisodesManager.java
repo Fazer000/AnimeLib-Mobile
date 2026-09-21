@@ -22,6 +22,7 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.example.animelib.R;
 import com.example.animelib.adapters.HorizontalEpisodesAdapter;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.models.EpisodesListResponse;
@@ -263,17 +264,23 @@ public class EpisodesManager {
      * Настройка поиска серии для портретного режима
      */
     public void setupPortraitSearchViews(View searchBtn, EditText inputEt) {
-        if (searchBtn != null && searchBtn.getParent() instanceof View) {
-            this.portraitSearchContainer = (View) searchBtn.getParent();
+        if (searchBtn != null) {
+            if (searchBtn.getParent() instanceof View) {
+                this.portraitSearchContainer = (View) searchBtn.getParent();
+            } else if (searchBtn.getRootView() != null) {
+                this.portraitSearchContainer = searchBtn.getRootView().findViewById(R.id.portraitSearchContainer);
+            }
             updatePortraitSearchVisibility();
         }
         setupSearchUI(searchBtn, inputEt);
     }
 
     private void updatePortraitSearchVisibility() {
-        if (portraitSearchContainer != null) {
-            portraitSearchContainer.setVisibility((episodes != null && !episodes.isEmpty()) ? View.VISIBLE : View.GONE);
-        }
+        safeRunOnUiThread(() -> {
+            if (portraitSearchContainer != null) {
+                portraitSearchContainer.setVisibility((episodes != null && !episodes.isEmpty()) ? View.VISIBLE : View.GONE);
+            }
+        });
     }
 
     /**
