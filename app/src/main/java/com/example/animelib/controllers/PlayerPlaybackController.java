@@ -1,6 +1,8 @@
 package com.example.animelib.controllers;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import com.google.android.material.button.MaterialButton;
@@ -15,7 +17,6 @@ import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.hls.HlsMediaSource;
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.exoplayer.source.ProgressiveMediaSource;
 import androidx.media3.ui.PlayerView;
@@ -29,6 +30,7 @@ import com.example.animelib.managers.TimecodeManager;
 public class PlayerPlaybackController {
 
     private static final String TAG = "PlayerPlaybackController";
+    private static final long BUFFERING_TIMEOUT_MS = 15_000L;
 
     public interface PlaybackCallback {
         Context getPlayerContext();
@@ -47,6 +49,8 @@ public class PlayerPlaybackController {
     private final Context context;
     private final PlayerView playerView;
     private final HttpDataSource.Factory httpDataSourceFactory;
+    private final Handler watchdogHandler = new Handler(Looper.getMainLooper());
+    private Runnable bufferingWatchdogRunnable = null;
     private ExoPlayer player;
     private PlaybackCallback callback;
     private boolean isFirstFrameRendered = false;
@@ -81,7 +85,7 @@ public class PlayerPlaybackController {
         if (factory instanceof DefaultHttpDataSource.Factory) {
             DefaultHttpDataSource.Factory defaultFactory = (DefaultHttpDataSource.Factory) factory;
             defaultFactory
-                    .setConnectTimeoutMs(15000)
+                    .setConnectTimeoutMs(10000)
                     .setReadTimeoutMs(15000)
                     .setAllowCrossProtocolRedirects(true);
             if (headers != null) {
@@ -92,7 +96,7 @@ public class PlayerPlaybackController {
 
         DefaultHttpDataSource.Factory newFactory = new DefaultHttpDataSource.Factory()
                 .setUserAgent("Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36")
-                .setConnectTimeoutMs(15000)
+                .setConnectTimeoutMs(10000)
                 .setReadTimeoutMs(15000)
                 .setAllowCrossProtocolRedirects(true);
 
@@ -103,6 +107,10 @@ public class PlayerPlaybackController {
     }
 
     public ExoPlayer initializePlayer(String videoUrl, MediaItem mediaItem, int resizeMode, boolean playWhenReady) {
+        return initializePlayer(videoUrl, mediaItem, resizeMode, playWhenReady, 0);
+    }
+
+    public ExoPlayer initializePlayer(String videoUrl, MediaItem mediaItem, int resizeMode, boolean playWhenReady, long startPosition) {
         if (context == null || videoUrl == null) return player;
 
         Context playerContext = callback != null ? callback.getPlayerContext() : context;
@@ -161,7 +169,11 @@ public class PlayerPlaybackController {
                     .createMediaSource(mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl));
         }
 
-        player.setMediaSource(mediaSource);
+        if (startPosition > 0) {
+            player.setMediaSource(mediaSource, startPosition);
+        } else {
+            player.setMediaSource(mediaSource);
+        }
 
         AmbientLightManager ambientLightManager = callback != null ? callback.getAmbientLightManager() : null;
         if (ambientLightManager != null) {
@@ -184,6 +196,60 @@ public class PlayerPlaybackController {
             timecodeManager.initializeViews(player, playerView, skipButton);
         }
 
+        if (playWhenReady) {
+            startBufferingWatchdog();
+        }
+        player.setPlayWhenReady(playWhenReady);
+        player.prepare();
+
+        return player;
+    }
+
+    public ExoPlayer switchMediaSource(String videoUrl, MediaItem mediaItem, long startPosition, boolean playWhenReady) {
+        if (player == null) {
+            int resizeMode = playerView != null ? playerView.getResizeMode() : androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT;
+            return initializePlayer(videoUrl, mediaItem, resizeMode, playWhenReady, startPosition);
+        }
+
+        Context playerContext = callback != null ? callback.getPlayerContext() : context;
+        if (playerContext == null) playerContext = context;
+
+        isFirstFrameRendered = false;
+
+        HttpDataSource.Factory httpFactory = getEffectiveHttpDataSourceFactory();
+        DataSource.Factory dsFactory = new DefaultDataSource.Factory(playerContext, httpFactory);
+
+        MediaSource mediaSource;
+        if (videoUrl.contains(".m3u8") || videoUrl.contains("hls")) {
+            mediaSource = new HlsMediaSource.Factory(dsFactory)
+                    .setAllowChunklessPreparation(true)
+                    .createMediaSource(mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl));
+        } else {
+            androidx.media3.extractor.DefaultExtractorsFactory extractorsFactory =
+                    new androidx.media3.extractor.DefaultExtractorsFactory()
+                            .setConstantBitrateSeekingEnabled(true);
+
+            mediaSource = new ProgressiveMediaSource.Factory(dsFactory, extractorsFactory)
+                    .createMediaSource(mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl));
+        }
+
+        AmbientLightManager ambientLightManager = callback != null ? callback.getAmbientLightManager() : null;
+        if (ambientLightManager != null) {
+            ambientLightManager.setPlayer(player, mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl), videoUrl);
+        }
+
+        if (startPosition > 0) {
+            player.setMediaSource(mediaSource, startPosition);
+        } else {
+            player.setMediaSource(mediaSource);
+        }
+
+        if (playWhenReady) {
+            startBufferingWatchdog();
+        } else {
+            cancelBufferingWatchdog();
+        }
+
         player.setPlayWhenReady(playWhenReady);
         player.prepare();
 
@@ -191,7 +257,34 @@ public class PlayerPlaybackController {
     }
 
     public ExoPlayer initializeHlsPlayer(String hlsUrl, MediaItem mediaItem, int resizeMode, boolean playWhenReady) {
-        return initializePlayer(hlsUrl, mediaItem, resizeMode, playWhenReady);
+        return initializePlayer(hlsUrl, mediaItem, resizeMode, playWhenReady, 0);
+    }
+
+    public ExoPlayer initializeHlsPlayer(String hlsUrl, MediaItem mediaItem, int resizeMode, boolean playWhenReady, long startPosition) {
+        return initializePlayer(hlsUrl, mediaItem, resizeMode, playWhenReady, startPosition);
+    }
+
+    private void startBufferingWatchdog() {
+        cancelBufferingWatchdog();
+        bufferingWatchdogRunnable = () -> {
+            if (player != null && player.getPlaybackState() == Player.STATE_BUFFERING && player.getPlayWhenReady()) {
+                Log.w(TAG, "Playback stuck in buffering for " + BUFFERING_TIMEOUT_MS + "ms");
+                if (callback != null) {
+                    callback.onPlayerError(new PlaybackException(
+                            "Превышено время ожидания видеопотока. Попробуйте сменить качество или озвучку.",
+                            null,
+                            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT));
+                }
+            }
+        };
+        watchdogHandler.postDelayed(bufferingWatchdogRunnable, BUFFERING_TIMEOUT_MS);
+    }
+
+    private void cancelBufferingWatchdog() {
+        if (bufferingWatchdogRunnable != null) {
+            watchdogHandler.removeCallbacks(bufferingWatchdogRunnable);
+            bufferingWatchdogRunnable = null;
+        }
     }
 
     private void setupPlayerListener() {
@@ -200,6 +293,7 @@ public class PlayerPlaybackController {
             @Override
             public void onRenderedFirstFrame() {
                 isFirstFrameRendered = true;
+                cancelBufferingWatchdog();
                 if (callback != null) {
                     callback.onFirstFrameRendered();
                 }
@@ -207,6 +301,11 @@ public class PlayerPlaybackController {
 
             @Override
             public void onPlaybackStateChanged(int playbackState) {
+                if (playbackState == Player.STATE_READY || playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
+                    cancelBufferingWatchdog();
+                } else if (playbackState == Player.STATE_BUFFERING && player != null && player.getPlayWhenReady()) {
+                    startBufferingWatchdog();
+                }
                 if (callback != null) {
                     callback.onPlaybackStateChanged(playbackState, player != null && player.getPlayWhenReady());
                 }
@@ -215,6 +314,7 @@ public class PlayerPlaybackController {
             @Override
             public void onPlayerError(PlaybackException error) {
                 Log.e(TAG, "ExoPlayer error", error);
+                cancelBufferingWatchdog();
                 if (callback != null) {
                     callback.onPlayerError(error);
                 }
@@ -223,6 +323,7 @@ public class PlayerPlaybackController {
     }
 
     public void release() {
+        cancelBufferingWatchdog();
         if (player != null) {
             player.release();
             player = null;
