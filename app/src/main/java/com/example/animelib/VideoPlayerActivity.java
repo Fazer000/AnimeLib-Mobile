@@ -456,7 +456,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private HorizontalRelatedTitlesAdapter portraitRelatedTitlesAdapter;
 
     // User preferences are now managed by PlayersManager
-    private String preferredQuality;
+    private String preferredQuality = "Авто";
     private ImageButton downloadButton;
     private ImageButton downloadButtonTop;
     private ImageButton btnDownloadFromMenu;

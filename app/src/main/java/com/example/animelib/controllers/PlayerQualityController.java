@@ -20,7 +20,7 @@ public class PlayerQualityController {
 
     private static final String TAG = "PlayerQualityCtrl";
 
-    private String preferredQuality = "1080p";
+    private String preferredQuality = "Авто";
     private KodikResponse currentKodikResponse;
 
     public interface QualityCallback {

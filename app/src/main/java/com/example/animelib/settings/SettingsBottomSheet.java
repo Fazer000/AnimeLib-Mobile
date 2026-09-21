@@ -665,7 +665,7 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
         if (currentQualityText == null) return;
 
         if (quality == null) {
-            quality = isOfflineMode ? "Загруженное" : "1080p";
+            quality = isOfflineMode ? "Загруженное" : "Авто";
         }
 
         if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(quality)) {
@@ -691,7 +691,7 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
 
     private String formatQualityWithTag(String quality) {
         if (quality == null) {
-            quality = isOfflineMode ? "Загруженное" : "1080p";
+            quality = isOfflineMode ? "Загруженное" : "Авто";
         }
         String tag = com.example.animelib.util.FloatingBottomSheetUtils.getQualityTag(quality);
         if (tag != null && !tag.isEmpty() && !quality.equalsIgnoreCase(tag)) {
