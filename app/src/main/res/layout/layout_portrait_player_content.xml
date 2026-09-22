@@ -623,7 +623,7 @@
                     android:layout_height="wrap_content"
                     android:visibility="gone"
                     app:chipSpacingHorizontal="6dp"
-                    app:chipSpacingVertical="6dp" />
+                    app:chipSpacingVertical="4dp" />
 
             </LinearLayout>
 

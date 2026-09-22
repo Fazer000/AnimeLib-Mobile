@@ -55,6 +55,11 @@ public class TimecodeManager {
      * Инициализация с UI компонентами
      */
     public void initializeViews(ExoPlayer player, PlayerView playerView, MaterialButton skipSegmentButton) {
+        if (this.player != null && playerListener != null) {
+            try {
+                this.player.removeListener(playerListener);
+            } catch (Exception ignored) {}
+        }
         this.player = player;
         this.playerView = playerView;
         this.skipSegmentButton = skipSegmentButton;
@@ -71,8 +76,8 @@ public class TimecodeManager {
         // Настраиваем обработчик нажатия кнопки пропуска
         if (skipSegmentButton != null) {
             skipSegmentButton.setOnClickListener(v -> {
-                if (player != null) {
-                    long currentPositionMs = player.getCurrentPosition();
+                if (this.player != null) {
+                    long currentPositionMs = this.player.getCurrentPosition();
                     int currentPositionSeconds = (int) (currentPositionMs / 1000);
                     
                     // Ищем активный сегмент
@@ -80,9 +85,9 @@ public class TimecodeManager {
                         if (currentPositionSeconds >= timecode.getFrom() && 
                             currentPositionSeconds <= timecode.getTo()) {
                             long seekPosition = timecode.getTo() * 1000L; // Конвертируем секунды в миллисекунды
-                            player.seekTo(seekPosition);
+                            this.player.seekTo(seekPosition);
                             if (timebarSegmentsView != null) {
-                                timebarSegmentsView.setProgress(seekPosition, player.getBufferedPosition(), player.getDuration());
+                                timebarSegmentsView.setProgress(seekPosition, this.player.getBufferedPosition(), this.player.getDuration());
                             }
                             Log.d(TAG, "Skipping segment: " + timecode.getType() + " from " + timecode.getFrom() + "s to " + timecode.getTo() + "s at " + seekPosition + "ms");
                             break;
@@ -93,12 +98,15 @@ public class TimecodeManager {
         }
 
         if (timeBar != null) {
+            if (scrubListener != null) {
+                timeBar.removeListener(scrubListener);
+            }
             scrubListener = new TimeBar.OnScrubListener() {
                 @Override
                 public void onScrubStart(@NonNull TimeBar timeBar, long position) {
                     isScrubbing = true;
-                    if (timebarSegmentsView != null && player != null) {
-                        timebarSegmentsView.setProgress(position, player.getBufferedPosition(), player.getDuration());
+                    if (timebarSegmentsView != null && TimecodeManager.this.player != null) {
+                        timebarSegmentsView.setProgress(position, TimecodeManager.this.player.getBufferedPosition(), TimecodeManager.this.player.getDuration());
                     }
                     updateSegmentBadgeForPosition(position);
                 }
@@ -106,8 +114,8 @@ public class TimecodeManager {
                 @Override
                 public void onScrubMove(@NonNull TimeBar timeBar, long position) {
                     isScrubbing = true;
-                    if (timebarSegmentsView != null && player != null) {
-                        timebarSegmentsView.setProgress(position, player.getBufferedPosition(), player.getDuration());
+                    if (timebarSegmentsView != null && TimecodeManager.this.player != null) {
+                        timebarSegmentsView.setProgress(position, TimecodeManager.this.player.getBufferedPosition(), TimecodeManager.this.player.getDuration());
                     }
                     updateSegmentBadgeForPosition(position);
                 }
@@ -115,8 +123,8 @@ public class TimecodeManager {
                 @Override
                 public void onScrubStop(@NonNull TimeBar timeBar, long position, boolean canceled) {
                     isScrubbing = false;
-                    if (timebarSegmentsView != null && player != null) {
-                        timebarSegmentsView.setProgress(position, player.getBufferedPosition(), player.getDuration());
+                    if (timebarSegmentsView != null && TimecodeManager.this.player != null) {
+                        timebarSegmentsView.setProgress(position, TimecodeManager.this.player.getBufferedPosition(), TimecodeManager.this.player.getDuration());
                     }
                     updateTimecodeButtonsVisibility();
                 }
@@ -124,8 +132,19 @@ public class TimecodeManager {
             timeBar.addListener(scrubListener);
         }
         
-        // Добавляем слушатель для отслеживания позиции воспроизведения
-        if (player != null) {
+        ensurePlayerListener();
+        if (this.player != null) {
+            try {
+                this.player.addListener(playerListener);
+            } catch (Exception ignored) {}
+        }
+
+        updateTimecodeSegmentsOnBar();
+        startPeriodicUpdate();
+    }
+
+    private void ensurePlayerListener() {
+        if (playerListener == null) {
             playerListener = new Player.Listener() {
                 @Override
                 public void onPositionDiscontinuity(Player.PositionInfo oldPosition, Player.PositionInfo newPosition, int reason) {
@@ -152,10 +171,28 @@ public class TimecodeManager {
                     updateProgress();
                 }
             };
-            player.addListener(playerListener);
         }
+    }
 
+    /**
+     * Обновляет инстанс плеера (например, при бесшовной смене качества/озвучки)
+     */
+    public void updatePlayer(ExoPlayer newPlayer) {
+        if (this.player != null && playerListener != null) {
+            try {
+                this.player.removeListener(playerListener);
+            } catch (Exception ignored) {}
+        }
+        this.player = newPlayer;
+        ensurePlayerListener();
+        if (this.player != null) {
+            try {
+                this.player.addListener(playerListener);
+            } catch (Exception ignored) {}
+        }
         updateTimecodeSegmentsOnBar();
+        updateProgress();
+        updateTimecodeButtonsVisibility();
         startPeriodicUpdate();
     }
     

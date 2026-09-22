@@ -4796,6 +4796,12 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 timecodeManager.setTimecodes(currentPlayerData);
             }
         }
+        if (timecodeManager != null) {
+            timecodeManager.updatePlayer(player);
+        }
+        if (playerProgressController != null) {
+            playerProgressController.startViewProgressTracking();
+        }
 
         applyPlayerSidePanelTransform(0f);
         if (playerPanelsController != null) {

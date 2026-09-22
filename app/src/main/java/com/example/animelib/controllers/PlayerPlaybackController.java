@@ -336,6 +336,10 @@ public class PlayerPlaybackController {
         }
         isFirstFrameRendered = true;
         setupPlayerListener();
+        TimecodeManager timecodeManager = callback != null ? callback.getTimecodeManager() : null;
+        if (timecodeManager != null) {
+            timecodeManager.updatePlayer(newPlayer);
+        }
     }
 
     public void release() {

@@ -402,14 +402,12 @@ public class PlayerAnimeInfoController {
             }
         }
 
-        // 2. Rating Pill Overlay ("Тайтл ★ 9.59")
+        // 2. Rating Pill Overlay
         if (tvPortraitInfoRatingPill != null) {
             String ratingStr = (data.getRating() != null && !TextUtils.isEmpty(data.getRating().getAverageFormated()))
                     ? data.getRating().getAverageFormated() : null;
             if (ratingStr != null) {
-                int votes = data.getRating() != null ? data.getRating().getVotes() : 0;
-                String pillText = votes > 0 ? ("Тайтл ★ " + ratingStr + "  " + votes) : ("Тайтл ★ " + ratingStr);
-                SkeletonHelper.hideSkeleton(tvPortraitInfoRatingPill, pillText);
+                SkeletonHelper.hideSkeleton(tvPortraitInfoRatingPill, ratingStr);
                 tvPortraitInfoRatingPill.setVisibility(View.VISIBLE);
             } else {
                 SkeletonHelper.hideSkeleton(tvPortraitInfoRatingPill, "");
@@ -662,17 +660,17 @@ public class PlayerAnimeInfoController {
     private com.google.android.material.chip.Chip createAgeChip(Context context, String text) {
         com.google.android.material.chip.Chip chip = new com.google.android.material.chip.Chip(context);
         chip.setText(text);
-        chip.setTextSize(11.5f);
+        chip.setTextSize(10.5f);
         chip.setTextColor(android.graphics.Color.parseColor("#FF6B6B"));
         chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#261418")));
         chip.setChipStrokeColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4D2026")));
         chip.setChipStrokeWidth(dpToPx(context, 0.5f));
         chip.setEnsureMinTouchTargetSize(false);
-        chip.setChipStartPadding(dpToPx(context, 8));
-        chip.setChipEndPadding(dpToPx(context, 8));
-        chip.setTextStartPadding(dpToPx(context, 2));
-        chip.setTextEndPadding(dpToPx(context, 2));
-        chip.setChipMinHeight(dpToPx(context, 24));
+        chip.setChipStartPadding(dpToPx(context, 7));
+        chip.setChipEndPadding(dpToPx(context, 7));
+        chip.setTextStartPadding(dpToPx(context, 1));
+        chip.setTextEndPadding(dpToPx(context, 1));
+        chip.setChipMinHeight(dpToPx(context, 20));
         chip.setPadding(0, 0, 0, 0);
         return chip;
     }
@@ -680,7 +678,7 @@ public class PlayerAnimeInfoController {
     private com.google.android.material.chip.Chip createTagChip(Context context, String text, boolean isGenre) {
         com.google.android.material.chip.Chip chip = new com.google.android.material.chip.Chip(context);
         chip.setText(text);
-        chip.setTextSize(11.5f);
+        chip.setTextSize(10.5f);
         if (isGenre) {
             chip.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.purple_primary));
             chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(
@@ -697,11 +695,11 @@ public class PlayerAnimeInfoController {
             chip.setChipStrokeWidth(dpToPx(context, 0.5f));
         }
         chip.setEnsureMinTouchTargetSize(false);
-        chip.setChipStartPadding(dpToPx(context, 8));
-        chip.setChipEndPadding(dpToPx(context, 8));
-        chip.setTextStartPadding(dpToPx(context, 2));
-        chip.setTextEndPadding(dpToPx(context, 2));
-        chip.setChipMinHeight(dpToPx(context, 24));
+        chip.setChipStartPadding(dpToPx(context, 7));
+        chip.setChipEndPadding(dpToPx(context, 7));
+        chip.setTextStartPadding(dpToPx(context, 1));
+        chip.setTextEndPadding(dpToPx(context, 1));
+        chip.setChipMinHeight(dpToPx(context, 20));
         chip.setPadding(0, 0, 0, 0);
         return chip;
     }

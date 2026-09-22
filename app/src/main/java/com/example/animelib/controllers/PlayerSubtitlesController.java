@@ -16,6 +16,7 @@ import android.text.style.AbsoluteSizeSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.ReplacementSpan;
 import android.text.style.StyleSpan;
+import android.text.style.StrikethroughSpan;
 import android.text.style.UnderlineSpan;
 import android.util.Log;
 import android.util.TypedValue;
@@ -478,183 +479,184 @@ public class PlayerSubtitlesController {
         applySubtitlesStateToPlayer();
     }
 
-    public static class AssPathSpan extends ReplacementSpan {
-        private final Path rawPath;
-        private final int fillColor;
-        private final int strokeColor;
-        private final float strokeWidth;
-        private final float posX;
-        private final float posY;
-        private final float playResX;
-        private final float playResY;
+    public static class AssDrawingResult {
+        public final Path path;
+        public final RectF bounds;
 
-        public AssPathSpan(Path rawPath, int fillColor, int strokeColor, float strokeWidth, float posX, float posY, float playResX, float playResY) {
-            this.rawPath = rawPath;
-            this.fillColor = fillColor;
-            this.strokeColor = strokeColor;
-            this.strokeWidth = strokeWidth;
-            this.posX = posX;
-            this.posY = posY;
-            this.playResX = playResX > 0 ? playResX : 1280.0f;
-            this.playResY = playResY > 0 ? playResY : 720.0f;
-        }
-
-        @Override
-        public int getSize(@NonNull Paint paint, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
-            if (fm != null) {
-                fm.ascent = 0;
-                fm.top = 0;
-                fm.descent = 0;
-                fm.bottom = 0;
-            }
-            return 1;
-        }
-
-        @Override
-        public void draw(@NonNull Canvas canvas, CharSequence text, int start, int end, float x, int top, int y, int bottom, @NonNull Paint paint) {
-            if (rawPath == null) return;
-            canvas.save();
-
-            float canvasW = canvas.getWidth();
-            float canvasH = canvas.getHeight();
-            if (canvasW <= 0) canvasW = 1280.0f;
-            if (canvasH <= 0) canvasH = 720.0f;
-
-            float scaleX = canvasW / playResX;
-            float scaleY = canvasH / playResY;
-
-            Matrix matrix = new Matrix();
-            if (posX >= 0 && posY >= 0) {
-                matrix.postTranslate(posX, posY);
-            }
-            matrix.postScale(scaleX, scaleY);
-
-            Path transformedPath = new Path();
-            rawPath.transform(matrix, transformedPath);
-
-            if (fillColor != Color.TRANSPARENT) {
-                Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-                fillPaint.setStyle(Paint.Style.FILL);
-                fillPaint.setColor(fillColor);
-                canvas.drawPath(transformedPath, fillPaint);
-            }
-
-            if (strokeColor != Color.TRANSPARENT && strokeWidth > 0) {
-                Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-                strokePaint.setStyle(Paint.Style.STROKE);
-                strokePaint.setColor(strokeColor);
-                strokePaint.setStrokeWidth(strokeWidth * ((scaleX + scaleY) / 2.0f));
-                canvas.drawPath(transformedPath, strokePaint);
-            }
-
-            canvas.restore();
+        public AssDrawingResult(Path path, RectF bounds) {
+            this.path = path;
+            this.bounds = bounds;
         }
     }
 
-    private static Path parseAssPath(String drawingCommands, float scale) {
+    public static AssDrawingResult parseAssPath(String drawingCommands, float scale) {
         if (drawingCommands == null || drawingCommands.trim().isEmpty()) return null;
         try {
+            java.util.regex.Pattern tokenPattern = java.util.regex.Pattern.compile("([a-zA-Z])|(-?\\d+(?:\\.\\d+)?)");
+            java.util.regex.Matcher matcher = tokenPattern.matcher(drawingCommands);
+
+            List<String> tokens = new ArrayList<>();
+            while (matcher.find()) {
+                tokens.add(matcher.group());
+            }
+            if (tokens.isEmpty()) return null;
+
             Path path = new Path();
-            String[] tokens = drawingCommands.trim().split("[\\s,]+");
             char currentCmd = 'm';
             int i = 0;
             boolean hasPoints = false;
-            while (i < tokens.length) {
-                String token = tokens[i].trim();
-                if (token.isEmpty()) { i++; continue; }
-                char c = Character.toLowerCase(token.charAt(0));
-                if (c == 'm' || c == 'n' || c == 'l' || c == 'b' || c == 's' || c == 'p' || c == 'c') {
-                    currentCmd = c;
+
+            while (i < tokens.size()) {
+                String token = tokens.get(i);
+                char firstChar = Character.toLowerCase(token.charAt(0));
+
+                if (Character.isLetter(firstChar)) {
+                    currentCmd = firstChar;
                     i++;
-                    if (c == 'c') {
+                    if (currentCmd == 'c') {
                         path.close();
                         continue;
                     }
-                    if (i >= tokens.length) break;
+                    if (i >= tokens.size()) break;
                 }
+
                 if (currentCmd == 'm' || currentCmd == 'n') {
-                    if (i + 1 < tokens.length) {
-                        float x = Float.parseFloat(tokens[i]) * scale;
-                        float y = Float.parseFloat(tokens[i + 1]) * scale;
+                    if (i + 1 < tokens.size() && isNumeric(tokens.get(i)) && isNumeric(tokens.get(i + 1))) {
+                        float x = Float.parseFloat(tokens.get(i)) * scale;
+                        float y = Float.parseFloat(tokens.get(i + 1)) * scale;
                         path.moveTo(x, y);
                         hasPoints = true;
                         i += 2;
                         currentCmd = 'l';
-                    } else { i++; }
+                    } else {
+                        i++;
+                    }
                 } else if (currentCmd == 'l' || currentCmd == 's' || currentCmd == 'p') {
-                    if (i + 1 < tokens.length) {
-                        float x = Float.parseFloat(tokens[i]) * scale;
-                        float y = Float.parseFloat(tokens[i + 1]) * scale;
+                    if (i + 1 < tokens.size() && isNumeric(tokens.get(i)) && isNumeric(tokens.get(i + 1))) {
+                        float x = Float.parseFloat(tokens.get(i)) * scale;
+                        float y = Float.parseFloat(tokens.get(i + 1)) * scale;
                         path.lineTo(x, y);
                         hasPoints = true;
                         i += 2;
-                    } else { i++; }
+                    } else {
+                        i++;
+                    }
                 } else if (currentCmd == 'b') {
-                    if (i + 5 < tokens.length) {
-                        float x1 = Float.parseFloat(tokens[i]) * scale;
-                        float y1 = Float.parseFloat(tokens[i + 1]) * scale;
-                        float x2 = Float.parseFloat(tokens[i + 2]) * scale;
-                        float y2 = Float.parseFloat(tokens[i + 3]) * scale;
-                        float x3 = Float.parseFloat(tokens[i + 4]) * scale;
-                        float y3 = Float.parseFloat(tokens[i + 5]) * scale;
+                    if (i + 5 < tokens.size() && isNumeric(tokens.get(i)) && isNumeric(tokens.get(i + 1))
+                            && isNumeric(tokens.get(i + 2)) && isNumeric(tokens.get(i + 3))
+                            && isNumeric(tokens.get(i + 4)) && isNumeric(tokens.get(i + 5))) {
+                        float x1 = Float.parseFloat(tokens.get(i)) * scale;
+                        float y1 = Float.parseFloat(tokens.get(i + 1)) * scale;
+                        float x2 = Float.parseFloat(tokens.get(i + 2)) * scale;
+                        float y2 = Float.parseFloat(tokens.get(i + 3)) * scale;
+                        float x3 = Float.parseFloat(tokens.get(i + 4)) * scale;
+                        float y3 = Float.parseFloat(tokens.get(i + 5)) * scale;
                         path.cubicTo(x1, y1, x2, y2, x3, y3);
                         hasPoints = true;
                         i += 6;
-                    } else { i++; }
+                    } else {
+                        i++;
+                    }
                 } else {
                     i++;
                 }
             }
-            return hasPoints ? path : null;
+
+            if (!hasPoints) return null;
+
+            RectF bounds = new RectF();
+            path.computeBounds(bounds, true);
+            if (bounds.width() <= 0 || bounds.height() <= 0) return null;
+
+            return new AssDrawingResult(path, bounds);
         } catch (Exception e) {
             return null;
         }
     }
 
-    private Bitmap renderAssVectorPath(Path rawPath, int fillColor, int strokeColor, float strokeWidth, float pScale) {
-        if (rawPath == null) return null;
+    private static boolean isNumeric(String str) {
+        if (str == null || str.isEmpty()) return false;
+        char c = str.charAt(0);
+        return Character.isDigit(c) || c == '-' || c == '+' || c == '.';
+    }
+
+    private Cue renderAssVectorCue(Path rawPath, RectF bounds, int fillColor, int strokeColor, float strokeWidth,
+                                   float posX, float posY, int anVal, float playResX, float playResY) {
+        if (rawPath == null || bounds == null || bounds.width() <= 0 || bounds.height() <= 0) return null;
         try {
-            Path scaledPath = new Path();
-            Matrix scaleMatrix = new Matrix();
-            scaleMatrix.setScale(pScale, pScale);
-            rawPath.transform(scaleMatrix, scaledPath);
+            float padding = Math.max(3.0f, strokeWidth * 2.0f);
+            float boundsW = bounds.width() + padding * 2;
+            float boundsH = bounds.height() + padding * 2;
 
-            RectF bounds = new RectF();
-            scaledPath.computeBounds(bounds, true);
-
-            int padding = Math.max(4, Math.round(strokeWidth * 2));
-            int bmpWidth = Math.max(1, Math.round(bounds.width()) + padding * 2);
-            int bmpHeight = Math.max(1, Math.round(bounds.height()) + padding * 2);
-
-            if (bmpWidth > 2048) bmpWidth = 2048;
-            if (bmpHeight > 2048) bmpHeight = 2048;
+            float renderScale = Math.max(1.0f, Math.min(3.0f, 1080.0f / Math.max(1.0f, playResY)));
+            int bmpWidth = Math.max(1, Math.min(2048, Math.round(boundsW * renderScale)));
+            int bmpHeight = Math.max(1, Math.min(2048, Math.round(boundsH * renderScale)));
 
             Bitmap bitmap = Bitmap.createBitmap(bmpWidth, bmpHeight, Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bitmap);
 
-            Matrix translate = new Matrix();
-            translate.postTranslate(-bounds.left + padding, -bounds.top + padding);
-            Path drawPath = new Path();
-            scaledPath.transform(translate, drawPath);
+            Matrix matrix = new Matrix();
+            matrix.postTranslate(-bounds.left + padding, -bounds.top + padding);
+            matrix.postScale(renderScale, renderScale);
 
-            if (fillColor != Color.TRANSPARENT) {
+            Path drawPath = new Path();
+            rawPath.transform(matrix, drawPath);
+
+            if (Color.alpha(fillColor) > 0) {
                 Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
                 fillPaint.setStyle(Paint.Style.FILL);
                 fillPaint.setColor(fillColor);
                 canvas.drawPath(drawPath, fillPaint);
             }
 
-            if (strokeColor != Color.TRANSPARENT && strokeWidth > 0) {
+            if (strokeWidth > 0 && Color.alpha(strokeColor) > 0) {
                 Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
                 strokePaint.setStyle(Paint.Style.STROKE);
                 strokePaint.setColor(strokeColor);
-                strokePaint.setStrokeWidth(strokeWidth);
+                strokePaint.setStrokeWidth(strokeWidth * renderScale);
                 strokePaint.setStrokeJoin(Paint.Join.ROUND);
                 strokePaint.setStrokeCap(Paint.Cap.ROUND);
                 canvas.drawPath(drawPath, strokePaint);
             }
 
-            return bitmap;
+            float scriptX;
+            float scriptY;
+
+            if (posX >= 0 && posY >= 0) {
+                scriptX = posX + bounds.left - padding;
+                scriptY = posY + bounds.top - padding;
+            } else {
+                scriptX = bounds.left - padding;
+                scriptY = bounds.top - padding;
+
+                if (scriptX < 0 || scriptY < 0) {
+                    if (anVal == 7 || anVal == 8 || anVal == 9) {
+                        scriptX = (anVal == 8) ? ((playResX - boundsW) / 2.0f) : ((anVal == 9) ? (playResX - boundsW - 20) : 20);
+                        scriptY = 0.05f * playResY;
+                    } else if (anVal == 4 || anVal == 5 || anVal == 6) {
+                        scriptX = (anVal == 5) ? ((playResX - boundsW) / 2.0f) : ((anVal == 6) ? (playResX - boundsW - 20) : 20);
+                        scriptY = (playResY - boundsH) / 2.0f;
+                    } else {
+                        scriptX = (anVal == 2) ? ((playResX - boundsW) / 2.0f) : ((anVal == 3) ? (playResX - boundsW - 20) : 20);
+                        scriptY = playResY - boundsH - (0.06f * playResY);
+                    }
+                }
+            }
+
+            float normX = Math.max(0.0f, Math.min(1.0f, scriptX / playResX));
+            float normY = Math.max(0.0f, Math.min(1.0f, scriptY / playResY));
+            float normW = Math.max(0.001f, Math.min(1.0f, boundsW / playResX));
+            float normH = Math.max(0.001f, Math.min(1.0f, boundsH / playResY));
+
+            return new Cue.Builder()
+                    .setBitmap(bitmap)
+                    .setPosition(normX)
+                    .setPositionAnchor(Cue.ANCHOR_TYPE_START)
+                    .setLine(normY, Cue.LINE_TYPE_FRACTION)
+                    .setLineAnchor(Cue.ANCHOR_TYPE_START)
+                    .setSize(normW)
+                    .setBitmapHeight(normH)
+                    .build();
         } catch (Exception e) {
             return null;
         }
@@ -697,15 +699,16 @@ public class PlayerSubtitlesController {
                        .setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET).setLineAnchor(Cue.ANCHOR_TYPE_END)
                        .setTextAlignment(android.text.Layout.Alignment.ALIGN_NORMAL);
                 break;
-            case 2:
-                builder.setPosition(0.5f).setPositionAnchor(Cue.ANCHOR_TYPE_MIDDLE)
-                       .setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET).setLineAnchor(Cue.ANCHOR_TYPE_END)
-                       .setTextAlignment(android.text.Layout.Alignment.ALIGN_CENTER);
-                break;
             case 3:
                 builder.setPosition(0.95f).setPositionAnchor(Cue.ANCHOR_TYPE_END)
                        .setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET).setLineAnchor(Cue.ANCHOR_TYPE_END)
                        .setTextAlignment(android.text.Layout.Alignment.ALIGN_OPPOSITE);
+                break;
+            case 2:
+            default:
+                builder.setPosition(0.5f).setPositionAnchor(Cue.ANCHOR_TYPE_MIDDLE)
+                       .setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET).setLineAnchor(Cue.ANCHOR_TYPE_END)
+                       .setTextAlignment(android.text.Layout.Alignment.ALIGN_CENTER);
                 break;
         }
     }
@@ -766,6 +769,50 @@ public class PlayerSubtitlesController {
         return hasDrawingCmd && ((double) drawingTokens / tokens.length) >= 0.5;
     }
 
+    private static class AssStyleState {
+        Integer color = null;
+        Integer outlineColor = null;
+        String font = null;
+        Integer fontSize = null;
+        Boolean bold = null;
+        Boolean italic = null;
+        Boolean underline = null;
+        Boolean strikethrough = null;
+
+        void reset() {
+            color = null;
+            outlineColor = null;
+            font = null;
+            fontSize = null;
+            bold = null;
+            italic = null;
+            underline = null;
+            strikethrough = null;
+        }
+    }
+
+    private float getScriptResX(float posX, float posY, String raw) {
+        ExoPlayer p = callback != null ? callback.getPlayer() : null;
+        if (p != null && p.getVideoSize() != null && p.getVideoSize().width > 0) {
+            return (float) p.getVideoSize().width;
+        }
+        if (posX > 1280 || posY > 720 || (raw != null && (raw.contains("1920") || raw.contains("1080")))) {
+            return 1920.0f;
+        }
+        return 1280.0f;
+    }
+
+    private float getScriptResY(float posX, float posY, String raw) {
+        ExoPlayer p = callback != null ? callback.getPlayer() : null;
+        if (p != null && p.getVideoSize() != null && p.getVideoSize().height > 0) {
+            return (float) p.getVideoSize().height;
+        }
+        if (posX > 1280 || posY > 720 || (raw != null && (raw.contains("1920") || raw.contains("1080")))) {
+            return 1080.0f;
+        }
+        return 720.0f;
+    }
+
     public Cue processAssCue(Cue cue) {
         if (cue == null || cue.text == null) return null;
         CharSequence text = cue.text;
@@ -774,8 +821,7 @@ public class PlayerSubtitlesController {
         String raw = text.toString();
         if (raw.trim().isEmpty()) return null;
 
-        Cue.Builder builder = cue.buildUpon();
-
+        // 1. Check for ASS vector drawing
         if (isAssDrawingPath(raw)) {
             float posX = -1.0f;
             float posY = -1.0f;
@@ -784,6 +830,14 @@ public class PlayerSubtitlesController {
                 try {
                     posX = Float.parseFloat(posMatcher.group(1));
                     posY = Float.parseFloat(posMatcher.group(2));
+                } catch (Exception ignored) {}
+            }
+
+            int anVal = 7;
+            java.util.regex.Matcher anMatcher = java.util.regex.Pattern.compile("(?i)\\\\an([1-9])").matcher(raw);
+            if (anMatcher.find()) {
+                try {
+                    anVal = Integer.parseInt(anMatcher.group(1));
                 } catch (Exception ignored) {}
             }
 
@@ -824,236 +878,305 @@ public class PlayerSubtitlesController {
                 drawingCommands = raw.replaceAll("\\{([^\\}]+)\\}", "").trim();
             }
 
-            float playResX = (posX > 1280 || posY > 720 || raw.contains("1920") || raw.contains("1080")) ? 1920.0f : 1280.0f;
-            float playResY = (posX > 1280 || posY > 720 || raw.contains("1920") || raw.contains("1080")) ? 1080.0f : 720.0f;
+            float playResX = getScriptResX(posX, posY, raw);
+            float playResY = getScriptResY(posX, posY, raw);
 
-            Path path = parseAssPath(drawingCommands, pScale);
-            if (path != null) {
-                Bitmap vectorBmp = renderAssVectorPath(path, fillColor, strokeColor, strokeWidth, pScale);
-                if (vectorBmp != null) {
-                    builder.setBitmap(vectorBmp);
-                    if (posX >= 0 && posY >= 0) {
-                        float xRatio = Math.max(0.0f, Math.min(1.0f, posX / playResX));
-                        float yRatio = Math.max(0.0f, Math.min(1.0f, posY / playResY));
-                        builder.setPosition(xRatio)
-                               .setPositionAnchor(Cue.ANCHOR_TYPE_START)
-                               .setLine(yRatio, Cue.LINE_TYPE_FRACTION)
-                               .setLineAnchor(Cue.ANCHOR_TYPE_START)
-                               .setSize((float) vectorBmp.getWidth() / playResX);
-                    } else {
-                        builder.setPosition(0.5f)
-                               .setPositionAnchor(Cue.ANCHOR_TYPE_MIDDLE)
-                               .setLine(0.5f, Cue.LINE_TYPE_FRACTION)
-                               .setLineAnchor(Cue.ANCHOR_TYPE_MIDDLE);
-                    }
-                    return builder.build();
+            AssDrawingResult drawingResult = parseAssPath(drawingCommands, pScale);
+            if (drawingResult != null) {
+                Cue vectorCue = renderAssVectorCue(drawingResult.path, drawingResult.bounds, fillColor, strokeColor, strokeWidth,
+                        posX, posY, anVal, playResX, playResY);
+                if (vectorCue != null) {
+                    return vectorCue;
                 }
             }
         }
 
-        builder = cue.buildUpon();
-        SpannableStringBuilder ssb = new SpannableStringBuilder(text);
+        // 2. Process ASS Dialogue / Subtitle Text with formatting tags
+        Cue.Builder builder = cue.buildUpon();
 
-        String str = ssb.toString();
-        java.util.regex.Matcher pBlockMatcher = java.util.regex.Pattern.compile("(?i)\\{\\\\p[1-9]\\}[^\\{]*(\\{\\\\p0\\})?").matcher(str);
-        while (pBlockMatcher.find()) {
-            ssb.delete(pBlockMatcher.start(), pBlockMatcher.end());
-            str = ssb.toString();
-            pBlockMatcher = java.util.regex.Pattern.compile("(?i)\\{\\\\p[1-9]\\}[^\\{]*(\\{\\\\p0\\})?").matcher(str);
-        }
+        String rawCleaned = raw;
+        rawCleaned = rawCleaned.replaceAll("(?i)\\{\\\\p[1-9]\\}[^\\{]*(\\{\\\\p0\\})?", "");
+        rawCleaned = rawCleaned.replaceAll("(?i)(?:^|\\s)(?:m|n|l|b|s|p|c)(?:\\s+-?\\d+(?:\\.\\d+)?\\s*)+", "");
 
-        str = ssb.toString();
-        java.util.regex.Matcher drawingPathMatcher = java.util.regex.Pattern.compile("(?i)(?:^|\\s)(?:m|n|l|b|s|p|c)(?:\\s+-?\\d+(?:\\.\\d+)?\\s*)+").matcher(str);
-        while (drawingPathMatcher.find()) {
-            ssb.delete(drawingPathMatcher.start(), drawingPathMatcher.end());
-            str = ssb.toString();
-            drawingPathMatcher = java.util.regex.Pattern.compile("(?i)(?:^|\\s)(?:m|n|l|b|s|p|c)(?:\\s+-?\\d+(?:\\.\\d+)?\\s*)+").matcher(str);
-        }
-
-        if (ssb.toString().replaceAll("\\{([^\\}]+)\\}", "").trim().isEmpty()) {
+        if (rawCleaned.replaceAll("\\{([^\\}]+)\\}", "").trim().isEmpty()) {
             return null;
         }
 
-        str = ssb.toString();
-        int idx;
-        while ((idx = str.indexOf("\\N")) != -1) {
-            ssb.replace(idx, idx + 2, "\n");
-            str = ssb.toString();
-        }
-        while ((idx = str.indexOf("\\n")) != -1) {
-            ssb.replace(idx, idx + 2, "\n");
-            str = ssb.toString();
-        }
-        while ((idx = str.indexOf("\\h")) != -1) {
-            ssb.replace(idx, idx + 2, " ");
-            str = ssb.toString();
-        }
+        SpannableStringBuilder cleanSsb = new SpannableStringBuilder();
+        AssStyleState styleState = new AssStyleState();
+        Context ctx = callback != null ? callback.getContext() : null;
 
-        str = ssb.toString();
-        if (str.contains("{")) {
-            java.util.regex.Pattern tagPattern = java.util.regex.Pattern.compile("\\{([^\\}]+)\\}");
+        int anVal = 2;
+        boolean isExplicitlyPositioned = false;
 
-            Integer currentColor = null;
-            Integer currentOutlineColor = null;
-            String currentFont = null;
-            Integer currentSize = null;
-            Boolean isBold = null;
-            Boolean isItalic = null;
-            Boolean isUnderline = null;
+        int index = 0;
+        int len = rawCleaned.length();
 
-            int safetyCounter = 0;
-            while (safetyCounter++ < 50) {
-                java.util.regex.Matcher matcher = tagPattern.matcher(str);
-                if (!matcher.find()) break;
+        while (index < len) {
+            int tagOpen = rawCleaned.indexOf('{', index);
+            if (tagOpen == -1) {
+                String textSegment = rawCleaned.substring(index);
+                appendCleanSegment(cleanSsb, textSegment, styleState, ctx);
+                break;
+            }
 
-                int tagStart = matcher.start();
-                int tagEnd = matcher.end();
-                String tagBlock = matcher.group(1);
+            if (tagOpen > index) {
+                String textSegment = rawCleaned.substring(index, tagOpen);
+                appendCleanSegment(cleanSsb, textSegment, styleState, ctx);
+            }
 
-                int anVal = 2;
-                java.util.regex.Matcher anMatcher = java.util.regex.Pattern.compile("(?i)\\\\an([1-9])").matcher(tagBlock);
-                if (anMatcher.find()) {
-                    anVal = Integer.parseInt(anMatcher.group(1));
-                    applyAnAlignment(builder, anVal);
-                }
+            int tagClose = rawCleaned.indexOf('}', tagOpen);
+            if (tagClose == -1) {
+                String textSegment = rawCleaned.substring(tagOpen);
+                appendCleanSegment(cleanSsb, textSegment, styleState, ctx);
+                break;
+            }
 
-                java.util.regex.Matcher posMatcher = java.util.regex.Pattern.compile("(?i)\\\\pos\\(\\s*(-?\\d+(?:\\.\\d+)?)\\s*,\\s*(-?\\d+(?:\\.\\d+)?)\\s*\\)").matcher(tagBlock);
-                if (posMatcher.find()) {
-                    try {
-                        float px = Float.parseFloat(posMatcher.group(1));
-                        float py = Float.parseFloat(posMatcher.group(2));
-                        float scriptResX = (px > 1280 || py > 720 || raw.contains("1920") || raw.contains("1080")) ? 1920.0f : 1280.0f;
-                        float scriptResY = (px > 1280 || py > 720 || raw.contains("1920") || raw.contains("1080")) ? 1080.0f : 720.0f;
+            String tagBlock = rawCleaned.substring(tagOpen + 1, tagClose);
+            index = tagClose + 1;
 
-                        float normX = Math.max(0.0f, Math.min(1.0f, px / scriptResX));
-                        float normY = Math.max(0.0f, Math.min(1.0f, py / scriptResY));
+            // Extract alignment \an
+            java.util.regex.Matcher anMatcher = java.util.regex.Pattern.compile("(?i)\\\\an([1-9])").matcher(tagBlock);
+            if (anMatcher.find()) {
+                anVal = Integer.parseInt(anMatcher.group(1));
+                applyAnAlignment(builder, anVal);
+            }
 
-                        int xAnchor = Cue.ANCHOR_TYPE_MIDDLE;
-                        int yAnchor = Cue.ANCHOR_TYPE_END;
-                        if (anVal == 1 || anVal == 4 || anVal == 7) xAnchor = Cue.ANCHOR_TYPE_START;
-                        else if (anVal == 3 || anVal == 6 || anVal == 9) xAnchor = Cue.ANCHOR_TYPE_END;
+            // Extract position \pos(x,y) or \move(x1,y1,x2,y2)
+            java.util.regex.Matcher posMatcher = java.util.regex.Pattern.compile("(?i)\\\\(?:pos|move)\\(\\s*(-?\\d+(?:\\.\\d+)?)\\s*,\\s*(-?\\d+(?:\\.\\d+)?)[^\\)]*\\)").matcher(tagBlock);
+            if (posMatcher.find()) {
+                try {
+                    float px = Float.parseFloat(posMatcher.group(1));
+                    float py = Float.parseFloat(posMatcher.group(2));
+                    float playResX = getScriptResX(px, py, rawCleaned);
+                    float playResY = getScriptResY(px, py, rawCleaned);
 
-                        if (anVal >= 7) yAnchor = Cue.ANCHOR_TYPE_START;
-                        else if (anVal >= 4) yAnchor = Cue.ANCHOR_TYPE_MIDDLE;
+                    float normX = Math.max(0.0f, Math.min(1.0f, px / playResX));
+                    float normY = Math.max(0.0f, Math.min(1.0f, py / playResY));
 
-                        builder.setPosition(normX).setPositionAnchor(xAnchor)
-                               .setLine(normY, Cue.LINE_TYPE_FRACTION).setLineAnchor(yAnchor);
-                    } catch (Exception ignored) {}
-                }
+                    int xAnchor = Cue.ANCHOR_TYPE_MIDDLE;
+                    int yAnchor = Cue.ANCHOR_TYPE_END;
+                    if (anVal == 1 || anVal == 4 || anVal == 7) xAnchor = Cue.ANCHOR_TYPE_START;
+                    else if (anVal == 3 || anVal == 6 || anVal == 9) xAnchor = Cue.ANCHOR_TYPE_END;
 
-                java.util.regex.Matcher colorMatcher = java.util.regex.Pattern.compile("(?i)\\\\(?:1c|c)[&H#]*([0-9a-fA-F]{1,8})&?").matcher(tagBlock);
-                if (colorMatcher.find()) {
-                    currentColor = parseAssColor(colorMatcher.group(1));
-                }
+                    if (anVal >= 7) yAnchor = Cue.ANCHOR_TYPE_START;
+                    else if (anVal >= 4) yAnchor = Cue.ANCHOR_TYPE_MIDDLE;
 
-                java.util.regex.Matcher outlineColorMatcher = java.util.regex.Pattern.compile("(?i)\\\\3c[&H#]*([0-9a-fA-F]{1,8})&?").matcher(tagBlock);
-                if (outlineColorMatcher.find()) {
-                    currentOutlineColor = parseAssColor(outlineColorMatcher.group(1));
-                }
+                    builder.setPosition(normX).setPositionAnchor(xAnchor)
+                           .setLine(normY, Cue.LINE_TYPE_FRACTION).setLineAnchor(yAnchor);
+                    isExplicitlyPositioned = true;
+                } catch (Exception ignored) {}
+            }
 
-                java.util.regex.Matcher fontMatcher = java.util.regex.Pattern.compile("(?i)\\\\fn([^\\\\}]+)").matcher(tagBlock);
-                if (fontMatcher.find()) {
-                    currentFont = fontMatcher.group(1).trim();
-                    if (currentFont.isEmpty()) currentFont = null;
-                }
+            // Color \c or \1c
+            java.util.regex.Matcher colorMatcher = java.util.regex.Pattern.compile("(?i)\\\\(?:1c|c)[&H#]*([0-9a-fA-F]{1,8})&?").matcher(tagBlock);
+            if (colorMatcher.find()) {
+                styleState.color = parseAssColor(colorMatcher.group(1));
+            }
 
-                java.util.regex.Matcher sizeMatcher = java.util.regex.Pattern.compile("(?i)\\\\fs(\\d+)").matcher(tagBlock);
-                if (sizeMatcher.find()) {
-                    try {
-                        currentSize = Integer.parseInt(sizeMatcher.group(1));
-                    } catch (Exception ignored) {}
-                }
+            // Outline Color \3c
+            java.util.regex.Matcher outlineColorMatcher = java.util.regex.Pattern.compile("(?i)\\\\3c[&H#]*([0-9a-fA-F]{1,8})&?").matcher(tagBlock);
+            if (outlineColorMatcher.find()) {
+                styleState.outlineColor = parseAssColor(outlineColorMatcher.group(1));
+            }
 
-                java.util.regex.Matcher boldMatcher = java.util.regex.Pattern.compile("(?i)\\\\b([01]|\\d{3})").matcher(tagBlock);
-                if (boldMatcher.find()) {
-                    String val = boldMatcher.group(1);
-                    isBold = "1".equals(val) || (val.length() == 3 && !val.equals("000"));
-                }
+            // Font \fn
+            java.util.regex.Matcher fontMatcher = java.util.regex.Pattern.compile("(?i)\\\\fn([^\\\\}]+)").matcher(tagBlock);
+            if (fontMatcher.find()) {
+                String fn = fontMatcher.group(1).trim();
+                styleState.font = fn.isEmpty() ? null : fn;
+            }
 
-                java.util.regex.Matcher italicMatcher = java.util.regex.Pattern.compile("(?i)\\\\i([01])").matcher(tagBlock);
-                if (italicMatcher.find()) {
-                    isItalic = "1".equals(italicMatcher.group(1));
-                }
+            // Font Size \fs
+            java.util.regex.Matcher sizeMatcher = java.util.regex.Pattern.compile("(?i)\\\\fs(\\d+)").matcher(tagBlock);
+            if (sizeMatcher.find()) {
+                try {
+                    styleState.fontSize = Integer.parseInt(sizeMatcher.group(1));
+                } catch (Exception ignored) {}
+            }
 
-                java.util.regex.Matcher underlineMatcher = java.util.regex.Pattern.compile("(?i)\\\\u([01])").matcher(tagBlock);
-                if (underlineMatcher.find()) {
-                    isUnderline = "1".equals(underlineMatcher.group(1));
-                }
+            // Bold \b
+            java.util.regex.Matcher boldMatcher = java.util.regex.Pattern.compile("(?i)\\\\b([01]|\\d{3})").matcher(tagBlock);
+            if (boldMatcher.find()) {
+                String val = boldMatcher.group(1);
+                styleState.bold = "1".equals(val) || (val.length() == 3 && !val.equals("000"));
+            }
 
-                if (tagBlock.matches("(?i).*\\\\r.*")) {
-                    currentColor = null;
-                    currentOutlineColor = null;
-                    currentFont = null;
-                    currentSize = null;
-                    isBold = null;
-                    isItalic = null;
-                    isUnderline = null;
-                }
+            // Italic \i
+            java.util.regex.Matcher italicMatcher = java.util.regex.Pattern.compile("(?i)\\\\i([01])").matcher(tagBlock);
+            if (italicMatcher.find()) {
+                styleState.italic = "1".equals(italicMatcher.group(1));
+            }
 
-                ssb.delete(tagStart, tagEnd);
+            // Underline tag
+            java.util.regex.Matcher underlineMatcher = java.util.regex.Pattern.compile("(?i)\\\\u([01])").matcher(tagBlock);
+            if (underlineMatcher.find()) {
+                styleState.underline = "1".equals(underlineMatcher.group(1));
+            }
 
-                str = ssb.toString();
-                int nextTagIndex = str.indexOf('{', tagStart);
-                int textSegmentEnd = (nextTagIndex != -1) ? nextTagIndex : str.length();
+            // Strikethrough \s
+            java.util.regex.Matcher strikeMatcher = java.util.regex.Pattern.compile("(?i)\\\\s([01])").matcher(tagBlock);
+            if (strikeMatcher.find()) {
+                styleState.strikethrough = "1".equals(strikeMatcher.group(1));
+            }
 
-                Context ctx = callback != null ? callback.getContext() : null;
-
-                if (textSegmentEnd > tagStart) {
-                    if (currentColor != null) {
-                        ssb.setSpan(new ForegroundColorSpan(currentColor), tagStart, textSegmentEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    }
-                    if (currentFont != null && ctx != null) {
-                        Typeface tf = FontResolver.resolveTypeface(ctx, currentFont, isBold != null && isBold, isItalic != null && isItalic);
-                        ssb.setSpan(new CustomTypefaceSpan(tf), tagStart, textSegmentEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    }
-                    if (currentSize != null && currentSize > 0) {
-                        ssb.setSpan(new AbsoluteSizeSpan(currentSize, true), tagStart, textSegmentEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    }
-                    if (isBold != null || isItalic != null) {
-                        boolean b = (isBold != null && isBold);
-                        boolean it = (isItalic != null && isItalic);
-                        if (b && it) {
-                            ssb.setSpan(new StyleSpan(Typeface.BOLD_ITALIC), tagStart, textSegmentEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                        } else if (b) {
-                            ssb.setSpan(new StyleSpan(Typeface.BOLD), tagStart, textSegmentEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                        } else if (it) {
-                            ssb.setSpan(new StyleSpan(Typeface.ITALIC), tagStart, textSegmentEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                        }
-                    }
-                    if (isUnderline != null && isUnderline) {
-                        ssb.setSpan(new UnderlineSpan(), tagStart, textSegmentEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    }
-                }
+            // Reset \r
+            if (tagBlock.matches("(?i).*\\\\r.*")) {
+                styleState.reset();
             }
         }
 
-        if (ssb.toString().trim().isEmpty()) {
+        if (cleanSsb.toString().trim().isEmpty()) {
             return null;
         }
 
-        return builder.setText(ssb).build();
+        if (!isExplicitlyPositioned && anVal == 2) {
+            applyAnAlignment(builder, 2);
+        }
+
+        return builder.setText(cleanSsb).build();
+    }
+
+    private void appendCleanSegment(SpannableStringBuilder ssb, String segment, AssStyleState style, Context ctx) {
+        if (segment == null || segment.isEmpty()) return;
+
+        String converted = segment.replace("\\N", "\n")
+                                  .replace("\\n", "\n")
+                                  .replace("\\h", "\u00A0");
+
+        int start = ssb.length();
+        ssb.append(converted);
+        int end = ssb.length();
+
+        if (end > start) {
+            if (style.color != null) {
+                ssb.setSpan(new ForegroundColorSpan(style.color), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (style.font != null && ctx != null) {
+                Typeface tf = FontResolver.resolveTypeface(ctx, style.font,
+                        style.bold != null && style.bold,
+                        style.italic != null && style.italic);
+                ssb.setSpan(new CustomTypefaceSpan(tf), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (style.fontSize != null && style.fontSize > 0) {
+                // Scale ASS script font size proportionally so it does not explode on high density screens
+                float scaledSp = (style.fontSize / 34.0f) * subtitleTextSize;
+                scaledSp = Math.max(11f, Math.min(32f, scaledSp));
+                ssb.setSpan(new AbsoluteSizeSpan(Math.round(scaledSp), true), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (style.bold != null || style.italic != null) {
+                boolean b = (style.bold != null && style.bold);
+                boolean it = (style.italic != null && style.italic);
+                if (b && it) {
+                    ssb.setSpan(new StyleSpan(Typeface.BOLD_ITALIC), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                } else if (b) {
+                    ssb.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                } else if (it) {
+                    ssb.setSpan(new StyleSpan(Typeface.ITALIC), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+            }
+            if (style.underline != null && style.underline) {
+                ssb.setSpan(new UnderlineSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (style.strikethrough != null && style.strikethrough) {
+                ssb.setSpan(new StrikethroughSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+        }
     }
 
     public List<Cue> resolveCueCollisions(List<Cue> cues) {
         if (cues == null || cues.size() <= 1) return cues;
 
-        List<Cue> resolved = new ArrayList<>();
-        int unpositionedBottomCount = 0;
-
+        // 1. Deduplicate identical layer/karaoke cues
+        List<Cue> uniqueCues = new ArrayList<>();
         for (Cue cue : cues) {
             if (cue == null) continue;
-            boolean isBottomUnpositioned = (cue.line == Cue.DIMEN_UNSET || cue.lineType == Cue.TYPE_UNSET);
-            if (isBottomUnpositioned && cue.bitmap == null) {
-                Cue.Builder b = cue.buildUpon();
-                float linePos = 0.92f - (unpositionedBottomCount * 0.08f);
-                b.setLine(Math.max(0.1f, linePos), Cue.LINE_TYPE_FRACTION)
-                 .setLineAnchor(Cue.ANCHOR_TYPE_END);
-                unpositionedBottomCount++;
-                resolved.add(b.build());
-            } else {
-                resolved.add(cue);
+            boolean isDuplicate = false;
+            if (cue.text != null) {
+                String str1 = cue.text.toString().trim();
+                for (Cue existing : uniqueCues) {
+                    if (existing != null && existing.text != null) {
+                        String str2 = existing.text.toString().trim();
+                        if (str1.equals(str2) && Math.abs(cue.position - existing.position) < 0.05f) {
+                            isDuplicate = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!isDuplicate) {
+                uniqueCues.add(cue);
             }
         }
-        return resolved;
+
+        if (uniqueCues.size() <= 1) return uniqueCues;
+
+        // 2. Separate into Top, Bottom, Middle, and Bitmaps/Explicit Cues
+        List<Cue> bottomCues = new ArrayList<>();
+        List<Cue> topCues = new ArrayList<>();
+        List<Cue> otherCues = new ArrayList<>();
+
+        for (Cue cue : uniqueCues) {
+            if (cue.bitmap != null) {
+                otherCues.add(cue);
+            } else if (cue.line == Cue.DIMEN_UNSET || cue.lineType == Cue.TYPE_UNSET || cue.line >= 0.70f) {
+                bottomCues.add(cue);
+            } else if (cue.line <= 0.30f && cue.lineAnchor == Cue.ANCHOR_TYPE_START) {
+                topCues.add(cue);
+            } else {
+                otherCues.add(cue);
+            }
+        }
+
+        List<Cue> result = new ArrayList<>();
+
+        // 3. Stack bottom subtitles gracefully from bottom upwards
+        if (!bottomCues.isEmpty()) {
+            float currentLine = 0.94f;
+            for (int i = 0; i < bottomCues.size(); i++) {
+                Cue cue = bottomCues.get(i);
+                int lineCount = 1;
+                if (cue.text != null) {
+                    String s = cue.text.toString();
+                    for (int c = 0; c < s.length(); c++) {
+                        if (s.charAt(c) == '\n') lineCount++;
+                    }
+                }
+                float cueHeightFraction = Math.max(0.045f, 0.038f * lineCount + 0.008f);
+
+                Cue.Builder b = cue.buildUpon();
+                b.setLine(Math.max(0.15f, currentLine), Cue.LINE_TYPE_FRACTION)
+                 .setLineAnchor(Cue.ANCHOR_TYPE_END);
+                result.add(b.build());
+
+                currentLine -= (cueHeightFraction + 0.012f);
+            }
+        }
+
+        // 4. Stack top subtitles gracefully from top downwards
+        if (!topCues.isEmpty()) {
+            float currentLine = 0.04f;
+            for (int i = 0; i < topCues.size(); i++) {
+                Cue cue = topCues.get(i);
+                int lineCount = 1;
+                if (cue.text != null) {
+                    String s = cue.text.toString();
+                    for (int c = 0; c < s.length(); c++) {
+                        if (s.charAt(c) == '\n') lineCount++;
+                    }
+                }
+                float cueHeightFraction = Math.max(0.045f, 0.038f * lineCount + 0.008f);
+
+                Cue.Builder b = cue.buildUpon();
+                b.setLine(Math.min(0.85f, currentLine), Cue.LINE_TYPE_FRACTION)
+                 .setLineAnchor(Cue.ANCHOR_TYPE_START);
+                result.add(b.build());
+
+                currentLine += (cueHeightFraction + 0.012f);
+            }
+        }
+
+        result.addAll(otherCues);
+        return result;
     }
 }
