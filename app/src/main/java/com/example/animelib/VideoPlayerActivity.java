@@ -4125,7 +4125,17 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     .setBackBuffer(10_000, true)
                     .setPrioritizeTimeOverSizeThresholds(true)
                     .build();
+            androidx.media3.datasource.DefaultHttpDataSource.Factory httpFactory = new androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                    .setUserAgent("Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36")
+                    .setConnectTimeoutMs(10000)
+                    .setReadTimeoutMs(15000)
+                    .setAllowCrossProtocolRedirects(true);
+            if (apiService != null) {
+                httpFactory.setDefaultRequestProperties(apiService.getVideoRequestHeaders());
+            }
+            androidx.media3.datasource.DataSource.Factory dsFactory = new androidx.media3.datasource.DefaultDataSource.Factory(getPlayerContext(), httpFactory);
             player = new androidx.media3.exoplayer.ExoPlayer.Builder(getPlayerContext(), rf)
+                    .setMediaSourceFactory(new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dsFactory))
                     .setLoadControl(loadControl)
                     .setSeekBackIncrementMs(10000)
                     .setSeekForwardIncrementMs(10000)
@@ -4662,18 +4672,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
         androidx.media3.datasource.DataSource.Factory dsFactory = new androidx.media3.datasource.DefaultDataSource.Factory(playerContext, httpFactory);
 
         MediaItem mediaItem = createMediaItemWithSubtitles(newVideoUrl);
-        androidx.media3.exoplayer.source.MediaSource mediaSource;
-        if (newVideoUrl.contains(".m3u8") || newVideoUrl.contains("hls")) {
-            mediaSource = new androidx.media3.exoplayer.hls.HlsMediaSource.Factory(dsFactory)
-                    .setAllowChunklessPreparation(true)
-                    .createMediaSource(mediaItem);
-        } else {
-            androidx.media3.extractor.DefaultExtractorsFactory extractorsFactory =
-                    new androidx.media3.extractor.DefaultExtractorsFactory()
-                            .setConstantBitrateSeekingEnabled(true);
-            mediaSource = new androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dsFactory, extractorsFactory)
-                    .createMediaSource(mediaItem);
-        }
+        androidx.media3.exoplayer.source.DefaultMediaSourceFactory mediaSourceFactory =
+                new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dsFactory);
+        androidx.media3.exoplayer.source.MediaSource mediaSource = mediaSourceFactory.createMediaSource(mediaItem);
 
         backgroundPlayer.setMediaSource(mediaSource);
 

@@ -155,19 +155,11 @@ public class PlayerPlaybackController {
         HttpDataSource.Factory httpFactory = getEffectiveHttpDataSourceFactory();
         DataSource.Factory dsFactory = new DefaultDataSource.Factory(playerContext, httpFactory);
 
-        MediaSource mediaSource;
-        if (videoUrl.contains(".m3u8") || videoUrl.contains("hls")) {
-            mediaSource = new HlsMediaSource.Factory(dsFactory)
-                    .setAllowChunklessPreparation(true)
-                    .createMediaSource(mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl));
-        } else {
-            androidx.media3.extractor.DefaultExtractorsFactory extractorsFactory =
-                    new androidx.media3.extractor.DefaultExtractorsFactory()
-                            .setConstantBitrateSeekingEnabled(true);
+        androidx.media3.exoplayer.source.DefaultMediaSourceFactory mediaSourceFactory =
+                new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dsFactory);
 
-            mediaSource = new ProgressiveMediaSource.Factory(dsFactory, extractorsFactory)
-                    .createMediaSource(mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl));
-        }
+        MediaItem itemToPlay = mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl);
+        MediaSource mediaSource = mediaSourceFactory.createMediaSource(itemToPlay);
 
         if (startPosition > 0) {
             player.setMediaSource(mediaSource, startPosition);
@@ -219,23 +211,15 @@ public class PlayerPlaybackController {
         HttpDataSource.Factory httpFactory = getEffectiveHttpDataSourceFactory();
         DataSource.Factory dsFactory = new DefaultDataSource.Factory(playerContext, httpFactory);
 
-        MediaSource mediaSource;
-        if (videoUrl.contains(".m3u8") || videoUrl.contains("hls")) {
-            mediaSource = new HlsMediaSource.Factory(dsFactory)
-                    .setAllowChunklessPreparation(true)
-                    .createMediaSource(mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl));
-        } else {
-            androidx.media3.extractor.DefaultExtractorsFactory extractorsFactory =
-                    new androidx.media3.extractor.DefaultExtractorsFactory()
-                            .setConstantBitrateSeekingEnabled(true);
+        androidx.media3.exoplayer.source.DefaultMediaSourceFactory mediaSourceFactory =
+                new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dsFactory);
 
-            mediaSource = new ProgressiveMediaSource.Factory(dsFactory, extractorsFactory)
-                    .createMediaSource(mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl));
-        }
+        MediaItem itemToPlay = mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl);
+        MediaSource mediaSource = mediaSourceFactory.createMediaSource(itemToPlay);
 
         AmbientLightManager ambientLightManager = callback != null ? callback.getAmbientLightManager() : null;
         if (ambientLightManager != null) {
-            ambientLightManager.setPlayer(player, mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl), videoUrl);
+            ambientLightManager.setPlayer(player, itemToPlay, videoUrl);
         }
 
         if (startPosition > 0) {

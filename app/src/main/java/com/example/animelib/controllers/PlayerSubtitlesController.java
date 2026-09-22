@@ -24,6 +24,7 @@ import android.view.View;
 
 import androidx.annotation.NonNull;
 import androidx.media3.common.C;
+import androidx.media3.common.Format;
 import androidx.media3.common.text.Cue;
 import androidx.media3.common.text.CueGroup;
 import androidx.media3.common.MediaItem;
@@ -257,7 +258,7 @@ public class PlayerSubtitlesController {
                     .setMimeType(mimeType)
                     .setLanguage("ru")
                     .setLabel(label)
-                    .setSelectionFlags(isPreferred ? C.SELECTION_FLAG_DEFAULT : 0)
+                    .setSelectionFlags(isPreferred ? (C.SELECTION_FLAG_DEFAULT | C.SELECTION_FLAG_FORCED) : 0)
                     .setRoleFlags(C.ROLE_FLAG_SUBTITLE)
                     .build();
 
@@ -268,7 +269,7 @@ public class PlayerSubtitlesController {
     }
 
     public String getMimeTypeForSubtitle(String format, String url) {
-        if (format != null) {
+        if (format != null && !format.trim().isEmpty()) {
             String fmt = format.trim().toLowerCase();
             if ("ass".equals(fmt) || "ssa".equals(fmt)) {
                 return MimeTypes.TEXT_SSA;
@@ -280,15 +281,18 @@ public class PlayerSubtitlesController {
         }
         if (url != null) {
             String lowerUrl = url.toLowerCase();
-            if (lowerUrl.endsWith(".ass") || lowerUrl.endsWith(".ssa")) {
+            if (lowerUrl.contains(".ass") || lowerUrl.contains(".ssa")) {
                 return MimeTypes.TEXT_SSA;
-            } else if (lowerUrl.endsWith(".vtt")) {
+            } else if (lowerUrl.contains(".vtt")) {
                 return MimeTypes.TEXT_VTT;
-            } else if (lowerUrl.endsWith(".srt")) {
+            } else if (lowerUrl.contains(".srt")) {
                 return MimeTypes.APPLICATION_SUBRIP;
             }
         }
-        return MimeTypes.TEXT_UNKNOWN;
+        if ("vtt".equalsIgnoreCase(subtitleFormat) || "webvtt".equalsIgnoreCase(subtitleFormat)) {
+            return MimeTypes.TEXT_VTT;
+        }
+        return MimeTypes.TEXT_SSA;
     }
 
     public MediaItem createMediaItemWithSubtitles(String videoUrl) {
@@ -337,19 +341,26 @@ public class PlayerSubtitlesController {
                     }
                     return;
                 }
+                if (cueGroup.cues == null || cueGroup.cues.isEmpty()) {
+                    playerView.getSubtitleView().setCues(Collections.emptyList());
+                    return;
+                }
                 List<Cue> processedCues = new ArrayList<>();
                 for (Cue cue : cueGroup.cues) {
-                    if (cue.text != null) {
+                    if (cue == null) continue;
+                    if (cue.text != null && cue.text.length() > 0) {
                         Cue processed = processAssCue(cue);
                         if (processed != null && ((processed.text != null && processed.text.length() > 0) || processed.bitmap != null)) {
                             processedCues.add(processed);
+                        } else {
+                            processedCues.add(cue);
                         }
                     } else if (cue.bitmap != null) {
                         processedCues.add(cue);
                     }
                 }
                 List<Cue> stackedCues = resolveCueCollisions(processedCues);
-                playerView.getSubtitleView().setCues(stackedCues);
+                playerView.getSubtitleView().setCues(stackedCues.isEmpty() ? cueGroup.cues : stackedCues);
             }
 
             @Override
@@ -358,30 +369,46 @@ public class PlayerSubtitlesController {
                 if (!subtitlesEnabled || player == null) return;
 
                 boolean hasSelectedTextTrack = false;
+                Tracks.Group preferredTextGroup = null;
                 Tracks.Group firstSupportedTextGroup = null;
 
                 for (Tracks.Group group : tracks.getGroups()) {
-                    if (group.getType() == C.TRACK_TYPE_TEXT) {
+                    if (group.getType() == C.TRACK_TYPE_TEXT && group.isSupported()) {
                         if (group.isSelected()) {
                             hasSelectedTextTrack = true;
                             break;
-                        } else if (firstSupportedTextGroup == null && group.isSupported()) {
+                        }
+                        if (firstSupportedTextGroup == null) {
                             firstSupportedTextGroup = group;
+                        }
+                        for (int i = 0; i < group.length; i++) {
+                            Format format = group.getTrackFormat(i);
+                            String mime = format.sampleMimeType;
+                            if ("ass".equalsIgnoreCase(subtitleFormat) && MimeTypes.TEXT_SSA.equals(mime)) {
+                                preferredTextGroup = group;
+                                break;
+                            } else if (("vtt".equalsIgnoreCase(subtitleFormat) || "webvtt".equalsIgnoreCase(subtitleFormat)) && MimeTypes.TEXT_VTT.equals(mime)) {
+                                preferredTextGroup = group;
+                                break;
+                            }
                         }
                     }
                 }
 
-                if (!hasSelectedTextTrack && firstSupportedTextGroup != null) {
-                    Log.d("PlayerSubtitlesController", "No text track auto-selected by Media3. Forcing selection of text track");
-                    try {
-                        TrackSelectionParameters newParams = player.getTrackSelectionParameters()
-                                .buildUpon()
-                                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                                .setOverrideForType(new TrackSelectionOverride(firstSupportedTextGroup.getMediaTrackGroup(), 0))
-                                .build();
-                        player.setTrackSelectionParameters(newParams);
-                    } catch (Exception e) {
-                        Log.e("PlayerSubtitlesController", "Failed to force text track selection", e);
+                if (!hasSelectedTextTrack) {
+                    Tracks.Group targetGroup = preferredTextGroup != null ? preferredTextGroup : firstSupportedTextGroup;
+                    if (targetGroup != null) {
+                        Log.d("PlayerSubtitlesController", "No text track auto-selected by Media3. Forcing selection of text track: " + targetGroup.getMediaTrackGroup());
+                        try {
+                            TrackSelectionParameters newParams = player.getTrackSelectionParameters()
+                                    .buildUpon()
+                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                    .setOverrideForType(new TrackSelectionOverride(targetGroup.getMediaTrackGroup(), 0))
+                                    .build();
+                            player.setTrackSelectionParameters(newParams);
+                        } catch (Exception e) {
+                            Log.e("PlayerSubtitlesController", "Failed to force text track selection", e);
+                        }
                     }
                 }
             }
