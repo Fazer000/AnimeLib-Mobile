@@ -46,6 +46,27 @@ public class HorizontalEpisodesAdapter extends RecyclerView.Adapter<HorizontalEp
         this.listener = listener;
     }
     
+    private boolean isMatchingEpisode(EpisodesListResponse.EpisodeItem ep1, EpisodesListResponse.EpisodeItem ep2) {
+        if (ep1 == null || ep2 == null) return false;
+        if (ep1.getId() != 0 && ep2.getId() != 0 && ep1.getId() == ep2.getId()) {
+            return true;
+        }
+        String a = ep1.getNumber();
+        String b = ep2.getNumber();
+        if (a != null && b != null) {
+            if (a.equalsIgnoreCase(b)) {
+                return true;
+            }
+            try {
+                int ai = Integer.parseInt(a.trim());
+                int bi = Integer.parseInt(b.trim());
+                return ai == bi;
+            } catch (Exception ignore) {
+            }
+        }
+        return false;
+    }
+
     @SuppressLint("NotifyDataSetChanged")
     public void setAnimeBookmark(com.example.animelib.models.AnimeBookmarkResponse.BookmarkData bookmark) {
         Integer oldBookmarkedId = (this.animeBookmark != null) ? this.animeBookmark.getItemId() : null;
@@ -81,6 +102,16 @@ public class HorizontalEpisodesAdapter extends RecyclerView.Adapter<HorizontalEp
             notifyDataSetChanged();
         }
     }
+
+    @SuppressLint("NotifyDataSetChanged")
+    public void setEpisodes(List<EpisodesListResponse.EpisodeItem> newEpisodes, EpisodesListResponse.EpisodeItem currentEpisode) {
+        this.episodes.clear();
+        if (newEpisodes != null) {
+            this.episodes.addAll(newEpisodes);
+        }
+        this.currentEpisode = currentEpisode;
+        notifyDataSetChanged();
+    }
     
     @SuppressLint("NotifyDataSetChanged")
     public void setCurrentEpisode(EpisodesListResponse.EpisodeItem currentEpisode) {
@@ -97,10 +128,10 @@ public class HorizontalEpisodesAdapter extends RecyclerView.Adapter<HorizontalEp
         for (int i = 0; i < episodes.size(); i++) {
             EpisodesListResponse.EpisodeItem ep = episodes.get(i);
             if (ep != null) {
-                if (previousEpisode != null && ep.getId() == previousEpisode.getId()) {
+                if (previousEpisode != null && isMatchingEpisode(ep, previousEpisode)) {
                     oldIndex = i;
                 }
-                if (currentEpisode != null && ep.getId() == currentEpisode.getId()) {
+                if (currentEpisode != null && isMatchingEpisode(ep, currentEpisode)) {
                     newIndex = i;
                 }
             }
@@ -110,6 +141,8 @@ public class HorizontalEpisodesAdapter extends RecyclerView.Adapter<HorizontalEp
             if (oldIndex != newIndex) notifyItemChanged(newIndex);
         } else if (newIndex != -1) {
             notifyItemChanged(newIndex);
+        } else if (oldIndex != -1) {
+            notifyItemChanged(oldIndex);
         } else {
             notifyDataSetChanged();
         }
@@ -162,29 +195,7 @@ public class HorizontalEpisodesAdapter extends RecyclerView.Adapter<HorizontalEp
         }
 
         // Check if this is the current episode
-        boolean isCurrentEpisode = false;
-        if (currentEpisode != null) {
-            // Try ID first
-            if (currentEpisode.getId() == episode.getId()) {
-                isCurrentEpisode = true;
-            } else {
-                // Compare numbers (string or numeric-equivalent)
-                String a = currentEpisode.getNumber();
-                String b = episode.getNumber();
-                if (a != null && b != null) {
-                    if (a.equals(b)) {
-                        isCurrentEpisode = true;
-                    } else {
-                        try {
-                            int ai = Integer.parseInt(a.trim());
-                            int bi = Integer.parseInt(b.trim());
-                            isCurrentEpisode = ai == bi;
-                        } catch (Exception ignore) {
-                        }
-                    }
-                }
-            }
-        }
+        boolean isCurrentEpisode = isMatchingEpisode(episode, currentEpisode);
         
         // Debug logging
         android.util.Log.d("EpisodesAdapter", "Episode " + episode.getNumber() + 
@@ -196,12 +207,9 @@ public class HorizontalEpisodesAdapter extends RecyclerView.Adapter<HorizontalEp
         // Set selected state and colors
         holder.itemView.setSelected(isCurrentEpisode);
 
-        TypedValue typedValue = new TypedValue();
-        Resources.Theme theme = holder.itemView.getContext().getTheme();
-
         if (isHorizontalInPlayer) {
             if (isCurrentEpisode) {
-                holder.episodeText.setTextColor(ContextCompat.getColor(context, R.color.player_item_active_text));
+                holder.episodeText.setTextColor(ContextCompat.getColor(context, R.color.purple_primary));
                 holder.itemView.setBackgroundResource(R.drawable.player_episode_item_horizontal_selected);
             } else {
                 holder.episodeText.setTextColor(ContextCompat.getColor(context, R.color.player_item_inactive_text));

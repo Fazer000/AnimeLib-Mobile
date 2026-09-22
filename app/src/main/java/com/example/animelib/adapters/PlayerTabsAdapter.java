@@ -1,6 +1,7 @@
 package com.example.animelib.adapters;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -11,6 +12,8 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.animelib.R;
+import com.example.animelib.data.DatabaseManager;
+import com.example.animelib.data.entity.TokenEntity;
 import com.example.animelib.models.EpisodeResponse;
 import com.example.animelib.models.EpisodesListResponse;
 
@@ -214,12 +217,38 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
         return result;
     }
 
+    private boolean isUserAuthorized(Context context) {
+        if (context == null) return false;
+        try {
+            DatabaseManager db = DatabaseManager.getInstance(context);
+            if (db != null) {
+                TokenEntity token = db.getToken();
+                return token != null && token.getAccessToken() != null && !token.getAccessToken().trim().isEmpty();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to check authorization in PlayerTabsAdapter", e);
+        }
+        return false;
+    }
+
     @SuppressLint("SetTextI18n")
     private void setupPlayerTab(PlayerTabViewHolder holder,
                                 List<EpisodeResponse.PlayerData> players,
                                 String playerType) {
         Log.d(TAG, "setupPlayerTab for " + playerType + " with " + (players != null ? players.size() : "null") + " players");
         
+        Context context = holder.itemView.getContext();
+        if ("animelib".equalsIgnoreCase(playerType) && !isUserAuthorized(context)) {
+            if (holder.tvEmptyVoiceovers != null) {
+                holder.tvEmptyVoiceovers.setText(R.string.player_unavailable_without_auth);
+                holder.tvEmptyVoiceovers.setVisibility(View.VISIBLE);
+            }
+            if (holder.playersRecyclerView != null) {
+                holder.playersRecyclerView.setVisibility(View.GONE);
+            }
+            return;
+        }
+
         List<EpisodeResponse.PlayerData> processedPlayers = filterAndSortPlayers(players);
         boolean isEmpty = processedPlayers.isEmpty();
 

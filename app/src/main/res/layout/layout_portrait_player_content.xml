@@ -278,260 +278,298 @@
 
         </LinearLayout>
 
-        <!-- Раскрывающийся блок информации об аниме в вертикальном режиме (без фоновой карточки) -->
+        <!-- Раскрывающийся блок информации об аниме в вертикальном режиме -->
         <LinearLayout
             android:id="@+id/portraitExpandedAnimeInfoContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
             android:layout_marginBottom="16dp"
             android:orientation="vertical"
-            android:gravity="center_horizontal"
             android:visibility="gone">
 
-                <!-- Шапка раскрывающейся карточки с кнопкой Скрыть -->
-                <RelativeLayout
-                    android:id="@+id/btnPortraitCloseExpanded"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginHorizontal="16dp"
-                    android:layout_marginBottom="12dp"
-                    android:background="@drawable/card_ripple_effect"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:paddingHorizontal="4dp"
-                    android:paddingVertical="4dp">
+            <!-- Шапка: Заголовок и кнопка Скрыть -->
+            <RelativeLayout
+                android:id="@+id/btnPortraitCloseExpanded"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_ripple_effect"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingBottom="12dp">
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_centerVertical="true"
-                        android:text="Информация о тайтле"
-                        android:textColor="@color/primary_text_color"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
-
-                    <ImageView
-                        android:layout_width="22dp"
-                        android:layout_height="22dp"
-                        android:layout_alignParentEnd="true"
-                        android:layout_centerVertical="true"
-                        android:padding="2dp"
-                        android:rotation="270"
-                        android:src="@drawable/ic_chevron_right"
-                        app:tint="@color/primary_text_color" />
-                </RelativeLayout>
-
-                <!-- Оболочка основного контента инфо -->
                 <LinearLayout
-                    android:id="@+id/portraitInfoContentLayout"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:gravity="center_horizontal">
-
-                <!-- 1. Постер по центру с оверлей-рейт бейджем внизу -->
-                <FrameLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginHorizontal="16dp"
-                    android:layout_marginBottom="12dp">
+                    android:layout_alignParentStart="true"
+                    android:layout_centerVertical="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
 
-                    <com.google.android.material.card.MaterialCardView
-                        android:layout_width="160dp"
-                        android:layout_height="228dp"
-                        app:cardCornerRadius="14dp"
-                        app:cardElevation="4dp"
-                        app:strokeWidth="0dp">
+                    <View
+                        android:layout_width="3.5dp"
+                        android:layout_height="16dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="@drawable/bg_anime_info_accent_pill" />
 
-                        <ImageView
-                            android:id="@+id/ivPortraitInfoPoster"
-                            android:layout_width="match_parent"
-                            android:layout_height="match_parent"
-                            android:scaleType="centerCrop"
-                            android:src="@drawable/ic_image_placeholder"
-                            android:contentDescription="Anime Poster" />
-                    </com.google.android.material.card.MaterialCardView>
-
-                    <!-- Оверлей-бейдж с рейтингом: Тайтл ★ 9.59 -->
                     <TextView
-                        android:id="@+id/tvPortraitInfoRatingPill"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_gravity="bottom|center_horizontal"
-                        android:layout_marginBottom="8dp"
-                        android:background="@drawable/bg_rating_pill"
-                        android:paddingHorizontal="12dp"
-                        android:paddingVertical="5dp"
+                        android:text="О тайтле"
                         android:textColor="@color/primary_text_color"
-                        android:textSize="12sp"
-                        android:textStyle="bold"
-                        android:drawablePadding="5dp"
-                        app:drawableStartCompat="@drawable/ic_star"
-                        app:drawableTint="#FFD700"
-                        android:visibility="gone" />
-                </FrameLayout>
+                        android:textSize="16sp"
+                        android:fontFamily="@font/open_sans_bold" />
+                </LinearLayout>
 
-                <!-- 2. Название на русском и английском -->
-                <TextView
-                    android:id="@+id/tvPortraitInfoTitle"
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_alignParentEnd="true"
+                    android:layout_centerVertical="true"
+                    android:padding="3dp"
+                    android:rotation="270"
+                    android:src="@drawable/ic_chevron_right"
+                    app:tint="@color/secondary_text_color" />
+            </RelativeLayout>
+
+            <!-- Оболочка основного контента инфо -->
+            <LinearLayout
+                android:id="@+id/portraitInfoContentLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- 1. Главный блок Hero: Постер слева + Названия и бейджи справа -->
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginHorizontal="16dp"
-                    android:gravity="center"
-                    android:textColor="@color/primary_text_color"
-                    android:textSize="19sp"
-                    android:textStyle="bold"
-                    android:layout_marginBottom="2dp" />
+                    android:orientation="horizontal"
+                    android:gravity="top"
+                    android:layout_marginBottom="14dp">
 
-                <TextView
-                    android:id="@+id/tvPortraitInfoEngName"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginHorizontal="16dp"
-                    android:gravity="center"
-                    android:textColor="@color/accent_text_color"
-                    android:textSize="13.5sp"
-                    android:visibility="gone"
-                    android:layout_marginBottom="14dp" />
+                    <!-- Постер с плавающим бейджем рейтинга -->
+                    <FrameLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="14dp">
 
-                <!-- 4. Сетка метаинформации 4 колонки: Тип | Статус | Эпизоды | Выпуск -->
+                        <com.google.android.material.card.MaterialCardView
+                            android:layout_width="112dp"
+                            android:layout_height="160dp"
+                            app:cardCornerRadius="12dp"
+                            app:cardElevation="4dp"
+                            app:cardBackgroundColor="@color/card_bg_color"
+                            app:strokeWidth="0.5dp"
+                            app:strokeColor="@color/chip_unselected_stroke">
+
+                            <ImageView
+                                android:id="@+id/ivPortraitInfoPoster"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:scaleType="centerCrop"
+                                android:src="@drawable/ic_image_placeholder"
+                                android:contentDescription="Anime Poster" />
+                        </com.google.android.material.card.MaterialCardView>
+
+                        <!-- Рейтинг бейдж внизу постера -->
+                        <TextView
+                            android:id="@+id/tvPortraitInfoRatingPill"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="bottom|center_horizontal"
+                            android:layout_marginBottom="6dp"
+                            android:background="@drawable/bg_rating_pill"
+                            android:paddingHorizontal="8dp"
+                            android:paddingVertical="3dp"
+                            android:textColor="@color/primary_text_color"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:drawablePadding="4dp"
+                            app:drawableStartCompat="@drawable/ic_star"
+                            app:drawableTint="#FFD700"
+                            android:visibility="gone" />
+                    </FrameLayout>
+
+                    <!-- Правая колонка: Название, оригинальное имя, бейджи статуса -->
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <!-- Название на русском -->
+                        <TextView
+                            android:id="@+id/tvPortraitInfoTitle"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/primary_text_color"
+                            android:textSize="17sp"
+                            android:fontFamily="@font/open_sans_bold"
+                            android:maxLines="3"
+                            android:ellipsize="end"
+                            android:lineSpacingExtra="1.5dp" />
+
+                        <!-- Оригинальное / английское название -->
+                        <TextView
+                            android:id="@+id/tvPortraitInfoEngName"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:textColor="@color/accent_text_color"
+                            android:textSize="12.5sp"
+                            android:fontFamily="@font/open_sans"
+                            android:maxLines="2"
+                            android:ellipsize="end"
+                            android:visibility="gone" />
+
+                        <!-- Быстрые плашки статуса и формата -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <TextView
+                                android:id="@+id/tvPortraitInfoStatus"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginEnd="6dp"
+                                android:background="@drawable/bg_anime_info_accent_pill"
+                                android:paddingHorizontal="8dp"
+                                android:paddingVertical="4dp"
+                                android:textColor="@color/purple_primary"
+                                android:textSize="11.5sp"
+                                android:fontFamily="@font/open_sans_bold"
+                                android:maxLines="1" />
+
+                            <TextView
+                                android:id="@+id/tvPortraitInfoType"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_anime_info_stat_pill"
+                                android:paddingHorizontal="8dp"
+                                android:paddingVertical="4dp"
+                                android:textColor="@color/primary_text_color"
+                                android:textSize="11.5sp"
+                                android:fontFamily="@font/open_sans"
+                                android:maxLines="1" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- 2. Сетка ключевых характеристик (плашки Эпизоды и Выпуск) -->
                 <LinearLayout
                     android:id="@+id/llPortraitMetadataGrid"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginHorizontal="16dp"
                     android:orientation="horizontal"
-                    android:paddingVertical="10dp"
-                    android:paddingHorizontal="4dp"
-                    android:background="@drawable/bg_author_card"
                     android:layout_marginBottom="14dp">
 
+                    <!-- Плашка 1: Серии -->
                     <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:gravity="center"
-                        android:orientation="vertical">
+                        android:layout_marginEnd="6dp"
+                        android:background="@drawable/bg_anime_info_stat_pill"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="10dp"
+                        android:paddingVertical="8dp">
 
-                        <TextView
+                        <LinearLayout
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Тип"
-                            android:textColor="@color/accent_text_color"
-                            android:textSize="11sp" />
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
 
-                        <TextView
-                            android:id="@+id/tvPortraitInfoType"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:textColor="@color/primary_text_color"
-                            android:textSize="12.5sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
+                            <ImageView
+                                android:layout_width="14dp"
+                                android:layout_height="14dp"
+                                android:layout_marginEnd="5dp"
+                                android:src="@drawable/ic_tv"
+                                app:tint="@color/accent_text_color" />
 
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:gravity="center"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Статус"
-                            android:textColor="@color/accent_text_color"
-                            android:textSize="11sp" />
-
-                        <TextView
-                            android:id="@+id/tvPortraitInfoStatus"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:textColor="@color/purple_primary"
-                            android:textSize="12.5sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:gravity="center"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Эпизоды"
-                            android:textColor="@color/accent_text_color"
-                            android:textSize="11sp" />
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Эпизоды"
+                                android:textColor="@color/accent_text_color"
+                                android:textSize="11sp" />
+                        </LinearLayout>
 
                         <TextView
                             android:id="@+id/tvPortraitInfoEpisodes"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
+                            android:layout_marginTop="3dp"
                             android:textColor="@color/primary_text_color"
                             android:textSize="12.5sp"
-                            android:textStyle="bold" />
+                            android:fontFamily="@font/open_sans_bold"
+                            android:maxLines="1"
+                            android:ellipsize="end" />
                     </LinearLayout>
 
+                    <!-- Плашка 2: Выпуск / Сезон -->
                     <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:gravity="center"
-                        android:orientation="vertical">
+                        android:background="@drawable/bg_anime_info_stat_pill"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="10dp"
+                        android:paddingVertical="8dp">
 
-                        <TextView
+                        <LinearLayout
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Выпуск"
-                            android:textColor="@color/accent_text_color"
-                            android:textSize="11sp" />
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <ImageView
+                                android:layout_width="14dp"
+                                android:layout_height="14dp"
+                                android:layout_marginEnd="5dp"
+                                android:src="@drawable/ic_calendar"
+                                app:tint="@color/accent_text_color" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Выпуск"
+                                android:textColor="@color/accent_text_color"
+                                android:textSize="11sp" />
+                        </LinearLayout>
 
                         <TextView
                             android:id="@+id/tvPortraitInfoReleaseDate"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
+                            android:layout_marginTop="3dp"
                             android:textColor="@color/primary_text_color"
                             android:textSize="12.5sp"
-                            android:textStyle="bold"
+                            android:fontFamily="@font/open_sans_bold"
                             android:maxLines="1"
                             android:ellipsize="end" />
                     </LinearLayout>
                 </LinearLayout>
 
-                <!-- 5. Карточки Авторов / Издателя (Горизонтальная карусель) -->
-                <HorizontalScrollView
-                    android:id="@+id/hsvPortraitAuthors"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:scrollbars="none"
-                    android:overScrollMode="never"
-                    android:clipToPadding="false"
-                    android:paddingHorizontal="16dp"
-                    android:visibility="gone"
-                    android:layout_marginBottom="14dp">
-
-                    <LinearLayout
-                        android:id="@+id/llPortraitAuthorsContainer"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal" />
-                </HorizontalScrollView>
-
-                <!-- 6. Описание -->
+                <!-- 3. Описание (Синопсис) -->
                 <LinearLayout
                     android:id="@+id/llPortraitSummarySection"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginHorizontal="16dp"
                     android:orientation="vertical"
-                    android:layout_marginBottom="12dp">
+                    android:layout_marginBottom="14dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Описание"
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="12sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:layout_marginBottom="6dp" />
 
                     <TextView
                         android:id="@+id/tvPortraitInfoSummary"
@@ -548,72 +586,93 @@
                         android:id="@+id/btnToggleSummary"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
+                        android:layout_marginTop="6dp"
                         android:text="Развернуть"
-                        android:textColor="@color/app_text_brand_button"
+                        android:textColor="@color/purple_primary"
                         android:textSize="13sp"
                         android:fontFamily="@font/open_sans_bold"
                         android:clickable="true"
                         android:focusable="true"
-                        android:paddingVertical="4dp"
-                        android:paddingHorizontal="2dp"
+                        android:paddingVertical="2dp"
                         android:visibility="gone" />
                 </LinearLayout>
 
-            <!-- 7. Теги и Жанры (Общий чип-поток как на сайте) -->
-            <com.google.android.material.chip.ChipGroup
-                android:id="@+id/cgPortraitInfoTagsAndGenres"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginHorizontal="16dp"
-                android:visibility="gone"
-                app:chipSpacingHorizontal="6dp"
-                app:chipSpacingVertical="6dp" />
-
-                </LinearLayout>
-
-                <!-- Ошибка загрузки инфо в портретном режиме -->
+                <!-- 4. Создатели / Издатель -->
                 <LinearLayout
-                    android:id="@+id/portraitInfoErrorLayout"
+                    android:id="@+id/llPortraitAuthorsSection"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginHorizontal="16dp"
-                    android:gravity="center"
                     android:orientation="vertical"
-                    android:paddingVertical="20dp"
-                    android:visibility="gone">
+                    android:layout_marginBottom="14dp">
 
-                    <ImageView
-                        android:layout_width="40dp"
-                        android:layout_height="40dp"
-                        android:src="@drawable/ic_exclamation_mark"
-                        app:tint="@color/secondary_text_color"
-                        android:layout_marginBottom="10dp" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <HorizontalScrollView
+                        android:id="@+id/hsvPortraitAuthors"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Не удалось загрузить информацию о тайтле"
-                        android:textColor="@color/secondary_text_color"
-                        android:textSize="14sp"
-                        android:gravity="center" />
+                        android:scrollbars="none"
+                        android:overScrollMode="never"
+                        android:clipToPadding="false"
+                        android:visibility="gone">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnRetryPortraitAnimeInfo"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:text="Повторить"
-                        android:textColor="@color/purple_primary"
-                        android:textSize="13sp"
-                        app:icon="@drawable/ic_refresh"
-                        app:iconTint="@color/purple_primary"
-                        app:strokeColor="@color/purple_primary"
-                        app:strokeWidth="1dp"
-                        app:cornerRadius="12dp" />
+                        <LinearLayout
+                            android:id="@+id/llPortraitAuthorsContainer"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal" />
+                    </HorizontalScrollView>
                 </LinearLayout>
 
+                <!-- 5. Теги и Жанры -->
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/cgPortraitInfoTagsAndGenres"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:visibility="gone"
+                    app:chipSpacingHorizontal="6dp"
+                    app:chipSpacingVertical="6dp" />
+
+            </LinearLayout>
+
+            <!-- Ошибка загрузки инфо в портретном режиме -->
+            <LinearLayout
+                android:id="@+id/portraitInfoErrorLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:paddingVertical="20dp"
+                android:visibility="gone">
+
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@drawable/ic_exclamation_mark"
+                    app:tint="@color/secondary_text_color"
+                    android:layout_marginBottom="10dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Не удалось загрузить информацию о тайтле"
+                    android:textColor="@color/secondary_text_color"
+                    android:textSize="14sp"
+                    android:gravity="center" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRetryPortraitAnimeInfo"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Повторить"
+                    android:textColor="@color/purple_primary"
+                    android:textSize="13sp"
+                    app:icon="@drawable/ic_refresh"
+                    app:iconTint="@color/purple_primary"
+                    app:strokeColor="@color/purple_primary"
+                    app:strokeWidth="1dp"
+                    app:cornerRadius="12dp" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- Блок Связанное (карусель связанных тайтлов) в вертикальном режиме -->

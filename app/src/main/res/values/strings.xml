@@ -31,6 +31,7 @@
     <string name="bs_title_surround_sound">Объемный звук</string>
     <string name="bs_title_download">Скачивание серий</string>
     <string name="bs_title_download_progress">Процесс скачивания</string>
+    <string name="player_unavailable_without_auth">Плеер недоступен без авторизации</string>
 
     <!-- Bottom Sheet Subtitles / Section Headers -->
     <string name="bs_subtitle_playback">Воспроизведение</string>

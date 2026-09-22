@@ -202,11 +202,14 @@ public class PlayerProgressController {
     public void updateBookmarkButtonColor(boolean isBookmarked) {
         if (callback == null) return;
         callback.safeRunOnUiThread(() -> {
+            boolean isAuthOrOffline = callback.isOfflineMode() || (apiService != null && apiService.isAuthorized());
+            float alpha = isAuthOrOffline ? 1.0f : 0.5f;
+
             ImageView bmBtn = callback.getBookmarkButton();
             if (bmBtn != null) {
                 bmBtn.setEnabled(true);
                 bmBtn.setClickable(true);
-                bmBtn.setAlpha(1.0f);
+                bmBtn.setAlpha(alpha);
                 int targetColor = isBookmarked ? context.getResources().getColor(R.color.bookmark_color) : context.getResources().getColor(R.color.white_color);
                 animateImageColorFilter(bmBtn, targetColor);
             }
@@ -216,7 +219,7 @@ public class PlayerProgressController {
                 portraitBmBtn.setEnabled(true);
                 portraitBmBtn.setClickable(true);
                 portraitBmBtn.setFocusable(true);
-                portraitBmBtn.setAlpha(1.0f);
+                portraitBmBtn.setAlpha(alpha);
                 int targetColor = isBookmarked ? context.getResources().getColor(R.color.bookmark_color) : context.getResources().getColor(R.color.primary_text_color);
                 animateImageColorFilter(portraitBmBtn, targetColor);
             }

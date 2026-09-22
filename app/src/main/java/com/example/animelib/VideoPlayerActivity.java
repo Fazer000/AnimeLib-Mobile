@@ -1960,9 +1960,12 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         if (portraitStatusDropdownButton != null) {
             portraitStatusDropdownButton.setOnClickListener(v -> showWatchStatusBottomSheet());
+            updatePortraitWatchStatusUI(currentWatchStatusId);
         }
 
         if (portraitBookmarkButton != null) {
+            boolean isAuthOrOffline = isOfflineMode || (apiService != null && apiService.isAuthorized());
+            portraitBookmarkButton.setAlpha(isAuthOrOffline ? 1.0f : 0.5f);
             portraitBookmarkButton.setOnClickListener(v -> {
                 addBookmark();
             });
@@ -5314,17 +5317,19 @@ public class VideoPlayerActivity extends AppCompatActivity {
      * Включает кнопку закладки когда плеер готов
      */
     private void enableBookmarkButton() {
+        boolean isAuthOrOffline = isOfflineMode || (apiService != null && apiService.isAuthorized());
+        float alpha = isAuthOrOffline ? 1.0f : 0.5f;
         if (bookmarkButton != null) {
             bookmarkButton.setEnabled(true);
             bookmarkButton.setClickable(true);
-            bookmarkButton.setAlpha(1.0f);
-            Log.d("VideoPlayer", "Bookmark button enabled");
+            bookmarkButton.setAlpha(alpha);
+            Log.d("VideoPlayer", "Bookmark button enabled, alpha=" + alpha);
         }
         if (portraitBookmarkButton != null) {
             portraitBookmarkButton.setEnabled(true);
             portraitBookmarkButton.setClickable(true);
             portraitBookmarkButton.setFocusable(true);
-            portraitBookmarkButton.setAlpha(1.0f);
+            portraitBookmarkButton.setAlpha(alpha);
         }
     }
     
@@ -6014,8 +6019,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     public void updatePortraitWatchStatusUI(Object statusId) {
         this.currentWatchStatusId = statusId;
+        boolean isAuth = apiService != null && apiService.isAuthorized();
         if (portraitStatusDropdownButton != null) {
             portraitStatusDropdownButton.setVisibility(View.VISIBLE);
+            portraitStatusDropdownButton.setAlpha(isAuth ? 1.0f : 0.5f);
         }
         com.example.animelib.models.WatchStatusItem item = com.example.animelib.managers.WatchStatusManager.getStatusById(statusId);
         if (tvPortraitStatus == null) return;
@@ -6072,6 +6079,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     public void showWatchStatusBottomSheet() {
+        if (apiService == null || !apiService.isAuthorized()) {
+            CustomToast.showWarning(this, "Для изменения статуса просмотра необходимо авторизоваться");
+            return;
+        }
+
         if (isOfflineMode) {
             CustomToast.showInfo(this, "Смена статуса недоступна в офлайн режиме");
             return;

@@ -881,6 +881,11 @@ public class CommentsManager {
     public void loadCommentsPage(int page) {
         if (isOfflineMode || currentEpisode == null) return;
         
+        boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
+        if (isPortrait) {
+            isPortraitCommentsRequested = true;
+        }
+
         isLoadingComments = true;
         if (commentsLoadingOverlay != null) {
             commentsLoadingOverlay.setVisibility(View.VISIBLE);
@@ -1054,6 +1059,9 @@ public class CommentsManager {
      * @param reloadIfVisible Перезагрузить если панель видна
      */
     public void resetCommentsOnEpisodeChange(boolean reloadIfVisible) {
+        boolean wasPortraitRequested = isPortraitCommentsRequested;
+        boolean wasLandscapeVisible = isCommentsVisible;
+
         commentsCurrentPage = 1;
         commentsHasNextPage = true;
         isLoadingComments = false;
@@ -1082,8 +1090,14 @@ public class CommentsManager {
             portraitCommentsErrorLayout.setVisibility(View.GONE);
         }
         
-        if (reloadIfVisible && shouldLoadComments()) {
-            loadCommentsPage(1);
+        if (reloadIfVisible) {
+            boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
+            if (isPortrait && wasPortraitRequested) {
+                isPortraitCommentsRequested = true;
+                loadCommentsPage(1);
+            } else if (!isPortrait && wasLandscapeVisible) {
+                loadCommentsPage(1);
+            }
         }
     }
 
@@ -1108,9 +1122,38 @@ public class CommentsManager {
         updateSortButtonText();
         
         if (changed) {
-            resetCommentsOnEpisodeChange(false);
-            
-            if (shouldLoadComments()) {
+            boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
+            boolean wasLandscapeVisible = isCommentsVisible;
+
+            commentsCurrentPage = 1;
+            commentsHasNextPage = true;
+            isLoadingComments = false;
+            pendingLandscapeCommentsResponse = null;
+            pendingStickyComments = null;
+
+            if (commentsAdapter != null) {
+                commentsAdapter.clearAll();
+            }
+            if (portraitCommentsAdapter != null) {
+                portraitCommentsAdapter.clearAll();
+            }
+            if (emptyCommentsText != null) {
+                emptyCommentsText.setVisibility(View.GONE);
+            }
+            if (portraitEmptyCommentsText != null) {
+                portraitEmptyCommentsText.setVisibility(View.GONE);
+            }
+            if (commentsErrorLayout != null) {
+                commentsErrorLayout.setVisibility(View.GONE);
+            }
+            if (portraitCommentsErrorLayout != null) {
+                portraitCommentsErrorLayout.setVisibility(View.GONE);
+            }
+
+            if (isPortrait) {
+                isPortraitCommentsRequested = true;
+                loadCommentsPage(1);
+            } else if (wasLandscapeVisible) {
                 loadCommentsPage(1);
             }
         }

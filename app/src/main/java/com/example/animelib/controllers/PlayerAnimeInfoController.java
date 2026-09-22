@@ -608,9 +608,9 @@ public class PlayerAnimeInfoController {
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        card.setBackgroundResource(R.drawable.bg_author_card);
+        card.setBackgroundResource(R.drawable.bg_anime_info_stat_pill);
         int pH = dpToPx(context, 10);
-        int pV = dpToPx(context, 8);
+        int pV = dpToPx(context, 7);
         card.setPadding(pH, pV, pH, pV);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -620,14 +620,14 @@ public class PlayerAnimeInfoController {
 
         com.google.android.material.imageview.ShapeableImageView icon = new com.google.android.material.imageview.ShapeableImageView(context);
         icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        int iconSize = dpToPx(context, 26);
+        int iconSize = dpToPx(context, 28);
         LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(iconSize, iconSize);
         iconParams.setMarginEnd(dpToPx(context, 8));
         icon.setLayoutParams(iconParams);
         icon.setShapeAppearanceModel(
                 icon.getShapeAppearanceModel()
                         .toBuilder()
-                        .setAllCornerSizes(dpToPx(context, 6f))
+                        .setAllCornerSizes(dpToPx(context, 8f))
                         .build()
         );
 
@@ -652,7 +652,7 @@ public class PlayerAnimeInfoController {
         TextView tvRole = new TextView(context);
         tvRole.setText(role);
         tvRole.setTextSize(10.5f);
-        tvRole.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.accent_text_color));
+        tvRole.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.purple_primary));
         textCol.addView(tvRole);
 
         card.addView(textCol);
@@ -662,17 +662,17 @@ public class PlayerAnimeInfoController {
     private com.google.android.material.chip.Chip createAgeChip(Context context, String text) {
         com.google.android.material.chip.Chip chip = new com.google.android.material.chip.Chip(context);
         chip.setText(text);
-        chip.setTextSize(12f);
-        chip.setTextColor(android.graphics.Color.parseColor("#FF5252"));
-        chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#2A181C")));
+        chip.setTextSize(11.5f);
+        chip.setTextColor(android.graphics.Color.parseColor("#FF6B6B"));
+        chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#261418")));
         chip.setChipStrokeColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4D2026")));
         chip.setChipStrokeWidth(dpToPx(context, 0.5f));
         chip.setEnsureMinTouchTargetSize(false);
-        chip.setChipStartPadding(dpToPx(context, 6));
-        chip.setChipEndPadding(dpToPx(context, 6));
-        chip.setTextStartPadding(dpToPx(context, 1));
-        chip.setTextEndPadding(dpToPx(context, 1));
-        chip.setChipMinHeight(dpToPx(context, 20));
+        chip.setChipStartPadding(dpToPx(context, 8));
+        chip.setChipEndPadding(dpToPx(context, 8));
+        chip.setTextStartPadding(dpToPx(context, 2));
+        chip.setTextEndPadding(dpToPx(context, 2));
+        chip.setChipMinHeight(dpToPx(context, 24));
         chip.setPadding(0, 0, 0, 0);
         return chip;
     }
@@ -680,7 +680,7 @@ public class PlayerAnimeInfoController {
     private com.google.android.material.chip.Chip createTagChip(Context context, String text, boolean isGenre) {
         com.google.android.material.chip.Chip chip = new com.google.android.material.chip.Chip(context);
         chip.setText(text);
-        chip.setTextSize(12f);
+        chip.setTextSize(11.5f);
         if (isGenre) {
             chip.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.purple_primary));
             chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(
@@ -697,11 +697,11 @@ public class PlayerAnimeInfoController {
             chip.setChipStrokeWidth(dpToPx(context, 0.5f));
         }
         chip.setEnsureMinTouchTargetSize(false);
-        chip.setChipStartPadding(dpToPx(context, 6));
-        chip.setChipEndPadding(dpToPx(context, 6));
-        chip.setTextStartPadding(dpToPx(context, 1));
-        chip.setTextEndPadding(dpToPx(context, 1));
-        chip.setChipMinHeight(dpToPx(context, 20));
+        chip.setChipStartPadding(dpToPx(context, 8));
+        chip.setChipEndPadding(dpToPx(context, 8));
+        chip.setTextStartPadding(dpToPx(context, 2));
+        chip.setTextEndPadding(dpToPx(context, 2));
+        chip.setChipMinHeight(dpToPx(context, 24));
         chip.setPadding(0, 0, 0, 0);
         return chip;
     }

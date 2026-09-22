@@ -463,6 +463,11 @@ public class EpisodesManager {
         Log.d(TAG, "Showing episodes horizontal list - lifting playersControlBar");
         isEpisodesMenuVisible = true;
 
+        if (episodesAdapter != null && currentEpisode != null) {
+            episodesAdapter.setCurrentEpisode(currentEpisode);
+            scrollToCurrentEpisode();
+        }
+
         // Отключаем автоматическое скрытие интерфейса плеера
         if (playerControlsCallback != null) {
             playerControlsCallback.onPlayerControlsAutoHideChanged(false);
@@ -799,53 +804,49 @@ public class EpisodesManager {
      * Обновление RecyclerView эпизодов
      */
     public void updateEpisodesRecyclerView() {
-        boolean isPortrait = isPortrait();
-
-        if (!isPortrait) {
-            if (episodesRecyclerView != null) {
-                Log.d(TAG, "Updating landscape episodes RecyclerView with current episode: " + 
-                    (currentEpisode != null ? currentEpisode.getNumber() + " (ID: " + currentEpisode.getId() + ")" : "null"));
-                
-                if (episodesAdapter == null) {
-                    episodesAdapter = new HorizontalEpisodesAdapter(episodes, currentEpisode, true, episode -> {
-                        if (episodeSelectionCallback != null) {
-                            episodeSelectionCallback.onEpisodeSelected(episode, true);
-                        }
-                        hideEpisodesMenu();
-                    });
-                    episodesRecyclerView.setAdapter(episodesAdapter);
-                } else {
-                    episodesAdapter.setCurrentEpisode(currentEpisode);
-                }
-                
-                if (animeBookmark != null) {
-                    episodesAdapter.setAnimeBookmark(animeBookmark);
-                }
-                
-                if (isEpisodesMenuVisible && currentEpisode != null) {
-                    scrollToCurrentEpisode();
-                }
+        if (episodesRecyclerView != null) {
+            Log.d(TAG, "Updating landscape episodes RecyclerView with current episode: " + 
+                (currentEpisode != null ? currentEpisode.getNumber() + " (ID: " + currentEpisode.getId() + ")" : "null"));
+            
+            if (episodesAdapter == null) {
+                episodesAdapter = new HorizontalEpisodesAdapter(episodes, currentEpisode, true, episode -> {
+                    if (episodeSelectionCallback != null) {
+                        episodeSelectionCallback.onEpisodeSelected(episode, true);
+                    }
+                    hideEpisodesMenu();
+                });
+                episodesRecyclerView.setAdapter(episodesAdapter);
+            } else {
+                episodesAdapter.setCurrentEpisode(currentEpisode);
             }
-        } else {
-            if (portraitEpisodesRecyclerView != null) {
-                if (portraitEpisodesAdapter == null) {
-                    portraitEpisodesAdapter = new HorizontalEpisodesAdapter(episodes, currentEpisode, false, episode -> {
-                        if (episodeSelectionCallback != null) {
-                            episodeSelectionCallback.onEpisodeSelected(episode, true);
-                        }
-                    });
-                    portraitEpisodesRecyclerView.setAdapter(portraitEpisodesAdapter);
-                } else {
-                    portraitEpisodesAdapter.setCurrentEpisode(currentEpisode);
-                }
+            
+            if (animeBookmark != null) {
+                episodesAdapter.setAnimeBookmark(animeBookmark);
+            }
+            
+            if (isEpisodesMenuVisible && currentEpisode != null) {
+                scrollToCurrentEpisode();
+            }
+        }
 
-                if (animeBookmark != null) {
-                    portraitEpisodesAdapter.setAnimeBookmark(animeBookmark);
-                }
+        if (portraitEpisodesRecyclerView != null) {
+            if (portraitEpisodesAdapter == null) {
+                portraitEpisodesAdapter = new HorizontalEpisodesAdapter(episodes, currentEpisode, false, episode -> {
+                    if (episodeSelectionCallback != null) {
+                        episodeSelectionCallback.onEpisodeSelected(episode, true);
+                    }
+                });
+                portraitEpisodesRecyclerView.setAdapter(portraitEpisodesAdapter);
+            } else {
+                portraitEpisodesAdapter.setCurrentEpisode(currentEpisode);
+            }
 
-                if (currentEpisode != null) {
-                    scrollToCurrentEpisode();
-                }
+            if (animeBookmark != null) {
+                portraitEpisodesAdapter.setAnimeBookmark(animeBookmark);
+            }
+
+            if (currentEpisode != null) {
+                scrollToCurrentEpisode();
             }
         }
 

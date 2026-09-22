@@ -3,11 +3,12 @@
     android:color="@color/purple_alpha_25">
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="#599D6BFE" />
+            <solid android:color="@color/player_glass_bg" />
             <corners android:radius="12dp" />
             <stroke 
-                android:width="0.5dp"
-                android:color="@color/player_item_active_stroke" />
+                android:width="1dp"
+                android:color="@color/purple_primary" />
         </shape>
     </item>
 </ripple>
+
