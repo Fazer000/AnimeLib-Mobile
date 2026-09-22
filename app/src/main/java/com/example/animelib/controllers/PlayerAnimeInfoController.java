@@ -652,7 +652,7 @@ public class PlayerAnimeInfoController {
         TextView tvRole = new TextView(context);
         tvRole.setText(role);
         tvRole.setTextSize(10.5f);
-        tvRole.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.purple_primary));
+        tvRole.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.app_text_accent_blue));
         textCol.addView(tvRole);
 
         card.addView(textCol);
