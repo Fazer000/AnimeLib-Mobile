@@ -75,6 +75,8 @@ public class PlayerSubtitlesController {
     private int subtitleBackgroundColor = 0x00000000;
     private int subtitleEdgeType = CaptionStyleCompat.EDGE_TYPE_OUTLINE;
     private int subtitleEdgeColor = 0xFF000000;
+    private int cachedPlayResX = 0;
+    private int cachedPlayResY = 0;
 
     public PlayerSubtitlesController(SubtitlesCallback callback) {
         this.callback = callback;
@@ -296,6 +298,33 @@ public class PlayerSubtitlesController {
     }
 
     public MediaItem createMediaItemWithSubtitles(String videoUrl) {
+        cachedPlayResX = 0;
+        cachedPlayResY = 0;
+        boolean isOffline = callback.isOfflineMode();
+        String currentVideoUrl = callback.getCurrentVideoUrl();
+        if (isOffline || (currentVideoUrl != null && currentVideoUrl.startsWith("/"))) {
+            DownloadedEpisodeEntity offlineEp = callback.getCurrentOfflineEpisode();
+            String localPath = (offlineEp != null && offlineEp.getLocalFilePath() != null) ? offlineEp.getLocalFilePath() : currentVideoUrl;
+            if (localPath != null && localPath.startsWith("/")) {
+                File videoFile = new File(localPath);
+                File dir = videoFile.getParentFile();
+                if (dir != null && dir.exists()) {
+                    String baseName = videoFile.getName();
+                    int dotIdx = baseName.lastIndexOf('.');
+                    if (dotIdx > 0) baseName = baseName.substring(0, dotIdx);
+                    File[] files = dir.listFiles();
+                    if (files != null) {
+                        for (File f : files) {
+                            if (f.getName().startsWith(baseName + "_sub_") && f.getName().toLowerCase().endsWith(".ass") && f.length() > 0) {
+                                parsePlayResFromFile(f);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         MediaItem.Builder builder = new MediaItem.Builder().setUri(videoUrl);
         List<MediaItem.SubtitleConfiguration> subtitleConfigs = buildSubtitleConfigurations();
         if (!subtitleConfigs.isEmpty()) {
@@ -303,6 +332,27 @@ public class PlayerSubtitlesController {
             Log.d("PlayerSubtitlesController", "Attached " + subtitleConfigs.size() + " subtitle tracks to media item.");
         }
         return builder.build();
+    }
+
+    public void parsePlayResFromFile(File assFile) {
+        if (assFile == null || !assFile.exists()) return;
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(assFile))) {
+            String line;
+            int count = 0;
+            while ((line = reader.readLine()) != null && count < 60) {
+                count++;
+                String trimmed = line.trim();
+                if (trimmed.startsWith("[Events]")) break;
+                if (trimmed.toLowerCase().startsWith("playresx:")) {
+                    String val = trimmed.substring(9).trim();
+                    cachedPlayResX = Integer.parseInt(val);
+                } else if (trimmed.toLowerCase().startsWith("playresy:")) {
+                    String val = trimmed.substring(9).trim();
+                    cachedPlayResY = Integer.parseInt(val);
+                }
+            }
+            Log.d("PlayerSubtitlesController", "Parsed ASS PlayRes: " + cachedPlayResX + "x" + cachedPlayResY);
+        } catch (Exception ignored) {}
     }
 
     public boolean isCurrentSubtitleVttOrSrt() {
@@ -539,6 +589,7 @@ public class PlayerSubtitlesController {
             if (tokens.isEmpty()) return null;
 
             Path path = new Path();
+            path.setFillType(Path.FillType.EVEN_ODD);
             char currentCmd = 'm';
             int i = 0;
             boolean hasPoints = false;
@@ -621,7 +672,7 @@ public class PlayerSubtitlesController {
                                    float posX, float posY, int anVal, float playResX, float playResY) {
         if (rawPath == null || bounds == null || bounds.width() <= 0 || bounds.height() <= 0) return null;
         try {
-            float padding = Math.max(3.0f, strokeWidth * 2.0f);
+            float padding = Math.max(4.0f, strokeWidth * 2.0f);
             float boundsW = bounds.width() + padding * 2;
             float boundsH = bounds.height() + padding * 2;
 
@@ -638,6 +689,7 @@ public class PlayerSubtitlesController {
 
             Path drawPath = new Path();
             rawPath.transform(matrix, drawPath);
+            drawPath.setFillType(Path.FillType.EVEN_ODD);
 
             if (Color.alpha(fillColor) > 0) {
                 Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -650,7 +702,7 @@ public class PlayerSubtitlesController {
                 Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
                 strokePaint.setStyle(Paint.Style.STROKE);
                 strokePaint.setColor(strokeColor);
-                strokePaint.setStrokeWidth(strokeWidth * renderScale);
+                strokePaint.setStrokeWidth(Math.max(1.0f, strokeWidth * renderScale));
                 strokePaint.setStrokeJoin(Paint.Join.ROUND);
                 strokePaint.setStrokeCap(Paint.Cap.ROUND);
                 canvas.drawPath(drawPath, strokePaint);
@@ -660,8 +712,22 @@ public class PlayerSubtitlesController {
             float scriptY;
 
             if (posX >= 0 && posY >= 0) {
-                scriptX = posX + bounds.left - padding;
-                scriptY = posY + bounds.top - padding;
+                float anchorOffsetX = 0f;
+                float anchorOffsetY = 0f;
+                int xAlign = (anVal - 1) % 3 + 1; // 1: left, 2: center, 3: right
+                int yAlign = (anVal - 1) / 3 + 1; // 1: bottom, 2: middle, 3: top
+                if (xAlign == 2) {
+                    anchorOffsetX = boundsW / 2.0f;
+                } else if (xAlign == 3) {
+                    anchorOffsetX = boundsW;
+                }
+                if (yAlign == 2) {
+                    anchorOffsetY = boundsH / 2.0f;
+                } else if (yAlign == 1) {
+                    anchorOffsetY = boundsH;
+                }
+                scriptX = posX + bounds.left - anchorOffsetX;
+                scriptY = posY + bounds.top - anchorOffsetY;
             } else {
                 scriptX = bounds.left - padding;
                 scriptY = bounds.top - padding;
@@ -750,16 +816,42 @@ public class PlayerSubtitlesController {
         }
     }
 
+    private static int convertLegacyAlignment(int a) {
+        switch (a) {
+            case 1: return 1;
+            case 2: return 2;
+            case 3: return 3;
+            case 5: return 7;
+            case 6: return 8;
+            case 7: return 9;
+            case 9: return 4;
+            case 10: return 5;
+            case 11: return 6;
+            default: return a;
+        }
+    }
+
     private static Integer parseAssColor(String rawHex) {
         if (rawHex == null) return null;
         String clean = rawHex.replaceAll("(?i)[&H#]", "").trim();
         if (clean.isEmpty()) return null;
 
-        while (clean.length() < 6) {
-            clean = "0" + clean;
-        }
-
         try {
+            if (clean.matches("^-?\\d+$")) {
+                long val = Long.parseLong(clean);
+                if (val < 0) val = val & 0xFFFFFFFFL;
+                int b = (int) ((val >> 16) & 0xFF);
+                int g = (int) ((val >> 8) & 0xFF);
+                int r = (int) (val & 0xFF);
+                int a = (int) ((val >> 24) & 0xFF);
+                int alpha = Math.max(0, Math.min(255, 255 - a));
+                return Color.argb(alpha, r, g, b);
+            }
+
+            while (clean.length() < 6) {
+                clean = "0" + clean;
+            }
+
             if (clean.length() == 6) {
                 int b = Integer.parseInt(clean.substring(0, 2), 16);
                 int g = Integer.parseInt(clean.substring(2, 4), 16);
@@ -848,6 +940,28 @@ public class PlayerSubtitlesController {
     }
 
     private float getScriptResX(float posX, float posY, String raw) {
+        if (cachedPlayResX > 0) {
+            return (float) cachedPlayResX;
+        }
+        ExoPlayer p = callback != null ? callback.getPlayer() : null;
+        if (p != null && p.getVideoSize() != null && p.getVideoSize().width > 0) {
+            int vw = p.getVideoSize().width;
+            if (posX > 1280 || posY > 720) {
+                return 1920.0f;
+            }
+            if (vw >= 1920) {
+                if (posX <= 1280 && posY <= 720 && (posX > 848 || posY > 480)) {
+                    return 1280.0f;
+                }
+                return 1920.0f;
+            }
+            if (vw == 1280) {
+                return 1280.0f;
+            }
+            if (vw > 0) {
+                return (float) vw;
+            }
+        }
         if (posX > 1280 || posY > 720 || (raw != null && (raw.contains("1920") || raw.contains("1080")))) {
             return 1920.0f;
         }
@@ -861,6 +975,28 @@ public class PlayerSubtitlesController {
     }
 
     private float getScriptResY(float posX, float posY, String raw) {
+        if (cachedPlayResY > 0) {
+            return (float) cachedPlayResY;
+        }
+        ExoPlayer p = callback != null ? callback.getPlayer() : null;
+        if (p != null && p.getVideoSize() != null && p.getVideoSize().height > 0) {
+            int vh = p.getVideoSize().height;
+            if (posX > 1280 || posY > 720) {
+                return 1080.0f;
+            }
+            if (vh >= 1080) {
+                if (posX <= 1280 && posY <= 720 && (posX > 848 || posY > 480)) {
+                    return 720.0f;
+                }
+                return 1080.0f;
+            }
+            if (vh == 720) {
+                return 720.0f;
+            }
+            if (vh > 0) {
+                return (float) vh;
+            }
+        }
         if (posX > 1280 || posY > 720 || (raw != null && (raw.contains("1920") || raw.contains("1080")))) {
             return 1080.0f;
         }
@@ -899,6 +1035,13 @@ public class PlayerSubtitlesController {
                 try {
                     anVal = Integer.parseInt(anMatcher.group(1));
                 } catch (Exception ignored) {}
+            } else {
+                java.util.regex.Matcher legacyAMatcher = java.util.regex.Pattern.compile("(?i)\\\\a([1-9]|10|11)").matcher(raw);
+                if (legacyAMatcher.find()) {
+                    try {
+                        anVal = convertLegacyAlignment(Integer.parseInt(legacyAMatcher.group(1)));
+                    } catch (Exception ignored) {}
+                }
             }
 
             int fillColor = Color.WHITE;
@@ -949,11 +1092,19 @@ public class PlayerSubtitlesController {
                     return vectorCue;
                 }
             }
-            // If it is a vector drawing, never fall through to render raw numbers as text
             return null;
         }
 
-        // If no ASS tags or escape sequences exist, return original cue directly (preserves Media3 spans and default positioning)
+        Integer baseStyleColor = null;
+        if (cue.text instanceof Spanned) {
+            Spanned spanned = (Spanned) cue.text;
+            ForegroundColorSpan[] colorSpans = spanned.getSpans(0, spanned.length(), ForegroundColorSpan.class);
+            if (colorSpans != null && colorSpans.length > 0) {
+                baseStyleColor = colorSpans[0].getForegroundColor();
+            }
+        }
+
+        // If no ASS tags or escape sequences exist, return original cue directly
         if (!raw.contains("{") && !raw.contains("\\N") && !raw.contains("\\n") && !raw.contains("\\h")) {
             return cue;
         }
@@ -981,19 +1132,19 @@ public class PlayerSubtitlesController {
             int tagOpen = rawCleaned.indexOf('{', index);
             if (tagOpen == -1) {
                 String textSegment = rawCleaned.substring(index);
-                appendCleanSegment(cleanSsb, textSegment, styleState, ctx);
+                appendCleanSegment(cleanSsb, textSegment, styleState, baseStyleColor, ctx);
                 break;
             }
 
             if (tagOpen > index) {
                 String textSegment = rawCleaned.substring(index, tagOpen);
-                appendCleanSegment(cleanSsb, textSegment, styleState, ctx);
+                appendCleanSegment(cleanSsb, textSegment, styleState, baseStyleColor, ctx);
             }
 
             int tagClose = rawCleaned.indexOf('}', tagOpen);
             if (tagClose == -1) {
                 String textSegment = rawCleaned.substring(tagOpen);
-                appendCleanSegment(cleanSsb, textSegment, styleState, ctx);
+                appendCleanSegment(cleanSsb, textSegment, styleState, baseStyleColor, ctx);
                 break;
             }
 
@@ -1005,6 +1156,12 @@ public class PlayerSubtitlesController {
             if (anMatcher.find()) {
                 anVal = Integer.parseInt(anMatcher.group(1));
                 applyAnAlignment(builder, anVal);
+            } else {
+                java.util.regex.Matcher legacyAMatcher = java.util.regex.Pattern.compile("(?i)\\\\a([1-9]|10|11)").matcher(tagBlock);
+                if (legacyAMatcher.find()) {
+                    anVal = convertLegacyAlignment(Integer.parseInt(legacyAMatcher.group(1)));
+                    applyAnAlignment(builder, anVal);
+                }
             }
 
             // Extract position \pos(x,y) or \move(x1,y1,x2,y2)
@@ -1098,7 +1255,7 @@ public class PlayerSubtitlesController {
         return builder.setText(cleanSsb).build();
     }
 
-    private void appendCleanSegment(SpannableStringBuilder ssb, String segment, AssStyleState style, Context ctx) {
+    private void appendCleanSegment(SpannableStringBuilder ssb, String segment, AssStyleState style, Integer defaultColor, Context ctx) {
         if (segment == null || segment.isEmpty()) return;
 
         String converted = segment.replace("\\N", "\n")
@@ -1110,9 +1267,9 @@ public class PlayerSubtitlesController {
         int end = ssb.length();
 
         if (end > start) {
-            if (style.color != null) {
-                ssb.setSpan(new ForegroundColorSpan(style.color), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
+            int targetColor = style.color != null ? style.color : (defaultColor != null ? defaultColor : subtitleTextColor);
+            ssb.setSpan(new ForegroundColorSpan(targetColor), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
             if (style.font != null && ctx != null) {
                 Typeface tf = FontResolver.resolveTypeface(ctx, style.font,
                         style.bold != null && style.bold,
@@ -1120,7 +1277,6 @@ public class PlayerSubtitlesController {
                 ssb.setSpan(new CustomTypefaceSpan(tf), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             if (style.fontSize != null && style.fontSize > 0) {
-                // Scale ASS script font size proportionally so it does not explode on high density screens
                 float scaledSp = (style.fontSize / 34.0f) * subtitleTextSize;
                 scaledSp = Math.max(11f, Math.min(32f, scaledSp));
                 ssb.setSpan(new AbsoluteSizeSpan(Math.round(scaledSp), true), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
