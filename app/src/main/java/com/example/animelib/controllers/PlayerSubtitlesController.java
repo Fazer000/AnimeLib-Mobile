@@ -745,28 +745,17 @@ public class PlayerSubtitlesController {
         if (str == null || str.trim().isEmpty()) return false;
         String trimmed = str.trim();
 
-        if (trimmed.matches("(?i).*\\{\\\\p[1-9]\\}.*")) {
+        // 1. Explicit ASS drawing tag \p1, \p2, etc. (must not be \p0)
+        if (java.util.regex.Pattern.compile("(?i)\\{\\\\p[1-9][^\\}]*\\}").matcher(trimmed).find()) {
             return true;
         }
 
+        // 2. Pure drawing path syntax (only vector command letters followed by numbers, no regular words)
         String cleanText = trimmed.replaceAll("\\{([^\\}]+)\\}", "").trim();
-        if (cleanText.matches("(?i)^(?:[mlbspcn]\\s+-?\\d+(?:\\.\\d+)?(?:\\s+|$))+.*")) {
-            return true;
-        }
+        if (cleanText.isEmpty()) return false;
 
-        String[] tokens = cleanText.split("\\s+");
-        if (tokens.length < 3) return false;
-        int drawingTokens = 0;
-        boolean hasDrawingCmd = false;
-        for (String t : tokens) {
-            if (t.matches("-?\\d+(?:\\.\\d+)?")) {
-                drawingTokens++;
-            } else if (t.matches("(?i)^[mlbspcn]$")) {
-                drawingTokens++;
-                hasDrawingCmd = true;
-            }
-        }
-        return hasDrawingCmd && ((double) drawingTokens / tokens.length) >= 0.5;
+        return cleanText.matches("(?i)^[mlbspcn0-9\\.\\-\\s]+$")
+                && cleanText.matches("(?i)^(?:[mlbspcn]\\s+-?\\d+(?:\\.\\d+)?(?:\\s+|$)){2,}.*");
     }
 
     private static class AssStyleState {
@@ -891,12 +880,16 @@ public class PlayerSubtitlesController {
             }
         }
 
+        // If no ASS tags or escape sequences exist, return original cue directly (preserves Media3 spans and default positioning)
+        if (!raw.contains("{") && !raw.contains("\\N") && !raw.contains("\\n") && !raw.contains("\\h")) {
+            return cue;
+        }
+
         // 2. Process ASS Dialogue / Subtitle Text with formatting tags
         Cue.Builder builder = cue.buildUpon();
 
         String rawCleaned = raw;
         rawCleaned = rawCleaned.replaceAll("(?i)\\{\\\\p[1-9]\\}[^\\{]*(\\{\\\\p0\\})?", "");
-        rawCleaned = rawCleaned.replaceAll("(?i)(?:^|\\s)(?:m|n|l|b|s|p|c)(?:\\s+-?\\d+(?:\\.\\d+)?\\s*)+", "");
 
         if (rawCleaned.replaceAll("\\{([^\\}]+)\\}", "").trim().isEmpty()) {
             return null;
@@ -906,8 +899,7 @@ public class PlayerSubtitlesController {
         AssStyleState styleState = new AssStyleState();
         Context ctx = callback != null ? callback.getContext() : null;
 
-        int anVal = 2;
-        boolean isExplicitlyPositioned = false;
+        int anVal = -1;
 
         int index = 0;
         int len = rawCleaned.length();
@@ -954,17 +946,17 @@ public class PlayerSubtitlesController {
                     float normX = Math.max(0.0f, Math.min(1.0f, px / playResX));
                     float normY = Math.max(0.0f, Math.min(1.0f, py / playResY));
 
+                    int targetAn = anVal > 0 ? anVal : 2;
                     int xAnchor = Cue.ANCHOR_TYPE_MIDDLE;
                     int yAnchor = Cue.ANCHOR_TYPE_END;
-                    if (anVal == 1 || anVal == 4 || anVal == 7) xAnchor = Cue.ANCHOR_TYPE_START;
-                    else if (anVal == 3 || anVal == 6 || anVal == 9) xAnchor = Cue.ANCHOR_TYPE_END;
+                    if (targetAn == 1 || targetAn == 4 || targetAn == 7) xAnchor = Cue.ANCHOR_TYPE_START;
+                    else if (targetAn == 3 || targetAn == 6 || targetAn == 9) xAnchor = Cue.ANCHOR_TYPE_END;
 
-                    if (anVal >= 7) yAnchor = Cue.ANCHOR_TYPE_START;
-                    else if (anVal >= 4) yAnchor = Cue.ANCHOR_TYPE_MIDDLE;
+                    if (targetAn >= 7) yAnchor = Cue.ANCHOR_TYPE_START;
+                    else if (targetAn >= 4) yAnchor = Cue.ANCHOR_TYPE_MIDDLE;
 
                     builder.setPosition(normX).setPositionAnchor(xAnchor)
                            .setLine(normY, Cue.LINE_TYPE_FRACTION).setLineAnchor(yAnchor);
-                    isExplicitlyPositioned = true;
                 } catch (Exception ignored) {}
             }
 
@@ -1030,10 +1022,6 @@ public class PlayerSubtitlesController {
             return null;
         }
 
-        if (!isExplicitlyPositioned && anVal == 2) {
-            applyAnAlignment(builder, 2);
-        }
-
         return builder.setText(cleanSsb).build();
     }
 
@@ -1085,7 +1073,8 @@ public class PlayerSubtitlesController {
     }
 
     public List<Cue> resolveCueCollisions(List<Cue> cues) {
-        if (cues == null || cues.size() <= 1) return cues;
+        if (cues == null || cues.isEmpty()) return Collections.emptyList();
+        if (cues.size() == 1) return cues;
 
         // 1. Deduplicate identical layer/karaoke cues
         List<Cue> uniqueCues = new ArrayList<>();
@@ -1111,72 +1100,45 @@ public class PlayerSubtitlesController {
 
         if (uniqueCues.size() <= 1) return uniqueCues;
 
-        // 2. Separate into Top, Bottom, Middle, and Bitmaps/Explicit Cues
-        List<Cue> bottomCues = new ArrayList<>();
-        List<Cue> topCues = new ArrayList<>();
+        // 2. Check if multiple bottom unpositioned cues collide
+        List<Cue> unpositionedBottomCues = new ArrayList<>();
         List<Cue> otherCues = new ArrayList<>();
 
         for (Cue cue : uniqueCues) {
-            if (cue.bitmap != null) {
-                otherCues.add(cue);
-            } else if (cue.line == Cue.DIMEN_UNSET || cue.lineType == Cue.TYPE_UNSET || cue.line >= 0.70f) {
-                bottomCues.add(cue);
-            } else if (cue.line <= 0.30f && cue.lineAnchor == Cue.ANCHOR_TYPE_START) {
-                topCues.add(cue);
+            if (cue.bitmap == null && (cue.line == Cue.DIMEN_UNSET || cue.lineType == Cue.TYPE_UNSET)) {
+                unpositionedBottomCues.add(cue);
             } else {
                 otherCues.add(cue);
             }
         }
 
-        List<Cue> result = new ArrayList<>();
-
-        // 3. Stack bottom subtitles gracefully from bottom upwards
-        if (!bottomCues.isEmpty()) {
-            float currentLine = 0.94f;
-            for (int i = 0; i < bottomCues.size(); i++) {
-                Cue cue = bottomCues.get(i);
-                int lineCount = 1;
-                if (cue.text != null) {
-                    String s = cue.text.toString();
-                    for (int c = 0; c < s.length(); c++) {
-                        if (s.charAt(c) == '\n') lineCount++;
-                    }
-                }
-                float cueHeightFraction = Math.max(0.045f, 0.038f * lineCount + 0.008f);
-
-                Cue.Builder b = cue.buildUpon();
-                b.setLine(Math.max(0.15f, currentLine), Cue.LINE_TYPE_FRACTION)
-                 .setLineAnchor(Cue.ANCHOR_TYPE_END);
-                result.add(b.build());
-
-                currentLine -= (cueHeightFraction + 0.012f);
-            }
+        if (unpositionedBottomCues.size() <= 1) {
+            return uniqueCues;
         }
 
-        // 4. Stack top subtitles gracefully from top downwards
-        if (!topCues.isEmpty()) {
-            float currentLine = 0.04f;
-            for (int i = 0; i < topCues.size(); i++) {
-                Cue cue = topCues.get(i);
-                int lineCount = 1;
-                if (cue.text != null) {
-                    String s = cue.text.toString();
-                    for (int c = 0; c < s.length(); c++) {
-                        if (s.charAt(c) == '\n') lineCount++;
-                    }
+        List<Cue> result = new ArrayList<>(otherCues);
+        result.add(unpositionedBottomCues.get(0));
+
+        float currentLine = 0.85f;
+        for (int i = 1; i < unpositionedBottomCues.size(); i++) {
+            Cue cue = unpositionedBottomCues.get(i);
+            int lineCount = 1;
+            if (cue.text != null) {
+                String s = cue.text.toString();
+                for (int c = 0; c < s.length(); c++) {
+                    if (s.charAt(c) == '\n') lineCount++;
                 }
-                float cueHeightFraction = Math.max(0.045f, 0.038f * lineCount + 0.008f);
-
-                Cue.Builder b = cue.buildUpon();
-                b.setLine(Math.min(0.85f, currentLine), Cue.LINE_TYPE_FRACTION)
-                 .setLineAnchor(Cue.ANCHOR_TYPE_START);
-                result.add(b.build());
-
-                currentLine += (cueHeightFraction + 0.012f);
             }
+            float cueHeightFraction = Math.max(0.045f, 0.038f * lineCount + 0.008f);
+
+            Cue.Builder b = cue.buildUpon();
+            b.setLine(Math.max(0.15f, currentLine), Cue.LINE_TYPE_FRACTION)
+             .setLineAnchor(Cue.ANCHOR_TYPE_END);
+            result.add(b.build());
+
+            currentLine -= (cueHeightFraction + 0.012f);
         }
 
-        result.addAll(otherCues);
         return result;
     }
 }
