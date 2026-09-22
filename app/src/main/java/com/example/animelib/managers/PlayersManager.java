@@ -799,6 +799,12 @@ public class PlayersManager {
     public void setEnable4K(boolean enable4K) {
         this.enable4K = enable4K;
         Log.d(TAG, "4K setting updated: " + enable4K);
+        if (sidePanelTabsAdapter != null) {
+            sidePanelTabsAdapter.notifyDataSetChanged();
+        }
+        if (voiceoverBottomSheet != null && voiceoverBottomSheet.isShowing()) {
+            voiceoverBottomSheet.updateData(animelibPlayers, kodikPlayers, currentPlayerData);
+        }
     }
     
     /**

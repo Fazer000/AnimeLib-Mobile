@@ -92,31 +92,45 @@ public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdap
             }
         }
 
-        // FHD tag (1080p)
+        // Tags: SUB, FHD, 4K
         boolean hasFhd = false;
         boolean hasFourK = false;
         if ("animelib".equalsIgnoreCase(player.getPlayer())) {
             if (player.getVideo() != null && player.getVideo().getQuality() != null) {
                 for (EpisodeResponse.QualityData q : player.getVideo().getQuality()) {
-                    if (q != null && q.getQuality() == 1080) {
-                        hasFhd = true;
-                        break;
-                    }
-                }
-                for (EpisodeResponse.QualityData q : player.getVideo().getQuality()) {
-                    if (q != null && q.getQuality() == 2160) {
-                        hasFourK = true;
-                        break;
+                    if (q != null) {
+                        if (q.getQuality() >= 2160) {
+                            hasFourK = true;
+                        } else if (q.getQuality() >= 1080) {
+                            hasFhd = true;
+                        }
                     }
                 }
             }
         }
-        if (holder.fhdTag != null) {
-            holder.fhdTag.setVisibility(hasFhd && !hasFourK ? View.VISIBLE : View.GONE);
+
+        boolean is4kEnabled = false;
+        try {
+            is4kEnabled = com.example.animelib.data.DatabaseManager.getInstance(holder.itemView.getContext()).load4KSetting();
+        } catch (Exception ignored) {
+            is4kEnabled = false;
         }
 
-        if (holder.fourKTag != null) {
-            holder.fourKTag.setVisibility(hasFourK ? View.VISIBLE : View.GONE);
+        if (is4kEnabled) {
+            if (holder.fhdTag != null) {
+                holder.fhdTag.setVisibility(hasFhd && !hasFourK ? View.VISIBLE : View.GONE);
+            }
+            if (holder.fourKTag != null) {
+                holder.fourKTag.setVisibility(hasFourK ? View.VISIBLE : View.GONE);
+            }
+        } else {
+            // Если в настройках выключен 4K: тег выше FHD не пишем, при наличии 4K пишем FHD
+            if (holder.fhdTag != null) {
+                holder.fhdTag.setVisibility((hasFhd || hasFourK) ? View.VISIBLE : View.GONE);
+            }
+            if (holder.fourKTag != null) {
+                holder.fourKTag.setVisibility(View.GONE);
+            }
         }
 
         if (holder.subTag != null) {

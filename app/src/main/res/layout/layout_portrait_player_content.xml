@@ -306,12 +306,6 @@
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
-                    <View
-                        android:layout_width="3.5dp"
-                        android:layout_height="16dp"
-                        android:layout_marginEnd="8dp"
-                        android:background="@drawable/bg_anime_info_accent_pill" />
-
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"

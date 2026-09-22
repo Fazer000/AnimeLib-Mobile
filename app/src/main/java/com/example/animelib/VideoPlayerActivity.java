@@ -2184,16 +2184,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 if (curEp != null) {
                     String num = curEp.getNumber() != null ? curEp.getNumber().trim() : "";
                     String name = cleanEpisodeName(curEp.getName(), num);
-                    String displayEpTitle;
-                    if (!num.isEmpty() && !name.isEmpty()) {
-                        displayEpTitle = num + " серия · " + name;
-                    } else if (!num.isEmpty()) {
-                        displayEpTitle = num + " серия";
-                    } else if (!name.isEmpty()) {
-                        displayEpTitle = name;
-                    } else {
-                        displayEpTitle = "";
-                    }
+                    String displayEpTitle = name != null ? name.trim() : "";
                     if (!displayEpTitle.isEmpty()) {
                         SkeletonHelper.hideSkeleton(tvPortraitEpisodeTitle, displayEpTitle);
                         tvPortraitEpisodeTitle.setVisibility(View.VISIBLE);
@@ -2205,16 +2196,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     String epNum = getIntent() != null ? getIntent().getStringExtra("EXTRA_EPISODE_NUMBER") : null;
                     String epName = getIntent() != null ? getIntent().getStringExtra("EXTRA_EPISODE_TITLE") : null;
                     String cleanName = cleanEpisodeName(epName, epNum);
-                    String displayEpTitle;
-                    if (epNum != null && !epNum.trim().isEmpty() && !cleanName.isEmpty()) {
-                        displayEpTitle = epNum.trim() + " серия · " + cleanName;
-                    } else if (epNum != null && !epNum.trim().isEmpty()) {
-                        displayEpTitle = epNum.trim() + " серия";
-                    } else if (!cleanName.isEmpty()) {
-                        displayEpTitle = cleanName;
-                    } else {
-                        displayEpTitle = "";
-                    }
+                    String displayEpTitle = cleanName != null ? cleanName.trim() : "";
                     if (!displayEpTitle.isEmpty()) {
                         SkeletonHelper.hideSkeleton(tvPortraitEpisodeTitle, displayEpTitle);
                         tvPortraitEpisodeTitle.setVisibility(View.VISIBLE);
