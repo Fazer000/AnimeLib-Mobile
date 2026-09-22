@@ -349,10 +349,19 @@ public class PlayerSubtitlesController {
                 for (Cue cue : cueGroup.cues) {
                     if (cue == null) continue;
                     if (cue.text != null && cue.text.length() > 0) {
+                        String raw = cue.text.toString();
+                        if (isAssDrawingPath(raw)) {
+                            Cue vectorCue = processAssCue(cue);
+                            if (vectorCue != null) {
+                                processedCues.add(vectorCue);
+                            }
+                            // Do not display drawing commands as raw text
+                            continue;
+                        }
                         Cue processed = processAssCue(cue);
                         if (processed != null && ((processed.text != null && processed.text.length() > 0) || processed.bitmap != null)) {
                             processedCues.add(processed);
-                        } else {
+                        } else if (processed == null && raw.trim().length() > 0) {
                             processedCues.add(cue);
                         }
                     } else if (cue.bitmap != null) {
@@ -360,7 +369,7 @@ public class PlayerSubtitlesController {
                     }
                 }
                 List<Cue> stackedCues = resolveCueCollisions(processedCues);
-                playerView.getSubtitleView().setCues(stackedCues.isEmpty() ? cueGroup.cues : stackedCues);
+                playerView.getSubtitleView().setCues(stackedCues);
             }
 
             @Override
@@ -451,6 +460,7 @@ public class PlayerSubtitlesController {
                 );
                 subtitleView.setStyle(style);
                 subtitleView.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleTextSize);
+                subtitleView.setBottomPaddingFraction(0.06f);
             } catch (Exception e) {
                 Log.w("PlayerSubtitlesController", "Failed to style SubtitleView", e);
             }
@@ -768,21 +778,51 @@ public class PlayerSubtitlesController {
         return null;
     }
 
-    private static boolean isAssDrawingPath(String str) {
+    public static boolean isAssDrawingPath(String str) {
         if (str == null || str.trim().isEmpty()) return false;
         String trimmed = str.trim();
 
-        // 1. Explicit ASS drawing tag \p1, \p2, etc. (must not be \p0)
-        if (java.util.regex.Pattern.compile("(?i)\\{\\\\p[1-9][^\\}]*\\}").matcher(trimmed).find()) {
+        // 1. Explicit ASS drawing tag \p1..\p9
+        if (java.util.regex.Pattern.compile("(?i)\\{\\\\p[1-9][^\\}]*\\}").matcher(trimmed).find()
+                || java.util.regex.Pattern.compile("(?i)\\\\p[1-9]\\b").matcher(trimmed).find()) {
             return true;
         }
 
-        // 2. Pure drawing path syntax (only vector command letters followed by numbers, no regular words)
+        // 2. Pure or stripped ASS drawing path commands
         String cleanText = trimmed.replaceAll("\\{([^\\}]+)\\}", "").trim();
         if (cleanText.isEmpty()) return false;
 
-        return cleanText.matches("(?i)^[mlbspcn0-9\\.\\-\\s]+$")
-                && cleanText.matches("(?i)^(?:[mlbspcn]\\s+-?\\d+(?:\\.\\d+)?(?:\\s+|$)){2,}.*");
+        // Common ASS vector paths start with 'm ' or 'n ' or 'm -'
+        if (cleanText.matches("(?i)^[mn]\\s+-?\\d+.*")) {
+            String[] tokens = cleanText.split("\\s+");
+            if (tokens.length >= 3) {
+                int drawingTokens = 0;
+                for (String token : tokens) {
+                    if (token.matches("(?i)^[mlbspcn]$") || isNumeric(token)) {
+                        drawingTokens++;
+                    }
+                }
+                if ((float) drawingTokens / tokens.length >= 0.70f) {
+                    return true;
+                }
+            }
+        }
+
+        // Also check if entire string is drawing tokens (letters m,l,b,s,p,c,n, numbers, signs)
+        if (cleanText.matches("(?i)^[mlbspcn0-9\\.\\-\\s,]+$")) {
+            String[] tokens = cleanText.split("[\\s,]+");
+            if (tokens.length >= 3) {
+                int numCount = 0;
+                for (String t : tokens) {
+                    if (isNumeric(t)) numCount++;
+                }
+                if ((float) numCount / tokens.length >= 0.45f) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static class AssStyleState {
@@ -808,23 +848,27 @@ public class PlayerSubtitlesController {
     }
 
     private float getScriptResX(float posX, float posY, String raw) {
-        ExoPlayer p = callback != null ? callback.getPlayer() : null;
-        if (p != null && p.getVideoSize() != null && p.getVideoSize().width > 0) {
-            return (float) p.getVideoSize().width;
-        }
         if (posX > 1280 || posY > 720 || (raw != null && (raw.contains("1920") || raw.contains("1080")))) {
             return 1920.0f;
+        }
+        if (posX > 848 || posY > 480) {
+            return 1280.0f;
+        }
+        if (posX > 640) {
+            return 848.0f;
         }
         return 1280.0f;
     }
 
     private float getScriptResY(float posX, float posY, String raw) {
-        ExoPlayer p = callback != null ? callback.getPlayer() : null;
-        if (p != null && p.getVideoSize() != null && p.getVideoSize().height > 0) {
-            return (float) p.getVideoSize().height;
-        }
         if (posX > 1280 || posY > 720 || (raw != null && (raw.contains("1920") || raw.contains("1080")))) {
             return 1080.0f;
+        }
+        if (posX > 848 || posY > 480) {
+            return 720.0f;
+        }
+        if (posX > 640 || posY > 288) {
+            return 480.0f;
         }
         return 720.0f;
     }
@@ -905,6 +949,8 @@ public class PlayerSubtitlesController {
                     return vectorCue;
                 }
             }
+            // If it is a vector drawing, never fall through to render raw numbers as text
+            return null;
         }
 
         // If no ASS tags or escape sequences exist, return original cue directly (preserves Media3 spans and default positioning)
@@ -1103,17 +1149,32 @@ public class PlayerSubtitlesController {
         if (cues == null || cues.isEmpty()) return Collections.emptyList();
         if (cues.size() == 1) return cues;
 
-        // 1. Deduplicate identical layer/karaoke cues
-        List<Cue> uniqueCues = new ArrayList<>();
+        // 1. Filter out empty or raw vector drawing artifacts
+        List<Cue> validCues = new ArrayList<>();
         for (Cue cue : cues) {
             if (cue == null) continue;
+            if (cue.text != null) {
+                String str = cue.text.toString().trim();
+                if (str.isEmpty() || isAssDrawingPath(str)) {
+                    continue;
+                }
+            }
+            validCues.add(cue);
+        }
+
+        if (validCues.isEmpty()) return Collections.emptyList();
+        if (validCues.size() == 1) return validCues;
+
+        // 2. Deduplicate identical layer/karaoke cues
+        List<Cue> uniqueCues = new ArrayList<>();
+        for (Cue cue : validCues) {
             boolean isDuplicate = false;
             if (cue.text != null) {
                 String str1 = cue.text.toString().trim();
                 for (Cue existing : uniqueCues) {
                     if (existing != null && existing.text != null) {
                         String str2 = existing.text.toString().trim();
-                        if (str1.equals(str2) && Math.abs(cue.position - existing.position) < 0.05f) {
+                        if (str1.equals(str2)) {
                             isDuplicate = true;
                             break;
                         }
@@ -1127,7 +1188,7 @@ public class PlayerSubtitlesController {
 
         if (uniqueCues.size() <= 1) return uniqueCues;
 
-        // 2. Check if multiple bottom unpositioned cues collide
+        // 3. Separate unpositioned bottom cues from specifically positioned cues
         List<Cue> unpositionedBottomCues = new ArrayList<>();
         List<Cue> otherCues = new ArrayList<>();
 
@@ -1143,29 +1204,29 @@ public class PlayerSubtitlesController {
             return uniqueCues;
         }
 
-        List<Cue> result = new ArrayList<>(otherCues);
-        result.add(unpositionedBottomCues.get(0));
-
-        float currentLine = 0.85f;
-        for (int i = 1; i < unpositionedBottomCues.size(); i++) {
-            Cue cue = unpositionedBottomCues.get(i);
-            int lineCount = 1;
-            if (cue.text != null) {
-                String s = cue.text.toString();
-                for (int c = 0; c < s.length(); c++) {
-                    if (s.charAt(c) == '\n') lineCount++;
+        // Merge simultaneous unpositioned bottom dialogue cues into one formatted cue with linebreaks
+        SpannableStringBuilder mergedText = new SpannableStringBuilder();
+        for (int i = 0; i < unpositionedBottomCues.size(); i++) {
+            Cue c = unpositionedBottomCues.get(i);
+            if (c.text != null && c.text.length() > 0) {
+                if (mergedText.length() > 0) {
+                    mergedText.append("\n");
                 }
+                mergedText.append(c.text);
             }
-            float cueHeightFraction = Math.max(0.045f, 0.038f * lineCount + 0.008f);
-
-            Cue.Builder b = cue.buildUpon();
-            b.setLine(Math.max(0.15f, currentLine), Cue.LINE_TYPE_FRACTION)
-             .setLineAnchor(Cue.ANCHOR_TYPE_END);
-            result.add(b.build());
-
-            currentLine -= (cueHeightFraction + 0.012f);
         }
 
+        Cue mergedBottomCue = unpositionedBottomCues.get(0).buildUpon()
+                .setText(mergedText)
+                .setPosition(0.5f)
+                .setPositionAnchor(Cue.ANCHOR_TYPE_MIDDLE)
+                .setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET)
+                .setLineAnchor(Cue.ANCHOR_TYPE_END)
+                .setTextAlignment(android.text.Layout.Alignment.ALIGN_CENTER)
+                .build();
+
+        List<Cue> result = new ArrayList<>(otherCues);
+        result.add(mergedBottomCue);
         return result;
     }
 }
