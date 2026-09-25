@@ -12,13 +12,12 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.example.animelib.R;
 import com.example.animelib.models.SearchResponse;
 import com.example.animelib.util.ImageLoader;
-import com.google.android.material.chip.Chip;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Адаптер для отображения результатов поиска аниме
+ * Адаптер для отображения результатов поиска аниме в стиле Alert Dialog
  */
 public class SearchResultsAdapter extends RecyclerView.Adapter<SearchResultsAdapter.SearchViewHolder> {
     
@@ -66,9 +65,10 @@ public class SearchResultsAdapter extends RecyclerView.Adapter<SearchResultsAdap
     static class SearchViewHolder extends RecyclerView.ViewHolder {
         private final ImageView cover;
         private final TextView title;
-        private final Chip typeChip;
-        private final Chip statusChip;
-        private final Chip yearChip;
+        private final TextView subtitle;
+        private final TextView typeBadge;
+        private final TextView statusBadge;
+        private final TextView yearBadge;
         private final TextView rating;
         private final TextView votes;
         
@@ -76,68 +76,119 @@ public class SearchResultsAdapter extends RecyclerView.Adapter<SearchResultsAdap
             super(itemView);
             cover = itemView.findViewById(R.id.searchItemCover);
             title = itemView.findViewById(R.id.searchItemTitle);
-            typeChip = itemView.findViewById(R.id.searchItemTypeChip);
-            statusChip = itemView.findViewById(R.id.searchItemStatusChip);
-            yearChip = itemView.findViewById(R.id.searchItemYearChip);
+            subtitle = itemView.findViewById(R.id.searchItemSubtitle);
+            typeBadge = itemView.findViewById(R.id.searchItemTypeBadge);
+            statusBadge = itemView.findViewById(R.id.searchItemStatusBadge);
+            yearBadge = itemView.findViewById(R.id.searchItemYearBadge);
             rating = itemView.findViewById(R.id.searchItemRating);
             votes = itemView.findViewById(R.id.searchItemVotes);
         }
         
         public void bind(SearchResponse.AnimeSearchItem item, OnItemClickListener listener) {
-            // Title
-            if (item.getRusName() != null && !item.getRusName().isEmpty()) {
-                title.setText(item.getRusName());
+            // Main Title & Subtitle
+            String mainTitle = item.getRusName();
+            String originalName = item.getName();
+            String engName = item.getEngName();
+            
+            if (mainTitle != null && !mainTitle.trim().isEmpty()) {
+                title.setText(mainTitle);
+                // Subtitle: English or Japanese original if different
+                String sub = (engName != null && !engName.isEmpty()) ? engName : originalName;
+                if (sub != null && !sub.equalsIgnoreCase(mainTitle)) {
+                    subtitle.setText(sub);
+                    subtitle.setVisibility(View.VISIBLE);
+                } else {
+                    subtitle.setVisibility(View.GONE);
+                }
+            } else if (originalName != null && !originalName.trim().isEmpty()) {
+                title.setText(originalName);
+                subtitle.setVisibility(View.GONE);
+            } else if (engName != null) {
+                title.setText(engName);
+                subtitle.setVisibility(View.GONE);
             } else {
-                title.setText(item.getName());
+                title.setText("Без названия");
+                subtitle.setVisibility(View.GONE);
             }
             
-            // Cover
-            if (item.getCover() != null && item.getCover().getThumbnail() != null) {
-                ImageLoader.getInstance().loadInto(cover, item.getCover().getThumbnail(), R.drawable.ic_logo_non_back_light);
+            // Cover Image
+            String coverUrl = null;
+            if (item.getCover() != null) {
+                if (item.getCover().getThumbnail() != null) {
+                    coverUrl = item.getCover().getThumbnail();
+                } else if (item.getCover().getDefaultUrl() != null) {
+                    coverUrl = item.getCover().getDefaultUrl();
+                } else if (item.getCover().getMd() != null) {
+                    coverUrl = item.getCover().getMd();
+                }
             }
             
-            // Type chip
-            if (item.getType() != null && item.getType().getLabel() != null) {
-                typeChip.setText(item.getType().getLabel());
-                typeChip.setVisibility(View.VISIBLE);
+            if (coverUrl != null && !coverUrl.isEmpty()) {
+                ImageLoader.getInstance().loadInto(cover, coverUrl, R.drawable.placeholder_image);
             } else {
-                typeChip.setVisibility(View.GONE);
+                cover.setImageResource(R.drawable.placeholder_image);
             }
             
-            // Status chip
-            if (item.getStatus() != null && item.getStatus().getLabel() != null) {
-                statusChip.setText(item.getStatus().getLabel());
-                statusChip.setVisibility(View.VISIBLE);
+            // Type badge
+            if (item.getType() != null && item.getType().getLabel() != null && !item.getType().getLabel().isEmpty()) {
+                typeBadge.setText(item.getType().getLabel());
+                typeBadge.setVisibility(View.VISIBLE);
             } else {
-                statusChip.setVisibility(View.GONE);
+                typeBadge.setVisibility(View.GONE);
             }
             
-            // Year chip
-            if (item.getReleaseDate() != null && !item.getReleaseDate().isEmpty()) {
-                String year = item.getReleaseDate().split("-")[0];
-                yearChip.setText(year);
-                yearChip.setVisibility(View.VISIBLE);
+            // Status badge
+            if (item.getStatus() != null && item.getStatus().getLabel() != null && !item.getStatus().getLabel().isEmpty()) {
+                statusBadge.setText(item.getStatus().getLabel());
+                statusBadge.setVisibility(View.VISIBLE);
             } else {
-                yearChip.setVisibility(View.GONE);
+                statusBadge.setVisibility(View.GONE);
+            }
+            
+            // Year badge
+            String date = item.getReleaseDate();
+            if (date != null && !date.isEmpty()) {
+                String year = date.contains("-") ? date.split("-")[0] : date;
+                yearBadge.setText(year);
+                yearBadge.setVisibility(View.VISIBLE);
+            } else if (item.getReleaseDateString() != null && !item.getReleaseDateString().isEmpty()) {
+                yearBadge.setText(item.getReleaseDateString());
+                yearBadge.setVisibility(View.VISIBLE);
+            } else {
+                yearBadge.setVisibility(View.GONE);
             }
             
             // Rating
             if (item.getRating() != null) {
-                rating.setText(item.getRating().getAverageFormated());
-                votes.setText("(" + item.getRating().getVotesFormated() + ")");
+                String avg = item.getRating().getAverageFormated();
+                if (avg == null || avg.isEmpty()) {
+                    avg = item.getRating().getAverage();
+                }
+                rating.setText(avg != null && !avg.isEmpty() ? avg : "—");
+                
+                String votesStr = item.getRating().getVotesFormated();
+                if (votesStr != null && !votesStr.isEmpty()) {
+                    votes.setText("(" + votesStr + ")");
+                    votes.setVisibility(View.VISIBLE);
+                } else if (item.getRating().getVotes() > 0) {
+                    votes.setText("(" + item.getRating().getVotes() + ")");
+                    votes.setVisibility(View.VISIBLE);
+                } else {
+                    votes.setVisibility(View.GONE);
+                }
             } else {
                 rating.setText("—");
-                votes.setText("");
+                votes.setVisibility(View.GONE);
             }
             
-            // Click listener - открывает страницу аниме в WebView
+            // Click listener - opens anime page in WebView
             itemView.setOnClickListener(v -> {
                 if (listener != null) {
                     listener.onItemClick(item);
                 }
             });
             
-            // Long click listener - открывает VideoPlayerActivity
+            // Long click listener - opens VideoPlayerActivity
             itemView.setOnLongClickListener(v -> {
                 if (listener != null) {
                     listener.onItemLongClick(item);
@@ -148,4 +199,3 @@ public class SearchResultsAdapter extends RecyclerView.Adapter<SearchResultsAdap
         }
     }
 }
-

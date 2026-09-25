@@ -1,86 +1,124 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/searchRootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?attr/primaryColor"
+    android:background="#99000000"
     android:clickable="true"
     android:focusable="true">
 
-    <LinearLayout
+    <!-- Search Alert Dialog Card -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/searchCardContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical">
-
-        <!-- Header with close button -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="?attr/statusBarColor"
-            android:elevation="6dp">
-
-            <ImageButton
-                android:id="@+id/closeButton"
-                android:layout_width="25dp"
-                android:layout_height="25dp"
-                android:layout_margin="10dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_arrow_back"
-                android:contentDescription="Закрыть"
-                app:tint="?attr/primaryTextColor" />
-
-            <EditText
-                android:id="@+id/searchInput"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:layout_marginStart="12dp"
-                android:layout_marginEnd="12dp"
-                android:background="@android:color/transparent"
-                android:hint="Поиск тайтлов"
-                android:textSize="16sp"
-                android:textColor="?attr/primaryTextColor"
-                android:textColorHint="?attr/accentTextColor"
-                android:inputType="text"
-                android:imeOptions="actionSearch|flagNoExtractUi|flagNoFullscreen"
-                android:maxLines="1" />
-
-            <ImageButton
-                android:id="@+id/clearButton"
-                android:layout_width="25dp"
-                android:layout_height="25dp"
-                android:layout_margin="10dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_close"
-                app:tint="?attr/accentTextColor"
-                android:contentDescription="Очистить"
-                android:visibility="gone" />
-
-        </LinearLayout>
+        android:layout_gravity="center"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="24dp"
+        android:layout_marginBottom="24dp"
+        app:cardCornerRadius="22dp"
+        app:cardElevation="16dp"
+        app:cardMaxElevation="16dp"
+        app:cardBackgroundColor="@color/dialog_bg"
+        android:clickable="true"
+        android:focusable="true">
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:elevation="4dp"
-            android:background="@drawable/nr_bb_background">
-            <!-- Tab Layout -->
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <!-- Top Header & Search Bar -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="10dp">
+
+                <!-- Search Input Box -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="46dp"
+                    android:layout_weight="1"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/bg_search_input_box"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="6dp">
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_search"
+                        app:tint="@color/purple_primary"
+                        android:contentDescription="Поиск" />
+
+                    <EditText
+                        android:id="@+id/searchInput"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginEnd="4dp"
+                        android:background="@android:color/transparent"
+                        android:hint="Поиск тайтлов..."
+                        android:textSize="15sp"
+                        android:fontFamily="@font/open_sans_semibold"
+                        android:textColor="@color/dialog_text_title"
+                        android:textColorHint="@color/dialog_text_hint"
+                        android:inputType="text"
+                        android:imeOptions="actionSearch|flagNoExtractUi|flagNoFullscreen"
+                        android:maxLines="1" />
+
+                    <ImageButton
+                        android:id="@+id/clearButton"
+                        android:layout_width="28dp"
+                        android:layout_height="28dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@drawable/ic_eraser"
+                        app:tint="@color/dialog_icon_close"
+                        android:scaleType="fitCenter"
+                        android:padding="5dp"
+                        android:contentDescription="Очистить"
+                        android:visibility="gone" />
+
+                </LinearLayout>
+
+                <!-- Close Alert Button -->
+                <ImageButton
+                    android:id="@+id/closeButton"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginStart="10dp"
+                    android:background="@drawable/bg_search_circle_button"
+                    android:src="@drawable/ic_close"
+                    app:tint="@color/dialog_icon_close"
+                    android:padding="8dp"
+                    android:contentDescription="Закрыть" />
+
+            </LinearLayout>
+
+            <!-- Search Tabs Header -->
             <com.google.android.material.tabs.TabLayout
                 android:id="@+id/searchTabLayout"
                 android:layout_width="match_parent"
-                android:layout_height="40dp"
-                android:background="?attr/primaryColor"
+                android:layout_height="38dp"
+                android:background="@android:color/transparent"
                 app:tabMode="scrollable"
                 app:tabGravity="start"
                 app:tabIndicator="@drawable/tab_indicator_rounded"
-                app:tabIndicatorColor="?attr/secondaryColor"
+                app:tabIndicatorColor="@color/purple_primary"
                 app:tabIndicatorGravity="bottom"
                 app:tabIndicatorHeight="3dp"
                 app:tabIndicatorFullWidth="false"
-                app:tabSelectedTextColor="?attr/primaryTextColor"
-                app:tabTextColor="?attr/accentTextColor"
+                app:tabSelectedTextColor="@color/purple_primary"
+                app:tabTextColor="@color/dialog_text_muted"
                 app:tabTextAppearance="@style/SearchTabTextAppearance"
                 app:tabPaddingStart="16dp"
                 app:tabPaddingEnd="16dp">
@@ -92,91 +130,217 @@
                     android:text="Тайтлы" />
 
             </com.google.android.material.tabs.TabLayout>
+
             <View
                 android:layout_width="match_parent"
-                android:layout_height="0.5dp"
-                android:background="?attr/alphaBorderColor" />
-        </LinearLayout>
+                android:layout_height="1dp"
+                android:background="@color/dialog_input_stroke" />
 
-<!--        <LinearLayout-->
-<!--            android:layout_width="match_parent"-->
-<!--            android:layout_height="wrap_content"-->
-<!--            android:layout_marginVertical="4dp"-->
-<!--            android:gravity="center_vertical"-->
-<!--            android:orientation="horizontal">-->
-<!--            <ImageView-->
-<!--                android:layout_width="30dp"-->
-<!--                android:layout_height="30dp"-->
-<!--                android:scaleX="2"-->
-<!--                android:scaleY="2"-->
-<!--                android:layout_marginEnd="6dp"-->
-<!--                android:src="@drawable/ic_animelib_logo_non_back" />-->
-<!--            <TextView-->
-<!--                android:layout_width="wrap_content"-->
-<!--                android:layout_height="wrap_content"-->
-<!--                android:text="AnimeLIB"-->
-<!--                android:textSize="18dp"-->
-<!--                android:textStyle="bold"-->
-<!--                android:textColor="?attr/primaryTextColor" />-->
-<!--        </LinearLayout>-->
-
-        <!-- Search results -->
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/searchResults"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:clipToPadding="false"
-            android:padding="8dp" />
-
-        <!-- Empty state -->
-        <LinearLayout
-            android:id="@+id/emptyState"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:padding="32dp"
-            android:visibility="visible">
-
-            <ImageView
-                android:layout_width="120dp"
-                android:layout_height="120dp"
-                android:src="@drawable/ic_search"
-                app:tint="?attr/accentTextColor"
-                android:alpha="0.3"
-                android:contentDescription="Поиск" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Начните вводить название аниме"
-                android:textSize="16sp"
-                android:textColor="?attr/accentTextColor"
-                android:layout_marginTop="16dp" />
-
-        </LinearLayout>
-
-        <!-- Loading indicator -->
-        <FrameLayout
-            android:id="@+id/loadingIndicator"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:visibility="gone">
-
-            <com.google.android.material.progressindicator.CircularProgressIndicator
-                style="@style/CustomProgressIndicator"
+            <!-- Content Area: Results / Empty / No Results / Loading -->
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:fitsSystemWindows="true"
-                app:trackCornerRadius="20dp"
-                android:layout_gravity="center"
-                android:indeterminate="true"/>
-        </FrameLayout>
+                android:layout_height="0dp"
+                android:layout_weight="1">
 
-    </LinearLayout>
+                <!-- Search results list -->
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/searchResults"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:clipToPadding="false"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="8dp"
+                    android:scrollbars="vertical"
+                    android:visibility="gone" />
+
+                <!-- Initial Empty State -->
+                <LinearLayout
+                    android:id="@+id/emptyState"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingHorizontal="24dp"
+                    android:paddingVertical="16dp"
+                    android:visibility="visible">
+
+                    <FrameLayout
+                        android:layout_width="64dp"
+                        android:layout_height="64dp"
+                        android:background="@drawable/bg_search_empty_icon_bg">
+
+                        <ImageView
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_search"
+                            app:tint="@color/purple_primary"
+                            android:contentDescription="Поиск" />
+                    </FrameLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Быстрый поиск"
+                        android:textSize="17sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:textStyle="bold"
+                        android:textColor="@color/dialog_text_title"
+                        android:layout_marginTop="14dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Введите название аниме на русском или английском языке"
+                        android:textSize="13sp"
+                        android:fontFamily="@font/open_sans"
+                        android:textColor="@color/dialog_text_muted"
+                        android:gravity="center"
+                        android:layout_marginTop="4dp" />
+
+                    <!-- Helpful tip card -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_search_tip_card"
+                        android:layout_marginTop="20dp"
+                        android:padding="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <ImageView
+                                android:layout_width="16dp"
+                                android:layout_height="16dp"
+                                android:src="@drawable/ic_link"
+                                app:tint="@color/purple_primary"
+                                android:contentDescription="Клик" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="8dp"
+                                android:text="Клик — открыть страницу тайтла"
+                                android:textColor="@color/dialog_text_body"
+                                android:textSize="12sp"
+                                android:fontFamily="@font/open_sans" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginTop="8dp">
+
+                            <ImageView
+                                android:layout_width="16dp"
+                                android:layout_height="16dp"
+                                android:src="@drawable/ic_play"
+                                app:tint="@color/purple_primary"
+                                android:contentDescription="Плеер" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="8dp"
+                                android:text="Удержание — мгновенно открыть плеер"
+                                android:textColor="@color/purple_primary"
+                                android:textSize="12sp"
+                                android:fontFamily="@font/open_sans_semibold"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+                <!-- No Results State -->
+                <LinearLayout
+                    android:id="@+id/noResultsState"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingHorizontal="24dp"
+                    android:visibility="gone">
+
+                    <FrameLayout
+                        android:layout_width="56dp"
+                        android:layout_height="56dp"
+                        android:background="@drawable/bg_search_empty_icon_bg">
+
+                        <ImageView
+                            android:layout_width="28dp"
+                            android:layout_height="28dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_search"
+                            app:tint="@color/dialog_icon_close"
+                            android:alpha="0.6"
+                            android:contentDescription="Ничего не найдено" />
+                    </FrameLayout>
+
+                    <TextView
+                        android:id="@+id/noResultsTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Ничего не найдено"
+                        android:textSize="16sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:textStyle="bold"
+                        android:textColor="@color/dialog_text_title"
+                        android:layout_marginTop="12dp" />
+
+                    <TextView
+                        android:id="@+id/noResultsSubtitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Попробуйте изменить запрос или проверить написание"
+                        android:textSize="13sp"
+                        android:fontFamily="@font/open_sans"
+                        android:textColor="@color/dialog_text_muted"
+                        android:gravity="center"
+                        android:layout_marginTop="4dp" />
+
+                </LinearLayout>
+
+                <!-- Loading indicator -->
+                <LinearLayout
+                    android:id="@+id/loadingIndicator"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:visibility="gone">
+
+                    <com.google.android.material.progressindicator.CircularProgressIndicator
+                        style="@style/CustomProgressIndicator"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        app:indicatorColor="@color/purple_primary"
+                        app:trackCornerRadius="20dp"
+                        android:indeterminate="true" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Идёт поиск..."
+                        android:textSize="13sp"
+                        android:fontFamily="@font/open_sans_semibold"
+                        android:textColor="@color/dialog_text_muted"
+                        android:layout_marginTop="12dp" />
+                </LinearLayout>
+
+            </FrameLayout>
+
+        </LinearLayout>
+
+    </androidx.cardview.widget.CardView>
 
 </FrameLayout>
-

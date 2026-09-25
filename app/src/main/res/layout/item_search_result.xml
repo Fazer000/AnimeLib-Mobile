@@ -1,145 +1,176 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="4dp"
-    app:cardCornerRadius="12dp"
-    app:cardElevation="0dp"
-    app:strokeWidth="0dp"
-    app:cardBackgroundColor="?attr/rvItemBackground">
+    android:layout_marginHorizontal="2dp"
+    android:layout_marginVertical="4dp"
+    android:background="@drawable/bg_search_result_item"
+    android:clickable="true"
+    android:focusable="true"
+    android:orientation="horizontal"
+    android:padding="8dp">
 
+    <!-- Anime Cover -->
+    <androidx.cardview.widget.CardView
+        android:layout_width="62dp"
+        android:layout_height="88dp"
+        android:layout_gravity="center_vertical"
+        app:cardCornerRadius="10dp"
+        app:cardElevation="2dp"
+        app:cardBackgroundColor="@color/card_bg_color">
+
+        <ImageView
+            android:id="@+id/searchItemCover"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:src="@drawable/placeholder_image"
+            android:contentDescription="Anime Cover" />
+
+    </androidx.cardview.widget.CardView>
+
+    <!-- Anime Info Column -->
     <LinearLayout
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:clipToPadding="false"
-        android:orientation="horizontal"
-        android:padding="8dp">
+        android:layout_gravity="center_vertical"
+        android:layout_weight="1"
+        android:layout_marginStart="12dp"
+        android:orientation="vertical">
 
-        <!-- Anime Cover -->
-        <androidx.cardview.widget.CardView
-            android:layout_width="60dp"
-            android:layout_height="90dp"
-            android:layout_gravity="center_vertical"
-            app:cardCornerRadius="8dp"
-            app:cardElevation="2dp"
-            app:cardBackgroundColor="?attr/cardBackgroundColor">
-
-            <ImageView
-                android:id="@+id/searchItemCover"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:scaleType="centerCrop"
-                android:contentDescription="Anime Cover" />
-
-        </androidx.cardview.widget.CardView>
-
-        <!-- Anime Info -->
-        <LinearLayout
-            android:layout_width="0dp"
+        <!-- Title -->
+        <TextView
+            android:id="@+id/searchItemTitle"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:layout_weight="1"
-            android:layout_marginStart="12dp"
-            android:orientation="vertical">
+            android:textColor="@color/dialog_text_title"
+            android:textSize="14.5sp"
+            android:fontFamily="@font/open_sans_bold"
+            android:textStyle="bold"
+            android:maxLines="2"
+            android:ellipsize="end"
+            tools:text="Магическая битва" />
 
-            <!-- Title -->
+        <!-- Subtitle (English / Original name) -->
+        <TextView
+            android:id="@+id/searchItemSubtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:textColor="@color/dialog_text_muted"
+            android:textSize="11.5sp"
+            android:fontFamily="@font/open_sans"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:visibility="gone"
+            tools:text="Jujutsu Kaisen"
+            tools:visibility="visible" />
+
+        <!-- Badges Row (Type, Status, Year) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
             <TextView
-                android:id="@+id/searchItemTitle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textColor="?attr/primaryTextColor"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:maxLines="2"
-                android:ellipsize="end" />
-
-            <!-- Chips (Type, Status, Year) -->
-            <com.google.android.material.chip.ChipGroup
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                app:chipSpacingHorizontal="4dp"
-                app:singleLine="true">
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/searchItemTypeChip"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textSize="10sp"
-                    android:textColor="?attr/primaryTextColor"
-                    app:chipBackgroundColor="?attr/alphaBorderColor"
-                    app:chipStrokeColor="?attr/alphaPrimaryColor"
-                    app:chipStrokeWidth="0.5dp"
-                    app:chipMinHeight="24dp"
-                    app:chipCornerRadius="50dp"
-                    app:ensureMinTouchTargetSize="false" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/searchItemStatusChip"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textSize="10sp"
-                    android:textColor="?attr/primaryTextColor"
-                    app:chipBackgroundColor="?attr/alphaBorderColor"
-                    app:chipStrokeColor="?attr/alphaPrimaryColor"
-                    app:chipStrokeWidth="0.5dp"
-                    app:chipMinHeight="24dp"
-                    app:chipCornerRadius="50dp"
-                    app:ensureMinTouchTargetSize="false" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/searchItemYearChip"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textSize="10sp"
-                    android:textColor="?attr/primaryTextColor"
-                    app:chipBackgroundColor="?attr/alphaBorderColor"
-                    app:chipStrokeColor="?attr/alphaPrimaryColor"
-                    app:chipStrokeWidth="0.5dp"
-                    app:chipMinHeight="24dp"
-                    app:chipCornerRadius="50dp"
-                    app:ensureMinTouchTargetSize="false"
-                    android:visibility="gone" />
-
-            </com.google.android.material.chip.ChipGroup>
-
-            <!-- Rating -->
-            <LinearLayout
+                android:id="@+id/searchItemTypeBadge"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:background="@drawable/bg_search_pill_badge_accent"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="2dp"
+                android:textColor="@color/purple_primary"
+                android:textSize="10.5sp"
+                android:fontFamily="@font/open_sans_semibold"
+                android:textStyle="bold"
+                android:visibility="gone"
+                tools:text="ТВ"
+                tools:visibility="visible" />
 
-                <ImageView
-                    android:layout_width="14dp"
-                    android:layout_height="14dp"
-                    android:src="@drawable/ic_star"
-                    app:tint="?attr/ratingStarColor"
-                    android:layout_marginEnd="4dp"/>
+            <TextView
+                android:id="@+id/searchItemStatusBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/bg_search_pill_badge"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="2dp"
+                android:textColor="@color/dialog_text_muted"
+                android:textSize="10.5sp"
+                android:fontFamily="@font/open_sans"
+                android:visibility="gone"
+                tools:text="Онгоинг"
+                tools:visibility="visible" />
 
-                <TextView
-                    android:id="@+id/searchItemRating"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textColor="?attr/primaryTextColor"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
+            <TextView
+                android:id="@+id/searchItemYearBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/bg_search_pill_badge"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="2dp"
+                android:textColor="@color/dialog_text_muted"
+                android:textSize="10.5sp"
+                android:fontFamily="@font/open_sans"
+                android:visibility="gone"
+                tools:text="2024"
+                tools:visibility="visible" />
 
-                <TextView
-                    android:id="@+id/searchItemVotes"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp"
-                    android:textColor="?attr/accentTextColor"
-                    android:textSize="12sp" />
+        </LinearLayout>
 
-            </LinearLayout>
+        <!-- Rating & Action Hint Row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:layout_width="13dp"
+                android:layout_height="13dp"
+                android:src="@drawable/ic_star"
+                app:tint="@color/dt_rating_star"
+                android:contentDescription="Рейтинг" />
+
+            <TextView
+                android:id="@+id/searchItemRating"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:textColor="@color/dialog_text_title"
+                android:textSize="13sp"
+                android:fontFamily="@font/open_sans_bold"
+                android:textStyle="bold"
+                tools:text="9.1" />
+
+            <TextView
+                android:id="@+id/searchItemVotes"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:textColor="@color/dialog_text_muted"
+                android:textSize="11sp"
+                android:fontFamily="@font/open_sans"
+                tools:text="(14.2k)" />
+
+            <!-- Quick play icon hint -->
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@drawable/ic_chevron_right"
+                app:tint="@color/dialog_icon_close"
+                android:alpha="0.7"
+                android:contentDescription="Открыть" />
 
         </LinearLayout>
 
     </LinearLayout>
 
-</com.google.android.material.card.MaterialCardView>
-
+</LinearLayout>

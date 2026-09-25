@@ -16,11 +16,12 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
-import android.widget.Toast;
+import android.widget.TextView;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.cardview.widget.CardView;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -31,31 +32,36 @@ import com.example.animelib.models.SearchResponse;
 import com.google.android.material.tabs.TabLayout;
 
 /**
- * Фрагмент быстрого поиска аниме
+ * Фрагмент быстрого поиска аниме в виде всплывающего алерт-окна
  */
 public class SearchFragment extends Fragment {
     private static final String TAG = "SearchFragment";
-    private static final long SEARCH_DELAY_MS = 500; // Задержка перед поиском
+    private static final long SEARCH_DELAY_MS = 350; // Быстрый и отзывчивый debounce
     
+    private View searchRootLayout;
+    private CardView searchCardContainer;
     private EditText searchInput;
     private ImageButton clearButton;
     private ImageButton closeButton;
     private TabLayout searchTabLayout;
     private RecyclerView searchResults;
     private LinearLayout emptyState;
+    private LinearLayout noResultsState;
+    private TextView noResultsTitle;
+    private TextView noResultsSubtitle;
     private View loadingIndicator;
     
     private SearchResultsAdapter adapter;
     private ApiService apiService;
     private Handler searchHandler;
     private Runnable searchRunnable;
+    private String currentQuery = "";
     
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_search, container, false);
         
-        // Initialize API service
         apiService = new ApiService(requireContext());
         searchHandler = new Handler(Looper.getMainLooper());
         
@@ -69,23 +75,28 @@ public class SearchFragment extends Fragment {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        
-        // Обработка системной кнопки назад
         setupBackPressHandler();
-        
-        // Фокус на инпуте с открытием клавиатуры
         openKeyboard();
     }
     
     @Override
     public void onDestroyView() {
         super.onDestroyView();
-        // Cancel pending search
         if (searchHandler != null && searchRunnable != null) {
             searchHandler.removeCallbacks(searchRunnable);
         }
-        // Закрываем клавиатуру при выходе
         closeKeyboard();
+    }
+    
+    /**
+     * Закрывает поиск и убирает клавиатуру
+     */
+    public void dismissSearch() {
+        Log.d(TAG, "Dismissing search alert");
+        closeKeyboard();
+        if (getActivity() != null && isAdded()) {
+            getActivity().getSupportFragmentManager().popBackStack();
+        }
     }
     
     /**
@@ -97,13 +108,7 @@ public class SearchFragment extends Fragment {
             new OnBackPressedCallback(true) {
                 @Override
                 public void handleOnBackPressed() {
-                    Log.d(TAG, "Back button pressed, closing search fragment");
-                    // Закрываем клавиатуру
-                    closeKeyboard();
-                    // Закрываем фрагмент
-                    if (getActivity() != null) {
-                        getActivity().getSupportFragmentManager().popBackStack();
-                    }
+                    dismissSearch();
                 }
             }
         );
@@ -116,13 +121,14 @@ public class SearchFragment extends Fragment {
         if (searchInput != null) {
             searchInput.requestFocus();
             searchInput.postDelayed(() -> {
+                if (getContext() == null) return;
                 InputMethodManager imm = (InputMethodManager) requireContext()
                         .getSystemService(Context.INPUT_METHOD_SERVICE);
                 if (imm != null) {
                     imm.showSoftInput(searchInput, InputMethodManager.SHOW_IMPLICIT);
                     Log.d(TAG, "Keyboard opened");
                 }
-            }, 100); // Небольшая задержка для надежности
+            }, 100);
         }
     }
     
@@ -141,12 +147,17 @@ public class SearchFragment extends Fragment {
     }
     
     private void initializeViews(View view) {
+        searchRootLayout = view.findViewById(R.id.searchRootLayout);
+        searchCardContainer = view.findViewById(R.id.searchCardContainer);
         searchInput = view.findViewById(R.id.searchInput);
         clearButton = view.findViewById(R.id.clearButton);
         closeButton = view.findViewById(R.id.closeButton);
         searchTabLayout = view.findViewById(R.id.searchTabLayout);
         searchResults = view.findViewById(R.id.searchResults);
         emptyState = view.findViewById(R.id.emptyState);
+        noResultsState = view.findViewById(R.id.noResultsState);
+        noResultsTitle = view.findViewById(R.id.noResultsTitle);
+        noResultsSubtitle = view.findViewById(R.id.noResultsSubtitle);
         loadingIndicator = view.findViewById(R.id.loadingIndicator);
         
         // Setup RecyclerView
@@ -166,18 +177,16 @@ public class SearchFragment extends Fragment {
         searchResults.setLayoutManager(new LinearLayoutManager(getContext()));
         searchResults.setVisibility(View.GONE);
         
-        // Setup TabLayout
         setupTabLayout();
     }
     
     private void setupTabLayout() {
-        // Отключаем uppercase для текста табов
         for (int i = 0; i < searchTabLayout.getTabCount(); i++) {
             TabLayout.Tab tab = searchTabLayout.getTabAt(i);
             if (tab != null && tab.view != null) {
-                android.widget.TextView textView = (android.widget.TextView) tab.view.getChildAt(1);
-                if (textView != null) {
-                    textView.setAllCaps(false);
+                View tabTextView = tab.view.getChildAt(1);
+                if (tabTextView instanceof TextView) {
+                    ((TextView) tabTextView).setAllCaps(false);
                 }
             }
         }
@@ -185,11 +194,7 @@ public class SearchFragment extends Fragment {
         searchTabLayout.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
             @Override
             public void onTabSelected(TabLayout.Tab tab) {
-                int position = tab.getPosition();
-                Log.d(TAG, "Tab selected: " + position);
-                
-                // В будущем здесь будет переключение между разными типами поиска
-                // Пока что только "Тайтлы"
+                Log.d(TAG, "Tab selected: " + tab.getPosition());
             }
             
             @Override
@@ -203,19 +208,25 @@ public class SearchFragment extends Fragment {
     }
     
     private void setupListeners() {
-        // Close button
-        closeButton.setOnClickListener(v -> {
-            closeKeyboard();
-            if (getActivity() != null) {
-                getActivity().getSupportFragmentManager().popBackStack();
-            }
-        });
+        // Клик по затемненному фону вокруг алерта — закрывает окно
+        if (searchRootLayout != null) {
+            searchRootLayout.setOnClickListener(v -> dismissSearch());
+        }
+        
+        // Клик внутри самой карточки алерта не закрывает его
+        if (searchCardContainer != null) {
+            searchCardContainer.setOnClickListener(v -> {});
+        }
+        
+        // Close button inside alert
+        closeButton.setOnClickListener(v -> dismissSearch());
         
         // Clear button
         clearButton.setOnClickListener(v -> {
             searchInput.setText("");
             searchInput.requestFocus();
             adapter.clearItems();
+            currentQuery = "";
             showEmptyState();
         });
         
@@ -227,17 +238,16 @@ public class SearchFragment extends Fragment {
             
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
-                // Show/hide clear button
                 clearButton.setVisibility(s.length() > 0 ? View.VISIBLE : View.GONE);
                 
-                // Cancel previous search
                 if (searchRunnable != null) {
                     searchHandler.removeCallbacks(searchRunnable);
                 }
                 
-                // Perform search with delay
-                if (s.length() > 0) {
-                    String query = s.toString().trim();
+                String query = s.toString().trim();
+                currentQuery = query;
+                
+                if (!query.isEmpty()) {
                     searchRunnable = () -> performSearch(query);
                     searchHandler.postDelayed(searchRunnable, SEARCH_DELAY_MS);
                 } else {
@@ -251,12 +261,11 @@ public class SearchFragment extends Fragment {
             }
         });
         
-        // Search action on keyboard
+        // Search action on keyboard (IME search)
         searchInput.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
                 String query = searchInput.getText().toString().trim();
                 if (!query.isEmpty()) {
-                    // Cancel debounce and search immediately
                     if (searchRunnable != null) {
                         searchHandler.removeCallbacks(searchRunnable);
                     }
@@ -275,37 +284,41 @@ public class SearchFragment extends Fragment {
         }
         
         Log.d(TAG, "Performing search for: " + query);
-        
-        // Show loading
         showLoading();
         
-        // Perform API search
         apiService.searchAnime(query, new ApiService.SearchCallback() {
             @Override
             public void onSearchResults(SearchResponse response) {
-                if (getActivity() == null) return;
+                if (getActivity() == null || !isAdded()) return;
                 
                 getActivity().runOnUiThread(() -> {
-                    if (response.getData() != null && !response.getData().isEmpty()) {
+                    // Check if current search input still corresponds to this query
+                    String activeInput = searchInput.getText().toString().trim();
+                    if (!activeInput.isEmpty() && !activeInput.equalsIgnoreCase(query)) {
+                        // Ignore outdated search response
+                        return;
+                    }
+                    
+                    if (response != null && response.getData() != null && !response.getData().isEmpty()) {
                         adapter.setItems(response.getData());
                         showResults();
                         Log.d(TAG, "Search completed: " + response.getData().size() + " results");
                     } else {
                         adapter.clearItems();
-                        showEmptyState();
-                        Log.d(TAG, "Search completed: no results");
+                        showNoResults(query);
+                        Log.d(TAG, "Search completed: no results for " + query);
                     }
                 });
             }
             
             @Override
             public void onError(String error) {
-                if (getActivity() == null) return;
+                if (getActivity() == null || !isAdded()) return;
                 
                 getActivity().runOnUiThread(() -> {
                     Log.e(TAG, "Search error: " + error);
                     com.example.animelib.util.CustomToast.showWarning(getContext(), "Ошибка поиска: " + error);
-                    showEmptyState();
+                    showNoResults(query);
                 });
             }
         });
@@ -317,17 +330,12 @@ public class SearchFragment extends Fragment {
     private void onAnimeItemClick(SearchResponse.AnimeSearchItem item) {
         Log.d(TAG, "Anime clicked: " + item.getRusName() + " (slug_url: " + item.getSlugUrl() + ")");
         
-        // Закрываем клавиатуру
         closeKeyboard();
-        
-        // Формируем URL для WebView: /ru/anime/{slug_url}
         String webViewUrl = "/ru/anime/" + item.getSlugUrl();
         
-        // Закрываем фрагмент поиска
         if (getActivity() != null) {
             getActivity().getSupportFragmentManager().popBackStack();
             
-            // Открываем URL в WebView MainActivity
             if (getActivity() instanceof MainActivity) {
                 ((MainActivity) getActivity()).loadUrlInWebView(webViewUrl);
             }
@@ -340,38 +348,48 @@ public class SearchFragment extends Fragment {
     private void onAnimeItemLongClick(SearchResponse.AnimeSearchItem item) {
         Log.d(TAG, "Anime long clicked: " + item.getRusName() + " (slug_url: " + item.getSlugUrl() + ")");
         
-        // Закрываем клавиатуру
         closeKeyboard();
-        
-        // Open VideoPlayerActivity with anime URL
         String animeUrl = "https://api.cdnlibs.org/api/anime/" + item.getSlugUrl();
         
         Intent intent = new Intent(getContext(), VideoPlayerActivity.class);
         intent.putExtra("anime_url", animeUrl);
         startActivity(intent);
         
-        // Закрываем фрагмент поиска
         if (getActivity() != null) {
             getActivity().getSupportFragmentManager().popBackStack();
         }
     }
     
     private void showEmptyState() {
-        emptyState.setVisibility(View.VISIBLE);
-        searchResults.setVisibility(View.GONE);
-        loadingIndicator.setVisibility(View.GONE);
+        if (emptyState != null) emptyState.setVisibility(View.VISIBLE);
+        if (noResultsState != null) noResultsState.setVisibility(View.GONE);
+        if (searchResults != null) searchResults.setVisibility(View.GONE);
+        if (loadingIndicator != null) loadingIndicator.setVisibility(View.GONE);
+    }
+    
+    private void showNoResults(String query) {
+        if (emptyState != null) emptyState.setVisibility(View.GONE);
+        if (noResultsState != null) {
+            noResultsState.setVisibility(View.VISIBLE);
+            if (noResultsSubtitle != null && query != null && !query.isEmpty()) {
+                noResultsSubtitle.setText("По запросу «" + query + "» ничего не найдено.\nПопробуйте изменить формулировку.");
+            }
+        }
+        if (searchResults != null) searchResults.setVisibility(View.GONE);
+        if (loadingIndicator != null) loadingIndicator.setVisibility(View.GONE);
     }
     
     private void showLoading() {
-        emptyState.setVisibility(View.GONE);
-        searchResults.setVisibility(View.GONE);
-        loadingIndicator.setVisibility(View.VISIBLE);
+        if (emptyState != null) emptyState.setVisibility(View.GONE);
+        if (noResultsState != null) noResultsState.setVisibility(View.GONE);
+        if (searchResults != null) searchResults.setVisibility(View.GONE);
+        if (loadingIndicator != null) loadingIndicator.setVisibility(View.VISIBLE);
     }
     
     private void showResults() {
-        emptyState.setVisibility(View.GONE);
-        searchResults.setVisibility(View.VISIBLE);
-        loadingIndicator.setVisibility(View.GONE);
+        if (emptyState != null) emptyState.setVisibility(View.GONE);
+        if (noResultsState != null) noResultsState.setVisibility(View.GONE);
+        if (searchResults != null) searchResults.setVisibility(View.VISIBLE);
+        if (loadingIndicator != null) loadingIndicator.setVisibility(View.GONE);
     }
 }
-
