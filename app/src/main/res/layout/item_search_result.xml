@@ -1,176 +1,181 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginHorizontal="2dp"
     android:layout_marginVertical="4dp"
-    android:background="@drawable/bg_search_result_item"
     android:clickable="true"
     android:focusable="true"
-    android:orientation="horizontal"
-    android:padding="8dp">
+    android:foreground="?attr/selectableItemBackground"
+    app:cardBackgroundColor="@color/card_bg_color"
+    app:cardCornerRadius="14dp"
+    app:cardElevation="0dp"
+    app:cardPreventCornerOverlap="false"
+    app:strokeColor="@color/dialog_input_stroke"
+    app:strokeWidth="0.5dp">
 
-    <!-- Anime Cover -->
-    <androidx.cardview.widget.CardView
-        android:layout_width="62dp"
-        android:layout_height="88dp"
-        android:layout_gravity="center_vertical"
-        app:cardCornerRadius="10dp"
-        app:cardElevation="2dp"
-        app:cardBackgroundColor="@color/card_bg_color">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="96dp"
+        android:orientation="horizontal">
 
-        <ImageView
+        <!-- Anime Cover (Frameless: no padding on top, bottom, or left) -->
+        <com.google.android.material.imageview.ShapeableImageView
             android:id="@+id/searchItemCover"
-            android:layout_width="match_parent"
+            android:layout_width="72dp"
             android:layout_height="match_parent"
             android:scaleType="centerCrop"
             android:src="@drawable/placeholder_image"
+            app:shapeAppearanceOverlay="@style/SearchItemCoverShape"
             android:contentDescription="Anime Cover" />
 
-    </androidx.cardview.widget.CardView>
-
-    <!-- Anime Info Column -->
-    <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center_vertical"
-        android:layout_weight="1"
-        android:layout_marginStart="12dp"
-        android:orientation="vertical">
-
-        <!-- Title -->
-        <TextView
-            android:id="@+id/searchItemTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textColor="@color/dialog_text_title"
-            android:textSize="14.5sp"
-            android:fontFamily="@font/open_sans_bold"
-            android:textStyle="bold"
-            android:maxLines="2"
-            android:ellipsize="end"
-            tools:text="Магическая битва" />
-
-        <!-- Subtitle (English / Original name) -->
-        <TextView
-            android:id="@+id/searchItemSubtitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="1dp"
-            android:textColor="@color/dialog_text_muted"
-            android:textSize="11.5sp"
-            android:fontFamily="@font/open_sans"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:visibility="gone"
-            tools:text="Jujutsu Kaisen"
-            tools:visibility="visible" />
-
-        <!-- Badges Row (Type, Status, Year) -->
+        <!-- Anime Info Column -->
         <LinearLayout
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="5dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:layout_gravity="center_vertical"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingVertical="9dp">
 
+            <!-- Title -->
             <TextView
-                android:id="@+id/searchItemTypeBadge"
-                android:layout_width="wrap_content"
+                android:id="@+id/searchItemTitle"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="@drawable/bg_search_pill_badge_accent"
-                android:paddingHorizontal="6dp"
-                android:paddingVertical="2dp"
-                android:textColor="@color/purple_primary"
-                android:textSize="10.5sp"
-                android:fontFamily="@font/open_sans_semibold"
-                android:textStyle="bold"
-                android:visibility="gone"
-                tools:text="ТВ"
-                tools:visibility="visible" />
-
-            <TextView
-                android:id="@+id/searchItemStatusBadge"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="4dp"
-                android:background="@drawable/bg_search_pill_badge"
-                android:paddingHorizontal="6dp"
-                android:paddingVertical="2dp"
-                android:textColor="@color/dialog_text_muted"
-                android:textSize="10.5sp"
-                android:fontFamily="@font/open_sans"
-                android:visibility="gone"
-                tools:text="Онгоинг"
-                tools:visibility="visible" />
-
-            <TextView
-                android:id="@+id/searchItemYearBadge"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="4dp"
-                android:background="@drawable/bg_search_pill_badge"
-                android:paddingHorizontal="6dp"
-                android:paddingVertical="2dp"
-                android:textColor="@color/dialog_text_muted"
-                android:textSize="10.5sp"
-                android:fontFamily="@font/open_sans"
-                android:visibility="gone"
-                tools:text="2024"
-                tools:visibility="visible" />
-
-        </LinearLayout>
-
-        <!-- Rating & Action Hint Row -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="5dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <ImageView
-                android:layout_width="13dp"
-                android:layout_height="13dp"
-                android:src="@drawable/ic_star"
-                app:tint="@color/dt_rating_star"
-                android:contentDescription="Рейтинг" />
-
-            <TextView
-                android:id="@+id/searchItemRating"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="4dp"
                 android:textColor="@color/dialog_text_title"
-                android:textSize="13sp"
+                android:textSize="14.5sp"
                 android:fontFamily="@font/open_sans_bold"
                 android:textStyle="bold"
-                tools:text="9.1" />
+                android:maxLines="2"
+                android:ellipsize="end"
+                tools:text="Магическая битва" />
 
+            <!-- Subtitle (English / Original name) -->
             <TextView
-                android:id="@+id/searchItemVotes"
-                android:layout_width="0dp"
+                android:id="@+id/searchItemSubtitle"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="4dp"
+                android:layout_marginTop="1dp"
                 android:textColor="@color/dialog_text_muted"
-                android:textSize="11sp"
+                android:textSize="11.5sp"
                 android:fontFamily="@font/open_sans"
-                tools:text="(14.2k)" />
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:visibility="gone"
+                tools:text="Jujutsu Kaisen"
+                tools:visibility="visible" />
 
-            <!-- Quick play icon hint -->
-            <ImageView
-                android:layout_width="16dp"
-                android:layout_height="16dp"
-                android:src="@drawable/ic_chevron_right"
-                app:tint="@color/dialog_icon_close"
-                android:alpha="0.7"
-                android:contentDescription="Открыть" />
+            <!-- Badges Row (Type, Status, Year) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/searchItemTypeBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_search_pill_badge_accent"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="2dp"
+                    android:textColor="@color/purple_primary"
+                    android:textSize="10.5sp"
+                    android:fontFamily="@font/open_sans_semibold"
+                    android:textStyle="bold"
+                    android:visibility="gone"
+                    tools:text="ТВ"
+                    tools:visibility="visible" />
+
+                <TextView
+                    android:id="@+id/searchItemStatusBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/bg_search_pill_badge"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="2dp"
+                    android:textColor="@color/dialog_text_muted"
+                    android:textSize="10.5sp"
+                    android:fontFamily="@font/open_sans"
+                    android:visibility="gone"
+                    tools:text="Онгоинг"
+                    tools:visibility="visible" />
+
+                <TextView
+                    android:id="@+id/searchItemYearBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/bg_search_pill_badge"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="2dp"
+                    android:textColor="@color/dialog_text_muted"
+                    android:textSize="10.5sp"
+                    android:fontFamily="@font/open_sans"
+                    android:visibility="gone"
+                    tools:text="2024"
+                    tools:visibility="visible" />
+
+            </LinearLayout>
+
+            <!-- Rating & Action Hint Row -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <ImageView
+                    android:layout_width="13dp"
+                    android:layout_height="13dp"
+                    android:src="@drawable/ic_star"
+                    app:tint="@color/dt_rating_star"
+                    android:contentDescription="Рейтинг" />
+
+                <TextView
+                    android:id="@+id/searchItemRating"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:textColor="@color/dialog_text_title"
+                    android:textSize="13sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:textStyle="bold"
+                    tools:text="9.1" />
+
+                <TextView
+                    android:id="@+id/searchItemVotes"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:textColor="@color/dialog_text_muted"
+                    android:textSize="11sp"
+                    android:fontFamily="@font/open_sans"
+                    tools:text="(14.2k)" />
+
+                <!-- Quick play icon hint -->
+                <ImageView
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:src="@drawable/ic_chevron_right"
+                    app:tint="@color/dialog_icon_close"
+                    android:alpha="0.7"
+                    android:contentDescription="Открыть" />
+
+            </LinearLayout>
 
         </LinearLayout>
 
     </LinearLayout>
 
-</LinearLayout>
+</com.google.android.material.card.MaterialCardView>

@@ -91,6 +91,14 @@
         <item name="android:textColor">@color/lt_primary_text_color</item>
     </style>
 
+    <style name="SearchItemCoverShape" parent="ShapeAppearance.Material3.Corner.None">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSizeTopLeft">14dp</item>
+        <item name="cornerSizeBottomLeft">14dp</item>
+        <item name="cornerSizeTopRight">14dp</item>
+        <item name="cornerSizeBottomRight">14dp</item>
+    </style>
+
     <!-- Основная тема для BottomSheetDialog -->
     <style name="ThemeOverlay.AnimeLIB.BottomSheetDialog" parent="ThemeOverlay.Material3.BottomSheetDialog">
         <item name="primaryTextColor">@color/app_text_primary</item>
