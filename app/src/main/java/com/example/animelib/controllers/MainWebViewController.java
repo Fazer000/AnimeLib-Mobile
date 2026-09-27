@@ -304,6 +304,10 @@ public class MainWebViewController {
                     }
                 }
 
+                if (activity instanceof com.example.animelib.MainActivity && url != null && !"about:blank".equals(url)) {
+                    activity.runOnUiThread(() -> ((com.example.animelib.MainActivity) activity).updateSystemBarColors(url));
+                }
+
                 currentDomain = newDomain;
                 if (callback != null && newDomain != null) {
                     callback.onDomainChanged(newDomain);
@@ -335,6 +339,9 @@ public class MainWebViewController {
 
                 if (isFirstLoad) {
                     isFirstLoad = false;
+                }
+                if (activity instanceof com.example.animelib.MainActivity && url != null && !"about:blank".equals(url)) {
+                    activity.runOnUiThread(() -> ((com.example.animelib.MainActivity) activity).updateSystemBarColors(url));
                 }
                 swipeRefreshLayout.setRefreshing(false);
                 Log.d("MainWebViewController", "Finished loading: " + url);

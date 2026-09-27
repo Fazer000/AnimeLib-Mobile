@@ -45,6 +45,7 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
     private final String titleName;
     private final String targetUrl;
 
+    private FrameLayout layoutWebHeader;
     private ImageView btnRefreshWeb;
     private ImageView btnCloseWeb;
     private ProgressBar progressBarWeb;
@@ -145,12 +146,15 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
     }
 
     private void initViews(View root) {
+        layoutWebHeader = root.findViewById(R.id.layoutWebHeader);
         btnRefreshWeb = root.findViewById(R.id.btnRefreshWeb);
         btnCloseWeb = root.findViewById(R.id.btnCloseWeb);
         progressBarWeb = root.findViewById(R.id.progressBarWeb);
         webViewTitle = root.findViewById(R.id.webViewTitle);
         layoutWebError = root.findViewById(R.id.layoutWebError);
         btnRetryWeb = root.findViewById(R.id.btnRetryWeb);
+
+        updateHeaderColor(targetUrl);
 
         if (btnCloseWeb != null) {
             btnCloseWeb.setOnClickListener(v -> dismiss());
@@ -321,6 +325,7 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
                 @Override
                 public void onPageStarted(WebView view, String url, Bitmap favicon) {
                     super.onPageStarted(view, url, favicon);
+                    updateHeaderColor(url);
                     CookieSyncManager.syncFromUrl(url);
                     CookieSyncManager.injectAuthLocalStorage(view);
                     if (progressBarWeb != null) {
@@ -338,6 +343,7 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
                 @Override
                 public void onPageFinished(WebView view, String url) {
                     super.onPageFinished(view, url);
+                    updateHeaderColor(url);
                     CookieSyncManager.syncFromUrl(url);
                     CookieSyncManager.injectAuthLocalStorage(view);
                     com.example.animelib.util.LatestViewsManager.injectLatestViewsToWebView(view);
@@ -402,6 +408,24 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
                 Log.e(TAG, "Failed to load URL: " + e.getMessage(), e);
             }
         }
+    }
+
+    private void updateHeaderColor(String url) {
+        if (layoutWebHeader == null) return;
+        Context context = getContext();
+        if (context == null) return;
+
+        int headerColor = com.example.animelib.util.ThemeUtils.getSiteHeaderColor(context, url);
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setColor(headerColor);
+        float radius = 20 * context.getResources().getDisplayMetrics().density;
+        bg.setCornerRadii(new float[]{
+                radius, radius, // top-left
+                radius, radius, // top-right
+                0, 0,           // bottom-right
+                0, 0            // bottom-left
+        });
+        layoutWebHeader.setBackground(bg);
     }
 
     @Override

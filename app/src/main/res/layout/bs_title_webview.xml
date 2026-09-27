@@ -8,6 +8,7 @@
 
     <!-- Top Bar with Handle & Action Buttons -->
     <FrameLayout
+        android:id="@+id/layoutWebHeader"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@drawable/bg_bottom_sheet_header"

@@ -67,6 +67,36 @@ public class ThemeUtils {
         }
     }
 
+    public static boolean isDarkTheme(Context context) {
+        if (context == null) return false;
+        int nightMode = context.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        return nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    /**
+     * Возвращает цвет шапки/системного статус-бара для сайта.
+     * В светлой теме:
+     * - AnimeLib: по умолчанию (как есть - #ede7f6)
+     * - MangaLib: #fff3e0
+     * - RanobeLib: #e0f2ff
+     * В темной теме:
+     * - Все сайты: как есть (#1C1C1E)
+     */
+    public static int getSiteHeaderColor(Context context, String url) {
+        if (context == null) return 0xFFEDE7F6;
+        if (isDarkTheme(context)) {
+            return androidx.core.content.ContextCompat.getColor(context, com.example.animelib.R.color.dt_header_color);
+        }
+        String siteKey = SiteUtils.getSiteKey(url);
+        if ("mangalib".equalsIgnoreCase(siteKey)) {
+            return androidx.core.content.ContextCompat.getColor(context, com.example.animelib.R.color.site_header_mangalib_light);
+        } else if ("ranobelib".equalsIgnoreCase(siteKey)) {
+            return androidx.core.content.ContextCompat.getColor(context, com.example.animelib.R.color.site_header_ranobelib_light);
+        } else {
+            return androidx.core.content.ContextCompat.getColor(context, com.example.animelib.R.color.lt_header_color);
+        }
+    }
+
     public static void saveThemePreference(Context context, int themeMode) {
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
         preferences.edit().putInt(THEME_MODE, themeMode).commit();

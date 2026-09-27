@@ -72,6 +72,11 @@
     <color name="lt_webview_status_bar_color">#ede7f6</color>
     <color name="toolbar_header_bg">#ede7f6</color>
 
+    <!-- Lib Site Header Colors (Light Theme) -->
+    <color name="site_header_animelib_light">#ede7f6</color>
+    <color name="site_header_mangalib_light">#FFF3E0</color>
+    <color name="site_header_ranobelib_light">#E0F2FF</color>
+
     <!-- Text Colors -->
     <color name="lt_primary_text_color">@color/app_text_primary</color>
     <color name="lt_secondary_text_color">@color/app_text_secondary</color>

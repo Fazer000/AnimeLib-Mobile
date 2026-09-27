@@ -135,6 +135,7 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public void onDomainChanged(String newDomain) {
                         Log.d("MainActivity", "Domain changed to: " + newDomain);
+                        runOnUiThread(() -> updateSystemBarColors(webView != null ? webView.getUrl() : newDomain));
                     }
                 }
         );
@@ -204,9 +205,31 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void updateSystemBarColors() {
-        int nightMode = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
-        boolean isDarkTheme = nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+    public void updateSystemBarColors() {
+        String currentUrl = null;
+        if (webView != null && webView.getUrl() != null && !webView.getUrl().isEmpty()) {
+            currentUrl = webView.getUrl();
+        } else if (databaseManager != null) {
+            currentUrl = databaseManager.getSiteUrl();
+        }
+        updateSystemBarColors(currentUrl);
+    }
+
+    public void updateSystemBarColors(String url) {
+        if (isFinishing() || isDestroyed()) return;
+
+        boolean isDarkTheme = ThemeUtils.isDarkTheme(this);
+        int headerColor = ThemeUtils.getSiteHeaderColor(this, url);
+
+        try {
+            getWindow().setStatusBarColor(headerColor);
+        } catch (Exception e) {
+            Log.w("MainActivity", "Failed to set status bar color", e);
+        }
+
+        if (swipeRefreshLayout != null) {
+            swipeRefreshLayout.setBackgroundColor(headerColor);
+        }
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             android.view.WindowInsetsController controller = getWindow().getInsetsController();
@@ -303,6 +326,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         Log.d("MainActivity", "Loading URL: " + targetUrl);
+        updateSystemBarColors(targetUrl);
         webViewController.loadUrlInWebView(targetUrl);
         if (bannerController != null) {
             bannerController.showUrlTopBannerAnimated(targetUrl);
