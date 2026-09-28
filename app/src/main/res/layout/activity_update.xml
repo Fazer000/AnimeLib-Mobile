@@ -74,10 +74,11 @@
 
                 <ImageView
                     android:id="@+id/ivUpdateLogo"
-                    android:layout_width="64dp"
-                    android:layout_height="64dp"
-                    android:src="@mipmap/ic_launcher_round"
-                    android:layout_marginBottom="12dp" />
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="?attr/logoDrawable"
+                    android:layout_marginBottom="10dp"
+                    android:contentDescription="AnimeLib Logo" />
 
                 <TextView
                     android:id="@+id/tvVersionTitle"

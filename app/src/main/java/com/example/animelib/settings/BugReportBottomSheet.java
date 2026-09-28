@@ -63,7 +63,7 @@ public class BugReportBottomSheet extends FlexibleBottomSheetDialog {
         MaterialButton btnOpenGithub = view.findViewById(R.id.btnOpenGithub);
         MaterialButton btnCopyReport = view.findViewById(R.id.btnCopyReport);
 
-        String appVersion = "1.8.7";
+        String appVersion = "1.8.8";
         try {
             PackageInfo pInfo = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
             appVersion = pInfo.versionName;

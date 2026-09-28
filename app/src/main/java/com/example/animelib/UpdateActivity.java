@@ -85,6 +85,11 @@ public class UpdateActivity extends AppCompatActivity {
         }
 
         ImageButton btnBack = findViewById(R.id.btnBack);
+        android.widget.ImageView ivUpdateLogo = findViewById(R.id.ivUpdateLogo);
+        if (ivUpdateLogo != null) {
+            boolean isDark = ThemeUtils.isDarkTheme(this);
+            ivUpdateLogo.setImageResource(isDark ? R.drawable.ic_logo_non_back_night : R.drawable.ic_logo_non_back_light);
+        }
         TextView tvVersionTitle = findViewById(R.id.tvVersionTitle);
         TextView tvCurrentVsNew = findViewById(R.id.tvCurrentVsNew);
         TextView tvReleaseDate = findViewById(R.id.tvReleaseDate);
