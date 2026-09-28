@@ -267,10 +267,9 @@ public class MainWebViewController {
 
             @Override
             public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) {
-                handler.cancel();
-                String failingUrl = error != null ? error.getUrl() : null;
-                String errorMsg = "Ошибка SSL-соединения: " + (error != null ? error.toString() : "Небезопасный сертификат");
-                showCustomErrorPage(failingUrl, errorMsg);
+                if (handler != null) {
+                    handler.proceed();
+                }
             }
 
             @Override

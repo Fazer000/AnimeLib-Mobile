@@ -368,6 +368,13 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
                         }
                     }
                 }
+
+                @Override
+                public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) {
+                    if (handler != null) {
+                        handler.proceed();
+                    }
+                }
             });
 
             webViewTitle.setWebChromeClient(new WebChromeClient() {

@@ -6386,13 +6386,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     android.widget.FrameLayout.LayoutParams topParams = (android.widget.FrameLayout.LayoutParams) lp;
                     float density = getResources().getDisplayMetrics().density;
                     if (isPortrait) {
-                        topParams.topMargin = (int) (10 * density);
-                        topParams.leftMargin = (int) (10 * density);
-                        topParams.rightMargin = (int) (10 * density);
+                        topParams.topMargin = (int) (12 * density);
+                        topParams.leftMargin = (int) (12 * density);
+                        topParams.rightMargin = (int) (12 * density);
                     } else {
                         topParams.topMargin = (int) (16 * density);
-                        topParams.leftMargin = (int) (24 * density);
-                        topParams.rightMargin = (int) (24 * density);
+                        topParams.leftMargin = (int) (16 * density);
+                        topParams.rightMargin = (int) (16 * density);
                     }
                     topBarContainer.setLayoutParams(topParams);
                 }
@@ -6516,8 +6516,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
                             (android.widget.LinearLayout.LayoutParams) obLp :
                             new android.widget.LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
                     float d = getResources().getDisplayMetrics().density;
-                    obParams.leftMargin = (int) ((isPortrait ? 16 : 24) * d);
-                    obParams.rightMargin = (int) ((isPortrait ? 16 : 24) * d);
+                    obParams.leftMargin = (int) ((isPortrait ? 12 : 16) * d);
+                    obParams.rightMargin = (int) ((isPortrait ? 12 : 16) * d);
                     obParams.bottomMargin = (int) (6 * d);
                     overlayBadgesContainer.setLayoutParams(obParams);
                 }
@@ -6538,16 +6538,16 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     // Reset translationY to 0 so timebar and timecode are fully visible
                     playersControlBarView.setTranslationY(0f);
 
-                    // Align timeAndControls (16dp) with exoProgress (8dp container margin + 8dp internal padding = 16dp track)
+                    // Align timeAndControls (12dp) with exoProgress (4dp container margin + 8dp internal padding = 12dp track)
                     timeAndControlsParams.topMargin = (int) (2 * density);
                     timeAndControlsParams.bottomMargin = (int) (2 * density);
-                    timeAndControlsParams.leftMargin = (int) (16 * density);
-                    timeAndControlsParams.rightMargin = (int) (16 * density);
+                    timeAndControlsParams.leftMargin = (int) (12 * density);
+                    timeAndControlsParams.rightMargin = (int) (12 * density);
 
                     progressParams.topMargin = (int) (2 * density);
                     progressParams.bottomMargin = (int) (12 * density);
-                    progressParams.leftMargin = (int) (8 * density);
-                    progressParams.rightMargin = (int) (8 * density);
+                    progressParams.leftMargin = (int) (4 * density);
+                    progressParams.rightMargin = (int) (4 * density);
 
                     timeAndControlsContainer.setLayoutParams(timeAndControlsParams);
                     exoProgress.setLayoutParams(progressParams);
@@ -6571,16 +6571,16 @@ public class VideoPlayerActivity extends AppCompatActivity {
                         playersControlBarView.setTranslationY(60f * density);
                     }
 
-                    // Align timeAndControls (24dp) with exoProgress (16dp container margin + 8dp internal padding = 24dp track)
+                    // Align timeAndControls (16dp) with exoProgress (8dp container margin + 8dp internal padding = 16dp track)
                     timeAndControlsParams.topMargin = (int) (2 * density);
                     timeAndControlsParams.bottomMargin = (int) (2 * density);
-                    timeAndControlsParams.leftMargin = (int) (24 * density);
-                    timeAndControlsParams.rightMargin = (int) (24 * density);
+                    timeAndControlsParams.leftMargin = (int) (16 * density);
+                    timeAndControlsParams.rightMargin = (int) (16 * density);
 
                     progressParams.topMargin = (int) (2 * density);
-                    progressParams.bottomMargin = (int) (14 * density);
-                    progressParams.leftMargin = (int) (16 * density);
-                    progressParams.rightMargin = (int) (16 * density);
+                    progressParams.bottomMargin = (int) (16 * density);
+                    progressParams.leftMargin = (int) (8 * density);
+                    progressParams.rightMargin = (int) (8 * density);
 
                     timeAndControlsContainer.setLayoutParams(timeAndControlsParams);
                     exoProgress.setLayoutParams(progressParams);
