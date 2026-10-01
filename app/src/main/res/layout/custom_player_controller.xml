@@ -571,4 +571,20 @@
 
     </LinearLayout>
 
+    <!-- Lock Screen Button (Directly below PiP button, visible only in landscape mode) -->
+    <ImageButton
+        android:id="@+id/btnLockScreen"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="60dp"
+        android:layout_marginEnd="16dp"
+        android:background="@android:color/transparent"
+        android:foreground="@drawable/ripple_circle"
+        android:src="@drawable/ic_lock"
+        android:scaleType="fitCenter"
+        android:contentDescription="Блокировка экрана"
+        android:padding="6dp"
+        android:visibility="gone" />
+
 </FrameLayout>

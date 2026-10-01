@@ -264,6 +264,97 @@
                     android:textStyle="bold" />
             </LinearLayout>
 
+            <!-- Screen Lock Overlay (Landscape mode only, shows swipe unlock zone at bottom) -->
+            <FrameLayout
+                android:id="@+id/layoutLockedOverlay"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clickable="true"
+                android:focusable="true"
+                android:visibility="gone">
+
+                <!-- Lock Status Indicator (briefly shown when locked / tapped) -->
+                <LinearLayout
+                    android:id="@+id/lockedStatusBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top|center_horizontal"
+                    android:layout_marginTop="24dp"
+                    android:background="@drawable/video_time_background"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="8dp"
+                    android:elevation="10dp">
+
+                    <ImageView
+                        android:id="@+id/ivLockedBadgeIcon"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_marginEnd="8dp"
+                        android:src="@drawable/ic_lock"
+                        app:tint="@color/white_color" />
+
+                    <TextView
+                        android:id="@+id/tvLockedBadgeText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Экран заблокирован"
+                        android:textColor="@color/white_color"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <!-- Bottom Swipe Unlock Zone -->
+                <FrameLayout
+                    android:id="@+id/swipeUnlockZone"
+                    android:layout_width="match_parent"
+                    android:layout_height="110dp"
+                    android:layout_gravity="bottom"
+                    android:paddingBottom="20dp"
+                    android:clipChildren="false"
+                    android:clipToPadding="false">
+
+                    <!-- Interactive Swipe Pill -->
+                    <LinearLayout
+                        android:id="@+id/swipeUnlockPill"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center_horizontal|bottom"
+                        android:background="@drawable/bg_swipe_unlock_pill"
+                        android:orientation="horizontal"
+                        android:gravity="center"
+                        android:elevation="12dp">
+
+                        <ImageView
+                            android:id="@+id/ivSwipeChevron"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_marginEnd="8dp"
+                            android:src="@drawable/ic_chevron_up"
+                            app:tint="@color/white_color" />
+
+                        <ImageView
+                            android:id="@+id/ivSwipeLockIcon"
+                            android:layout_width="18dp"
+                            android:layout_height="18dp"
+                            android:layout_marginEnd="8dp"
+                            android:src="@drawable/ic_lock"
+                            app:tint="@color/white_color" />
+
+                        <TextView
+                            android:id="@+id/tvSwipeUnlockText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Смахните вверх для разблокировки"
+                            android:textColor="@color/white_color"
+                            android:textSize="13sp"
+                            android:fontFamily="@font/open_sans_bold"
+                            android:includeFontPadding="false" />
+                    </LinearLayout>
+                </FrameLayout>
+            </FrameLayout>
+
         </com.example.animelib.ui.RoundedCornerFrameLayout>
 
         <!-- Container for Portrait Mode (below player) -->

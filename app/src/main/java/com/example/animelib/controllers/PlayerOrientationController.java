@@ -15,6 +15,7 @@ public class PlayerOrientationController {
     private OrientationEventListener orientationEventListener;
     private int lastPhysicalOrientation = -1;
     private boolean manualOrientationOverride = false;
+    private boolean isLocked = false;
 
     public PlayerOrientationController(Activity activity) {
         this.activity = activity;
@@ -24,6 +25,7 @@ public class PlayerOrientationController {
         orientationEventListener = new OrientationEventListener(activity, SensorManager.SENSOR_DELAY_NORMAL) {
             @Override
             public void onOrientationChanged(int orientation) {
+                if (isLocked) return;
                 if (orientation == OrientationEventListener.ORIENTATION_UNKNOWN) return;
 
                 int currentPhysicalOrientation;
@@ -48,7 +50,34 @@ public class PlayerOrientationController {
         enable();
     }
 
+    public void setLocked(boolean locked) {
+        this.isLocked = locked;
+        if (locked) {
+            disable();
+            int currentOrientation = activity.getResources().getConfiguration().orientation;
+            if (currentOrientation == Configuration.ORIENTATION_LANDSCAPE) {
+                int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
+                if (rotation == android.view.Surface.ROTATION_270 || rotation == android.view.Surface.ROTATION_180) {
+                    activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE);
+                } else {
+                    activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+                }
+            } else {
+                activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LOCKED);
+            }
+        } else {
+            manualOrientationOverride = false;
+            enable();
+            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR);
+        }
+    }
+
+    public boolean isLocked() {
+        return isLocked;
+    }
+
     public void toggleFullscreenOrientation() {
+        if (isLocked) return;
         boolean isPortrait = activity.getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
         manualOrientationOverride = true;
         if (isPortrait) {

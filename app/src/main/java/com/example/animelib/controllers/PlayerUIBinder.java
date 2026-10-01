@@ -19,6 +19,7 @@ public class PlayerUIBinder {
     public TextView settingsQualityTag;
     public ImageButton menuToggleFullscreen;
     public ImageButton pipButton;
+    public ImageButton btnLockScreen;
     public TextView animeTitleView;
     public TextView currentTeamName;
     public TextView currentEpisodeName;
@@ -47,6 +48,7 @@ public class PlayerUIBinder {
         settingsQualityTag = controllerView.findViewById(R.id.settingsQualityTag);
         menuToggleFullscreen = controllerView.findViewById(R.id.menuToggleFullscreen);
         pipButton = controllerView.findViewById(R.id.pipButton);
+        btnLockScreen = controllerView.findViewById(R.id.btnLockScreen);
 
         animeTitleView = controllerView.findViewById(R.id.animeTitle);
         currentTeamName = controllerView.findViewById(R.id.currentTeamName);

@@ -247,12 +247,26 @@ public class GesturesManager {
     /**
      * Настройка свайпа для перемотки (оригинальная реализация)
      */
+    private boolean isScreenLocked = false;
+
+    public void setScreenLocked(boolean locked) {
+        this.isScreenLocked = locked;
+        if (locked) {
+            hideAllGesturesUI();
+        }
+    }
+
+    public boolean isScreenLocked() {
+        return isScreenLocked;
+    }
+
     @OptIn(markerClass = UnstableApi.class)
     @SuppressLint({"ClickableViewAccessibility", "SetTextI18n"})
     private void setupSwipeSeek() {
         if (playerView == null) return;
         
         playerView.setOnTouchListener((v, event) -> {
+            if (isScreenLocked) return false;
             if (player == null) return false;
             
             // ПРИОРИТЕТ 1: Вертикальные жесты (эпизоды и панель с инфо) обрабатываются ПЕРВЫМИ

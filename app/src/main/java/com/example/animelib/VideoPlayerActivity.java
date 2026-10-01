@@ -203,6 +203,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private TextView seekPreviewText;
     private TextView holdSpeedToast;
     private ImageButton pipButton;
+    private ImageButton btnLockScreen;
     private RecyclerView episodesHorizontalRecyclerView;
     private ImageButton commentsButton;
     private ImageButton bookmarkButton;
@@ -295,6 +296,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private com.example.animelib.controllers.PlayerRelatedTitlesController playerRelatedTitlesController;
     private com.example.animelib.controllers.PlayerEpisodesController playerEpisodesController;
     private com.example.animelib.controllers.PlayerVideoResolverController playerVideoResolverController;
+    private com.example.animelib.controllers.PlayerLockController playerLockController;
 
     // Subtitle settings
     private boolean subtitlesEnabled = true;
@@ -814,6 +816,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         playerOrientationController = new com.example.animelib.controllers.PlayerOrientationController(this);
         playerOrientationController.init();
+
+        playerLockController = new com.example.animelib.controllers.PlayerLockController(this);
 
         databaseManager = new com.example.animelib.data.DatabaseManager(this);
         playerDownloadController = new com.example.animelib.controllers.PlayerDownloadController(this, databaseManager);
@@ -1604,6 +1608,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             settingsQualityTag = playerUIBinder.settingsQualityTag;
             menuToggleFullscreen = playerUIBinder.menuToggleFullscreen;
             if (pipButton == null) pipButton = playerUIBinder.pipButton;
+            if (btnLockScreen == null) btnLockScreen = playerUIBinder.btnLockScreen;
             animeTitleView = playerUIBinder.animeTitleView;
             currentTeamName = playerUIBinder.currentTeamName;
             currentEpisodeName = playerUIBinder.currentEpisodeName;
@@ -1622,6 +1627,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             settingsQualityTag = controllerView.findViewById(R.id.settingsQualityTag);
             menuToggleFullscreen = controllerView.findViewById(R.id.menuToggleFullscreen);
             if (pipButton == null) pipButton = controllerView.findViewById(R.id.pipButton);
+            if (btnLockScreen == null) btnLockScreen = controllerView.findViewById(R.id.btnLockScreen);
             animeTitleView = controllerView.findViewById(R.id.animeTitle);
             currentTeamName = controllerView.findViewById(R.id.currentTeamName);
             currentEpisodeName = controllerView.findViewById(R.id.currentEpisodeName);
@@ -1636,6 +1642,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
             bookmarkButton = controllerView.findViewById(R.id.bookmarkButton);
         }
         updateSettingsQualityTag();
+        if (playerLockController != null && btnLockScreen != null) {
+            playerLockController.setLockScreenButton(btnLockScreen);
+        }
         downloadButton = null;
         downloadButtonTop = null;
         btnDownloadFromMenu = findViewById(R.id.btnDownloadFromMenu);
@@ -1697,6 +1706,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
         // Setup draggable panels
         if (playerPanelsController != null) {
             playerPanelsController.initViews(menuPanelContainer, commentsPanelContainer, slidingMenuPanel, commentsPanel, menuOverlay, playerContainer);
+        }
+
+        // Initialize lock controller
+        if (playerLockController != null) {
+            playerLockController.init(playerView, playerOrientationController, gesturesManager, btnLockScreen, findViewById(android.R.id.content));
         }
         
         // Initialize comments manager
@@ -6374,6 +6388,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
             if (pipButton == null) pipButton = controllerView.findViewById(R.id.pipButton);
             if (pipButton != null) pipButton.setVisibility(View.VISIBLE);
 
+            if (btnLockScreen == null) btnLockScreen = controllerView.findViewById(R.id.btnLockScreen);
+            if (btnLockScreen != null) btnLockScreen.setVisibility(isPortrait ? View.GONE : View.VISIBLE);
+            if (playerLockController != null) playerLockController.updateVisibilityForOrientation(isPortrait);
+
             View animeInfoContainer = controllerView.findViewById(R.id.animeInfoContainer);
             if (animeInfoContainer != null) {
                 animeInfoContainer.setVisibility(isPortrait ? View.GONE : View.VISIBLE);
@@ -6651,6 +6669,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
             playerOrientationController.cleanup();
             playerOrientationController = null;
         }
+        if (playerLockController != null) {
+            playerLockController.cleanup();
+            playerLockController = null;
+        }
         if (playerNextEpisodeController != null) {
             playerNextEpisodeController.cleanup();
             playerNextEpisodeController = null;
@@ -6832,6 +6854,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     @Override
     public void onBackPressed() {
+        if (playerLockController != null && playerLockController.isLocked()) {
+            playerLockController.unlockScreen();
+            return;
+        }
         if (player != null && player.isPlaying() && playerPipController != null && !playerPipController.isInPictureInPictureMode()) {
             autoSaveBookmark();
             playerPipController.enterPictureInPictureMode();
