@@ -271,6 +271,8 @@
                 android:layout_height="match_parent"
                 android:clickable="true"
                 android:focusable="true"
+                android:clipChildren="false"
+                android:clipToPadding="false"
                 android:visibility="gone">
 
                 <!-- Lock Status Indicator (briefly shown when locked / tapped) -->
@@ -284,8 +286,7 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:paddingHorizontal="14dp"
-                    android:paddingVertical="8dp"
-                    android:elevation="10dp">
+                    android:paddingVertical="8dp">
 
                     <ImageView
                         android:id="@+id/ivLockedBadgeIcon"
@@ -305,54 +306,43 @@
                         android:textStyle="bold" />
                 </LinearLayout>
 
-                <!-- Bottom Swipe Unlock Zone -->
-                <FrameLayout
-                    android:id="@+id/swipeUnlockZone"
-                    android:layout_width="match_parent"
-                    android:layout_height="110dp"
-                    android:layout_gravity="bottom"
-                    android:paddingBottom="20dp"
-                    android:clipChildren="false"
-                    android:clipToPadding="false">
+                <!-- Interactive Swipe Pill (Directly in full-screen overlay to avoid clipping on drag) -->
+                <LinearLayout
+                    android:id="@+id/swipeUnlockPill"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal|bottom"
+                    android:layout_marginBottom="24dp"
+                    android:background="@drawable/bg_swipe_unlock_pill"
+                    android:orientation="horizontal"
+                    android:gravity="center">
 
-                    <!-- Interactive Swipe Pill -->
-                    <LinearLayout
-                        android:id="@+id/swipeUnlockPill"
+                    <ImageView
+                        android:id="@+id/ivSwipeChevron"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginEnd="8dp"
+                        android:src="@drawable/ic_chevron_up"
+                        app:tint="@color/white_color" />
+
+                    <ImageView
+                        android:id="@+id/ivSwipeLockIcon"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_marginEnd="8dp"
+                        android:src="@drawable/ic_lock"
+                        app:tint="@color/white_color" />
+
+                    <TextView
+                        android:id="@+id/tvSwipeUnlockText"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_gravity="center_horizontal|bottom"
-                        android:background="@drawable/bg_swipe_unlock_pill"
-                        android:orientation="horizontal"
-                        android:gravity="center"
-                        android:elevation="12dp">
-
-                        <ImageView
-                            android:id="@+id/ivSwipeChevron"
-                            android:layout_width="20dp"
-                            android:layout_height="20dp"
-                            android:layout_marginEnd="8dp"
-                            android:src="@drawable/ic_chevron_up"
-                            app:tint="@color/white_color" />
-
-                        <ImageView
-                            android:id="@+id/ivSwipeLockIcon"
-                            android:layout_width="18dp"
-                            android:layout_height="18dp"
-                            android:layout_marginEnd="8dp"
-                            android:src="@drawable/ic_lock"
-                            app:tint="@color/white_color" />
-
-                        <TextView
-                            android:id="@+id/tvSwipeUnlockText"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Смахните вверх для разблокировки"
-                            android:textColor="@color/white_color"
-                            android:textSize="13sp"
-                            android:fontFamily="@font/open_sans_bold"
-                            android:includeFontPadding="false" />
-                    </LinearLayout>
-                </FrameLayout>
+                        android:text="Смахните вверх для разблокировки"
+                        android:textColor="@color/white_color"
+                        android:textSize="13sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:includeFontPadding="false" />
+                </LinearLayout>
             </FrameLayout>
 
         </com.example.animelib.ui.RoundedCornerFrameLayout>

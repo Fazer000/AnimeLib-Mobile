@@ -21,7 +21,6 @@ import androidx.media3.ui.PlayerView;
 
 import com.example.animelib.R;
 import com.example.animelib.managers.GesturesManager;
-import com.example.animelib.util.CustomToast;
 
 /**
  * Контроллер блокировки экрана в плеере (только для ландшафтного режима).
@@ -40,7 +39,6 @@ public class PlayerLockController {
 
     private View layoutLockedOverlay;
     private View lockedStatusBadge;
-    private View swipeUnlockZone;
     private View swipeUnlockPill;
     private ImageView ivSwipeLockIcon;
     private ImageView ivSwipeChevron;
@@ -71,7 +69,6 @@ public class PlayerLockController {
         if (root != null) {
             layoutLockedOverlay = root.findViewById(R.id.layoutLockedOverlay);
             lockedStatusBadge = root.findViewById(R.id.lockedStatusBadge);
-            swipeUnlockZone = root.findViewById(R.id.swipeUnlockZone);
             swipeUnlockPill = root.findViewById(R.id.swipeUnlockPill);
             ivSwipeLockIcon = root.findViewById(R.id.ivSwipeLockIcon);
             ivSwipeChevron = root.findViewById(R.id.ivSwipeChevron);
@@ -225,72 +222,59 @@ public class PlayerLockController {
                 playerView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
             }
         } catch (Exception ignored) {}
-
-        CustomToast.show(activity, "Экран разблокирован");
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private void setupSwipeUnlockGesture() {
         if (layoutLockedOverlay == null) return;
 
-        // Клик и касание по любой области экрана в заблокированном состоянии: убираем прозрачность
-        layoutLockedOverlay.setOnClickListener(v -> {
-            if (!isLocked) return;
-            wakeUpLockUI();
-        });
-
         layoutLockedOverlay.setOnTouchListener((v, event) -> {
-            if (!isLocked) return false;
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                wakeUpLockUI();
-            }
-            return false;
-        });
-
-        // Обработка свайпа в зоне разблокировки снизу
-        View touchTarget = swipeUnlockZone != null ? swipeUnlockZone : layoutLockedOverlay;
-        touchTarget.setOnTouchListener((v, event) -> {
             if (!isLocked) return false;
 
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     startTouchY = event.getRawY();
-                    isDraggingPill = true;
                     wakeUpLockUI();
+                    // Разрешаем драг из нижней половины экрана
+                    int overlayHeight = layoutLockedOverlay.getHeight();
+                    float touchYInView = event.getY();
+                    if (overlayHeight <= 0 || touchYInView >= overlayHeight * 0.45f) {
+                        isDraggingPill = true;
+                    } else {
+                        isDraggingPill = false;
+                    }
                     return true;
 
                 case MotionEvent.ACTION_MOVE:
-                    if (!isDraggingPill) {
-                        startTouchY = event.getRawY();
-                        isDraggingPill = true;
-                    }
-                    float currentY = event.getRawY();
-                    float deltaY = startTouchY - currentY; // Положительное значение при движении вверх
+                    if (isDraggingPill) {
+                        float currentY = event.getRawY();
+                        float deltaY = startTouchY - currentY; // Положительное значение при движении вверх
 
-                    if (deltaY > 0) {
-                        float translationY = -Math.min(deltaY, unlockThresholdPx * 1.8f);
-                        if (swipeUnlockPill != null) {
-                            swipeUnlockPill.setTranslationY(translationY);
-                        }
-
-                        if (deltaY >= unlockThresholdPx) {
-                            if (ivSwipeLockIcon != null) {
-                                ivSwipeLockIcon.setImageResource(R.drawable.ic_lock_open);
+                        if (deltaY > 0) {
+                            float translationY = -Math.min(deltaY, unlockThresholdPx * 3.0f);
+                            if (swipeUnlockPill != null) {
+                                swipeUnlockPill.setTranslationY(translationY);
                             }
-                            if (tvSwipeUnlockText != null) {
-                                tvSwipeUnlockText.setText("Отпустите для разблокировки");
+
+                            if (deltaY >= unlockThresholdPx) {
+                                if (ivSwipeLockIcon != null) {
+                                    ivSwipeLockIcon.setImageResource(R.drawable.ic_lock_open);
+                                }
+                                if (tvSwipeUnlockText != null) {
+                                    tvSwipeUnlockText.setText("Отпустите для разблокировки");
+                                }
+                            } else {
+                                if (ivSwipeLockIcon != null) {
+                                    ivSwipeLockIcon.setImageResource(R.drawable.ic_lock);
+                                }
+                                if (tvSwipeUnlockText != null) {
+                                    tvSwipeUnlockText.setText("Смахните вверх для разблокировки");
+                                }
                             }
                         } else {
-                            if (ivSwipeLockIcon != null) {
-                                ivSwipeLockIcon.setImageResource(R.drawable.ic_lock);
+                            if (swipeUnlockPill != null) {
+                                swipeUnlockPill.setTranslationY(0f);
                             }
-                            if (tvSwipeUnlockText != null) {
-                                tvSwipeUnlockText.setText("Смахните вверх для разблокировки");
-                            }
-                        }
-                    } else {
-                        if (swipeUnlockPill != null) {
-                            swipeUnlockPill.setTranslationY(0f);
                         }
                     }
                     return true;
