@@ -233,10 +233,18 @@ public class PlayerLockController {
     private void setupSwipeUnlockGesture() {
         if (layoutLockedOverlay == null) return;
 
-        // Клик по экрану в заблокированном состоянии: подсветка свайп-зоны
+        // Клик и касание по любой области экрана в заблокированном состоянии: убираем прозрачность
         layoutLockedOverlay.setOnClickListener(v -> {
             if (!isLocked) return;
             wakeUpLockUI();
+        });
+
+        layoutLockedOverlay.setOnTouchListener((v, event) -> {
+            if (!isLocked) return false;
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                wakeUpLockUI();
+            }
+            return false;
         });
 
         // Обработка свайпа в зоне разблокировки снизу
@@ -248,7 +256,6 @@ public class PlayerLockController {
                 case MotionEvent.ACTION_DOWN:
                     startTouchY = event.getRawY();
                     isDraggingPill = true;
-                    mainHandler.removeCallbacks(autoDimRunnable);
                     wakeUpLockUI();
                     return true;
 
@@ -324,6 +331,7 @@ public class PlayerLockController {
     private void wakeUpLockUI() {
         mainHandler.removeCallbacks(autoDimRunnable);
         if (swipeUnlockPill != null) {
+            swipeUnlockPill.setVisibility(View.VISIBLE);
             swipeUnlockPill.animate()
                     .alpha(1f)
                     .setDuration(180)
@@ -343,8 +351,8 @@ public class PlayerLockController {
         if (!isLocked) return;
         if (swipeUnlockPill != null) {
             swipeUnlockPill.animate()
-                    .alpha(0.28f)
-                    .setDuration(500)
+                    .alpha(0f)
+                    .setDuration(400)
                     .start();
         }
         if (lockedStatusBadge != null) {
