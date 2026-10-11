@@ -41,13 +41,6 @@ public class CommentSettingsBottomSheet extends FlexibleBottomSheetDialog {
     private ExpressiveSlider sliderRepliesLimit;
     private SliderLabelsView sliderLabelsView;
 
-    private TextView presetReply1;
-    private TextView presetReply2;
-    private TextView presetReply3;
-    private TextView presetReply5;
-    private TextView presetReply10;
-    private TextView presetReplyUnlimited;
-
     public CommentSettingsBottomSheet(@NonNull Context context, @Nullable OnCommentSettingsListener listener) {
         super(context, R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
         this.databaseManager = DatabaseManager.getInstance(context);
@@ -77,13 +70,6 @@ public class CommentSettingsBottomSheet extends FlexibleBottomSheetDialog {
         tvRepliesLimitSubtext = view.findViewById(R.id.tvRepliesLimitSubtext);
         sliderRepliesLimit = view.findViewById(R.id.sliderRepliesLimit);
         sliderLabelsView = view.findViewById(R.id.sliderLabelsView);
-
-        presetReply1 = view.findViewById(R.id.presetReply1);
-        presetReply2 = view.findViewById(R.id.presetReply2);
-        presetReply3 = view.findViewById(R.id.presetReply3);
-        presetReply5 = view.findViewById(R.id.presetReply5);
-        presetReply10 = view.findViewById(R.id.presetReply10);
-        presetReplyUnlimited = view.findViewById(R.id.presetReplyUnlimited);
 
         // Setup comments switch
         if (switchDisableComments != null) {
@@ -142,14 +128,6 @@ public class CommentSettingsBottomSheet extends FlexibleBottomSheetDialog {
         }
 
         updateLimitUI(repliesLimit);
-
-        // Setup preset chips
-        setupPreset(presetReply1, 1);
-        setupPreset(presetReply2, 2);
-        setupPreset(presetReply3, 3);
-        setupPreset(presetReply5, 5);
-        setupPreset(presetReply10, 10);
-        setupPreset(presetReplyUnlimited, AppSettings.REPLIES_UNLIMITED);
     }
 
     private void selectLimit(int targetLimit) {
@@ -163,11 +141,6 @@ public class CommentSettingsBottomSheet extends FlexibleBottomSheetDialog {
         }
         updateLimitUI(targetLimit);
         applyLimitChange(targetLimit);
-    }
-
-    private void setupPreset(TextView presetView, int targetLimit) {
-        if (presetView == null) return;
-        presetView.setOnClickListener(v -> selectLimit(targetLimit));
     }
 
     private void applyLimitChange(int limit) {
@@ -231,26 +204,9 @@ public class CommentSettingsBottomSheet extends FlexibleBottomSheetDialog {
             }
         }
 
-        // Highlight active preset chip
-        updatePresetChip(presetReply1, limit == 1);
-        updatePresetChip(presetReply2, limit == 2);
-        updatePresetChip(presetReply3, limit == 3);
-        updatePresetChip(presetReply5, limit == 5);
-        updatePresetChip(presetReply10, limit == 10);
-        updatePresetChip(presetReplyUnlimited, isUnlimited);
-
         if (sliderLabelsView != null) {
             sliderLabelsView.setCurrentValue(limit);
         }
-    }
-
-    private void updatePresetChip(TextView chip, boolean isSelected) {
-        if (chip == null) return;
-        chip.setBackgroundResource(isSelected ? R.drawable.chip_selected : R.drawable.chip_unselected);
-        int textColor = isSelected
-                ? ContextCompat.getColor(getContext(), R.color.purple_primary)
-                : ContextCompat.getColor(getContext(), R.color.primary_text_color);
-        chip.setTextColor(textColor);
     }
 
     public static String formatRepliesPlural(int n) {

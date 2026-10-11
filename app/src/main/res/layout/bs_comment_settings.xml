@@ -200,109 +200,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:layout_marginBottom="14dp"
+                android:layout_marginBottom="16dp"
                 android:text="Остальные ответы скрыты под кнопкой «Показать ещё»"
                 android:textColor="@color/accent_text_color"
                 android:textSize="12sp"
                 android:fontFamily="@font/open_sans"/>
-
-            <!-- Preset chips row -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center"
-                android:layout_marginBottom="10dp">
-
-                <TextView
-                    android:id="@+id/presetReply1"
-                    android:layout_width="0dp"
-                    android:layout_height="34dp"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/chip_unselected"
-                    android:text="1"
-                    android:textSize="12.5sp"
-                    android:fontFamily="@font/open_sans_bold"
-                    android:textColor="@color/primary_text_color"
-                    android:clickable="true"
-                    android:focusable="true"/>
-
-                <TextView
-                    android:id="@+id/presetReply2"
-                    android:layout_width="0dp"
-                    android:layout_height="34dp"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/chip_unselected"
-                    android:text="2"
-                    android:textSize="12.5sp"
-                    android:fontFamily="@font/open_sans_bold"
-                    android:textColor="@color/primary_text_color"
-                    android:clickable="true"
-                    android:focusable="true"/>
-
-                <TextView
-                    android:id="@+id/presetReply3"
-                    android:layout_width="0dp"
-                    android:layout_height="34dp"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/chip_selected"
-                    android:text="3"
-                    android:textSize="12.5sp"
-                    android:fontFamily="@font/open_sans_bold"
-                    android:textColor="@color/purple_primary"
-                    android:clickable="true"
-                    android:focusable="true"/>
-
-                <TextView
-                    android:id="@+id/presetReply5"
-                    android:layout_width="0dp"
-                    android:layout_height="34dp"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/chip_unselected"
-                    android:text="5"
-                    android:textSize="12.5sp"
-                    android:fontFamily="@font/open_sans_bold"
-                    android:textColor="@color/primary_text_color"
-                    android:clickable="true"
-                    android:focusable="true"/>
-
-                <TextView
-                    android:id="@+id/presetReply10"
-                    android:layout_width="0dp"
-                    android:layout_height="34dp"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:layout_marginEnd="4dp"
-                    android:background="@drawable/chip_unselected"
-                    android:text="10"
-                    android:textSize="12.5sp"
-                    android:fontFamily="@font/open_sans_bold"
-                    android:textColor="@color/primary_text_color"
-                    android:clickable="true"
-                    android:focusable="true"/>
-
-                <TextView
-                    android:id="@+id/presetReplyUnlimited"
-                    android:layout_width="0dp"
-                    android:layout_height="34dp"
-                    android:layout_weight="1.3"
-                    android:gravity="center"
-                    android:background="@drawable/chip_unselected"
-                    android:text="Все ∞"
-                    android:textSize="12sp"
-                    android:fontFamily="@font/open_sans_bold"
-                    android:textColor="@color/primary_text_color"
-                    android:clickable="true"
-                    android:focusable="true"/>
-            </LinearLayout>
 
             <!-- Material 3 Expressive Slider (Stepped, last division unlimited) -->
             <com.example.animelib.views.ExpressiveSlider

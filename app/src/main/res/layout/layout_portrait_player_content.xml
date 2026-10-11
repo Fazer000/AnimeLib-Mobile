@@ -146,7 +146,7 @@
         <!-- 2. Карусель эпизодов с кнопкой поиска справа -->
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="38dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:layout_marginBottom="16dp">
@@ -154,13 +154,13 @@
             <!-- Карусель с градиентом в правой части от прозрачного к фону -->
             <FrameLayout
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="38dp"
                 android:layout_weight="1">
 
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/portraitEpisodesRecyclerView"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
+                    android:layout_height="38dp"
                     android:paddingStart="16dp"
                     android:paddingEnd="0dp"
                     android:clipToPadding="false"
@@ -170,7 +170,7 @@
                 <!-- Градиент в правой части карусели от прозрачного к цвету фона -->
                 <View
                     android:layout_width="12dp"
-                    android:layout_height="match_parent"
+                    android:layout_height="38dp"
                     android:layout_gravity="end"
                     android:background="@drawable/bg_carousel_gradient_right"
                     android:clickable="false"

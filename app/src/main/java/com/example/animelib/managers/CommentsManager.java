@@ -826,10 +826,6 @@ public class CommentsManager {
      * Переключение видимости панели комментариев
      */
     public void toggleCommentsPanel() {
-        if (isCommentsDisabledInPlayer()) {
-            CustomToast.showInfo(context, "Комментарии в плеере отключены в настройках");
-            return;
-        }
         if (isOfflineMode) {
             CustomToast.showInfo(context, "Комментарии недоступны в офлайн режиме");
             return;
@@ -846,9 +842,6 @@ public class CommentsManager {
      * Показать панель комментариев
      */
     public void showCommentsPanel() {
-        if (isCommentsDisabledInPlayer()) {
-            return;
-        }
         if (isOfflineMode) {
             CustomToast.showInfo(context, "Комментарии недоступны в офлайн режиме");
             return;
@@ -900,6 +893,10 @@ public class CommentsManager {
     }
 
     private void applyPendingLandscapeComments() {
+        if (isCommentsDisabledInPlayer()) {
+            applyCommentsDisabledState(true);
+            return;
+        }
         if (pendingStickyComments != null && commentsAdapter != null) {
             commentsAdapter.setStickyComments(pendingStickyComments);
             pendingStickyComments = null;
@@ -1515,7 +1512,9 @@ public class CommentsManager {
         }
         if (portraitCommentsAdapter == null || portraitCommentsAdapter.getItemCount() == 0) {
             isPortraitCommentsRequested = true;
-            loadCommentsPage(1);
+            loadCommentsPage(commentsCurrentPage > 0 ? commentsCurrentPage : 1);
+        } else {
+            updatePaginationUI();
         }
     }
 
@@ -1554,16 +1553,7 @@ public class CommentsManager {
                     if (portraitCommentsHeader != null) portraitCommentsHeader.setVisibility(View.VISIBLE);
                     if (portraitCommentInputContainer != null) portraitCommentInputContainer.setVisibility(View.VISIBLE);
                     if (portraitCommentsRecyclerView != null) portraitCommentsRecyclerView.setVisibility(View.VISIBLE);
-                    if (portraitCommentsPaginationBar != null && commentsTotalPages != null && commentsTotalPages > 1) {
-                        portraitCommentsPaginationBar.setVisibility(View.VISIBLE);
-                    }
-                    if (tvPortraitHeaderPageIndicator != null && commentsTotalPages != null && commentsTotalPages > 1) {
-                        tvPortraitHeaderPageIndicator.setVisibility(View.VISIBLE);
-                    }
                     if (commentsRecyclerView != null) commentsRecyclerView.setVisibility(View.VISIBLE);
-                    if (commentsPaginationBar != null && commentsTotalPages != null && commentsTotalPages > 1) {
-                        commentsPaginationBar.setVisibility(View.VISIBLE);
-                    }
                     if (commentsPanel != null) {
                         View panelInput = commentsPanel.findViewById(R.id.commentInputContainer);
                         if (panelInput != null) panelInput.setVisibility(View.VISIBLE);
@@ -1572,6 +1562,7 @@ public class CommentsManager {
                         View rulesBtn = commentsPanel.findViewById(R.id.btnCommentRules);
                         if (rulesBtn != null) rulesBtn.setVisibility(View.VISIBLE);
                     }
+                    updatePaginationUI();
                 }
                 updateCommentsButtonVisibility(true);
             }
@@ -1703,7 +1694,7 @@ public class CommentsManager {
      */
     public void updatePaginationUI() {
         safeRunOnUiThread(() -> {
-            if (isOfflineMode) {
+            if (isOfflineMode || isCommentsDisabledInPlayer()) {
                 if (commentsPaginationBar != null) commentsPaginationBar.setVisibility(View.GONE);
                 if (portraitCommentsPaginationBar != null) portraitCommentsPaginationBar.setVisibility(View.GONE);
                 if (tvPortraitHeaderPageIndicator != null) tvPortraitHeaderPageIndicator.setVisibility(View.GONE);
@@ -1850,6 +1841,10 @@ public class CommentsManager {
     public void loadCommentsForPortraitIfNeeded() {
         if (isOfflineMode) {
             applyOfflineViewsState();
+            return;
+        }
+        if (isCommentsDisabledInPlayer()) {
+            applyCommentsDisabledState(true);
             return;
         }
         isPortraitCommentsRequested = true;
@@ -2200,7 +2195,9 @@ public class CommentsManager {
                             updateCommentsButtonVisibility(true);
                             if (portraitCommentsAdapter == null || portraitCommentsAdapter.getItemCount() == 0) {
                                 isPortraitCommentsRequested = true;
-                                loadCommentsPage(1);
+                                loadCommentsPage(commentsCurrentPage > 0 ? commentsCurrentPage : 1);
+                            } else {
+                                updatePaginationUI();
                             }
                         }
                         if (settingsCallback != null) {

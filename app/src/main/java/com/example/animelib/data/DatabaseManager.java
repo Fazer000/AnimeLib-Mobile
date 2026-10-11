@@ -513,7 +513,11 @@ public class DatabaseManager {
         }
     }
 
+    private volatile Boolean cachedDisableCommentsInPlayer = null;
+    private volatile Integer cachedCommentRepliesLimit = null;
+
     public void saveDisableCommentsInPlayerSetting(boolean disable) {
+        cachedDisableCommentsInPlayer = disable;
         executor.execute(() -> {
             try {
                 AppSettings settings = db.appSettingsDao().getSettingsSync();
@@ -530,10 +534,15 @@ public class DatabaseManager {
     }
 
     public boolean loadDisableCommentsInPlayerSetting() {
+        if (cachedDisableCommentsInPlayer != null) {
+            return cachedDisableCommentsInPlayer;
+        }
         try {
             AppSettings settings = db.appSettingsDao().getSettingsSync();
             if (settings != null) {
-                return settings.isDisableCommentsInPlayer();
+                boolean val = settings.isDisableCommentsInPlayer();
+                cachedDisableCommentsInPlayer = val;
+                return val;
             }
         } catch (Exception e) {
             Log.e(TAG, "Failed to load disable comments in player setting", e);
@@ -542,6 +551,7 @@ public class DatabaseManager {
     }
 
     public void saveCommentRepliesLimitSetting(int limit) {
+        cachedCommentRepliesLimit = limit;
         executor.execute(() -> {
             try {
                 AppSettings settings = db.appSettingsDao().getSettingsSync();
@@ -558,10 +568,15 @@ public class DatabaseManager {
     }
 
     public int loadCommentRepliesLimitSetting() {
+        if (cachedCommentRepliesLimit != null) {
+            return cachedCommentRepliesLimit;
+        }
         try {
             AppSettings settings = db.appSettingsDao().getSettingsSync();
             if (settings != null) {
-                return settings.getCommentRepliesLimit();
+                int val = settings.getCommentRepliesLimit();
+                cachedCommentRepliesLimit = val;
+                return val;
             }
         } catch (Exception e) {
             Log.e(TAG, "Failed to load comment replies limit setting", e);
