@@ -316,50 +316,12 @@
                 android:stepSize="1.0"
                 app:labelBehavior="gone" />
 
-            <!-- Labels below slider -->
-            <LinearLayout
+            <!-- Division Labels below slider (mathematically aligned with slider dots) -->
+            <com.example.animelib.views.SliderLabelsView
+                android:id="@+id/sliderLabelsView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="2dp"
-                android:paddingHorizontal="4dp">
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="1"
-                    android:textColor="@color/accent_text_color"
-                    android:textSize="11sp"
-                    android:fontFamily="@font/open_sans"/>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="3"
-                    android:textColor="@color/accent_text_color"
-                    android:textSize="11sp"
-                    android:fontFamily="@font/open_sans"/>
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:text="5"
-                    android:textColor="@color/accent_text_color"
-                    android:textSize="11sp"
-                    android:fontFamily="@font/open_sans"/>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:gravity="end"
-                    android:text="Неограниченно"
-                    android:textColor="@color/accent_text_color"
-                    android:textSize="11sp"
-                    android:fontFamily="@font/open_sans"/>
-            </LinearLayout>
+                android:layout_marginTop="2dp" />
 
         </LinearLayout>
 

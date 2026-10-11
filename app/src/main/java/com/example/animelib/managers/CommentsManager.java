@@ -67,6 +67,12 @@ public class CommentsManager {
     private View portraitCommentsHeader;
     private View portraitCommentInputContainer;
 
+    // Disabled comments in player support
+    private View portraitCommentsDisabledNotice;
+    private View btnPortraitEnableComments;
+    private View landscapeCommentsDisabledNotice;
+    private View btnLandscapeEnableComments;
+
     // Адаптер и состояние
     private CommentsAdapter commentsAdapter;
     private RecyclerView portraitCommentsRecyclerView;
@@ -187,6 +193,9 @@ public class CommentsManager {
         
         setupCommentsViews();
         initializePanelPosition();
+        if (isCommentsDisabledInPlayer()) {
+            applyCommentsDisabledState(true);
+        }
     }
     
     /**
@@ -261,6 +270,12 @@ public class CommentsManager {
             View btnCommentSettings = commentsPanel.findViewById(R.id.btnCommentSettings);
             if (btnCommentSettings != null) {
                 btnCommentSettings.setOnClickListener(v -> showSettingsDialog());
+            }
+
+            landscapeCommentsDisabledNotice = commentsPanel.findViewById(R.id.landscapeCommentsDisabledNotice);
+            btnLandscapeEnableComments = commentsPanel.findViewById(R.id.btnLandscapeEnableComments);
+            if (btnLandscapeEnableComments != null) {
+                btnLandscapeEnableComments.setOnClickListener(v -> enableCommentsInPlayer());
             }
 
             // Pagination Controls (Landscape / Side Panel Carousel)
@@ -927,7 +942,7 @@ public class CommentsManager {
      * @param page Номер страницы
      */
     public void loadCommentsPage(int page) {
-        if (isOfflineMode || currentEpisode == null) return;
+        if (isOfflineMode || isCommentsDisabledInPlayer() || currentEpisode == null) return;
         
         boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
         if (isPortrait) {
@@ -1158,6 +1173,9 @@ public class CommentsManager {
     }
 
     public boolean shouldLoadComments() {
+        if (isCommentsDisabledInPlayer()) {
+            return false;
+        }
         boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
         if (isPortrait) {
             return isPortraitCommentsRequested;
@@ -1320,6 +1338,11 @@ public class CommentsManager {
             android.app.Activity act = (android.app.Activity) context;
             portraitScrollView = act.findViewById(R.id.portraitScrollView);
             portraitOfflineCommentsNotice = act.findViewById(R.id.portraitOfflineCommentsNotice);
+            portraitCommentsDisabledNotice = act.findViewById(R.id.portraitCommentsDisabledNotice);
+            btnPortraitEnableComments = act.findViewById(R.id.btnPortraitEnableComments);
+            if (btnPortraitEnableComments != null) {
+                btnPortraitEnableComments.setOnClickListener(v -> enableCommentsInPlayer());
+            }
             portraitCommentsHeader = act.findViewById(R.id.portraitCommentsHeader);
             portraitCommentInputContainer = act.findViewById(R.id.portraitCommentInputContainer);
             portraitCommentInputField = act.findViewById(R.id.portraitCommentInputField);
@@ -1419,6 +1442,12 @@ public class CommentsManager {
             applyOfflineViewsState();
             return;
         }
+        if (isCommentsDisabledInPlayer()) {
+            applyCommentsDisabledState(true);
+            return;
+        } else {
+            applyCommentsDisabledState(false);
+        }
     }
 
     public void setOfflineMode(boolean offline) {
@@ -1473,6 +1502,80 @@ public class CommentsManager {
             }
             updatePaginationUI();
         }
+    }
+
+    public void enableCommentsInPlayer() {
+        try {
+            com.example.animelib.data.DatabaseManager.getInstance(context).saveDisableCommentsInPlayerSetting(false);
+        } catch (Exception ignored) {}
+        applyCommentsDisabledState(false);
+        updateCommentsButtonVisibility(true);
+        if (settingsCallback != null) {
+            settingsCallback.onCommentsInPlayerToggled(false);
+        }
+        if (portraitCommentsAdapter == null || portraitCommentsAdapter.getItemCount() == 0) {
+            isPortraitCommentsRequested = true;
+            loadCommentsPage(1);
+        }
+    }
+
+    public void applyCommentsDisabledState(boolean disabled) {
+        safeRunOnUiThread(() -> {
+            if (disabled) {
+                if (portraitCommentsDisabledNotice != null) portraitCommentsDisabledNotice.setVisibility(View.VISIBLE);
+                if (portraitCommentsHeader != null) portraitCommentsHeader.setVisibility(View.GONE);
+                if (portraitCommentInputContainer != null) portraitCommentInputContainer.setVisibility(View.GONE);
+                if (portraitCommentsRecyclerView != null) portraitCommentsRecyclerView.setVisibility(View.GONE);
+                if (portraitEmptyCommentsText != null) portraitEmptyCommentsText.setVisibility(View.GONE);
+                if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
+                if (portraitCommentsLoadingOverlay != null) portraitCommentsLoadingOverlay.setVisibility(View.GONE);
+                if (portraitCommentsPaginationBar != null) portraitCommentsPaginationBar.setVisibility(View.GONE);
+                if (tvPortraitHeaderPageIndicator != null) tvPortraitHeaderPageIndicator.setVisibility(View.GONE);
+
+                if (landscapeCommentsDisabledNotice != null) landscapeCommentsDisabledNotice.setVisibility(View.VISIBLE);
+                if (commentsRecyclerView != null) commentsRecyclerView.setVisibility(View.GONE);
+                if (emptyCommentsText != null) emptyCommentsText.setVisibility(View.GONE);
+                if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
+                if (commentsLoadingOverlay != null) commentsLoadingOverlay.setVisibility(View.GONE);
+                if (commentsPaginationBar != null) commentsPaginationBar.setVisibility(View.GONE);
+                if (commentsPanel != null) {
+                    View panelInput = commentsPanel.findViewById(R.id.commentInputContainer);
+                    if (panelInput != null) panelInput.setVisibility(View.GONE);
+                    View sortBtn = commentsPanel.findViewById(R.id.btnSortComments);
+                    if (sortBtn != null) sortBtn.setVisibility(View.GONE);
+                    View rulesBtn = commentsPanel.findViewById(R.id.btnCommentRules);
+                    if (rulesBtn != null) rulesBtn.setVisibility(View.GONE);
+                }
+                updateCommentsButtonVisibility(false);
+            } else {
+                if (portraitCommentsDisabledNotice != null) portraitCommentsDisabledNotice.setVisibility(View.GONE);
+                if (landscapeCommentsDisabledNotice != null) landscapeCommentsDisabledNotice.setVisibility(View.GONE);
+                if (!isOfflineMode) {
+                    if (portraitCommentsHeader != null) portraitCommentsHeader.setVisibility(View.VISIBLE);
+                    if (portraitCommentInputContainer != null) portraitCommentInputContainer.setVisibility(View.VISIBLE);
+                    if (portraitCommentsRecyclerView != null) portraitCommentsRecyclerView.setVisibility(View.VISIBLE);
+                    if (portraitCommentsPaginationBar != null && commentsTotalPages != null && commentsTotalPages > 1) {
+                        portraitCommentsPaginationBar.setVisibility(View.VISIBLE);
+                    }
+                    if (tvPortraitHeaderPageIndicator != null && commentsTotalPages != null && commentsTotalPages > 1) {
+                        tvPortraitHeaderPageIndicator.setVisibility(View.VISIBLE);
+                    }
+                    if (commentsRecyclerView != null) commentsRecyclerView.setVisibility(View.VISIBLE);
+                    if (commentsPaginationBar != null && commentsTotalPages != null && commentsTotalPages > 1) {
+                        commentsPaginationBar.setVisibility(View.VISIBLE);
+                    }
+                    if (commentsPanel != null) {
+                        View panelInput = commentsPanel.findViewById(R.id.commentInputContainer);
+                        if (panelInput != null) panelInput.setVisibility(View.VISIBLE);
+                        View sortBtn = commentsPanel.findViewById(R.id.btnSortComments);
+                        if (sortBtn != null) sortBtn.setVisibility(View.VISIBLE);
+                        View rulesBtn = commentsPanel.findViewById(R.id.btnCommentRules);
+                        if (rulesBtn != null) rulesBtn.setVisibility(View.VISIBLE);
+                    }
+                }
+                updateCommentsButtonVisibility(true);
+            }
+        });
     }
 
     /**
@@ -2087,6 +2190,7 @@ public class CommentsManager {
                 new com.example.animelib.settings.CommentSettingsBottomSheet(context, new com.example.animelib.settings.CommentSettingsBottomSheet.OnCommentSettingsListener() {
                     @Override
                     public void onCommentsInPlayerToggled(boolean disabled) {
+                        applyCommentsDisabledState(disabled);
                         if (disabled) {
                             if (isCommentsVisible) {
                                 hideCommentsPanel();
@@ -2094,6 +2198,10 @@ public class CommentsManager {
                             updateCommentsButtonVisibility(false);
                         } else {
                             updateCommentsButtonVisibility(true);
+                            if (portraitCommentsAdapter == null || portraitCommentsAdapter.getItemCount() == 0) {
+                                isPortraitCommentsRequested = true;
+                                loadCommentsPage(1);
+                            }
                         }
                         if (settingsCallback != null) {
                             settingsCallback.onCommentsInPlayerToggled(disabled);

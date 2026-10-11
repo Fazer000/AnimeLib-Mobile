@@ -19,6 +19,7 @@ public class ExpressiveSlider extends Slider {
     private final Paint inactiveTrackPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint thumbPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint endDotPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint activeDotPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private final RectF activeRect = new RectF();
     private final RectF inactiveRect = new RectF();
@@ -42,6 +43,7 @@ public class ExpressiveSlider extends Slider {
         inactiveTrackPaint.setStyle(Paint.Style.FILL);
         thumbPaint.setStyle(Paint.Style.FILL);
         endDotPaint.setStyle(Paint.Style.FILL);
+        activeDotPaint.setStyle(Paint.Style.FILL);
 
         int primaryColor = ContextCompat.getColor(context, R.color.purple_primary);
         int inactiveColor = ContextCompat.getColor(context, R.color.purple_alpha_25);
@@ -50,6 +52,7 @@ public class ExpressiveSlider extends Slider {
         inactiveTrackPaint.setColor(inactiveColor);
         thumbPaint.setColor(primaryColor);
         endDotPaint.setColor(primaryColor);
+        activeDotPaint.setColor(android.graphics.Color.argb(160, 255, 255, 255));
 
         setTickVisible(false);
         setLabelBehavior(LabelFormatter.LABEL_GONE);
@@ -141,7 +144,32 @@ public class ExpressiveSlider extends Slider {
             float cornerRadius = trackHeight / 2f;
             canvas.drawRoundRect(inactiveRect, cornerRadius, cornerRadius, inactiveTrackPaint);
 
-            // 3. Draw single dot near the right end of inactive track
+        }
+
+        // 3. Draw Dots for step divisions inside the slider or single end dot
+        float stepSize = getStepSize();
+        int numSteps = (stepSize > 0 && valTo > valFrom) ? Math.round((valTo - valFrom) / stepSize) : 0;
+
+        if (numSteps >= 1 && numSteps <= 30) {
+            for (int i = 0; i <= numSteps; i++) {
+                float stepFraction = (float) i / (float) numSteps;
+                float dotX = startX + stepFraction * availableWidth;
+
+                // Don't draw dot if covered by the thumb or thumb gap
+                if (dotX >= thumbLeft - gap && dotX <= thumbRight + gap) {
+                    continue;
+                }
+
+                if (dotX < thumbLeft - gap && dotX >= trackLeftBoundary + dotRadius) {
+                    // Inside active track (subtle light dot)
+                    canvas.drawCircle(dotX, centerY, dotRadius, activeDotPaint);
+                } else if (dotX > thumbRight + gap && dotX <= trackRightBoundary - dotRadius) {
+                    // Inside inactive track (purple dot, same as end dot)
+                    canvas.drawCircle(dotX, centerY, dotRadius, endDotPaint);
+                }
+            }
+        } else if (trackRightBoundary > inactiveLeft) {
+            // Continuous slider: single dot near the right end of inactive track
             float dotX = trackRightBoundary - dotMarginRight;
             if (dotX > inactiveLeft + dotMarginRight) {
                 canvas.drawCircle(dotX, centerY, dotRadius, endDotPaint);

@@ -17,7 +17,9 @@ import com.example.animelib.data.DatabaseManager;
 import com.example.animelib.util.FlexibleBottomSheetDialog;
 import com.example.animelib.util.FloatingBottomSheetUtils;
 import com.example.animelib.views.ExpressiveSlider;
+import com.example.animelib.views.SliderLabelsView;
 import com.google.android.material.materialswitch.MaterialSwitch;
+import com.google.android.material.slider.Slider;
 
 public class CommentSettingsBottomSheet extends FlexibleBottomSheetDialog {
 
@@ -37,6 +39,7 @@ public class CommentSettingsBottomSheet extends FlexibleBottomSheetDialog {
     private TextView tvRepliesLimitValue;
     private TextView tvRepliesLimitSubtext;
     private ExpressiveSlider sliderRepliesLimit;
+    private SliderLabelsView sliderLabelsView;
 
     private TextView presetReply1;
     private TextView presetReply2;
@@ -73,6 +76,7 @@ public class CommentSettingsBottomSheet extends FlexibleBottomSheetDialog {
         tvRepliesLimitValue = view.findViewById(R.id.tvRepliesLimitValue);
         tvRepliesLimitSubtext = view.findViewById(R.id.tvRepliesLimitSubtext);
         sliderRepliesLimit = view.findViewById(R.id.sliderRepliesLimit);
+        sliderLabelsView = view.findViewById(R.id.sliderLabelsView);
 
         presetReply1 = view.findViewById(R.id.presetReply1);
         presetReply2 = view.findViewById(R.id.presetReply2);
@@ -89,7 +93,11 @@ public class CommentSettingsBottomSheet extends FlexibleBottomSheetDialog {
             switchDisableComments.setOnCheckedChangeListener((buttonView, isChecked) -> {
                 disableCommentsInPlayer = isChecked;
                 updateDisableCommentsUI(isChecked);
-                databaseManager.saveDisableCommentsInPlayerSetting(isChecked);
+                new Thread(() -> {
+                    try {
+                        databaseManager.saveDisableCommentsInPlayerSetting(isChecked);
+                    } catch (Exception ignored) {}
+                }).start();
                 if (listener != null) {
                     listener.onCommentsInPlayerToggled(isChecked);
                 }
@@ -102,20 +110,35 @@ public class CommentSettingsBottomSheet extends FlexibleBottomSheetDialog {
             });
         }
 
-        // Setup slider & presets
+        // Setup slider & labels view
         float initialSliderVal = getSliderValueFromLimit(repliesLimit);
         if (sliderRepliesLimit != null) {
             sliderRepliesLimit.setValue(initialSliderVal);
             sliderRepliesLimit.addOnChangeListener((slider, value, fromUser) -> {
                 int intVal = Math.round(value);
                 int newLimit = getLimitFromSliderValue(intVal);
-                this.repliesLimit = newLimit;
-                updateLimitUI(newLimit);
-                databaseManager.saveCommentRepliesLimitSetting(newLimit);
-                if (listener != null) {
-                    listener.onRepliesLimitChanged(newLimit);
+                if (newLimit != this.repliesLimit) {
+                    this.repliesLimit = newLimit;
+                    updateLimitUI(newLimit);
+                    if (sliderLabelsView != null) {
+                        sliderLabelsView.setCurrentValue(newLimit);
+                    }
                 }
             });
+            sliderRepliesLimit.addOnSliderTouchListener(new Slider.OnSliderTouchListener() {
+                @Override
+                public void onStartTrackingTouch(@NonNull Slider slider) {}
+
+                @Override
+                public void onStopTrackingTouch(@NonNull Slider slider) {
+                    applyLimitChange(repliesLimit);
+                }
+            });
+        }
+
+        if (sliderLabelsView != null) {
+            sliderLabelsView.setCurrentValue(repliesLimit);
+            sliderLabelsView.setOnLabelClickListener(this::selectLimit);
         }
 
         updateLimitUI(repliesLimit);
@@ -129,20 +152,39 @@ public class CommentSettingsBottomSheet extends FlexibleBottomSheetDialog {
         setupPreset(presetReplyUnlimited, AppSettings.REPLIES_UNLIMITED);
     }
 
+    private void selectLimit(int targetLimit) {
+        this.repliesLimit = targetLimit;
+        float sliderVal = getSliderValueFromLimit(targetLimit);
+        if (sliderRepliesLimit != null) {
+            sliderRepliesLimit.setValue(sliderVal);
+        }
+        if (sliderLabelsView != null) {
+            sliderLabelsView.setCurrentValue(targetLimit);
+        }
+        updateLimitUI(targetLimit);
+        applyLimitChange(targetLimit);
+    }
+
     private void setupPreset(TextView presetView, int targetLimit) {
         if (presetView == null) return;
-        presetView.setOnClickListener(v -> {
-            this.repliesLimit = targetLimit;
-            float sliderVal = getSliderValueFromLimit(targetLimit);
-            if (sliderRepliesLimit != null) {
-                sliderRepliesLimit.setValue(sliderVal);
-            }
-            updateLimitUI(targetLimit);
-            databaseManager.saveCommentRepliesLimitSetting(targetLimit);
-            if (listener != null) {
-                listener.onRepliesLimitChanged(targetLimit);
-            }
-        });
+        presetView.setOnClickListener(v -> selectLimit(targetLimit));
+    }
+
+    private void applyLimitChange(int limit) {
+        new Thread(() -> {
+            try {
+                databaseManager.saveCommentRepliesLimitSetting(limit);
+            } catch (Exception ignored) {}
+        }).start();
+        if (listener != null) {
+            listener.onRepliesLimitChanged(limit);
+        }
+    }
+
+    @Override
+    public void dismiss() {
+        applyLimitChange(repliesLimit);
+        super.dismiss();
     }
 
     private float getSliderValueFromLimit(int limit) {
@@ -196,6 +238,10 @@ public class CommentSettingsBottomSheet extends FlexibleBottomSheetDialog {
         updatePresetChip(presetReply5, limit == 5);
         updatePresetChip(presetReply10, limit == 10);
         updatePresetChip(presetReplyUnlimited, isUnlimited);
+
+        if (sliderLabelsView != null) {
+            sliderLabelsView.setCurrentValue(limit);
+        }
     }
 
     private void updatePresetChip(TextView chip, boolean isSelected) {

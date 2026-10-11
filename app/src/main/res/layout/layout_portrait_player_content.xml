@@ -979,6 +979,66 @@
                     android:gravity="center" />
             </LinearLayout>
 
+            <!-- Плашка отключенных комментариев в плеере -->
+            <LinearLayout
+                android:id="@+id/portraitCommentsDisabledNotice"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingVertical="32dp"
+                android:paddingHorizontal="20dp"
+                android:layout_marginBottom="16dp"
+                android:background="@drawable/bg_portrait_block_button"
+                android:visibility="gone">
+
+                <ImageView
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:src="@drawable/ic_comments"
+                    app:tint="@color/accent_text_color"
+                    android:alpha="0.45"
+                    android:contentDescription="Комментарии отключены" />
+
+                <TextView
+                    android:id="@+id/tvPortraitCommentsDisabledTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Комментарии отключены"
+                    android:textColor="@color/primary_text_color"
+                    android:textSize="16sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:gravity="center" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Отображение комментариев в плеере выключено"
+                    android:textColor="@color/accent_text_color"
+                    android:textSize="12.5sp"
+                    android:fontFamily="@font/open_sans"
+                    android:gravity="center" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnPortraitEnableComments"
+                    style="@style/Widget.Material3.Button"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="Включить"
+                    android:textColor="@android:color/white"
+                    android:textSize="13.5sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    app:backgroundTint="@color/purple_primary"
+                    app:icon="@drawable/ic_comments"
+                    app:iconTint="@android:color/white"
+                    app:cornerRadius="16dp"
+                    android:paddingHorizontal="24dp"
+                    android:paddingVertical="10dp" />
+            </LinearLayout>
+
             <!-- Заголовок комментариев (Сортировка + Правила) -->
             <LinearLayout
                 android:id="@+id/portraitCommentsHeader"
