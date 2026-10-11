@@ -2026,8 +2026,19 @@ public class VideoPlayerActivity extends AppCompatActivity {
             portraitScrollView.setOnScrollChangeListener((androidx.core.widget.NestedScrollView.OnScrollChangeListener) (v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
                 if (btnPortraitScrollToTop != null) {
                     if (scrollY > 300) {
-                        if (btnPortraitScrollToTop.getVisibility() != View.VISIBLE) {
-                            btnPortraitScrollToTop.show();
+                        int childHeight = (v.getChildCount() > 0) ? v.getChildAt(0).getMeasuredHeight() : 0;
+                        int scrollBottom = scrollY + v.getMeasuredHeight();
+                        int threshold = (int) (80 * getResources().getDisplayMetrics().density);
+                        boolean isNearBottom = (childHeight > 0 && (childHeight - scrollBottom < threshold)) || !v.canScrollVertically(1);
+
+                        if (isNearBottom) {
+                            if (btnPortraitScrollToTop.getVisibility() == View.VISIBLE) {
+                                btnPortraitScrollToTop.hide();
+                            }
+                        } else {
+                            if (btnPortraitScrollToTop.getVisibility() != View.VISIBLE) {
+                                btnPortraitScrollToTop.show();
+                            }
                         }
                     } else {
                         if (btnPortraitScrollToTop.getVisibility() == View.VISIBLE) {
@@ -2039,12 +2050,6 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 if (scrollY >= 150) {
                     if (playerCommentsController != null && !isOfflineMode && getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
                         playerCommentsController.loadCommentsForPortraitIfNeeded();
-                    }
-                }
-
-                if (scrollY >= (v.getChildAt(0).getMeasuredHeight() - v.getMeasuredHeight() - 200)) {
-                    if (playerCommentsController != null && !isOfflineMode && getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
-                        playerCommentsController.loadNextCommentsPageIfAvailable();
                     }
                 }
             });

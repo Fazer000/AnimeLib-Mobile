@@ -8,8 +8,7 @@
     android:fillViewport="true"
     android:overScrollMode="never"
     android:clipToPadding="false"
-    android:paddingTop="12dp"
-    android:paddingBottom="24dp">
+    android:paddingTop="12dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -1025,6 +1024,22 @@
                     android:layout_weight="1" />
 
                 <TextView
+                    android:id="@+id/tvPortraitHeaderPageIndicator"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/bg_comment_header_button"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="7dp"
+                    android:text="Стр. 1"
+                    android:textColor="@color/purple_primary"
+                    android:textSize="12sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:visibility="gone" />
+
+                <TextView
                     android:id="@+id/btnPortraitCommentRules"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -1317,6 +1332,86 @@
                         app:trackThickness="4dp" />
                 </FrameLayout>
             </FrameLayout>
+
+            <!-- M3 Pagination Controls (Portrait Carousel) -->
+            <LinearLayout
+                android:id="@+id/portraitCommentsPaginationBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="10dp"
+                android:visibility="gone">
+
+                <!-- Left Arrow Button -->
+                <ImageView
+                    android:id="@+id/btnPortraitPaginationPrev"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/player_episode_item_normal"
+                    android:padding="9dp"
+                    android:src="@drawable/ic_chevron_left"
+                    app:tint="@color/accent_text_color"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:contentDescription="Предыдущая страница" />
+
+                <!-- Carousel with Left and Right Fade Gradients -->
+                <FrameLayout
+                    android:id="@+id/flPortraitPaginationContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="38dp">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rvPortraitPaginationPages"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:orientation="horizontal"
+                        android:clipToPadding="false"
+                        android:paddingStart="4dp"
+                        android:paddingEnd="4dp"
+                        android:overScrollMode="never" />
+
+                    <!-- Left Gradient -->
+                    <View
+                        android:id="@+id/vPortraitPaginationGradientLeft"
+                        android:layout_width="14dp"
+                        android:layout_height="match_parent"
+                        android:layout_gravity="start"
+                        android:background="@drawable/bg_carousel_gradient_left"
+                        android:clickable="false"
+                        android:focusable="false"
+                        android:visibility="gone" />
+
+                    <!-- Right Gradient -->
+                    <View
+                        android:id="@+id/vPortraitPaginationGradientRight"
+                        android:layout_width="14dp"
+                        android:layout_height="match_parent"
+                        android:layout_gravity="end"
+                        android:background="@drawable/bg_carousel_gradient_right"
+                        android:clickable="false"
+                        android:focusable="false"
+                        android:visibility="gone" />
+                </FrameLayout>
+
+                <!-- Right Arrow Button -->
+                <ImageView
+                    android:id="@+id/btnPortraitPaginationNext"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/player_episode_item_normal"
+                    android:padding="9dp"
+                    android:src="@drawable/ic_chevron_right"
+                    app:tint="@color/accent_text_color"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:contentDescription="Следующая страница" />
+
+            </LinearLayout>
 
         </LinearLayout>
 

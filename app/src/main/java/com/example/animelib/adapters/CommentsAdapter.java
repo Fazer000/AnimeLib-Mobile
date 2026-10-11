@@ -73,8 +73,10 @@ public class CommentsAdapter extends RecyclerView.Adapter<CommentsAdapter.Commen
     // Flattened for RecyclerView
     private final List<DisplayItem> flat = new ArrayList<>();
     private final Map<Long, CharSequence> simpleSpannedCache = new HashMap<>();
+    private int currentPage = 1;
 
     public void clearAll() {
+        currentPage = 1;
         stickyRoots.clear();
         allById.clear();
         roots.clear();
@@ -103,13 +105,15 @@ public class CommentsAdapter extends RecyclerView.Adapter<CommentsAdapter.Commen
         rebuildFlat(-1);
     }
 
-    public void appendResponse(CommentsResponse response, boolean append) {
-        if (!append) {
-            allById.clear();
-            roots.clear();
-            childrenByParentId.clear();
-            flat.clear();
-            simpleSpannedCache.clear();
+    public void setPageResponse(CommentsResponse response, int page) {
+        this.currentPage = page;
+        allById.clear();
+        roots.clear();
+        childrenByParentId.clear();
+        flat.clear();
+        simpleSpannedCache.clear();
+
+        if (page <= 1) {
             for (CommentsResponse.CommentItem s : stickyRoots) {
                 if (s != null) {
                     s.setSticky(true);
@@ -119,9 +123,53 @@ public class CommentsAdapter extends RecyclerView.Adapter<CommentsAdapter.Commen
         }
 
         if (response == null || response.getData() == null) {
-            if (!append) {
-                notifyDataSetChanged();
+            rebuildFlat(-1);
+            return;
+        }
+
+        List<CommentsResponse.CommentItem> newRoots = response.getData().getRoot();
+        List<CommentsResponse.CommentItem> replies = response.getData().getReplies();
+
+        if (newRoots != null) {
+            for (CommentsResponse.CommentItem r : newRoots) {
+                if (r == null) continue;
+                if (allById.containsKey(r.getId())) {
+                    CommentsResponse.CommentItem existing = allById.get(r.getId());
+                    if (existing != null && existing.isSticky()) {
+                        continue;
+                    }
+                } else {
+                    allById.put(r.getId(), r);
+                }
+                roots.add(r);
             }
+        }
+        if (replies != null) {
+            for (CommentsResponse.CommentItem c : replies) {
+                if (c == null || allById.containsKey(c.getId())) continue;
+                allById.put(c.getId(), c);
+                Long parentId = c.getParent_comment();
+                if (parentId == null) parentId = c.getRoot_id();
+                if (parentId == null) continue;
+                List<CommentsResponse.CommentItem> list = childrenByParentId.get(parentId);
+                if (list == null) {
+                    list = new ArrayList<>();
+                    childrenByParentId.put(parentId, list);
+                }
+                list.add(c);
+            }
+        }
+
+        rebuildFlat(-1);
+    }
+
+    public void appendResponse(CommentsResponse response, boolean append) {
+        if (!append) {
+            setPageResponse(response, 1);
+            return;
+        }
+
+        if (response == null || response.getData() == null) {
             return;
         }
 
@@ -160,13 +208,15 @@ public class CommentsAdapter extends RecyclerView.Adapter<CommentsAdapter.Commen
             }
         }
 
-        rebuildFlat(append ? previousFlatSize : -1);
+        rebuildFlat(previousFlatSize);
     }
 
     private void rebuildFlat(int previousFlatSize) {
         flat.clear();
-        for (CommentsResponse.CommentItem sticky : stickyRoots) {
-            addWithChildren(sticky, 0);
+        if (currentPage <= 1) {
+            for (CommentsResponse.CommentItem sticky : stickyRoots) {
+                addWithChildren(sticky, 0);
+            }
         }
         for (CommentsResponse.CommentItem root : roots) {
             addWithChildren(root, 0);

@@ -101,9 +101,32 @@ public class CommentsManager {
     private boolean isCommentsVisible = false;
     private int commentsPanelWidth = 360; // dp
     private int commentsCurrentPage = 1;
-    private boolean commentsHasNextPage = true;
+    private boolean commentsHasNextPage = false;
+    private Integer commentsTotalPages = null;
     private boolean isLoadingComments = false;
     private String commentsSortType = "desc";
+
+    // Элементы пагинации (Landscape / Side Panel Carousel)
+    private View commentsPaginationBar;
+    private android.widget.ImageView btnPaginationPrev;
+    private View flPaginationContainer;
+    private RecyclerView rvPaginationPages;
+    private View vPaginationGradientLeft;
+    private View vPaginationGradientRight;
+    private android.widget.ImageView btnPaginationNext;
+    private com.example.animelib.adapters.CommentPagesAdapter landscapePagesAdapter;
+
+    // Элементы пагинации (Portrait Carousel)
+    private View portraitCommentsPaginationBar;
+    private android.widget.ImageView btnPortraitPaginationPrev;
+    private View flPortraitPaginationContainer;
+    private RecyclerView rvPortraitPaginationPages;
+    private View vPortraitPaginationGradientLeft;
+    private View vPortraitPaginationGradientRight;
+    private android.widget.ImageView btnPortraitPaginationNext;
+    private TextView tvPortraitHeaderPageIndicator;
+    private com.example.animelib.adapters.CommentPagesAdapter portraitPagesAdapter;
+    private androidx.core.widget.NestedScrollView portraitScrollView;
     
     private CommentsResponse pendingLandscapeCommentsResponse;
     private boolean pendingLandscapeAppend;
@@ -235,6 +258,35 @@ public class CommentsManager {
             if (btnCommentRules != null) {
                 btnCommentRules.setOnClickListener(v -> showRulesDialog());
             }
+
+            // Pagination Controls (Landscape / Side Panel Carousel)
+            commentsPaginationBar = commentsPanel.findViewById(R.id.commentsPaginationBar);
+            btnPaginationPrev = commentsPanel.findViewById(R.id.btnPaginationPrev);
+            flPaginationContainer = commentsPanel.findViewById(R.id.flPaginationContainer);
+            rvPaginationPages = commentsPanel.findViewById(R.id.rvPaginationPages);
+            vPaginationGradientLeft = commentsPanel.findViewById(R.id.vPaginationGradientLeft);
+            vPaginationGradientRight = commentsPanel.findViewById(R.id.vPaginationGradientRight);
+            btnPaginationNext = commentsPanel.findViewById(R.id.btnPaginationNext);
+
+            if (rvPaginationPages != null) {
+                rvPaginationPages.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false));
+                landscapePagesAdapter = new com.example.animelib.adapters.CommentPagesAdapter(this::goToPage);
+                rvPaginationPages.setAdapter(landscapePagesAdapter);
+                rvPaginationPages.addOnScrollListener(new RecyclerView.OnScrollListener() {
+                    @Override
+                    public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                        updateGradients(recyclerView, vPaginationGradientLeft, vPaginationGradientRight);
+                    }
+                });
+            }
+
+            if (btnPaginationPrev != null) {
+                btnPaginationPrev.setOnClickListener(v -> goToPage(commentsCurrentPage - 1));
+            }
+            if (btnPaginationNext != null) {
+                btnPaginationNext.setOnClickListener(v -> goToPage(commentsCurrentPage + 1));
+            }
+
             if (commentInputField != null) {
                 commentInputField.setOnEditorActionListener((v, actionId, event) -> {
                     if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) {
@@ -747,24 +799,6 @@ public class CommentsManager {
         });
         commentsRecyclerView.setLayoutManager(new LinearLayoutManager(context));
         commentsRecyclerView.setAdapter(commentsAdapter);
-        
-        // Добавляем слушатель прокрутки для пагинации
-        commentsRecyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override
-            public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
-                if (dy <= 0) return;
-                
-                LinearLayoutManager layoutManager = (LinearLayoutManager) rv.getLayoutManager();
-                if (layoutManager == null) return;
-                
-                int total = layoutManager.getItemCount();
-                int last = layoutManager.findLastVisibleItemPosition();
-                
-                if (!isLoadingComments && commentsHasNextPage && last >= total - 3) {
-                    loadCommentsPage(commentsCurrentPage + 1);
-                }
-            }
-        });
     }
     
     /**
@@ -843,9 +877,10 @@ public class CommentsManager {
             pendingStickyComments = null;
         }
         if (pendingLandscapeCommentsResponse != null && commentsAdapter != null) {
-            commentsAdapter.appendResponse(pendingLandscapeCommentsResponse, pendingLandscapeAppend);
+            commentsAdapter.setPageResponse(pendingLandscapeCommentsResponse, commentsCurrentPage);
             pendingLandscapeCommentsResponse = null;
         }
+        updatePaginationUI();
     }
     
     public void forceHideCommentsPanel() {
@@ -951,18 +986,26 @@ public class CommentsManager {
                         }
                         isLoadingComments = false;
                         
+                        if (response != null && response.getMeta() != null) {
+                            commentsHasNextPage = response.getMeta().isHas_next_page();
+                            commentsCurrentPage = response.getMeta().getPage();
+                            commentsTotalPages = response.getMeta().getTotal_pages();
+                        } else {
+                            commentsCurrentPage = page;
+                        }
+
                         if (response != null) {
                             boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
                             if (isPortrait) {
                                 if (portraitCommentsAdapter != null) {
-                                    portraitCommentsAdapter.appendResponse(response, page > 1);
+                                    portraitCommentsAdapter.setPageResponse(response, commentsCurrentPage);
                                 }
                             } else {
                                 if (isCommentsVisible && commentsAdapter != null) {
-                                    commentsAdapter.appendResponse(response, page > 1);
+                                    commentsAdapter.setPageResponse(response, commentsCurrentPage);
                                 } else {
                                     pendingLandscapeCommentsResponse = response;
-                                    pendingLandscapeAppend = (page > 1);
+                                    pendingLandscapeAppend = false;
                                 }
                             }
                             
@@ -998,11 +1041,8 @@ public class CommentsManager {
                                 dataCallback.onCommentsLoaded(allComments);
                             }
                         }
-                        
-                        if (response != null && response.getMeta() != null) {
-                            commentsHasNextPage = response.getMeta().isHas_next_page();
-                            commentsCurrentPage = page;
-                        }
+
+                        updatePaginationUI();
                     });
             }
                 
@@ -1043,6 +1083,7 @@ public class CommentsManager {
                         }
                     }
                     
+                    updatePaginationUI();
                     CustomToast.showWarning(context, "Ошибка загрузки комментариев");
                     
                     // Уведомить об ошибке
@@ -1063,11 +1104,13 @@ public class CommentsManager {
         boolean wasLandscapeVisible = isCommentsVisible;
 
         commentsCurrentPage = 1;
-        commentsHasNextPage = true;
+        commentsHasNextPage = false;
+        commentsTotalPages = null;
         isLoadingComments = false;
         isPortraitCommentsRequested = false;
         pendingLandscapeCommentsResponse = null;
         pendingStickyComments = null;
+        updatePaginationUI();
         
         if (commentsAdapter != null) {
             commentsAdapter.clearAll();
@@ -1126,10 +1169,12 @@ public class CommentsManager {
             boolean wasLandscapeVisible = isCommentsVisible;
 
             commentsCurrentPage = 1;
-            commentsHasNextPage = true;
+            commentsHasNextPage = false;
+            commentsTotalPages = null;
             isLoadingComments = false;
             pendingLandscapeCommentsResponse = null;
             pendingStickyComments = null;
+            updatePaginationUI();
 
             if (commentsAdapter != null) {
                 commentsAdapter.clearAll();
@@ -1258,6 +1303,7 @@ public class CommentsManager {
 
         if (context instanceof android.app.Activity) {
             android.app.Activity act = (android.app.Activity) context;
+            portraitScrollView = act.findViewById(R.id.portraitScrollView);
             portraitOfflineCommentsNotice = act.findViewById(R.id.portraitOfflineCommentsNotice);
             portraitCommentsHeader = act.findViewById(R.id.portraitCommentsHeader);
             portraitCommentInputContainer = act.findViewById(R.id.portraitCommentInputContainer);
@@ -1266,6 +1312,38 @@ public class CommentsManager {
             portraitReplyBar = act.findViewById(R.id.portraitReplyBar);
             tvPortraitReplyToText = act.findViewById(R.id.tvPortraitReplyToText);
             btnPortraitCancelReply = act.findViewById(R.id.btnPortraitCancelReply);
+
+            // Portrait Pagination Controls (Portrait Carousel)
+            portraitCommentsPaginationBar = act.findViewById(R.id.portraitCommentsPaginationBar);
+            btnPortraitPaginationPrev = act.findViewById(R.id.btnPortraitPaginationPrev);
+            flPortraitPaginationContainer = act.findViewById(R.id.flPortraitPaginationContainer);
+            rvPortraitPaginationPages = act.findViewById(R.id.rvPortraitPaginationPages);
+            vPortraitPaginationGradientLeft = act.findViewById(R.id.vPortraitPaginationGradientLeft);
+            vPortraitPaginationGradientRight = act.findViewById(R.id.vPortraitPaginationGradientRight);
+            btnPortraitPaginationNext = act.findViewById(R.id.btnPortraitPaginationNext);
+            tvPortraitHeaderPageIndicator = act.findViewById(R.id.tvPortraitHeaderPageIndicator);
+
+            if (rvPortraitPaginationPages != null) {
+                rvPortraitPaginationPages.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false));
+                portraitPagesAdapter = new com.example.animelib.adapters.CommentPagesAdapter(this::goToPage);
+                rvPortraitPaginationPages.setAdapter(portraitPagesAdapter);
+                rvPortraitPaginationPages.addOnScrollListener(new RecyclerView.OnScrollListener() {
+                    @Override
+                    public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                        updateGradients(recyclerView, vPortraitPaginationGradientLeft, vPortraitPaginationGradientRight);
+                    }
+                });
+            }
+
+            if (btnPortraitPaginationPrev != null) {
+                btnPortraitPaginationPrev.setOnClickListener(v -> goToPage(commentsCurrentPage - 1));
+            }
+            if (btnPortraitPaginationNext != null) {
+                btnPortraitPaginationNext.setOnClickListener(v -> goToPage(commentsCurrentPage + 1));
+            }
+            if (tvPortraitHeaderPageIndicator != null) {
+                tvPortraitHeaderPageIndicator.setOnClickListener(v -> showPageJumpDialog());
+            }
 
             if (portraitCommentInputField != null) {
                 com.example.animelib.util.CommentFormattingHelper.attachFormattingTextWatcher(portraitCommentInputField);
@@ -1311,6 +1389,7 @@ public class CommentsManager {
         }
 
         updateSortButtonText();
+        updatePaginationUI();
         if (isOfflineMode) {
             applyOfflineViewsState();
             return;
@@ -1334,6 +1413,9 @@ public class CommentsManager {
             if (portraitCommentsRecyclerView != null) portraitCommentsRecyclerView.setVisibility(View.GONE);
             if (portraitEmptyCommentsText != null) portraitEmptyCommentsText.setVisibility(View.GONE);
             if (commentsRecyclerView != null) commentsRecyclerView.setVisibility(View.GONE);
+            if (commentsPaginationBar != null) commentsPaginationBar.setVisibility(View.GONE);
+            if (portraitCommentsPaginationBar != null) portraitCommentsPaginationBar.setVisibility(View.GONE);
+            if (tvPortraitHeaderPageIndicator != null) tvPortraitHeaderPageIndicator.setVisibility(View.GONE);
             if (commentsPanel != null) {
                 View panelInputContainer = commentsPanel.findViewById(R.id.commentInputContainer);
                 if (panelInputContainer != null) panelInputContainer.setVisibility(View.GONE);
@@ -1364,6 +1446,276 @@ public class CommentsManager {
             if (emptyCommentsText != null) {
                 emptyCommentsText.setText("Комментариев пока нет");
             }
+            updatePaginationUI();
+        }
+    }
+
+    /**
+     * Переход на выбранную страницу комментариев
+     */
+    public void goToPage(int targetPage) {
+        if (isLoadingComments || isOfflineMode || currentEpisode == null) return;
+        if (targetPage < 1) targetPage = 1;
+        if (commentsTotalPages != null && commentsTotalPages > 0 && targetPage > commentsTotalPages) {
+            targetPage = commentsTotalPages;
+        }
+        if (targetPage == commentsCurrentPage) return;
+
+        loadCommentsPage(targetPage);
+
+        boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
+        if (isPortrait) {
+            if (portraitScrollView != null && portraitCommentsHeader != null) {
+                portraitScrollView.post(() -> {
+                    int topY = portraitCommentsHeader.getTop();
+                    portraitScrollView.smoothScrollTo(0, Math.max(0, topY - dpToPx(16)));
+                });
+            } else if (portraitCommentsRecyclerView != null) {
+                portraitCommentsRecyclerView.scrollToPosition(0);
+            }
+        } else {
+            if (commentsRecyclerView != null) {
+                commentsRecyclerView.scrollToPosition(0);
+            }
+        }
+    }
+
+    /**
+     * Показывает диалог ввода номера страницы
+     */
+    public void showPageJumpDialog() {
+        if (context == null || isOfflineMode) return;
+        try {
+            View dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_comments_page_jump, null);
+            ImageButton btnClose = dialogView.findViewById(R.id.btnClosePageDialog);
+            TextView tvHint = dialogView.findViewById(R.id.tvPageDialogHint);
+            android.widget.EditText etPage = dialogView.findViewById(R.id.etPageNumber);
+            View btnCancel = dialogView.findViewById(R.id.btnCancelPageJump);
+            View btnConfirm = dialogView.findViewById(R.id.btnConfirmPageJump);
+
+            if (tvHint != null) {
+                if (commentsTotalPages != null && commentsTotalPages > 0) {
+                    tvHint.setText("Введите номер страницы (1 - " + commentsTotalPages + "):");
+                } else {
+                    tvHint.setText("Введите номер страницы (текущая: " + commentsCurrentPage + "):");
+                }
+            }
+
+            if (etPage != null) {
+                etPage.setText(String.valueOf(commentsCurrentPage));
+                etPage.setSelection(etPage.getText().length());
+            }
+
+            androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(context);
+            builder.setView(dialogView);
+            androidx.appcompat.app.AlertDialog dialog = builder.create();
+
+            if (dialog.getWindow() != null) {
+                dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+            }
+
+            if (btnClose != null) btnClose.setOnClickListener(v -> dialog.dismiss());
+            if (btnCancel != null) btnCancel.setOnClickListener(v -> dialog.dismiss());
+
+            if (btnConfirm != null) {
+                btnConfirm.setOnClickListener(v -> {
+                    String input = (etPage != null && etPage.getText() != null) ? etPage.getText().toString().trim() : "";
+                    if (input.isEmpty()) {
+                        CustomToast.showWarning(context, "Введите номер страницы");
+                        return;
+                    }
+                    try {
+                        int page = Integer.parseInt(input);
+                        if (page < 1) {
+                            CustomToast.showWarning(context, "Номер страницы должен быть не менее 1");
+                            return;
+                        }
+                        if (commentsTotalPages != null && commentsTotalPages > 0 && page > commentsTotalPages) {
+                            CustomToast.showWarning(context, "Максимальная страница: " + commentsTotalPages);
+                            return;
+                        }
+                        dialog.dismiss();
+                        goToPage(page);
+                    } catch (NumberFormatException e) {
+                        CustomToast.showWarning(context, "Некорректный номер страницы");
+                    }
+                });
+            }
+
+            if (etPage != null) {
+                etPage.setOnEditorActionListener((v, actionId, event) -> {
+                    if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE || actionId == android.view.inputmethod.EditorInfo.IME_ACTION_GO) {
+                        if (btnConfirm != null) btnConfirm.performClick();
+                        return true;
+                    }
+                    return false;
+                });
+            }
+
+            dialog.show();
+
+            if (etPage != null) {
+                etPage.postDelayed(() -> {
+                    try {
+                        etPage.requestFocus();
+                        android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+                        if (imm != null) {
+                            imm.showSoftInput(etPage, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+                        }
+                    } catch (Exception ignored) {}
+                }, 100);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error showing page jump dialog", e);
+        }
+    }
+
+    /**
+     * Обновить состояние и отображение контролов пагинации в стиле M3 (карусель с градиентами)
+     */
+    public void updatePaginationUI() {
+        safeRunOnUiThread(() -> {
+            if (isOfflineMode) {
+                if (commentsPaginationBar != null) commentsPaginationBar.setVisibility(View.GONE);
+                if (portraitCommentsPaginationBar != null) portraitCommentsPaginationBar.setVisibility(View.GONE);
+                if (tvPortraitHeaderPageIndicator != null) tvPortraitHeaderPageIndicator.setVisibility(View.GONE);
+                return;
+            }
+
+            boolean hasComments = (portraitCommentsAdapter != null && portraitCommentsAdapter.getItemCount() > 0)
+                    || (commentsAdapter != null && commentsAdapter.getItemCount() > 0);
+
+            int totalPages = 1;
+            if (commentsTotalPages != null && commentsTotalPages > 0) {
+                totalPages = commentsTotalPages;
+            } else if (commentsHasNextPage) {
+                totalPages = Math.max(commentsCurrentPage + 1, totalPages);
+            } else {
+                totalPages = Math.max(commentsCurrentPage, 1);
+            }
+
+            boolean showPagination = hasComments && (totalPages > 1 || commentsCurrentPage > 1);
+
+            String label;
+            if (commentsTotalPages != null && commentsTotalPages > 0) {
+                label = "Стр. " + commentsCurrentPage + " из " + commentsTotalPages;
+            } else {
+                label = "Стр. " + commentsCurrentPage;
+            }
+
+            boolean canPrev = commentsCurrentPage > 1;
+            boolean canNext = commentsHasNextPage || (commentsTotalPages != null && commentsCurrentPage < commentsTotalPages);
+
+            // Landscape Panel Carousel Controls
+            if (commentsPaginationBar != null) {
+                commentsPaginationBar.setVisibility(showPagination ? View.VISIBLE : View.GONE);
+                if (btnPaginationPrev != null) {
+                    btnPaginationPrev.setEnabled(canPrev);
+                    btnPaginationPrev.setAlpha(canPrev ? 1.0f : 0.35f);
+                }
+                if (btnPaginationNext != null) {
+                    btnPaginationNext.setEnabled(canNext);
+                    btnPaginationNext.setAlpha(canNext ? 1.0f : 0.35f);
+                }
+                if (landscapePagesAdapter != null && showPagination) {
+                    landscapePagesAdapter.setPages(commentsCurrentPage, totalPages);
+                    adjustCarouselWidth(commentsPaginationBar, flPaginationContainer, totalPages);
+                    if (rvPaginationPages != null) {
+                        rvPaginationPages.post(() -> {
+                            if (commentsCurrentPage > 0) {
+                                rvPaginationPages.smoothScrollToPosition(commentsCurrentPage - 1);
+                            }
+                            updateGradients(rvPaginationPages, vPaginationGradientLeft, vPaginationGradientRight);
+                        });
+                    }
+                }
+            }
+
+            // Portrait Carousel Controls
+            if (portraitCommentsPaginationBar != null) {
+                portraitCommentsPaginationBar.setVisibility(showPagination ? View.VISIBLE : View.GONE);
+                if (btnPortraitPaginationPrev != null) {
+                    btnPortraitPaginationPrev.setEnabled(canPrev);
+                    btnPortraitPaginationPrev.setAlpha(canPrev ? 1.0f : 0.35f);
+                }
+                if (btnPortraitPaginationNext != null) {
+                    btnPortraitPaginationNext.setEnabled(canNext);
+                    btnPortraitPaginationNext.setAlpha(canNext ? 1.0f : 0.35f);
+                }
+                if (portraitPagesAdapter != null && showPagination) {
+                    portraitPagesAdapter.setPages(commentsCurrentPage, totalPages);
+                    adjustCarouselWidth(portraitCommentsPaginationBar, flPortraitPaginationContainer, totalPages);
+                    if (rvPortraitPaginationPages != null) {
+                        rvPortraitPaginationPages.post(() -> {
+                            if (commentsCurrentPage > 0) {
+                                rvPortraitPaginationPages.smoothScrollToPosition(commentsCurrentPage - 1);
+                            }
+                            updateGradients(rvPortraitPaginationPages, vPortraitPaginationGradientLeft, vPortraitPaginationGradientRight);
+                        });
+                    }
+                }
+            }
+
+            // Portrait Header Page Indicator
+            if (tvPortraitHeaderPageIndicator != null) {
+                if (showPagination) {
+                    tvPortraitHeaderPageIndicator.setVisibility(View.VISIBLE);
+                    tvPortraitHeaderPageIndicator.setText(label);
+                } else {
+                    tvPortraitHeaderPageIndicator.setVisibility(View.GONE);
+                }
+            }
+        });
+    }
+
+    /**
+     * Динамически регулирует ширину контейнера карусели: если страниц мало,
+     * то контейнер сжимается до точной ширины страниц, и вся конструкция (стрелки + страницы)
+     * центрируется вместе. Если страниц много, карусель занимает всю доступную ширину между стрелками.
+     */
+    private void adjustCarouselWidth(View bar, View container, int totalPages) {
+        if (bar == null || container == null || context == null) return;
+        bar.post(() -> {
+            int barWidth = bar.getWidth();
+            if (barWidth <= 0) return;
+
+            int barPadding = bar.getPaddingStart() + bar.getPaddingEnd();
+            int arrowsWidth = dpToPx(38 + 6 + 38 + 6); // 2 кнопки по 38dp + отступы по 6dp
+            int maxAvailableWidth = barWidth - barPadding - arrowsWidth;
+            if (maxAvailableWidth <= 0) return;
+
+            // Каждая кнопка 38dp + отступ 6dp = 44dp, плюс внутренний padding RecyclerView (8dp)
+            int neededWidth = dpToPx(totalPages * 44 + 8);
+
+            ViewGroup.LayoutParams baseLp = container.getLayoutParams();
+            if (baseLp instanceof LinearLayout.LayoutParams) {
+                LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) baseLp;
+                if (neededWidth < maxAvailableWidth) {
+                    lp.width = neededWidth;
+                    lp.weight = 0;
+                } else {
+                    lp.width = 0;
+                    lp.weight = 1;
+                }
+                container.setLayoutParams(lp);
+            }
+        });
+    }
+
+    /**
+     * Показывает левый/правый градиент карусели только когда есть контент для скролла в соответствующую сторону,
+     * предотвращая перекрытие кнопок в начале или конце карусели.
+     */
+    private void updateGradients(RecyclerView rv, View leftGradient, View rightGradient) {
+        if (rv == null) return;
+        boolean canScrollLeft = rv.canScrollHorizontally(-1);
+        boolean canScrollRight = rv.canScrollHorizontally(1);
+
+        if (leftGradient != null) {
+            leftGradient.setVisibility(canScrollLeft ? View.VISIBLE : View.GONE);
+        }
+        if (rightGradient != null) {
+            rightGradient.setVisibility(canScrollRight ? View.VISIBLE : View.GONE);
         }
     }
 

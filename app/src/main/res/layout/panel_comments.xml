@@ -221,6 +221,86 @@
                 </FrameLayout>
             </FrameLayout>
 
+            <!-- M3 Pagination Controls (Landscape / Side Panel Carousel) -->
+            <LinearLayout
+                android:id="@+id/commentsPaginationBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="6dp"
+                android:visibility="gone">
+
+                <!-- Left Arrow Button -->
+                <ImageView
+                    android:id="@+id/btnPaginationPrev"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/player_episode_item_normal"
+                    android:padding="9dp"
+                    android:src="@drawable/ic_chevron_left"
+                    app:tint="@color/accent_text_color"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:contentDescription="Предыдущая страница" />
+
+                <!-- Carousel with Left and Right Fade Gradients -->
+                <FrameLayout
+                    android:id="@+id/flPaginationContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="38dp">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rvPaginationPages"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:orientation="horizontal"
+                        android:clipToPadding="false"
+                        android:paddingStart="4dp"
+                        android:paddingEnd="4dp"
+                        android:overScrollMode="never" />
+
+                    <!-- Left Gradient -->
+                    <View
+                        android:id="@+id/vPaginationGradientLeft"
+                        android:layout_width="14dp"
+                        android:layout_height="match_parent"
+                        android:layout_gravity="start"
+                        android:background="@drawable/bg_carousel_gradient_left"
+                        android:clickable="false"
+                        android:focusable="false"
+                        android:visibility="gone" />
+
+                    <!-- Right Gradient -->
+                    <View
+                        android:id="@+id/vPaginationGradientRight"
+                        android:layout_width="14dp"
+                        android:layout_height="match_parent"
+                        android:layout_gravity="end"
+                        android:background="@drawable/bg_carousel_gradient_right"
+                        android:clickable="false"
+                        android:focusable="false"
+                        android:visibility="gone" />
+                </FrameLayout>
+
+                <!-- Right Arrow Button -->
+                <ImageView
+                    android:id="@+id/btnPaginationNext"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/player_episode_item_normal"
+                    android:padding="9dp"
+                    android:src="@drawable/ic_chevron_right"
+                    app:tint="@color/accent_text_color"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:contentDescription="Следующая страница" />
+
+            </LinearLayout>
+
             <!-- Comment Input Container -->
             <LinearLayout
                 android:id="@+id/commentInputContainer"

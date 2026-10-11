@@ -20,11 +20,26 @@ public class CommentsResponse {
     public static class Meta {
         private boolean has_next_page;
         private int page;
+        private int current_page;
         private int per_page;
+        private Integer total;
+        private Integer total_pages;
+        private Integer last_page;
 
         public boolean isHas_next_page() { return has_next_page; }
-        public int getPage() { return page; }
+        public int getPage() { return page > 0 ? page : (current_page > 0 ? current_page : 1); }
+        public int getCurrent_page() { return getPage(); }
         public int getPer_page() { return per_page; }
+        public Integer getTotal() { return total; }
+        public Integer getTotal_pages() {
+            if (total_pages != null && total_pages > 0) return total_pages;
+            if (last_page != null && last_page > 0) return last_page;
+            if (total != null && total > 0 && per_page > 0) {
+                return (int) Math.ceil((double) total / per_page);
+            }
+            return null;
+        }
+        public Integer getLast_page() { return getTotal_pages(); }
     }
 
     public static class CommentItem {
