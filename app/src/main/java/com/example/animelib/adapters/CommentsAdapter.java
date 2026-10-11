@@ -20,6 +20,7 @@ import com.example.animelib.R;
 import com.example.animelib.models.CommentsResponse;
 import com.example.animelib.util.ImageLoader;
 import com.example.animelib.util.CommentHtmlProcessor;
+import com.example.animelib.settings.CommentSettingsBottomSheet;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -27,11 +28,13 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
-public class CommentsAdapter extends RecyclerView.Adapter<CommentsAdapter.CommentVH> {
+public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     public interface CommentActionListener {
         void onReplyClicked(CommentsResponse.CommentItem comment);
@@ -42,6 +45,22 @@ public class CommentsAdapter extends RecyclerView.Adapter<CommentsAdapter.Commen
 
     private CommentActionListener commentActionListener;
     private Long activeReplyCommentId = null;
+
+    private int repliesLimit = 3;
+    private final Set<Long> expandedParentIds = new HashSet<>();
+
+    public void setRepliesLimit(int limit) {
+        this.repliesLimit = limit;
+        rebuildFlat(-1);
+    }
+
+    public int getRepliesLimit() {
+        return repliesLimit;
+    }
+
+    public void markParentExpanded(long parentId) {
+        expandedParentIds.add(parentId);
+    }
 
     public void setCommentActionListener(CommentActionListener listener) {
         this.commentActionListener = listener;
@@ -56,10 +75,34 @@ public class CommentsAdapter extends RecyclerView.Adapter<CommentsAdapter.Commen
         return activeReplyCommentId;
     }
 
-    private static class DisplayItem {
+    public static class DisplayItem {
+        public static final int TYPE_COMMENT = 0;
+        public static final int TYPE_SHOW_MORE = 1;
+
+        final int type;
         final CommentsResponse.CommentItem item;
         final int level;
-        DisplayItem(CommentsResponse.CommentItem item, int level) { this.item = item; this.level = level; }
+        final long parentId;
+        final int hiddenCount;
+        final List<CommentsResponse.CommentItem> hiddenReplies;
+
+        DisplayItem(CommentsResponse.CommentItem item, int level) {
+            this.type = TYPE_COMMENT;
+            this.item = item;
+            this.level = level;
+            this.parentId = 0;
+            this.hiddenCount = 0;
+            this.hiddenReplies = null;
+        }
+
+        DisplayItem(long parentId, int hiddenCount, List<CommentsResponse.CommentItem> hiddenReplies) {
+            this.type = TYPE_SHOW_MORE;
+            this.item = null;
+            this.level = 1;
+            this.parentId = parentId;
+            this.hiddenCount = hiddenCount;
+            this.hiddenReplies = hiddenReplies;
+        }
     }
 
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault());
@@ -77,6 +120,7 @@ public class CommentsAdapter extends RecyclerView.Adapter<CommentsAdapter.Commen
 
     public void clearAll() {
         currentPage = 1;
+        expandedParentIds.clear();
         stickyRoots.clear();
         allById.clear();
         roots.clear();
@@ -235,28 +279,107 @@ public class CommentsAdapter extends RecyclerView.Adapter<CommentsAdapter.Commen
     private void addWithChildren(CommentsResponse.CommentItem node, int level) {
         flat.add(new DisplayItem(node, level));
         List<CommentsResponse.CommentItem> kids = childrenByParentId.get(node.getId());
-        if (kids == null) return;
+        if (kids == null || kids.isEmpty()) return;
         
         // Ограничиваем глубину дерева до 1 уровня (level 0 и 1)
         if (level >= 1) return;
         
-        for (CommentsResponse.CommentItem child : kids) {
-            addWithChildren(child, level + 1);
+        boolean isUnlimited = (repliesLimit == -1 || repliesLimit >= 11 || repliesLimit <= 0);
+        boolean isExpanded = expandedParentIds.contains(node.getId());
+        boolean showAll = isUnlimited || isExpanded || (kids.size() <= repliesLimit);
+
+        if (showAll) {
+            for (CommentsResponse.CommentItem child : kids) {
+                addWithChildren(child, level + 1);
+            }
+        } else {
+            int countToShow = Math.min(repliesLimit, kids.size());
+            for (int i = 0; i < countToShow; i++) {
+                addWithChildren(kids.get(i), level + 1);
+            }
+            int hiddenCount = kids.size() - countToShow;
+            if (hiddenCount > 0) {
+                List<CommentsResponse.CommentItem> hidden = new ArrayList<>(kids.subList(countToShow, kids.size()));
+                flat.add(new DisplayItem(node.getId(), hiddenCount, hidden));
+            }
         }
+    }
+
+    public void expandReplies(long parentId, int position, List<CommentsResponse.CommentItem> hiddenReplies) {
+        if (position < 0 || position >= flat.size()) return;
+        expandedParentIds.add(parentId);
+
+        flat.remove(position);
+        notifyItemRemoved(position);
+
+        List<DisplayItem> newItems = new ArrayList<>();
+        if (hiddenReplies != null) {
+            for (CommentsResponse.CommentItem child : hiddenReplies) {
+                newItems.add(new DisplayItem(child, 1));
+            }
+        }
+
+        if (!newItems.isEmpty()) {
+            flat.addAll(position, newItems);
+            notifyItemRangeInserted(position, newItems.size());
+        }
+    }
+
+    @Override
+    public int getItemViewType(int position) {
+        if (position >= 0 && position < flat.size()) {
+            return flat.get(position).type;
+        }
+        return DisplayItem.TYPE_COMMENT;
     }
 
     @NonNull
     @Override
-    public CommentVH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+    public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        if (viewType == DisplayItem.TYPE_SHOW_MORE) {
+            View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_comment_show_more, parent, false);
+            return new ShowMoreVH(v);
+        }
         View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_comment, parent, false);
         return new CommentVH(v);
     }
 
     @SuppressLint("SetTextI18n")
     @Override
-    public void onBindViewHolder(@NonNull CommentVH holder, int position) {
+    public void onBindViewHolder(@NonNull RecyclerView.ViewHolder rawHolder, int position) {
+        if (rawHolder instanceof ShowMoreVH) {
+            ShowMoreVH holder = (ShowMoreVH) rawHolder;
+            DisplayItem di = flat.get(position);
+            if (holder.threadGuideLine != null) {
+                holder.threadGuideLine.setVisibility(View.VISIBLE);
+            }
+            if (holder.tvShowMoreText != null) {
+                holder.tvShowMoreText.setText("Показать ещё " + CommentSettingsBottomSheet.formatRepliesPlural(di.hiddenCount));
+            }
+            if (holder.btnShowMore != null) {
+                holder.btnShowMore.setOnClickListener(v -> {
+                    int pos = holder.getBindingAdapterPosition();
+                    if (pos != RecyclerView.NO_POSITION && pos < flat.size()) {
+                        DisplayItem item = flat.get(pos);
+                        if (item.type == DisplayItem.TYPE_SHOW_MORE) {
+                            if (holder.ivShowMoreIcon != null) {
+                                holder.ivShowMoreIcon.animate().rotation(180f).setDuration(160).withEndAction(() -> {
+                                    expandReplies(item.parentId, pos, item.hiddenReplies);
+                                }).start();
+                            } else {
+                                expandReplies(item.parentId, pos, item.hiddenReplies);
+                            }
+                        }
+                    }
+                });
+            }
+            return;
+        }
+
+        CommentVH holder = (CommentVH) rawHolder;
         DisplayItem di = flat.get(position);
         CommentsResponse.CommentItem item = di.item;
+        if (item == null) return;
 
         // Показываем имя пользователя
         String username = item.getUser() != null ? item.getUser().getUsername() : "";
@@ -683,6 +806,21 @@ public class CommentsAdapter extends RecyclerView.Adapter<CommentsAdapter.Commen
             btnInlineFormatQuote = itemView.findViewById(R.id.btnInlineFormatQuote);
             inlineCommentInputField = itemView.findViewById(R.id.inlineCommentInputField);
             btnInlineSendComment = itemView.findViewById(R.id.btnInlineSendComment);
+        }
+    }
+
+    public static class ShowMoreVH extends RecyclerView.ViewHolder {
+        public final View threadGuideLine;
+        public final View btnShowMore;
+        public final ImageView ivShowMoreIcon;
+        public final TextView tvShowMoreText;
+
+        public ShowMoreVH(@NonNull View itemView) {
+            super(itemView);
+            threadGuideLine = itemView.findViewById(R.id.threadGuideLine);
+            btnShowMore = itemView.findViewById(R.id.btnShowMore);
+            ivShowMoreIcon = itemView.findViewById(R.id.ivShowMoreIcon);
+            tvShowMoreText = itemView.findViewById(R.id.tvShowMoreText);
         }
     }
 }

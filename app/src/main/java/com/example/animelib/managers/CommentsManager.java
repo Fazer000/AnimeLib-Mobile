@@ -258,6 +258,10 @@ public class CommentsManager {
             if (btnCommentRules != null) {
                 btnCommentRules.setOnClickListener(v -> showRulesDialog());
             }
+            View btnCommentSettings = commentsPanel.findViewById(R.id.btnCommentSettings);
+            if (btnCommentSettings != null) {
+                btnCommentSettings.setOnClickListener(v -> showSettingsDialog());
+            }
 
             // Pagination Controls (Landscape / Side Panel Carousel)
             commentsPaginationBar = commentsPanel.findViewById(R.id.commentsPaginationBar);
@@ -798,6 +802,8 @@ public class CommentsManager {
             }
         });
         commentsRecyclerView.setLayoutManager(new LinearLayoutManager(context));
+        commentsAdapter.setRepliesLimit(loadSavedRepliesLimit());
+        commentsRecyclerView.setItemAnimator(new androidx.recyclerview.widget.DefaultItemAnimator());
         commentsRecyclerView.setAdapter(commentsAdapter);
     }
     
@@ -805,6 +811,10 @@ public class CommentsManager {
      * Переключение видимости панели комментариев
      */
     public void toggleCommentsPanel() {
+        if (isCommentsDisabledInPlayer()) {
+            CustomToast.showInfo(context, "Комментарии в плеере отключены в настройках");
+            return;
+        }
         if (isOfflineMode) {
             CustomToast.showInfo(context, "Комментарии недоступны в офлайн режиме");
             return;
@@ -821,6 +831,9 @@ public class CommentsManager {
      * Показать панель комментариев
      */
     public void showCommentsPanel() {
+        if (isCommentsDisabledInPlayer()) {
+            return;
+        }
         if (isOfflineMode) {
             CustomToast.showInfo(context, "Комментарии недоступны в офлайн режиме");
             return;
@@ -1297,6 +1310,8 @@ public class CommentsManager {
                     showCommentActionsPopup(anchorView, comment);
                 }
             });
+            this.portraitCommentsAdapter.setRepliesLimit(loadSavedRepliesLimit());
+            this.portraitCommentsRecyclerView.setItemAnimator(new androidx.recyclerview.widget.DefaultItemAnimator());
             this.portraitCommentsRecyclerView.setAdapter(this.portraitCommentsAdapter);
             this.portraitCommentsRecyclerView.setNestedScrollingEnabled(false);
         }
@@ -1386,6 +1401,16 @@ public class CommentsManager {
 
         if (rulesBtn != null) {
             rulesBtn.setOnClickListener(v -> showRulesDialog());
+        }
+
+        if (this.portraitCommentsRecyclerView != null) {
+            View root = this.portraitCommentsRecyclerView.getRootView();
+            if (root != null) {
+                View btnPortraitCommentSettings = root.findViewById(R.id.btnPortraitCommentSettings);
+                if (btnPortraitCommentSettings != null) {
+                    btnPortraitCommentSettings.setOnClickListener(v -> showSettingsDialog());
+                }
+            }
         }
 
         updateSortButtonText();
@@ -2045,6 +2070,75 @@ public class CommentsManager {
         }
     }
 
+    public interface CommentsSettingsCallback {
+        void onCommentsInPlayerToggled(boolean disabled);
+        void onRepliesLimitChanged(int limit);
+    }
+    private CommentsSettingsCallback settingsCallback;
+
+    public void setSettingsCallback(CommentsSettingsCallback callback) {
+        this.settingsCallback = callback;
+    }
+
+    public void showSettingsDialog() {
+        if (context == null) return;
+        try {
+            com.example.animelib.settings.CommentSettingsBottomSheet bs =
+                new com.example.animelib.settings.CommentSettingsBottomSheet(context, new com.example.animelib.settings.CommentSettingsBottomSheet.OnCommentSettingsListener() {
+                    @Override
+                    public void onCommentsInPlayerToggled(boolean disabled) {
+                        if (disabled) {
+                            if (isCommentsVisible) {
+                                hideCommentsPanel();
+                            }
+                            updateCommentsButtonVisibility(false);
+                        } else {
+                            updateCommentsButtonVisibility(true);
+                        }
+                        if (settingsCallback != null) {
+                            settingsCallback.onCommentsInPlayerToggled(disabled);
+                        }
+                    }
+
+                    @Override
+                    public void onRepliesLimitChanged(int limit) {
+                        updateRepliesLimit(limit);
+                        if (settingsCallback != null) {
+                            settingsCallback.onRepliesLimitChanged(limit);
+                        }
+                    }
+                });
+            bs.show();
+        } catch (Exception e) {
+            Log.e(TAG, "Error showing comments settings bottom sheet", e);
+        }
+    }
+
+    public void updateRepliesLimit(int limit) {
+        if (commentsAdapter != null) {
+            commentsAdapter.setRepliesLimit(limit);
+        }
+        if (portraitCommentsAdapter != null) {
+            portraitCommentsAdapter.setRepliesLimit(limit);
+        }
+    }
+
+    public boolean isCommentsDisabledInPlayer() {
+        try {
+            return com.example.animelib.data.DatabaseManager.getInstance(context).loadDisableCommentsInPlayerSetting();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private int loadSavedRepliesLimit() {
+        try {
+            return com.example.animelib.data.DatabaseManager.getInstance(context).loadCommentRepliesLimitSetting();
+        } catch (Exception e) {
+            return 3;
+        }
+    }
+
     public void setVisibilityCallback(CommentsVisibilityCallback callback) {
         this.visibilityCallback = callback;
     }
@@ -2062,6 +2156,9 @@ public class CommentsManager {
      * @param isVisible Видима ли кнопка
      */
     public void updateCommentsButtonVisibility(boolean isVisible) {
+        if (isCommentsDisabledInPlayer()) {
+            isVisible = false;
+        }
         if (commentsButton != null) {
             commentsButton.setVisibility(isVisible ? View.VISIBLE : View.GONE);
             Log.d("CommentsManager", "Comments button visibility set to: " + (isVisible ? "VISIBLE" : "GONE"));

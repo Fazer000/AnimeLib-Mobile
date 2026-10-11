@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:paddingStart="24dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="3dp"
+    android:paddingBottom="7dp">
+
+    <!-- Thread line to match parent comment thread -->
+    <View
+        android:id="@+id/threadGuideLine"
+        android:layout_width="2.5dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="10dp"
+        android:background="@color/bs_divider_color" />
+
+    <!-- Show more button with ripple and smooth styling -->
+    <LinearLayout
+        android:id="@+id/btnShowMore"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_comment_show_more"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="7dp">
+
+        <ImageView
+            android:id="@+id/ivShowMoreIcon"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginEnd="8dp"
+            android:contentDescription="Развернуть"
+            android:src="@drawable/ic_chevron_down"
+            app:tint="@color/purple_primary" />
+
+        <TextView
+            android:id="@+id/tvShowMoreText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/open_sans_bold"
+            android:text="Показать ещё ответы"
+            android:textColor="@color/purple_primary"
+            android:textSize="12.5sp" />
+    </LinearLayout>
+
+</LinearLayout>

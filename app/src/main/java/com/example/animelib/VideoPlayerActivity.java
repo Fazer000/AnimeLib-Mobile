@@ -1422,6 +1422,16 @@ public class VideoPlayerActivity extends AppCompatActivity {
         return playerPanelsController != null && playerPanelsController.isCommentsPanelOpen();
     }
 
+    public boolean isCommentsDisabledInPlayer() {
+        if (databaseManager != null) {
+            return databaseManager.loadDisableCommentsInPlayerSetting();
+        }
+        if (apiService != null) {
+            return apiService.loadDisableCommentsInPlayerSetting();
+        }
+        return false;
+    }
+
     private void hideAllUI() {
         if (playerControlsOverlayManager != null) {
             ImageButton pipButton = findViewById(R.id.pipButton);
@@ -1642,6 +1652,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
             bookmarkButton = controllerView.findViewById(R.id.bookmarkButton);
         }
         updateSettingsQualityTag();
+        if (commentsButton != null && isCommentsDisabledInPlayer()) {
+            commentsButton.setVisibility(View.GONE);
+        }
         if (playerLockController != null && btnLockScreen != null) {
             playerLockController.setLockScreenButton(btnLockScreen);
         }
@@ -2445,7 +2458,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
             if (episodesMenuButton != null) episodesMenuButton.setVisibility(visibility);
             if (menuToggleButton != null) menuToggleButton.setVisibility(visibility);
             if (playerCommentsController != null) {
-                playerCommentsController.updateCommentsButtonVisibility(visible);
+                boolean commentsDisabled = isCommentsDisabledInPlayer();
+                playerCommentsController.updateCommentsButtonVisibility(!commentsDisabled && visible);
             }
         } else {
             if (episodesMenuButton != null) episodesMenuButton.setVisibility(View.GONE);
@@ -2842,6 +2856,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
             
             @Override
             public void onCommentsSwipeFromRight() {
+                if (isCommentsDisabledInPlayer()) {
+                    return;
+                }
                 Log.d("VideoPlayer", "Comments swipe from right detected");
                 // Открываем панель комментариев
                 if (playerCommentsController != null) {
@@ -2872,7 +2889,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             
             @Override
             public void onCommentsDragProgress(float progress) {
-                if (isOfflineMode) return;
+                if (isOfflineMode || isCommentsDisabledInPlayer()) return;
                 
                 // Скрываем худ плеера при начале drag панели комментариев
                 if (progress > 0 && playerView != null) {
@@ -3134,6 +3151,22 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     if (episodesManager != null) {
                         episodesManager.updateEpisodeNavigationButtonsVisibility();
                     }
+                }
+
+                @Override
+                public void onCommentsInPlayerToggled(boolean disabled) {
+                    runOnUiThread(() -> {
+                        if (commentsButton != null) {
+                            if (disabled) {
+                                commentsButton.setVisibility(View.GONE);
+                            } else {
+                                boolean isPortrait = getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT;
+                                if (!isPortrait && playerView != null && playerView.isControllerFullyVisible()) {
+                                    commentsButton.setVisibility(View.VISIBLE);
+                                }
+                            }
+                        }
+                    });
                 }
             });
         }

@@ -512,6 +512,62 @@ public class DatabaseManager {
             return 0xFF000000;
         }
     }
+
+    public void saveDisableCommentsInPlayerSetting(boolean disable) {
+        executor.execute(() -> {
+            try {
+                AppSettings settings = db.appSettingsDao().getSettingsSync();
+                if (settings == null) {
+                    settings = new AppSettings();
+                }
+                settings.setDisableCommentsInPlayer(disable);
+                db.appSettingsDao().upsert(settings);
+                Log.d(TAG, "Saved disable comments in player setting: " + disable);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to save disable comments in player setting", e);
+            }
+        });
+    }
+
+    public boolean loadDisableCommentsInPlayerSetting() {
+        try {
+            AppSettings settings = db.appSettingsDao().getSettingsSync();
+            if (settings != null) {
+                return settings.isDisableCommentsInPlayer();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to load disable comments in player setting", e);
+        }
+        return false;
+    }
+
+    public void saveCommentRepliesLimitSetting(int limit) {
+        executor.execute(() -> {
+            try {
+                AppSettings settings = db.appSettingsDao().getSettingsSync();
+                if (settings == null) {
+                    settings = new AppSettings();
+                }
+                settings.setCommentRepliesLimit(limit);
+                db.appSettingsDao().upsert(settings);
+                Log.d(TAG, "Saved comment replies limit setting: " + limit);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to save comment replies limit setting", e);
+            }
+        });
+    }
+
+    public int loadCommentRepliesLimitSetting() {
+        try {
+            AppSettings settings = db.appSettingsDao().getSettingsSync();
+            if (settings != null) {
+                return settings.getCommentRepliesLimit();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to load comment replies limit setting", e);
+        }
+        return 3;
+    }
     
     // ========== Token операции ==========
     

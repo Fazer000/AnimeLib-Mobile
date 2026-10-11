@@ -33,6 +33,10 @@ public class AppSettings {
     private float filterGamma = 1.0f;
     private float filterHue = 0f;
 
+    public static final int REPLIES_UNLIMITED = -1;
+    private boolean disableCommentsInPlayer = false;
+    private int commentRepliesLimit = 3;
+
     public AppSettings() {
     }
 
@@ -211,4 +215,20 @@ public class AppSettings {
 
     public float getFilterHue() { return filterHue; }
     public void setFilterHue(float filterHue) { this.filterHue = filterHue; }
+
+    public boolean isDisableCommentsInPlayer() {
+        return disableCommentsInPlayer;
+    }
+
+    public void setDisableCommentsInPlayer(boolean disableCommentsInPlayer) {
+        this.disableCommentsInPlayer = disableCommentsInPlayer;
+    }
+
+    public int getCommentRepliesLimit() {
+        return commentRepliesLimit != 0 ? commentRepliesLimit : 3;
+    }
+
+    public void setCommentRepliesLimit(int commentRepliesLimit) {
+        this.commentRepliesLimit = commentRepliesLimit;
+    }
 }

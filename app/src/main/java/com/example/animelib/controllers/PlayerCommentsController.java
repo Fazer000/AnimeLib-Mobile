@@ -16,6 +16,7 @@ public class PlayerCommentsController {
     public interface CommentsCallback {
         void onHideControllerRequested();
         void onUpdateNavigationRequested();
+        default void onCommentsInPlayerToggled(boolean disabled) {}
     }
 
     private final CommentsManager commentsManager;
@@ -40,6 +41,23 @@ public class PlayerCommentsController {
                 callback.onUpdateNavigationRequested();
             }
         });
+        commentsManager.setSettingsCallback(new CommentsManager.CommentsSettingsCallback() {
+            @Override
+            public void onCommentsInPlayerToggled(boolean disabled) {
+                if (callback != null) {
+                    callback.onCommentsInPlayerToggled(disabled);
+                }
+            }
+
+            @Override
+            public void onRepliesLimitChanged(int limit) {
+                // Handled in CommentsManager
+            }
+        });
+    }
+
+    public boolean isCommentsDisabledInPlayer() {
+        return commentsManager != null && commentsManager.isCommentsDisabledInPlayer();
     }
 
     public CommentsManager getCommentsManager() {

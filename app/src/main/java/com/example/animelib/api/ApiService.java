@@ -1272,6 +1272,22 @@ public class ApiService {
     public void saveThemeSetting(int themeMode) {
         databaseManager.saveThemeSetting(themeMode);
     }
+
+    public void saveDisableCommentsInPlayerSetting(boolean disable) {
+        databaseManager.saveDisableCommentsInPlayerSetting(disable);
+    }
+
+    public boolean loadDisableCommentsInPlayerSetting() {
+        return databaseManager.loadDisableCommentsInPlayerSetting();
+    }
+
+    public void saveCommentRepliesLimitSetting(int limit) {
+        databaseManager.saveCommentRepliesLimitSetting(limit);
+    }
+
+    public int loadCommentRepliesLimitSetting() {
+        return databaseManager.loadCommentRepliesLimitSetting();
+    }
     
     public int loadThemeSetting() {
         return databaseManager.loadThemeSetting();

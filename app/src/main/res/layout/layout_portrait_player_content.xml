@@ -1018,6 +1018,37 @@
                         android:fontFamily="@font/open_sans_bold" />
                 </LinearLayout>
 
+                <!-- Settings Button (Настройки) -->
+                <LinearLayout
+                    android:id="@+id/btnPortraitCommentSettings"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_comment_header_button"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="7dp">
+
+                    <ImageView
+                        android:layout_width="15dp"
+                        android:layout_height="15dp"
+                        android:src="@drawable/ic_tune_sliders"
+                        app:tint="@color/accent_text_color"
+                        android:contentDescription="Settings" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:text="Настройки"
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="13sp"
+                        android:fontFamily="@font/open_sans_bold" />
+                </LinearLayout>
+
                 <View
                     android:layout_width="0dp"
                     android:layout_height="1dp"
