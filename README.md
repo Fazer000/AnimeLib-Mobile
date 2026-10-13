@@ -122,6 +122,15 @@ app/src/main/
 
 ---
 
+## 📥 Скачать
+
+| Платформа | Последний релиз | Ссылка |
+|-----------|-----------------|--------|
+| 🖥️ **Desktop (ПК)** | [![Desktop Release](https://img.shields.io/github/v/release/Fazer000/AnimeLib-Desktop?label=desktop&style=flat-square)](https://github.com/Fazer000/AnimeLib-Desktop/releases) | [Скачать последнюю версию](https://github.com/Fazer000/AnimeLib-Desktop/releases) |
+| 📱 **Mobile (Android)** | [![Mobile Release](https://img.shields.io/github/v/release/Fazer000/AnimeLib-Mobile?label=mobile&style=flat-square)](https://github.com/Fazer000/AnimeLib-Mobile/releases) | [Скачать последнюю версию](https://github.com/Fazer000/AnimeLib-Mobile/releases) |
+
+---
+
 ## 📄 Отказ от ответственности (Disclaimer)
 
 * Данное приложение создано исключительно в ознакомительных и образовательных целях.
