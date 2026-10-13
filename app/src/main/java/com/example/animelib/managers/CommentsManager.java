@@ -967,12 +967,10 @@ public class CommentsManager {
         }
 
         isLoadingComments = true;
-        if (commentsLoadingOverlay != null) {
-            commentsLoadingOverlay.setVisibility(View.VISIBLE);
-        }
-        if (portraitCommentsLoadingOverlay != null) {
-            portraitCommentsLoadingOverlay.setVisibility(View.VISIBLE);
-        }
+        if (commentsPaginationBar != null) commentsPaginationBar.setVisibility(View.GONE);
+        if (portraitCommentsPaginationBar != null) portraitCommentsPaginationBar.setVisibility(View.GONE);
+        showLoadingOverlay(commentsLoadingOverlay);
+        showLoadingOverlay(portraitCommentsLoadingOverlay);
         if (commentsErrorLayout != null) {
             commentsErrorLayout.setVisibility(View.GONE);
         }
@@ -1017,12 +1015,8 @@ public class CommentsManager {
                             applyOfflineViewsState();
                             return;
                         }
-                        if (commentsLoadingOverlay != null) {
-                            commentsLoadingOverlay.setVisibility(View.GONE);
-                        }
-                        if (portraitCommentsLoadingOverlay != null) {
-                            portraitCommentsLoadingOverlay.setVisibility(View.GONE);
-                        }
+                        hideLoadingOverlay(commentsLoadingOverlay);
+                        hideLoadingOverlay(portraitCommentsLoadingOverlay);
                         if (commentsErrorLayout != null) {
                             commentsErrorLayout.setVisibility(View.GONE);
                         }
@@ -1095,12 +1089,8 @@ public class CommentsManager {
             public void onError(String error) {
                 safeRunOnUiThread(() -> {
                     isLoadingComments = false;
-                    if (commentsLoadingOverlay != null) {
-                        commentsLoadingOverlay.setVisibility(View.GONE);
-                    }
-                    if (portraitCommentsLoadingOverlay != null) {
-                        portraitCommentsLoadingOverlay.setVisibility(View.GONE);
-                    }
+                    hideLoadingOverlay(commentsLoadingOverlay);
+                    hideLoadingOverlay(portraitCommentsLoadingOverlay);
                     
                     // Скрываем текст пустого состояния при ошибке
                     if (emptyCommentsText != null) {
@@ -1708,7 +1698,7 @@ public class CommentsManager {
      */
     public void updatePaginationUI() {
         safeRunOnUiThread(() -> {
-            if (isOfflineMode || isCommentsDisabledInPlayer()) {
+            if (isOfflineMode || isCommentsDisabledInPlayer() || isLoadingComments) {
                 if (commentsPaginationBar != null) commentsPaginationBar.setVisibility(View.GONE);
                 if (portraitCommentsPaginationBar != null) portraitCommentsPaginationBar.setVisibility(View.GONE);
                 return;
@@ -2404,5 +2394,21 @@ public class CommentsManager {
                 visibilityCallback.onCommentsVisibilityChanged(false);
             }
         }
+    }
+
+    private void showLoadingOverlay(View overlay) {
+        if (overlay == null) return;
+        overlay.setAlpha(0f);
+        overlay.setVisibility(View.VISIBLE);
+        overlay.animate().alpha(1f).setDuration(250).start();
+    }
+
+    private void hideLoadingOverlay(View overlay) {
+        if (overlay == null) return;
+        overlay.animate()
+            .alpha(0f)
+            .setDuration(250)
+            .withEndAction(() -> overlay.setVisibility(View.GONE))
+            .start();
     }
 }

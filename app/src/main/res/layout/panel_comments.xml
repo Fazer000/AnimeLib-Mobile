@@ -146,216 +146,232 @@
 
             </LinearLayout>
 
-            <FrameLayout
+            <androidx.core.widget.NestedScrollView
                 android:id="@+id/commentsContainer"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_weight="1">
+                android:layout_weight="1"
+                android:fillViewport="true"
+                android:overScrollMode="never">
 
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/commentsRecyclerView"
+                <FrameLayout
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:clipToPadding="false"
-                    android:padding="8dp" />
+                    android:layout_height="wrap_content">
 
-                <!-- Landscape Comments Disabled Notice -->
-                <LinearLayout
-                    android:id="@+id/landscapeCommentsDisabledNotice"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:orientation="vertical"
-                    android:gravity="center"
-                    android:padding="24dp"
-                    android:visibility="gone">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
 
-                    <ImageView
-                        android:layout_width="40dp"
-                        android:layout_height="40dp"
-                        android:src="@drawable/ic_comments"
-                        app:tint="@color/accent_text_color"
-                        android:alpha="0.45"
-                        android:contentDescription="Комментарии отключены" />
+                        <androidx.recyclerview.widget.RecyclerView
+                            android:id="@+id/commentsRecyclerView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:clipToPadding="false"
+                            android:nestedScrollingEnabled="false"
+                            android:padding="8dp" />
+
+                        <!-- M3 Pagination Controls (Landscape / Side Panel Carousel) -->
+                        <LinearLayout
+                            android:id="@+id/commentsPaginationBar"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center"
+                            android:orientation="horizontal"
+                            android:paddingHorizontal="12dp"
+                            android:paddingVertical="8dp"
+                            android:visibility="gone">
+
+                            <!-- Left Arrow Button -->
+                            <ImageView
+                                android:id="@+id/btnPaginationPrev"
+                                android:layout_width="38dp"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:background="@drawable/player_episode_item_normal"
+                                android:padding="9dp"
+                                android:src="@drawable/ic_chevron_left"
+                                app:tint="@color/accent_text_color"
+                                android:clickable="true"
+                                android:focusable="true"
+                                android:contentDescription="Предыдущая страница" />
+
+                            <!-- Carousel with Left and Right Fade Gradients -->
+                            <FrameLayout
+                                android:id="@+id/flPaginationContainer"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp">
+
+                                <androidx.recyclerview.widget.RecyclerView
+                                    android:id="@+id/rvPaginationPages"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="38dp"
+                                    android:orientation="horizontal"
+                                    android:clipToPadding="false"
+                                    android:paddingStart="4dp"
+                                    android:paddingEnd="4dp"
+                                    android:overScrollMode="never" />
+
+                                <!-- Left Gradient -->
+                                <View
+                                    android:id="@+id/vPaginationGradientLeft"
+                                    android:layout_width="14dp"
+                                    android:layout_height="match_parent"
+                                    android:layout_gravity="start"
+                                    android:background="@drawable/bg_carousel_gradient_left"
+                                    android:clickable="false"
+                                    android:focusable="false"
+                                    android:visibility="gone" />
+
+                                <!-- Right Gradient -->
+                                <View
+                                    android:id="@+id/vPaginationGradientRight"
+                                    android:layout_width="14dp"
+                                    android:layout_height="match_parent"
+                                    android:layout_gravity="end"
+                                    android:background="@drawable/bg_carousel_gradient_right"
+                                    android:clickable="false"
+                                    android:focusable="false"
+                                    android:visibility="gone" />
+                            </FrameLayout>
+
+                            <!-- Right Arrow Button -->
+                            <ImageView
+                                android:id="@+id/btnPaginationNext"
+                                android:layout_width="38dp"
+                                android:layout_height="38dp"
+                                android:layout_marginStart="6dp"
+                                android:background="@drawable/player_episode_item_normal"
+                                android:padding="9dp"
+                                android:src="@drawable/ic_chevron_right"
+                                app:tint="@color/accent_text_color"
+                                android:clickable="true"
+                                android:focusable="true"
+                                android:contentDescription="Следующая страница" />
+
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                    <!-- Landscape Comments Disabled Notice -->
+                    <LinearLayout
+                        android:id="@+id/landscapeCommentsDisabledNotice"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="24dp"
+                        android:visibility="gone">
+
+                        <ImageView
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:src="@drawable/ic_comments"
+                            app:tint="@color/accent_text_color"
+                            android:alpha="0.45"
+                            android:contentDescription="Комментарии отключены" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="Комментарии отключены"
+                            android:textColor="@color/primary_text_color"
+                            android:textSize="16sp"
+                            android:fontFamily="@font/open_sans_bold"
+                            android:gravity="center" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="Отображение комментариев в плеере выключено"
+                            android:textColor="@color/accent_text_color"
+                            android:textSize="12.5sp"
+                            android:fontFamily="@font/open_sans"
+                            android:gravity="center" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnLandscapeEnableComments"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="16dp"
+                            android:text="Включить"
+                            android:textColor="@android:color/white"
+                            android:textSize="13.5sp"
+                            android:fontFamily="@font/open_sans_bold"
+                            app:backgroundTint="@color/purple_primary"
+                            app:icon="@drawable/ic_comments"
+                            app:iconTint="@android:color/white"
+                            app:cornerRadius="16dp"
+                            android:paddingHorizontal="24dp"
+                            android:paddingVertical="10dp" />
+                    </LinearLayout>
 
                     <TextView
+                        android:id="@+id/emptyCommentsText"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:text="Комментарии отключены"
-                        android:textColor="@color/primary_text_color"
-                        android:textSize="16sp"
-                        android:fontFamily="@font/open_sans_bold"
-                        android:gravity="center" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="Отображение комментариев в плеере выключено"
-                        android:textColor="@color/accent_text_color"
-                        android:textSize="12.5sp"
-                        android:fontFamily="@font/open_sans"
-                        android:gravity="center" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnLandscapeEnableComments"
-                        style="@style/Widget.Material3.Button"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="16dp"
-                        android:text="Включить"
-                        android:textColor="@android:color/white"
-                        android:textSize="13.5sp"
-                        android:fontFamily="@font/open_sans_bold"
-                        app:backgroundTint="@color/purple_primary"
-                        app:icon="@drawable/ic_comments"
-                        app:iconTint="@android:color/white"
-                        app:cornerRadius="16dp"
-                        android:paddingHorizontal="24dp"
-                        android:paddingVertical="10dp" />
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/emptyCommentsText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="center"
-                    android:text="Комментариев пока нет"
-                    android:textColor="?attr/accentTextColor"
-                    android:textSize="14sp"
-                    android:visibility="gone" />
-
-                <LinearLayout
-                    android:id="@+id/commentsErrorLayout"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="center"
-                    android:orientation="vertical"
-                    android:gravity="center"
-                    android:padding="16dp"
-                    android:visibility="gone">
-
-                    <TextView
-                        android:id="@+id/tvCommentsErrorText"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Ошибка загрузки комментариев"
+                        android:layout_gravity="center"
+                        android:text="Комментариев пока нет"
                         android:textColor="?attr/accentTextColor"
                         android:textSize="14sp"
-                        android:gravity="center" />
+                        android:visibility="gone" />
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnRetryComments"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
+                    <LinearLayout
+                        android:id="@+id/commentsErrorLayout"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:text="Повторить"
-                        android:textColor="@color/purple_primary"
-                        android:textSize="13sp"
-                        app:icon="@drawable/ic_refresh"
-                        app:iconTint="@color/purple_primary"
-                        app:strokeColor="@color/purple_primary"
-                        app:strokeWidth="1dp"
-                        app:cornerRadius="12dp" />
-                </LinearLayout>
-
-                <FrameLayout
-                    android:id="@+id/commentsLoadingOverlay"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:visibility="gone">
-
-                    <com.google.android.material.progressindicator.CircularProgressIndicator
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
                         android:layout_gravity="center"
-                        android:indeterminate="true"
-                        app:indicatorColor="?attr/secondaryColor"
-                        app:trackCornerRadius="8dp"
-                        app:trackThickness="4dp" />
-                </FrameLayout>
-            </FrameLayout>
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="16dp"
+                        android:visibility="gone">
 
-            <!-- M3 Pagination Controls (Landscape / Side Panel Carousel) -->
-            <LinearLayout
-                android:id="@+id/commentsPaginationBar"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:orientation="horizontal"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="6dp"
-                android:visibility="gone">
+                        <TextView
+                            android:id="@+id/tvCommentsErrorText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Ошибка загрузки комментариев"
+                            android:textColor="?attr/accentTextColor"
+                            android:textSize="14sp"
+                            android:gravity="center" />
 
-                <!-- Left Arrow Button -->
-                <ImageView
-                    android:id="@+id/btnPaginationPrev"
-                    android:layout_width="38dp"
-                    android:layout_height="38dp"
-                    android:layout_marginEnd="6dp"
-                    android:background="@drawable/player_episode_item_normal"
-                    android:padding="9dp"
-                    android:src="@drawable/ic_chevron_left"
-                    app:tint="@color/accent_text_color"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:contentDescription="Предыдущая страница" />
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnRetryComments"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="Повторить"
+                            android:textColor="@color/purple_primary"
+                            android:textSize="13sp"
+                            app:icon="@drawable/ic_refresh"
+                            app:iconTint="@color/purple_primary"
+                            app:strokeColor="@color/purple_primary"
+                            app:strokeWidth="1dp"
+                            app:cornerRadius="12dp" />
+                    </LinearLayout>
 
-                <!-- Carousel with Left and Right Fade Gradients -->
-                <FrameLayout
-                    android:id="@+id/flPaginationContainer"
-                    android:layout_width="wrap_content"
-                    android:layout_height="38dp">
-
-                    <androidx.recyclerview.widget.RecyclerView
-                        android:id="@+id/rvPaginationPages"
-                        android:layout_width="wrap_content"
-                        android:layout_height="38dp"
-                        android:orientation="horizontal"
-                        android:clipToPadding="false"
-                        android:paddingStart="4dp"
-                        android:paddingEnd="4dp"
-                        android:overScrollMode="never" />
-
-                    <!-- Left Gradient -->
-                    <View
-                        android:id="@+id/vPaginationGradientLeft"
-                        android:layout_width="14dp"
+                    <FrameLayout
+                        android:id="@+id/commentsLoadingOverlay"
+                        android:layout_width="match_parent"
                         android:layout_height="match_parent"
-                        android:layout_gravity="start"
-                        android:background="@drawable/bg_carousel_gradient_left"
-                        android:clickable="false"
-                        android:focusable="false"
-                        android:visibility="gone" />
+                        android:background="@color/bs_bg_color"
+                        android:visibility="gone">
 
-                    <!-- Right Gradient -->
-                    <View
-                        android:id="@+id/vPaginationGradientRight"
-                        android:layout_width="14dp"
-                        android:layout_height="match_parent"
-                        android:layout_gravity="end"
-                        android:background="@drawable/bg_carousel_gradient_right"
-                        android:clickable="false"
-                        android:focusable="false"
-                        android:visibility="gone" />
+                        <com.google.android.material.progressindicator.CircularProgressIndicator
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:layout_gravity="center"
+                            android:indeterminate="true"
+                            app:indicatorColor="?attr/secondaryColor"
+                            app:trackCornerRadius="8dp"
+                            app:trackThickness="4dp" />
+                    </FrameLayout>
                 </FrameLayout>
-
-                <!-- Right Arrow Button -->
-                <ImageView
-                    android:id="@+id/btnPaginationNext"
-                    android:layout_width="38dp"
-                    android:layout_height="38dp"
-                    android:layout_marginStart="6dp"
-                    android:background="@drawable/player_episode_item_normal"
-                    android:padding="9dp"
-                    android:src="@drawable/ic_chevron_right"
-                    app:tint="@color/accent_text_color"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:contentDescription="Следующая страница" />
-
-            </LinearLayout>
+            </androidx.core.widget.NestedScrollView>
 
             <!-- Comment Input Container -->
             <LinearLayout
@@ -558,6 +574,8 @@
                 </LinearLayout>
 
             </LinearLayout>
+
+
 
         </LinearLayout>
     </androidx.cardview.widget.CardView>

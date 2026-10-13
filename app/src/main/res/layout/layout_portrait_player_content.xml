@@ -1395,7 +1395,8 @@
                 <FrameLayout
                     android:id="@+id/portraitCommentsLoadingOverlay"
                     android:layout_width="match_parent"
-                    android:layout_height="120dp"
+                    android:layout_height="match_parent"
+                    android:background="@color/bs_bg_color"
                     android:visibility="gone">
 
                     <com.google.android.material.progressindicator.CircularProgressIndicator
