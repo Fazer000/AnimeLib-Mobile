@@ -79,11 +79,9 @@ public class CommentSettingsBottomSheet extends FlexibleBottomSheetDialog {
             switchDisableComments.setOnCheckedChangeListener((buttonView, isChecked) -> {
                 disableCommentsInPlayer = isChecked;
                 updateDisableCommentsUI(isChecked);
-                new Thread(() -> {
-                    try {
-                        databaseManager.saveDisableCommentsInPlayerSetting(isChecked);
-                    } catch (Exception ignored) {}
-                }).start();
+                try {
+                    databaseManager.saveDisableCommentsInPlayerSetting(isChecked);
+                } catch (Exception ignored) {}
                 if (listener != null) {
                     listener.onCommentsInPlayerToggled(isChecked);
                 }

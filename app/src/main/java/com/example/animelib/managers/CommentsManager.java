@@ -130,7 +130,6 @@ public class CommentsManager {
     private View vPortraitPaginationGradientLeft;
     private View vPortraitPaginationGradientRight;
     private android.widget.ImageView btnPortraitPaginationNext;
-    private TextView tvPortraitHeaderPageIndicator;
     private com.example.animelib.adapters.CommentPagesAdapter portraitPagesAdapter;
     private androidx.core.widget.NestedScrollView portraitScrollView;
     
@@ -467,11 +466,32 @@ public class CommentsManager {
 
             View itemEdit = popupView.findViewById(R.id.item_comment_edit);
             View itemDelete = popupView.findViewById(R.id.item_comment_delete);
+            View itemCopy = popupView.findViewById(R.id.item_comment_copy);
             View itemReport = popupView.findViewById(R.id.item_comment_report);
             View itemIgnore = popupView.findViewById(R.id.item_comment_ignore);
 
             boolean isAuth = apiService != null && apiService.isAuthorized();
             boolean isOwn = isOwnComment(comment);
+
+            if (itemCopy != null) {
+                itemCopy.setOnClickListener(v -> {
+                    try {
+                        popupWindow.dismiss();
+                    } catch (Exception ignored) {}
+                    try {
+                        android.content.ClipboardManager clipboard = (android.content.ClipboardManager) context.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                        String rawComment = comment.getComment() != null ? comment.getComment() : "";
+                        String plainText = android.text.Html.fromHtml(rawComment, android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim();
+                        android.content.ClipData clip = android.content.ClipData.newPlainText("Комментарий", plainText);
+                        if (clipboard != null) {
+                            clipboard.setPrimaryClip(clip);
+                            CustomToast.showSuccess(context, "Комментарий скопирован в буфер обмена");
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error copying comment", e);
+                    }
+                });
+            }
 
             if (itemEdit != null) {
                 itemEdit.setVisibility(isOwn ? View.VISIBLE : View.GONE);
@@ -1356,7 +1376,6 @@ public class CommentsManager {
             vPortraitPaginationGradientLeft = act.findViewById(R.id.vPortraitPaginationGradientLeft);
             vPortraitPaginationGradientRight = act.findViewById(R.id.vPortraitPaginationGradientRight);
             btnPortraitPaginationNext = act.findViewById(R.id.btnPortraitPaginationNext);
-            tvPortraitHeaderPageIndicator = act.findViewById(R.id.tvPortraitHeaderPageIndicator);
 
             if (rvPortraitPaginationPages != null) {
                 rvPortraitPaginationPages.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false));
@@ -1375,9 +1394,6 @@ public class CommentsManager {
             }
             if (btnPortraitPaginationNext != null) {
                 btnPortraitPaginationNext.setOnClickListener(v -> goToPage(commentsCurrentPage + 1));
-            }
-            if (tvPortraitHeaderPageIndicator != null) {
-                tvPortraitHeaderPageIndicator.setOnClickListener(v -> showPageJumpDialog());
             }
 
             if (portraitCommentInputField != null) {
@@ -1466,7 +1482,6 @@ public class CommentsManager {
             if (commentsRecyclerView != null) commentsRecyclerView.setVisibility(View.GONE);
             if (commentsPaginationBar != null) commentsPaginationBar.setVisibility(View.GONE);
             if (portraitCommentsPaginationBar != null) portraitCommentsPaginationBar.setVisibility(View.GONE);
-            if (tvPortraitHeaderPageIndicator != null) tvPortraitHeaderPageIndicator.setVisibility(View.GONE);
             if (commentsPanel != null) {
                 View panelInputContainer = commentsPanel.findViewById(R.id.commentInputContainer);
                 if (panelInputContainer != null) panelInputContainer.setVisibility(View.GONE);
@@ -1529,7 +1544,6 @@ public class CommentsManager {
                 if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
                 if (portraitCommentsLoadingOverlay != null) portraitCommentsLoadingOverlay.setVisibility(View.GONE);
                 if (portraitCommentsPaginationBar != null) portraitCommentsPaginationBar.setVisibility(View.GONE);
-                if (tvPortraitHeaderPageIndicator != null) tvPortraitHeaderPageIndicator.setVisibility(View.GONE);
 
                 if (landscapeCommentsDisabledNotice != null) landscapeCommentsDisabledNotice.setVisibility(View.VISIBLE);
                 if (commentsRecyclerView != null) commentsRecyclerView.setVisibility(View.GONE);
@@ -1697,7 +1711,6 @@ public class CommentsManager {
             if (isOfflineMode || isCommentsDisabledInPlayer()) {
                 if (commentsPaginationBar != null) commentsPaginationBar.setVisibility(View.GONE);
                 if (portraitCommentsPaginationBar != null) portraitCommentsPaginationBar.setVisibility(View.GONE);
-                if (tvPortraitHeaderPageIndicator != null) tvPortraitHeaderPageIndicator.setVisibility(View.GONE);
                 return;
             }
 
@@ -1775,15 +1788,7 @@ public class CommentsManager {
                 }
             }
 
-            // Portrait Header Page Indicator
-            if (tvPortraitHeaderPageIndicator != null) {
-                if (showPagination) {
-                    tvPortraitHeaderPageIndicator.setVisibility(View.VISIBLE);
-                    tvPortraitHeaderPageIndicator.setText(label);
-                } else {
-                    tvPortraitHeaderPageIndicator.setVisibility(View.GONE);
-                }
-            }
+
         });
     }
 

@@ -1652,8 +1652,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
             bookmarkButton = controllerView.findViewById(R.id.bookmarkButton);
         }
         updateSettingsQualityTag();
-        if (commentsButton != null && isCommentsDisabledInPlayer()) {
-            commentsButton.setVisibility(View.GONE);
+        boolean isPortraitInit = getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT;
+        if (commentsButton != null) {
+            if (isPortraitInit || isCommentsDisabledInPlayer()) {
+                commentsButton.setVisibility(View.GONE);
+            } else {
+                commentsButton.setVisibility(View.VISIBLE);
+            }
         }
         if (playerLockController != null && btnLockScreen != null) {
             playerLockController.setLockScreenButton(btnLockScreen);
@@ -2457,6 +2462,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
         if (!isPortrait) {
             if (episodesMenuButton != null) episodesMenuButton.setVisibility(visibility);
             if (menuToggleButton != null) menuToggleButton.setVisibility(visibility);
+            if (commentsButton != null) {
+                boolean commentsDisabled = isCommentsDisabledInPlayer();
+                commentsButton.setVisibility(!commentsDisabled && visible ? View.VISIBLE : View.GONE);
+            }
             if (playerCommentsController != null) {
                 boolean commentsDisabled = isCommentsDisabledInPlayer();
                 playerCommentsController.updateCommentsButtonVisibility(!commentsDisabled && visible);
@@ -2464,6 +2473,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
         } else {
             if (episodesMenuButton != null) episodesMenuButton.setVisibility(View.GONE);
             if (menuToggleButton != null) menuToggleButton.setVisibility(View.GONE);
+            if (commentsButton != null) {
+                commentsButton.setVisibility(View.GONE);
+            }
             if (playerCommentsController != null) {
                 playerCommentsController.updateCommentsButtonVisibility(false);
             }
@@ -3157,11 +3169,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 public void onCommentsInPlayerToggled(boolean disabled) {
                     runOnUiThread(() -> {
                         if (commentsButton != null) {
-                            if (disabled) {
+                            boolean isPortrait = getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT;
+                            if (disabled || isPortrait) {
                                 commentsButton.setVisibility(View.GONE);
                             } else {
-                                boolean isPortrait = getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT;
-                                if (!isPortrait && playerView != null && playerView.isControllerFullyVisible()) {
+                                if (playerView != null && playerView.isControllerFullyVisible()) {
                                     commentsButton.setVisibility(View.VISIBLE);
                                 }
                             }
