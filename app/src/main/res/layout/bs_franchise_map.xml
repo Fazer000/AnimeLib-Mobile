@@ -1,220 +1,210 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/bsMapRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/bs_background"
+    android:background="@drawable/bg_map_bottom_sheet"
     android:orientation="vertical"
     android:paddingTop="12dp">
 
-    <!-- Bottom sheet handle -->
-    <View
-        android:layout_width="36dp"
-        android:layout_height="4dp"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginBottom="10dp"
-        android:background="@drawable/bottom_sheet_handle" />
-
-    <!-- Header bar -->
-    <RelativeLayout
+    <!-- Bottom sheet drag header area -->
+    <LinearLayout
+        android:id="@+id/bsMapHeaderArea"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingHorizontal="16dp"
-        android:paddingBottom="8dp">
+        android:orientation="vertical">
 
-        <LinearLayout
-            android:layout_width="wrap_content"
+        <!-- Bottom sheet handle -->
+        <View
+            android:layout_width="36dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="10dp"
+            android:background="@drawable/bottom_sheet_handle" />
+
+        <!-- Header bar -->
+        <RelativeLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_alignParentStart="true"
-            android:layout_centerVertical="true"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:paddingHorizontal="16dp"
+            android:paddingBottom="8dp">
 
-            <TextView
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Интерактивная карта"
-                android:textColor="@color/primary_text_color"
-                android:textSize="18sp"
-                android:fontFamily="@font/open_sans_bold" />
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <TextView
-                android:id="@+id/tvMapCountBadge"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/bg_sticky_badge"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="2dp"
-                android:text="0 частей"
-                android:textColor="@android:color/white"
-                android:textSize="11sp"
-                android:fontFamily="@font/open_sans_bold" />
-        </LinearLayout>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Интерактивная карта"
+                    android:textColor="@color/primary_text_color"
+                    android:textSize="18sp"
+                    android:fontFamily="@font/open_sans_bold" />
 
-        <ImageButton
-            android:id="@+id/btnCloseMap"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:layout_alignParentEnd="true"
-            android:layout_centerVertical="true"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Close"
-            android:padding="4dp"
-            android:src="@drawable/ic_close"
-            app:tint="@color/accent_text_color" />
-    </RelativeLayout>
+                <TextView
+                    android:id="@+id/tvMapCountBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_sticky_badge"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="2dp"
+                    android:text="0 частей"
+                    android:textColor="@android:color/white"
+                    android:textSize="11sp"
+                    android:fontFamily="@font/open_sans_bold" />
+            </LinearLayout>
 
-    <!-- Legend Bar for Connection Curve Colors -->
-    <HorizontalScrollView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingHorizontal="16dp"
-        android:paddingBottom="10dp"
-        android:scrollbars="none"
-        android:overScrollMode="never">
+            <ImageButton
+                android:id="@+id/btnCloseMap"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Close"
+                android:padding="4dp"
+                android:src="@drawable/ic_close"
+                app:tint="@color/accent_text_color" />
+        </RelativeLayout>
 
-        <LinearLayout
-            android:layout_width="wrap_content"
+        <!-- Legend Bar for Connection Curve Colors -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:paddingHorizontal="16dp"
+            android:paddingBottom="10dp"
+            android:scrollbars="none"
+            android:overScrollMode="never">
 
-            <TextView
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="6dp"
-                android:background="@drawable/bg_anime_info_stat_pill"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="3dp"
-                android:text="● Сиквел / Приквел"
-                android:textColor="#A855F7"
-                android:textSize="10.5sp"
-                android:fontFamily="@font/open_sans_bold" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="6dp"
-                android:background="@drawable/bg_anime_info_stat_pill"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="3dp"
-                android:text="● Основной сюжет"
-                android:textColor="#3B82F6"
-                android:textSize="10.5sp"
-                android:fontFamily="@font/open_sans_bold" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_anime_info_stat_pill"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="3dp"
+                    android:text="● Сиквел / Приквел"
+                    android:textColor="#A855F7"
+                    android:textSize="10.5sp"
+                    android:fontFamily="@font/open_sans_bold" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="6dp"
-                android:background="@drawable/bg_anime_info_stat_pill"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="3dp"
-                android:text="┈ Сайд-стори"
-                android:textColor="#06B6D4"
-                android:textSize="10.5sp"
-                android:fontFamily="@font/open_sans_bold" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_anime_info_stat_pill"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="3dp"
+                    android:text="● Основной сюжет"
+                    android:textColor="#3B82F6"
+                    android:textSize="10.5sp"
+                    android:fontFamily="@font/open_sans_bold" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/bg_anime_info_stat_pill"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="3dp"
-                android:text="● Рекап"
-                android:textColor="#F59E0B"
-                android:textSize="10.5sp"
-                android:fontFamily="@font/open_sans_bold" />
-        </LinearLayout>
-    </HorizontalScrollView>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_anime_info_stat_pill"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="3dp"
+                    android:text="┈ Сайд-стори"
+                    android:textColor="#06B6D4"
+                    android:textSize="10.5sp"
+                    android:fontFamily="@font/open_sans_bold" />
 
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="0.5dp"
-        android:background="@color/chip_unselected_stroke" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_anime_info_stat_pill"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="3dp"
+                    android:text="● Рекап"
+                    android:textColor="#F59E0B"
+                    android:textSize="10.5sp"
+                    android:fontFamily="@font/open_sans_bold" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0.5dp"
+            android:background="@color/chip_unselected_stroke" />
+
+    </LinearLayout>
 
     <!-- Interactive Map Canvas Container -->
     <FrameLayout
+        android:id="@+id/mapGraphContainer"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="#0A0B10">
+        android:background="@color/toolbar_header_bg">
 
         <com.example.animelib.views.FranchiseMapGraphView
             android:id="@+id/franchiseGraphView"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
-        <!-- Floating action info card for selected anime on map -->
+        <!-- Floating Zoom Control Buttons (+ / - / %) -->
         <com.google.android.material.card.MaterialCardView
-            android:id="@+id/cardMapSelection"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
+            android:layout_gravity="bottom|end"
             android:layout_margin="16dp"
-            android:visibility="gone"
-            app:cardBackgroundColor="@color/bs_bg_color"
+            app:cardBackgroundColor="@color/card_bg_color"
             app:cardCornerRadius="16dp"
-            app:cardElevation="8dp"
-            app:strokeColor="@color/purple_primary"
+            app:cardElevation="6dp"
+            app:strokeColor="@color/chip_unselected_stroke"
             app:strokeWidth="1dp">
 
             <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:padding="12dp">
+                android:paddingHorizontal="4dp">
 
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
+                <ImageButton
+                    android:id="@+id/btnZoomOut"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Zoom Out"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_zoom_out"
+                    app:tint="@color/primary_text_color" />
 
-                    <TextView
-                        android:id="@+id/tvMapSelectedRelation"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textColor="@color/purple_primary"
-                        android:textSize="11sp"
-                        android:fontFamily="@font/open_sans_bold" />
-
-                    <TextView
-                        android:id="@+id/tvMapSelectedTitle"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:textColor="@color/primary_text_color"
-                        android:textSize="14sp"
-                        android:fontFamily="@font/open_sans_bold"
-                        android:maxLines="1"
-                        android:ellipsize="end" />
-
-                    <TextView
-                        android:id="@+id/tvMapSelectedSub"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:textColor="@color/accent_text_color"
-                        android:textSize="11.5sp" />
-                </LinearLayout>
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnMapWatchAnime"
-                    style="@style/Widget.Material3.Button"
+                <TextView
+                    android:id="@+id/tvZoomPercentage"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:text="Смотреть"
-                    android:textColor="@android:color/white"
-                    android:textSize="12.5sp"
-                    android:fontFamily="@font/open_sans_bold"
-                    app:backgroundTint="@color/purple_primary"
-                    app:cornerRadius="12dp"
-                    app:icon="@drawable/ic_play"
-                    app:iconTint="@android:color/white" />
+                    android:paddingHorizontal="6dp"
+                    android:text="75%"
+                    android:textColor="@color/primary_text_color"
+                    android:textSize="12sp"
+                    android:fontFamily="@font/open_sans_bold" />
+
+                <ImageButton
+                    android:id="@+id/btnZoomIn"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Zoom In"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_zoom_in"
+                    app:tint="@color/primary_text_color" />
 
             </LinearLayout>
 

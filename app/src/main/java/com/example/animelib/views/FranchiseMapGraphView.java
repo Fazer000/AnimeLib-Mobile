@@ -2,17 +2,16 @@ package com.example.animelib.views;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.DashPathEffect;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
 import android.text.TextUtils;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.view.GestureDetector;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
@@ -36,8 +35,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Интерактивный кастомный ViewGroup с отрисовкой связывающих кривых Безье
- * и группировкой аниме по годам (колонкам).
+ * Интерактивная карта франшизы аниме с поддержкой зума (Pinch-to-Zoom),
+ * табличной группировкой по годам и плавными кривыми Безье.
  */
 public class FranchiseMapGraphView extends ViewGroup {
 
@@ -47,8 +46,13 @@ public class FranchiseMapGraphView extends ViewGroup {
         void onNodeClick(FranchiseResponse.NodeItem node, String relation);
     }
 
+    public interface OnZoomChangeListener {
+        void onZoomChanged(float scaleFactor);
+    }
+
     private FranchiseResponse franchiseData;
     private OnNodeClickListener listener;
+    private OnZoomChangeListener zoomChangeListener;
 
     private final List<Integer> yearList = new ArrayList<>();
     private final Map<Integer, List<FranchiseResponse.NodeItem>> yearNodesMap = new HashMap<>();
@@ -58,6 +62,12 @@ public class FranchiseMapGraphView extends ViewGroup {
 
     private long selectedNodeId = -1;
     private final Set<Long> connectedNodeIds = new HashSet<>();
+
+    // Zoom & Scale
+    private float scaleFactor = 0.75f; // Изначально немного уменьшенный зум (75%)
+    private static final float MIN_SCALE = 0.35f;
+    private static final float MAX_SCALE = 2.20f;
+    private ScaleGestureDetector scaleGestureDetector;
 
     // 2D Scroll & Fling
     private OverScroller scroller;
@@ -72,7 +82,6 @@ public class FranchiseMapGraphView extends ViewGroup {
     private Paint linePaintMain;
     private Paint linePaintDefault;
     private Paint linePaintDimmed;
-    private Paint headerBgPaint;
     private Paint headerTextPaint;
     private Paint columnDividerPaint;
     private Paint arrowPaint;
@@ -111,15 +120,40 @@ public class FranchiseMapGraphView extends ViewGroup {
         float density = context.getResources().getDisplayMetrics().density;
         cardWidthPx = (int) (168 * density);
         cardHeightPx = (int) (88 * density);
-        colSpacingPx = (int) (64 * density);
+        colSpacingPx = (int) (56 * density);
         rowSpacingPx = (int) (20 * density);
-        headerHeightPx = (int) (52 * density);
+        headerHeightPx = (int) (48 * density);
         paddingX = (int) (24 * density);
         paddingY = (int) (20 * density);
 
-        initPaints(density);
+        initPaints(context, density);
+
+        scaleGestureDetector = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            @Override
+            public boolean onScale(ScaleGestureDetector detector) {
+                float factor = detector.getScaleFactor();
+                setScaleFactor(scaleFactor * factor);
+                return true;
+            }
+        });
 
         gestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onSingleTapUp(MotionEvent e) {
+                float canvasX = (e.getX() + getScrollX()) / scaleFactor;
+                float canvasY = (e.getY() + getScrollY()) / scaleFactor;
+
+                FranchiseResponse.LinkItem clickedLink = findLinkAt(canvasX, canvasY);
+                if (clickedLink != null) {
+                    selectBranchLink(clickedLink);
+                    return true;
+                } else {
+                    // Tap on empty space clears selection
+                    selectBranchLink(null);
+                    return super.onSingleTapUp(e);
+                }
+            }
+
             @Override
             public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
                 scrollBy((int) distanceX, (int) distanceY);
@@ -147,27 +181,25 @@ public class FranchiseMapGraphView extends ViewGroup {
         });
     }
 
-    private void initPaints(float density) {
-        linePaintSequel = createCurvePaint(0xFFA855F7, 3.5f * density, false);  // Яркий фиолетовый для прямого продолжения
-        linePaintMain = createCurvePaint(0xFF3B82F6, 3.5f * density, false);    // Синий для основной истории
-        linePaintSide = createCurvePaint(0xFF06B6D4, 2.5f * density, true);     // Бирюзовый пунктир для сайд-стори
-        linePaintSummary = createCurvePaint(0xFFF59E0B, 2.2f * density, false); // Янтарный для рекапов
-        linePaintDefault = createCurvePaint(0xFF8E8E93, 2.0f * density, false); // Серый
-        linePaintDimmed = createCurvePaint(0x338E8E93, 1.5f * density, false);  // Затененный
+    private void initPaints(Context context, float density) {
+        linePaintSequel = createCurvePaint(0xFFA855F7, 2.2f * density, false);  // Фиолетовый сиквел/приквел
+        linePaintMain = createCurvePaint(0xFF3B82F6, 2.2f * density, false);    // Синий основной сюжет
+        linePaintSide = createCurvePaint(0xFF06B6D4, 1.8f * density, true);     // Бирюзовый пунктир сайд-стори
+        linePaintSummary = createCurvePaint(0xFFF59E0B, 1.6f * density, false); // Янтарный рекап
+        linePaintDefault = createCurvePaint(0xFF8E8E93, 1.5f * density, false); // Серый по умолчанию
+        linePaintDimmed = createCurvePaint(0x338E8E93, 1.0f * density, false);  // Приглушенный
 
-        headerBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        headerBgPaint.setColor(0x269333EA);
-        headerBgPaint.setStyle(Paint.Style.FILL);
-
+        int textColor = ContextCompat.getColor(context, R.color.primary_text_color);
         headerTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        headerTextPaint.setColor(0xFFE2E8F0);
-        headerTextPaint.setTextSize(14f * density);
-        headerTextPaint.setTextAlign(Paint.Align.CENTER);
+        headerTextPaint.setColor(textColor);
+        headerTextPaint.setTextSize(15f * density);
+        headerTextPaint.setTextAlign(Paint.Align.LEFT);
         headerTextPaint.setFakeBoldText(true);
 
+        int strokeColor = ContextCompat.getColor(context, R.color.chip_unselected_stroke);
         columnDividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        columnDividerPaint.setColor(0x1AFFFFFF);
-        columnDividerPaint.setStrokeWidth(1f * density);
+        columnDividerPaint.setColor(strokeColor);
+        columnDividerPaint.setStrokeWidth(1.5f * density);
         columnDividerPaint.setStyle(Paint.Style.STROKE);
 
         arrowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -187,6 +219,34 @@ public class FranchiseMapGraphView extends ViewGroup {
             paint.setPathEffect(new DashPathEffect(new float[]{10 * d, 6 * d}, 0));
         }
         return paint;
+    }
+
+    public void setOnZoomChangeListener(OnZoomChangeListener listener) {
+        this.zoomChangeListener = listener;
+    }
+
+    public float getScaleFactor() {
+        return scaleFactor;
+    }
+
+    public void setScaleFactor(float newScale) {
+        float clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+        if (Math.abs(this.scaleFactor - clamped) > 0.001f) {
+            this.scaleFactor = clamped;
+            clampScroll();
+            invalidate();
+            if (zoomChangeListener != null) {
+                zoomChangeListener.onZoomChanged(this.scaleFactor);
+            }
+        }
+    }
+
+    public void zoomIn() {
+        setScaleFactor(scaleFactor + 0.15f);
+    }
+
+    public void zoomOut() {
+        setScaleFactor(scaleFactor - 0.15f);
     }
 
     public void setFranchiseData(FranchiseResponse franchise, OnNodeClickListener listener) {
@@ -325,6 +385,131 @@ public class FranchiseMapGraphView extends ViewGroup {
         invalidate();
     }
 
+    public void selectBranchLink(FranchiseResponse.LinkItem link) {
+        if (link == null) {
+            this.selectedNodeId = -1;
+            this.connectedNodeIds.clear();
+            for (View view : nodeViewsMap.values()) {
+                view.setAlpha(1.0f);
+            }
+            invalidate();
+            return;
+        }
+
+        this.selectedNodeId = -1;
+        this.connectedNodeIds.clear();
+
+        Set<Long> branchNodes = new HashSet<>();
+        collectBranchNodes(link.getSourceId(), branchNodes);
+        collectBranchNodes(link.getTargetId(), branchNodes);
+        this.connectedNodeIds.addAll(branchNodes);
+
+        for (Map.Entry<Long, View> entry : nodeViewsMap.entrySet()) {
+            View view = entry.getValue();
+            long id = entry.getKey();
+            if (connectedNodeIds.contains(id)) {
+                view.setAlpha(1.0f);
+            } else {
+                view.setAlpha(0.30f);
+            }
+        }
+
+        invalidate();
+    }
+
+    private void collectBranchNodes(long startNodeId, Set<Long> visited) {
+        if (franchiseData == null || franchiseData.getLinks() == null) return;
+
+        List<Long> queue = new ArrayList<>();
+        queue.add(startNodeId);
+        visited.add(startNodeId);
+
+        int head = 0;
+        while (head < queue.size()) {
+            long current = queue.get(head++);
+            for (FranchiseResponse.LinkItem link : franchiseData.getLinks()) {
+                if (link.getSourceId() == current && !visited.contains(link.getTargetId())) {
+                    visited.add(link.getTargetId());
+                    queue.add(link.getTargetId());
+                } else if (link.getTargetId() == current && !visited.contains(link.getSourceId())) {
+                    visited.add(link.getSourceId());
+                    queue.add(link.getSourceId());
+                }
+            }
+        }
+    }
+
+    private FranchiseResponse.LinkItem findLinkAt(float canvasX, float canvasY) {
+        if (franchiseData == null || franchiseData.getLinks() == null) return null;
+
+        float density = getResources().getDisplayMetrics().density;
+        float maxTouchDistPx = 28f * density; // Touch tolerance around curve
+        FranchiseResponse.LinkItem bestLink = null;
+        float minDistance = maxTouchDistPx;
+
+        for (FranchiseResponse.LinkItem link : franchiseData.getLinks()) {
+            RectF sourceRect = nodeBoundsMap.get(link.getSourceId());
+            RectF targetRect = nodeBoundsMap.get(link.getTargetId());
+            if (sourceRect == null || targetRect == null) continue;
+
+            float startX, startY, endX, endY;
+            if (sourceRect.left < targetRect.left) {
+                startX = sourceRect.right;
+                startY = sourceRect.centerY();
+                endX = targetRect.left;
+                endY = targetRect.centerY();
+            } else if (sourceRect.left > targetRect.left) {
+                startX = sourceRect.left;
+                startY = sourceRect.centerY();
+                endX = targetRect.right;
+                endY = targetRect.centerY();
+            } else {
+                startX = sourceRect.right;
+                startY = sourceRect.centerY();
+                endX = targetRect.right;
+                endY = targetRect.centerY();
+            }
+
+            float dx = Math.abs(endX - startX) / 2f;
+            float curveOffset = Math.max(dx, 36f * density);
+
+            float control1X, control1Y, control2X, control2Y;
+            if (sourceRect.left == targetRect.left) {
+                control1X = startX + 50f * density;
+                control1Y = startY;
+                control2X = startX + 50f * density;
+                control2Y = endY;
+            } else {
+                control1X = (startX < endX) ? (startX + curveOffset) : (startX - curveOffset);
+                control1Y = startY;
+                control2X = (startX < endX) ? (endX - curveOffset) : (endX + curveOffset);
+                control2Y = endY;
+            }
+
+            for (int i = 0; i <= 16; i++) {
+                float t = i / 16f;
+                float oneMinusT = 1f - t;
+
+                float px = oneMinusT * oneMinusT * oneMinusT * startX
+                        + 3f * oneMinusT * oneMinusT * t * control1X
+                        + 3f * oneMinusT * t * t * control2X
+                        + t * t * t * endX;
+
+                float py = oneMinusT * oneMinusT * oneMinusT * startY
+                        + 3f * oneMinusT * oneMinusT * t * control1Y
+                        + 3f * oneMinusT * t * t * control2Y
+                        + t * t * t * endY;
+
+                float dist = (float) Math.hypot(canvasX - px, canvasY - py);
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    bestLink = link;
+                }
+            }
+        }
+        return bestLink;
+    }
+
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int maxRows = 0;
@@ -355,8 +540,8 @@ public class FranchiseMapGraphView extends ViewGroup {
             getChildAt(i).measure(childWidthSpec, childHeightSpec);
         }
 
-        int measuredWidth = resolveSize(contentWidth, widthMeasureSpec);
-        int measuredHeight = resolveSize(contentHeight, heightMeasureSpec);
+        int measuredWidth = resolveSize((int) (contentWidth * scaleFactor), widthMeasureSpec);
+        int measuredHeight = resolveSize((int) (contentHeight * scaleFactor), heightMeasureSpec);
 
         setMeasuredDimension(measuredWidth, measuredHeight);
     }
@@ -396,7 +581,10 @@ public class FranchiseMapGraphView extends ViewGroup {
 
     @Override
     protected void dispatchDraw(Canvas canvas) {
-        // 1. Draw Year Column Headers and Vertical Guidelines
+        canvas.save();
+        canvas.scale(scaleFactor, scaleFactor);
+
+        // 1. Draw Year Headers (without pill) and Vertical Column Divider Lines (on left of each year)
         drawYearHeadersAndColumns(canvas);
 
         // 2. Draw Connecting Bezier Curves between nodes
@@ -404,34 +592,51 @@ public class FranchiseMapGraphView extends ViewGroup {
 
         // 3. Draw native Child Views (Node Cards) on top
         super.dispatchDraw(canvas);
+
+        canvas.restore();
     }
 
     private void drawYearHeadersAndColumns(Canvas canvas) {
         float density = getResources().getDisplayMetrics().density;
         int currentX = paddingX;
 
+        float tableTop = paddingY;
+        float tableBottom = contentHeight - paddingY;
+
         for (int col = 0; col < yearList.size(); col++) {
             int year = yearList.get(col);
 
-            // Column vertical guideline
-            float colCenterX = currentX + cardWidthPx / 2f;
-            canvas.drawLine(colCenterX, paddingY + headerHeightPx, colCenterX, contentHeight - paddingY, columnDividerPaint);
+            // Left vertical divider line for this year column (spanning full table height)
+            float lineX = currentX - (colSpacingPx / 2f);
+            canvas.drawLine(lineX, tableTop, lineX, tableBottom, columnDividerPaint);
 
-            // Year Header Pill
-            RectF pillRect = new RectF(currentX + 16 * density, paddingY, currentX + cardWidthPx - 16 * density, paddingY + 34 * density);
-            canvas.drawRoundRect(pillRect, 12 * density, 12 * density, headerBgPaint);
-
-            // Year Text
-            canvas.drawText(String.valueOf(year), pillRect.centerX(), pillRect.centerY() + 5 * density, headerTextPaint);
+            // Year Header Text (no background pill, clear text above column)
+            float textY = tableTop + 22f * density;
+            canvas.drawText(String.valueOf(year), currentX, textY, headerTextPaint);
 
             currentX += cardWidthPx + colSpacingPx;
         }
+
+        // Draw right vertical border line for the last column
+        if (!yearList.isEmpty()) {
+            float lineXRight = currentX - (colSpacingPx / 2f);
+            canvas.drawLine(lineXRight, tableTop, lineXRight, tableBottom, columnDividerPaint);
+        }
+
+        // Draw horizontal divider line separating year header row from title cards
+        float headerLineY = tableTop + headerHeightPx - (rowSpacingPx / 2f);
+        float startX = paddingX - (colSpacingPx / 2f);
+        float endX = currentX - (colSpacingPx / 2f);
+        canvas.drawLine(startX, headerLineY, endX, headerLineY, columnDividerPaint);
     }
 
     private void drawConnectionCurves(Canvas canvas) {
         if (franchiseData == null || franchiseData.getLinks() == null) return;
 
+        float density = getResources().getDisplayMetrics().density;
         Path bezierPath = new Path();
+
+        boolean isSelectionActive = !connectedNodeIds.isEmpty() || selectedNodeId > 0;
 
         for (FranchiseResponse.LinkItem link : franchiseData.getLinks()) {
             RectF sourceRect = nodeBoundsMap.get(link.getSourceId());
@@ -439,11 +644,12 @@ public class FranchiseMapGraphView extends ViewGroup {
 
             if (sourceRect == null || targetRect == null) continue;
 
-            boolean isConnectedToSelection = (selectedNodeId > 0 &&
-                    (link.getSourceId() == selectedNodeId || link.getTargetId() == selectedNodeId));
+            boolean isLinkInActiveBranch = isSelectionActive &&
+                    connectedNodeIds.contains(link.getSourceId()) &&
+                    connectedNodeIds.contains(link.getTargetId());
 
             Paint paintToUse;
-            if (selectedNodeId > 0 && !isConnectedToSelection) {
+            if (isSelectionActive && !isLinkInActiveBranch) {
                 paintToUse = linePaintDimmed;
             } else {
                 paintToUse = getPaintForRelation(link.getRelation());
@@ -474,12 +680,11 @@ public class FranchiseMapGraphView extends ViewGroup {
             bezierPath.moveTo(startX, startY);
 
             float dx = Math.abs(endX - startX) / 2f;
-            float dy = Math.abs(endY - startY) / 2f;
-            float curveOffset = Math.max(dx, 40f * getResources().getDisplayMetrics().density);
+            float curveOffset = Math.max(dx, 36f * density);
 
             if (sourceRect.left == targetRect.left) {
                 // Same column loop curve
-                float controlX = startX + 60f * getResources().getDisplayMetrics().density;
+                float controlX = startX + 50f * density;
                 bezierPath.cubicTo(controlX, startY, controlX, endY, endX, endY);
             } else {
                 float control1X = (startX < endX) ? (startX + curveOffset) : (startX - curveOffset);
@@ -487,11 +692,20 @@ public class FranchiseMapGraphView extends ViewGroup {
                 bezierPath.cubicTo(control1X, startY, control2X, endY, endX, endY);
             }
 
+            float origWidth = paintToUse.getStrokeWidth();
+            if (isSelectionActive && isLinkInActiveBranch) {
+                paintToUse.setStrokeWidth(3.0f * density);
+            }
+
             canvas.drawPath(bezierPath, paintToUse);
 
             // Draw target endpoint dot
             arrowPaint.setColor(paintToUse.getColor());
-            canvas.drawCircle(endX, endY, 4f * getResources().getDisplayMetrics().density, arrowPaint);
+            canvas.drawCircle(endX, endY, 3.0f * density, arrowPaint);
+
+            if (isSelectionActive && isLinkInActiveBranch) {
+                paintToUse.setStrokeWidth(origWidth);
+            }
         }
     }
 
@@ -514,9 +728,27 @@ public class FranchiseMapGraphView extends ViewGroup {
         }
     }
 
-    // Touch & Scrolling
+    // Touch & Scaling
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (getParent() != null) {
+            getParent().requestDisallowInterceptTouchEvent(true);
+        }
+
+        scaleGestureDetector.onTouchEvent(ev);
+
+        if (scaleGestureDetector.isInProgress()) {
+            return true;
+        }
+
+        return super.dispatchTouchEvent(ev);
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (getParent() != null) {
+            getParent().requestDisallowInterceptTouchEvent(true);
+        }
         boolean handled = gestureDetector.onTouchEvent(event);
         if (!handled && event.getAction() == MotionEvent.ACTION_UP) {
             clampScroll();
@@ -545,10 +777,10 @@ public class FranchiseMapGraphView extends ViewGroup {
     }
 
     private int getMaxScrollX() {
-        return Math.max(0, contentWidth - getWidth());
+        return Math.max(0, (int) (contentWidth * scaleFactor) - getWidth());
     }
 
     private int getMaxScrollY() {
-        return Math.max(0, contentHeight - getHeight());
+        return Math.max(0, (int) (contentHeight * scaleFactor) - getHeight());
     }
 }

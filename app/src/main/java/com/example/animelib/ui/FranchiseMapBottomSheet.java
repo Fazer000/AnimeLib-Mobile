@@ -5,8 +5,11 @@ import android.content.Context;
 import android.content.ContextWrapper;
 import android.net.Uri;
 import android.os.Bundle;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.TextView;
 
@@ -20,10 +23,10 @@ import com.example.animelib.models.SearchResponse;
 import com.example.animelib.util.CustomToast;
 import com.example.animelib.util.FlexibleBottomSheetDialog;
 import com.example.animelib.views.FranchiseMapGraphView;
-import com.google.android.material.button.MaterialButton;
+import com.google.android.material.bottomsheet.BottomSheetBehavior;
 
 /**
- * Всплывающая интерактивная карта хронологии франшизы аниме с соединенными кривыми и годами
+ * Интерактивная карта франшизы аниме в виде таблицы по годам
  */
 public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
 
@@ -35,14 +38,7 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
     private TextView tvMapCountBadge;
     private ImageButton btnCloseMap;
     private FranchiseMapGraphView franchiseGraphView;
-
-    private View cardMapSelection;
-    private TextView tvMapSelectedRelation;
-    private TextView tvMapSelectedTitle;
-    private TextView tvMapSelectedSub;
-    private MaterialButton btnMapWatchAnime;
-
-    private FranchiseResponse.NodeItem selectedNode;
+    private View mapGraphContainer;
 
     public FranchiseMapBottomSheet(@NonNull Context context, FranchiseResponse response) {
         super(context);
@@ -56,18 +52,18 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
         setContentView(R.layout.bs_franchise_map);
 
         initViews();
+        setupBottomSheetHeightAndTouch();
     }
 
     private void initViews() {
         tvMapCountBadge = findViewById(R.id.tvMapCountBadge);
         btnCloseMap = findViewById(R.id.btnCloseMap);
         franchiseGraphView = findViewById(R.id.franchiseGraphView);
+        mapGraphContainer = findViewById(R.id.mapGraphContainer);
 
-        cardMapSelection = findViewById(R.id.cardMapSelection);
-        tvMapSelectedRelation = findViewById(R.id.tvMapSelectedRelation);
-        tvMapSelectedTitle = findViewById(R.id.tvMapSelectedTitle);
-        tvMapSelectedSub = findViewById(R.id.tvMapSelectedSub);
-        btnMapWatchAnime = findViewById(R.id.btnMapWatchAnime);
+        ImageButton btnZoomIn = findViewById(R.id.btnZoomIn);
+        ImageButton btnZoomOut = findViewById(R.id.btnZoomOut);
+        TextView tvZoomPercentage = findViewById(R.id.tvZoomPercentage);
 
         if (btnCloseMap != null) {
             btnCloseMap.setOnClickListener(v -> dismiss());
@@ -79,47 +75,73 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
             }
 
             if (franchiseGraphView != null) {
-                franchiseGraphView.setFranchiseData(franchiseResponse, this::onNodeClickedOnMap);
-            }
-        }
+                // Instantly navigate on node click (Requirement #5)
+                franchiseGraphView.setFranchiseData(franchiseResponse, (node, relation) -> watchSelectedNode(node));
 
-        if (btnMapWatchAnime != null) {
-            btnMapWatchAnime.setOnClickListener(v -> {
-                if (selectedNode != null) {
-                    watchSelectedNode(selectedNode);
+                // Wire up zoom controls (Requirement #6)
+                if (btnZoomIn != null) {
+                    btnZoomIn.setOnClickListener(v -> franchiseGraphView.zoomIn());
                 }
-            });
+                if (btnZoomOut != null) {
+                    btnZoomOut.setOnClickListener(v -> franchiseGraphView.zoomOut());
+                }
+                if (tvZoomPercentage != null) {
+                    tvZoomPercentage.setText(Math.round(franchiseGraphView.getScaleFactor() * 100) + "%");
+                    franchiseGraphView.setOnZoomChangeListener(scale ->
+                            tvZoomPercentage.setText(Math.round(scale * 100) + "%")
+                    );
+                }
+            }
         }
     }
 
-    private void onNodeClickedOnMap(FranchiseResponse.NodeItem node, String relation) {
-        if (node == null) return;
-        this.selectedNode = node;
+    private void setupBottomSheetHeightAndTouch() {
+        Context context = getContext();
+        if (context == null) return;
 
-        if (cardMapSelection != null) {
-            cardMapSelection.setVisibility(View.VISIBLE);
+        DisplayMetrics dm = context.getResources().getDisplayMetrics();
+        int screenHeight = dm.heightPixels;
+        // Height must be at least 50% screen height and up to 85% (Requirement #4)
+        int minHeight = screenHeight / 2;
+        int targetHeight = Math.max(minHeight, (int) (screenHeight * 0.85));
+
+        View bsRoot = findViewById(R.id.bsMapRoot);
+        if (bsRoot != null) {
+            ViewGroup.LayoutParams lp = bsRoot.getLayoutParams();
+            if (lp != null) {
+                lp.height = targetHeight;
+                bsRoot.setLayoutParams(lp);
+            }
         }
 
-        if (tvMapSelectedRelation != null) {
-            tvMapSelectedRelation.setText(relation != null ? relation : "Часть франшизы");
+        FrameLayout bottomSheet = findViewById(com.google.android.material.R.id.design_bottom_sheet);
+        if (bottomSheet != null) {
+            BottomSheetBehavior<FrameLayout> behavior = BottomSheetBehavior.from(bottomSheet);
+            behavior.setSkipCollapsed(true);
+            behavior.setPeekHeight(targetHeight);
+            behavior.setState(BottomSheetBehavior.STATE_EXPANDED);
+
+            ViewGroup.LayoutParams lp = bottomSheet.getLayoutParams();
+            if (lp != null) {
+                lp.height = targetHeight;
+                bottomSheet.setLayoutParams(lp);
+            }
         }
 
-        if (tvMapSelectedTitle != null) {
-            tvMapSelectedTitle.setText(node.getName());
-        }
-
-        if (tvMapSelectedSub != null) {
-            String kind = node.getFormattedKind();
-            String year = node.getYear() > 0 ? String.valueOf(node.getYear()) : "";
-            tvMapSelectedSub.setText(kind + (year.isEmpty() ? "" : " • " + year));
+        // Prevent bottom sheet from dragging/closing when interacting with the map view canvas (Requirement #2)
+        if (mapGraphContainer != null) {
+            mapGraphContainer.setOnTouchListener((v, event) -> {
+                v.getParent().requestDisallowInterceptTouchEvent(true);
+                return false;
+            });
         }
     }
 
     private void watchSelectedNode(FranchiseResponse.NodeItem node) {
         if (node == null) return;
 
-        Log.d(TAG, "Navigating to watched node from map: " + node.getName());
-        CustomToast.showInfo(getContext(), "Поиск " + node.getName() + "...");
+        Log.d(TAG, "Navigating directly to node: " + node.getName());
+        CustomToast.showInfo(getContext(), "Переход: " + node.getName());
 
         apiService.searchAnime(node.getName(), new ApiService.SearchCallback() {
             @Override
