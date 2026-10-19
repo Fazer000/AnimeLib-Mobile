@@ -120,10 +120,10 @@ public class FranchiseMapGraphView extends ViewGroup {
         float density = context.getResources().getDisplayMetrics().density;
         cardWidthPx = (int) (250 * density);
         cardHeightPx = (int) (105 * density);
-        colSpacingPx = (int) (64 * density);
-        rowSpacingPx = (int) (32 * density);
-        paddingX = (int) (32 * density);
-        paddingY = (int) (32 * density);
+        colSpacingPx = (int) (80 * density);
+        rowSpacingPx = (int) (50 * density);
+        paddingX = (int) (60 * density);
+        paddingY = (int) (80 * density);
 
         initPaints(context, density);
 
@@ -144,6 +144,14 @@ public class FranchiseMapGraphView extends ViewGroup {
                 float canvasX = (e.getX() + getScrollX()) / scaleFactor;
                 float canvasY = (e.getY() + getScrollY()) / scaleFactor;
 
+                // 1. If tap is inside any card rectangle, let card View process click natively!
+                for (RectF rect : nodeBoundsMap.values()) {
+                    if (rect != null && rect.contains(canvasX, canvasY)) {
+                        return false;
+                    }
+                }
+
+                // 2. Tap on empty space: check for branch curve selection
                 FranchiseResponse.LinkItem clickedLink = findLinkAt(canvasX, canvasY);
                 if (clickedLink != null) {
                     selectBranchLink(clickedLink);
@@ -151,7 +159,7 @@ public class FranchiseMapGraphView extends ViewGroup {
                 } else {
                     // Tap on empty background clears selection
                     selectBranchLink(null);
-                    return super.onSingleTapUp(e);
+                    return false;
                 }
             }
 
@@ -364,7 +372,7 @@ public class FranchiseMapGraphView extends ViewGroup {
             if (bottom > maxBottomBranches) maxBottomBranches = bottom;
         }
 
-        int yCenter = paddingY + maxTopBranches * (cardHeightPx + rowSpacingPx);
+        int yCenter = paddingY + Math.max(1, maxTopBranches) * (cardHeightPx + rowSpacingPx);
 
         int currentX = paddingX;
         for (int i = 0; i < mainTrunkNodes.size(); i++) {
@@ -377,7 +385,7 @@ public class FranchiseMapGraphView extends ViewGroup {
                 int bottomIdx = 1;
                 for (int b = 0; b < branches.size(); b++) {
                     FranchiseResponse.NodeItem branch = branches.get(b);
-                    float bx = currentX + (b + 1) * (colSpacingPx * 0.35f);
+                    float bx = currentX; // Aligned cleanly in main node's column
                     float by;
                     if (b % 2 == 0) {
                         by = yCenter - topIdx * (cardHeightPx + rowSpacingPx);
@@ -390,8 +398,7 @@ public class FranchiseMapGraphView extends ViewGroup {
                 }
             }
 
-            int extraWidth = branches != null ? (int) (branches.size() * colSpacingPx * 0.35f) : 0;
-            currentX += cardWidthPx + colSpacingPx + extraWidth;
+            currentX += cardWidthPx + colSpacingPx;
         }
 
         float maxX = 0;
@@ -401,8 +408,9 @@ public class FranchiseMapGraphView extends ViewGroup {
             if (pt.y + cardHeightPx > maxY) maxY = pt.y + cardHeightPx;
         }
 
+        float density = getResources().getDisplayMetrics().density;
         contentWidth = (int) (maxX + paddingX);
-        contentHeight = (int) (maxY + paddingY);
+        contentHeight = Math.max((int) (600 * density), (int) (maxY + paddingY));
     }
 
     private View createNodeCardView(LayoutInflater inflater, FranchiseResponse.NodeItem node, long currentId) {
@@ -658,7 +666,7 @@ public class FranchiseMapGraphView extends ViewGroup {
         if (franchiseData == null || franchiseData.getLinks() == null) return null;
 
         float density = getResources().getDisplayMetrics().density;
-        float maxTouchDistPx = 28f * density;
+        float maxTouchDistPx = 14f * density;
         FranchiseResponse.LinkItem bestLink = null;
         float minDistance = maxTouchDistPx;
 
