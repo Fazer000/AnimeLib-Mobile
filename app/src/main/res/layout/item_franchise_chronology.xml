@@ -2,15 +2,12 @@
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/cardFranchiseItem"
-    android:layout_width="match_parent"
-    android:layout_height="110dp"
-    android:layout_marginHorizontal="4dp"
-    android:layout_marginTop="4dp"
-    android:layout_marginBottom="8dp"
+    android:layout_width="330dp"
+    android:layout_height="120dp"
     android:clickable="true"
     android:focusable="true"
     app:cardBackgroundColor="@color/card_bg_color"
-    app:cardCornerRadius="12dp"
+    app:cardCornerRadius="14dp"
     app:cardElevation="2dp"
     app:strokeWidth="0dp">
 
@@ -19,97 +16,105 @@
         android:layout_height="match_parent"
         android:orientation="horizontal">
 
-        <!-- Poster Cover -->
-        <FrameLayout
-            android:layout_width="82dp"
-            android:layout_height="match_parent">
+        <!-- Poster Cover: Frameless (0dp margin), rounded on all 4 corners -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="90dp"
+            android:layout_height="match_parent"
+            android:layout_margin="0dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp"
+            app:strokeWidth="0dp"
+            app:cardBackgroundColor="@color/placeholder_bg">
 
-            <ImageView
-                android:id="@+id/ivFranchiseCover"
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:scaleType="centerCrop"
-                android:src="@drawable/ic_image_placeholder"
-                android:contentDescription="Poster" />
+                android:layout_height="match_parent">
 
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="32dp"
-                android:layout_gravity="bottom"
-                android:background="@drawable/bg_carousel_gradient_right_dark"
-                android:rotation="90" />
+                <ImageView
+                    android:id="@+id/ivFranchiseCover"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scaleType="centerCrop"
+                    android:src="@drawable/ic_image_placeholder"
+                    android:contentDescription="Poster" />
 
-            <!-- Sequence step number -->
-            <TextView
-                android:id="@+id/tvFranchiseStepNumber"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="top|start"
-                android:layout_margin="5dp"
-                android:background="@drawable/bg_rules_number_circle"
-                android:gravity="center"
-                android:paddingHorizontal="6dp"
-                android:paddingVertical="2dp"
-                android:textColor="@android:color/white"
-                android:textSize="11sp"
-                android:fontFamily="@font/open_sans_bold" />
+                <!-- Sequence step number -->
+                <TextView
+                    android:id="@+id/tvFranchiseStepNumber"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top|start"
+                    android:layout_margin="4dp"
+                    android:background="@drawable/bg_rules_number_circle"
+                    android:gravity="center"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="2dp"
+                    android:textColor="@android:color/white"
+                    android:textSize="11sp"
+                    android:fontFamily="@font/open_sans_bold" />
 
-            <!-- Current anime badge -->
-            <TextView
-                android:id="@+id/tvFranchiseCurrentBadge"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="bottom|center_horizontal"
-                android:layout_marginBottom="4dp"
-                android:background="@drawable/bg_sticky_badge"
-                android:gravity="center"
-                android:paddingHorizontal="6dp"
-                android:paddingVertical="2dp"
-                android:text="Текущее"
-                android:textColor="@android:color/white"
-                android:textSize="9.5sp"
-                android:fontFamily="@font/open_sans_bold"
-                android:visibility="gone" />
-        </FrameLayout>
+                <!-- Current anime badge -->
+                <TextView
+                    android:id="@+id/tvFranchiseCurrentBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|center_horizontal"
+                    android:layout_marginBottom="4dp"
+                    android:background="@drawable/bg_sticky_badge"
+                    android:gravity="center"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="2dp"
+                    android:text="Текущее"
+                    android:textColor="@android:color/white"
+                    android:textSize="9.5sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:visibility="gone" />
+            </FrameLayout>
 
-        <!-- Node details -->
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Node details: increased marginStart from poster (10dp) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:layout_marginStart="10dp"
             android:orientation="vertical"
-            android:paddingHorizontal="10dp"
-            android:paddingVertical="8dp"
-            android:gravity="center_vertical">
+            android:paddingEnd="10dp"
+            android:paddingVertical="8dp">
 
-            <!-- Relation / Type in blue at top -->
-            <TextView
-                android:id="@+id/tvFranchiseRelation"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@color/app_text_accent_blue"
-                android:textSize="11.5sp"
-                android:fontFamily="@font/open_sans_bold"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:layout_marginBottom="2dp" />
-
-            <!-- Title name -->
-            <TextView
-                android:id="@+id/tvFranchiseTitle"
+            <!-- Top section: Relation type in blue and Title name -->
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textColor="@color/primary_text_color"
-                android:textSize="13.5sp"
-                android:fontFamily="@font/open_sans_bold"
-                android:maxLines="2"
-                android:ellipsize="end"
-                android:lineSpacingExtra="1dp" />
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
 
-            <!-- Kind & Year -->
+                <TextView
+                    android:id="@+id/tvFranchiseRelation"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/app_text_accent_blue"
+                    android:textSize="12sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:id="@+id/tvFranchiseTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/primary_text_color"
+                    android:textSize="15sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:maxLines="2"
+                    android:ellipsize="end"
+                    android:lineSpacingExtra="1dp" />
+            </LinearLayout>
+
+            <!-- Bottom section: Kind & Year -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
@@ -118,7 +123,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:textColor="@color/accent_text_color"
-                    android:textSize="11sp"
+                    android:textSize="12sp"
                     android:fontFamily="@font/open_sans" />
 
                 <TextView
@@ -127,7 +132,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginStart="6dp"
                     android:textColor="@color/secondary_text_color"
-                    android:textSize="11sp"
+                    android:textSize="12sp"
                     android:fontFamily="@font/open_sans_semibold" />
             </LinearLayout>
 

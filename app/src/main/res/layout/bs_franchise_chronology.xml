@@ -34,7 +34,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Хронология франшизы"
+                android:text="Хронология"
                 android:textColor="@color/primary_text_color"
                 android:textSize="18sp"
                 android:fontFamily="@font/open_sans_bold" />
@@ -66,43 +66,45 @@
             app:tint="@color/accent_text_color" />
     </RelativeLayout>
 
-    <!-- Control bar: Sort direction button -->
-    <LinearLayout
+    <!-- Control bar with sort button styled like comments -->
+    <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:paddingHorizontal="16dp"
-        android:paddingBottom="12dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:paddingBottom="10dp">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnToggleSortOrder"
-            style="@style/Widget.Material3.Button.OutlinedButton"
+        <LinearLayout
+            android:id="@+id/btnSortChronology"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Хронологически (сначала старые)"
-            android:textColor="@color/purple_primary"
-            android:textSize="12.5sp"
-            android:fontFamily="@font/open_sans_bold"
-            app:icon="@drawable/ic_sort_arrows"
-            app:iconTint="@color/purple_primary"
-            app:strokeColor="@color/purple_primary"
-            app:strokeWidth="1dp"
-            app:cornerRadius="12dp" />
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:background="@drawable/bg_comment_header_button"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="7dp">
 
-        <View
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_weight="1" />
+            <ImageView
+                android:layout_width="15dp"
+                android:layout_height="15dp"
+                android:src="@drawable/ic_sort_arrows"
+                app:tint="@color/accent_text_color"
+                android:contentDescription="Sort" />
 
-        <TextView
-            android:id="@+id/tvShikimoriSourceInfo"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Shikimori API"
-            android:textColor="@color/secondary_text_color"
-            android:textSize="11sp" />
-    </LinearLayout>
+            <TextView
+                android:id="@+id/tvSortChronologyText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="Хронологически"
+                android:textColor="@color/accent_text_color"
+                android:textSize="13sp"
+                android:fontFamily="@font/open_sans_bold" />
+        </LinearLayout>
+    </RelativeLayout>
 
     <View
         android:layout_width="match_parent"

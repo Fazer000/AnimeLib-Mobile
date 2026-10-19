@@ -58,16 +58,29 @@ public class FranchiseChronologyAdapter extends RecyclerView.Adapter<FranchiseCh
 
         ViewGroup.LayoutParams lp = view.getLayoutParams();
         if (lp != null) {
+            float density = parent.getContext().getResources().getDisplayMetrics().density;
             if (isFullListMode) {
                 lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
-                lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+                lp.height = (int) (120 * density);
             } else {
-                float density = parent.getContext().getResources().getDisplayMetrics().density;
-                lp.width = (int) (280 * density);
-                lp.height = (int) (110 * density);
+                lp.width = (int) (330 * density);
+                lp.height = (int) (120 * density);
             }
             view.setLayoutParams(lp);
         }
+
+        if (lp instanceof ViewGroup.MarginLayoutParams) {
+            ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
+            float density = parent.getContext().getResources().getDisplayMetrics().density;
+            int marginY = (int) (4 * density);
+            if (isFullListMode) {
+                mlp.setMargins(0, marginY, 0, marginY);
+            } else {
+                mlp.setMargins(0, marginY, (int) (8 * density), marginY);
+            }
+            view.setLayoutParams(mlp);
+        }
+
         return new ChronologyViewHolder(view);
     }
 
@@ -111,7 +124,7 @@ public class FranchiseChronologyAdapter extends RecyclerView.Adapter<FranchiseCh
         if (isCurrent) {
             holder.tvCurrentBadge.setVisibility(View.VISIBLE);
             holder.card.setStrokeColor(ContextCompat.getColor(context, R.color.purple_primary));
-            holder.card.setStrokeWidth(dpToPx(context, 2f));
+            holder.card.setStrokeWidth(Math.max(1, (int) (0.5f * context.getResources().getDisplayMetrics().density + 0.5f)));
         } else {
             holder.tvCurrentBadge.setVisibility(View.GONE);
             holder.card.setStrokeWidth(0);

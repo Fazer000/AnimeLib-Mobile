@@ -2,12 +2,12 @@
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/cardMapNode"
-    android:layout_width="180dp"
-    android:layout_height="90dp"
+    android:layout_width="250dp"
+    android:layout_height="105dp"
     android:clickable="true"
     android:focusable="true"
     app:cardBackgroundColor="@color/card_bg_color"
-    app:cardCornerRadius="12dp"
+    app:cardCornerRadius="14dp"
     app:cardElevation="2dp"
     app:strokeWidth="0dp">
 
@@ -16,72 +16,89 @@
         android:layout_height="match_parent"
         android:orientation="horizontal">
 
-        <!-- Poster Cover -->
-        <FrameLayout
-            android:layout_width="64dp"
-            android:layout_height="match_parent">
+        <!-- Poster Cover: Frameless (0dp margin), rounded on all corners -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="76dp"
+            android:layout_height="match_parent"
+            android:layout_margin="0dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp"
+            app:strokeWidth="0dp"
+            app:cardBackgroundColor="@color/placeholder_bg">
 
-            <ImageView
-                android:id="@+id/ivMapCardCover"
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:scaleType="centerCrop"
-                android:src="@drawable/ic_image_placeholder"
-                android:contentDescription="Cover" />
+                android:layout_height="match_parent">
 
-            <TextView
-                android:id="@+id/tvMapCardCurrentBadge"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_gravity="bottom"
-                android:background="#D9A855F7"
-                android:gravity="center"
-                android:paddingVertical="1.5dp"
-                android:text="СМОТРИТЕ"
-                android:textColor="@android:color/white"
-                android:textSize="8.5sp"
-                android:fontFamily="@font/open_sans_bold"
-                android:visibility="gone" />
-        </FrameLayout>
+                <ImageView
+                    android:id="@+id/ivMapCardCover"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scaleType="centerCrop"
+                    android:src="@drawable/ic_image_placeholder"
+                    android:contentDescription="Cover" />
 
-        <!-- Node info (Title type in blue at top, title name, kind/year) -->
+                <TextView
+                    android:id="@+id/tvMapCardCurrentBadge"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom"
+                    android:background="#D9A855F7"
+                    android:gravity="center"
+                    android:paddingVertical="1.5dp"
+                    android:text="СМОТРИТЕ"
+                    android:textColor="@android:color/white"
+                    android:textSize="8.5sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:visibility="gone" />
+            </FrameLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Node info container with marginStart 10dp -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:layout_marginStart="10dp"
             android:orientation="vertical"
-            android:paddingHorizontal="8dp"
-            android:paddingVertical="6dp"
-            android:gravity="center_vertical">
+            android:paddingEnd="8dp"
+            android:paddingVertical="8dp">
 
-            <TextView
-                android:id="@+id/tvMapCardRelation"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@color/app_text_accent_blue"
-                android:textSize="11sp"
-                android:fontFamily="@font/open_sans_bold"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:layout_marginBottom="2dp" />
-
-            <TextView
-                android:id="@+id/tvMapCardTitle"
+            <!-- Top section: Relation type in blue and Title name -->
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textColor="@color/primary_text_color"
-                android:textSize="12.5sp"
-                android:fontFamily="@font/open_sans_bold"
-                android:maxLines="2"
-                android:ellipsize="end"
-                android:lineSpacingExtra="1dp" />
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
 
+                <TextView
+                    android:id="@+id/tvMapCardRelation"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/app_text_accent_blue"
+                    android:textSize="11.5sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:id="@+id/tvMapCardTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/primary_text_color"
+                    android:textSize="13sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:maxLines="2"
+                    android:ellipsize="end"
+                    android:lineSpacingExtra="1dp" />
+            </LinearLayout>
+
+            <!-- Bottom section: Kind and Year -->
             <TextView
                 android:id="@+id/tvMapCardKind"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
                 android:textColor="@color/accent_text_color"
-                android:textSize="10.5sp"
+                android:textSize="11sp"
                 android:fontFamily="@font/open_sans"
                 android:maxLines="1"
                 android:ellipsize="end" />

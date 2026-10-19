@@ -118,8 +118,8 @@ public class FranchiseMapGraphView extends ViewGroup {
         scroller = new OverScroller(context);
 
         float density = context.getResources().getDisplayMetrics().density;
-        cardWidthPx = (int) (180 * density);
-        cardHeightPx = (int) (90 * density);
+        cardWidthPx = (int) (250 * density);
+        cardHeightPx = (int) (105 * density);
         colSpacingPx = (int) (64 * density);
         rowSpacingPx = (int) (32 * density);
         paddingX = (int) (32 * density);
@@ -131,7 +131,9 @@ public class FranchiseMapGraphView extends ViewGroup {
             @Override
             public boolean onScale(ScaleGestureDetector detector) {
                 float factor = detector.getScaleFactor();
-                setScaleFactor(scaleFactor * factor);
+                float focusX = detector.getFocusX();
+                float focusY = detector.getFocusY();
+                setScaleFactor(scaleFactor * factor, focusX, focusY);
                 return true;
             }
         });
@@ -181,12 +183,12 @@ public class FranchiseMapGraphView extends ViewGroup {
     }
 
     private void initPaints(Context context, float density) {
-        linePaintSequel = createCurvePaint(0xFFA855F7, 2.2f * density, false);  // Фиолетовый сиквел/приквел
-        linePaintMain = createCurvePaint(0xFF3B82F6, 2.2f * density, false);    // Синий основной сюжет
-        linePaintSide = createCurvePaint(0xFF06B6D4, 1.8f * density, true);     // Бирюзовый пунктир сайд-стори
-        linePaintSummary = createCurvePaint(0xFFF59E0B, 1.6f * density, false); // Янтарный рекап
-        linePaintDefault = createCurvePaint(0xFF8E8E93, 1.5f * density, false); // Серый по умолчанию
-        linePaintDimmed = createCurvePaint(0x338E8E93, 1.0f * density, false);  // Приглушенный
+        linePaintSequel = createCurvePaint(0xFFA855F7, 1.4f * density, false);  // Фиолетовый сиквел/приквел
+        linePaintMain = createCurvePaint(0xFF3B82F6, 1.4f * density, false);    // Синий основной сюжет
+        linePaintSide = createCurvePaint(0xFF06B6D4, 1.1f * density, true);     // Бирюзовый пунктир сайд-стори
+        linePaintSummary = createCurvePaint(0xFFF59E0B, 1.0f * density, false); // Янтарный рекап
+        linePaintDefault = createCurvePaint(0xFF8E8E93, 1.0f * density, false); // Серый по умолчанию
+        linePaintDimmed = createCurvePaint(0x338E8E93, 0.8f * density, false);  // Приглушенный
 
         arrowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         arrowPaint.setStyle(Paint.Style.FILL);
@@ -215,24 +217,49 @@ public class FranchiseMapGraphView extends ViewGroup {
         return scaleFactor;
     }
 
-    public void setScaleFactor(float newScale) {
+    public void setScaleFactor(float newScale, float focusX, float focusY) {
         float clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
         if (Math.abs(this.scaleFactor - clamped) > 0.001f) {
+            float oldScale = this.scaleFactor;
             this.scaleFactor = clamped;
-            clampScroll();
+
+            float canvasFocusX = (getScrollX() + focusX) / oldScale;
+            float canvasFocusY = (getScrollY() + focusY) / oldScale;
+
+            int newScrollX = Math.round(canvasFocusX * clamped - focusX);
+            int newScrollY = Math.round(canvasFocusY * clamped - focusY);
+
+            int maxScrollX = getMaxScrollX();
+            int maxScrollY = getMaxScrollY();
+
+            newScrollX = Math.max(0, Math.min(newScrollX, maxScrollX));
+            newScrollY = Math.max(0, Math.min(newScrollY, maxScrollY));
+
+            scrollTo(newScrollX, newScrollY);
             invalidate();
+
             if (zoomChangeListener != null) {
                 zoomChangeListener.onZoomChanged(this.scaleFactor);
             }
         }
     }
 
+    public void setScaleFactor(float newScale) {
+        float focusX = getWidth() > 0 ? getWidth() / 2f : 0f;
+        float focusY = getHeight() > 0 ? getHeight() / 2f : 0f;
+        setScaleFactor(newScale, focusX, focusY);
+    }
+
     public void zoomIn() {
-        setScaleFactor(scaleFactor + 0.15f);
+        float focusX = getWidth() > 0 ? getWidth() / 2f : 0f;
+        float focusY = getHeight() > 0 ? getHeight() / 2f : 0f;
+        setScaleFactor(scaleFactor + 0.15f, focusX, focusY);
     }
 
     public void zoomOut() {
-        setScaleFactor(scaleFactor - 0.15f);
+        float focusX = getWidth() > 0 ? getWidth() / 2f : 0f;
+        float focusY = getHeight() > 0 ? getHeight() / 2f : 0f;
+        setScaleFactor(scaleFactor - 0.15f, focusX, focusY);
     }
 
     public void setFranchiseData(FranchiseResponse franchise, OnNodeClickListener listener) {
@@ -414,7 +441,7 @@ public class FranchiseMapGraphView extends ViewGroup {
         if (isCurrent && card != null && tvCurrentBadge != null) {
             tvCurrentBadge.setVisibility(VISIBLE);
             card.setStrokeColor(ContextCompat.getColor(getContext(), R.color.purple_primary));
-            card.setStrokeWidth((int) (2 * getResources().getDisplayMetrics().density));
+            card.setStrokeWidth(Math.max(1, (int) (0.5f * getResources().getDisplayMetrics().density + 0.5f)));
         }
 
         view.setOnClickListener(v -> {
@@ -509,6 +536,124 @@ public class FranchiseMapGraphView extends ViewGroup {
         }
     }
 
+    private static class CurvePoints {
+        float startX, startY;
+        float c1x, c1y;
+        float c2x, c2y;
+        float endX, endY;
+    }
+
+    private CurvePoints calculateCurvePoints(FranchiseResponse.LinkItem link, float density) {
+        RectF sourceRect = nodeBoundsMap.get(link.getSourceId());
+        RectF targetRect = nodeBoundsMap.get(link.getTargetId());
+        if (sourceRect == null || targetRect == null) return null;
+
+        CurvePoints pts = new CurvePoints();
+
+        // 1. Determine anchor points based on relative positions
+        float dy = targetRect.centerY() - sourceRect.centerY();
+
+        if (Math.abs(sourceRect.centerX() - targetRect.centerX()) < 15f * density) {
+            // Directly above or below in same column
+            if (targetRect.top > sourceRect.bottom) {
+                pts.startX = sourceRect.centerX();
+                pts.startY = sourceRect.bottom;
+                pts.endX = targetRect.centerX();
+                pts.endY = targetRect.top;
+            } else {
+                pts.startX = sourceRect.centerX();
+                pts.startY = sourceRect.top;
+                pts.endX = targetRect.centerX();
+                pts.endY = targetRect.bottom;
+            }
+        } else if (dy < -20f * density) {
+            // Target is ABOVE source
+            pts.startX = sourceRect.right;
+            pts.startY = sourceRect.top + 16f * density;
+            pts.endX = targetRect.left;
+            pts.endY = targetRect.centerY();
+        } else if (dy > 20f * density) {
+            // Target is BELOW source
+            pts.startX = sourceRect.right;
+            pts.startY = sourceRect.bottom - 16f * density;
+            pts.endX = targetRect.left;
+            pts.endY = targetRect.centerY();
+        } else {
+            // Same horizontal row
+            if (sourceRect.left < targetRect.left) {
+                pts.startX = sourceRect.right;
+                pts.startY = sourceRect.centerY();
+                pts.endX = targetRect.left;
+                pts.endY = targetRect.centerY();
+            } else {
+                pts.startX = sourceRect.left;
+                pts.startY = sourceRect.centerY();
+                pts.endX = targetRect.right;
+                pts.endY = targetRect.centerY();
+            }
+        }
+
+        // 2. Initial control points
+        if (Math.abs(sourceRect.centerX() - targetRect.centerX()) < 15f * density) {
+            float arcX = pts.startX + 45f * density;
+            pts.c1x = arcX;
+            pts.c1y = pts.startY;
+            pts.c2x = arcX;
+            pts.c2y = pts.endY;
+        } else {
+            float midDx = Math.abs(pts.endX - pts.startX) * 0.5f;
+            float curveOffset = Math.max(midDx, 36f * density);
+            pts.c1x = (pts.startX < pts.endX) ? (pts.startX + curveOffset) : (pts.startX - curveOffset);
+            pts.c1y = pts.startY;
+            pts.c2x = (pts.startX < pts.endX) ? (pts.endX - curveOffset) : (pts.endX + curveOffset);
+            pts.c2y = pts.endY;
+        }
+
+        // 3. Obstacle Avoidance: bypass intermediate card rects
+        float minX = Math.min(pts.startX, pts.endX) - 10f * density;
+        float maxX = Math.max(pts.startX, pts.endX) + 10f * density;
+
+        for (Map.Entry<Long, RectF> entry : nodeBoundsMap.entrySet()) {
+            long nodeId = entry.getKey();
+            if (nodeId == link.getSourceId() || nodeId == link.getTargetId()) continue;
+
+            RectF rect = entry.getValue();
+            if (rect == null) continue;
+
+            if (rect.right < minX || rect.left > maxX) continue;
+
+            // Compute curve Y coordinate at rect.centerX()
+            float denom = pts.endX - pts.startX;
+            if (Math.abs(denom) > 1f) {
+                float t = (rect.centerX() - pts.startX) / denom;
+                if (t >= 0.15f && t <= 0.85f) {
+                    float oneMinusT = 1f - t;
+                    float curveY = oneMinusT * oneMinusT * oneMinusT * pts.startY
+                            + 3f * oneMinusT * oneMinusT * t * pts.c1y
+                            + 3f * oneMinusT * t * t * pts.c2y
+                            + t * t * t * pts.endY;
+
+                    // If curve Y intersects or passes through intermediate card
+                    if (curveY >= rect.top - 12f * density && curveY <= rect.bottom + 12f * density) {
+                        if (pts.startY <= rect.top || pts.endY <= rect.top) {
+                            // Route curve ABOVE card
+                            float avoidY = rect.top - 20f * density;
+                            pts.c1y = Math.min(pts.c1y, avoidY);
+                            pts.c2y = Math.min(pts.c2y, avoidY);
+                        } else {
+                            // Route curve BELOW card
+                            float avoidY = rect.bottom + 20f * density;
+                            pts.c1y = Math.max(pts.c1y, avoidY);
+                            pts.c2y = Math.max(pts.c2y, avoidY);
+                        }
+                    }
+                }
+            }
+        }
+
+        return pts;
+    }
+
     private FranchiseResponse.LinkItem findLinkAt(float canvasX, float canvasY) {
         if (franchiseData == null || franchiseData.getLinks() == null) return null;
 
@@ -518,57 +663,22 @@ public class FranchiseMapGraphView extends ViewGroup {
         float minDistance = maxTouchDistPx;
 
         for (FranchiseResponse.LinkItem link : franchiseData.getLinks()) {
-            RectF sourceRect = nodeBoundsMap.get(link.getSourceId());
-            RectF targetRect = nodeBoundsMap.get(link.getTargetId());
-            if (sourceRect == null || targetRect == null) continue;
-
-            float startX, startY, endX, endY;
-            if (sourceRect.left < targetRect.left) {
-                startX = sourceRect.right;
-                startY = sourceRect.centerY();
-                endX = targetRect.left;
-                endY = targetRect.centerY();
-            } else if (sourceRect.left > targetRect.left) {
-                startX = sourceRect.left;
-                startY = sourceRect.centerY();
-                endX = targetRect.right;
-                endY = targetRect.centerY();
-            } else {
-                startX = sourceRect.right;
-                startY = sourceRect.centerY();
-                endX = targetRect.right;
-                endY = targetRect.centerY();
-            }
-
-            float dx = Math.abs(endX - startX) / 2f;
-            float curveOffset = Math.max(dx, 36f * density);
-
-            float control1X, control1Y, control2X, control2Y;
-            if (sourceRect.left == targetRect.left) {
-                control1X = startX + 50f * density;
-                control1Y = startY;
-                control2X = startX + 50f * density;
-                control2Y = endY;
-            } else {
-                control1X = (startX < endX) ? (startX + curveOffset) : (startX - curveOffset);
-                control1Y = startY;
-                control2X = (startX < endX) ? (endX - curveOffset) : (endX + curveOffset);
-                control2Y = endY;
-            }
+            CurvePoints pts = calculateCurvePoints(link, density);
+            if (pts == null) continue;
 
             for (int i = 0; i <= 16; i++) {
                 float t = i / 16f;
                 float oneMinusT = 1f - t;
 
-                float px = oneMinusT * oneMinusT * oneMinusT * startX
-                        + 3f * oneMinusT * oneMinusT * t * control1X
-                        + 3f * oneMinusT * t * t * control2X
-                        + t * t * t * endX;
+                float px = oneMinusT * oneMinusT * oneMinusT * pts.startX
+                        + 3f * oneMinusT * oneMinusT * t * pts.c1x
+                        + 3f * oneMinusT * t * t * pts.c2x
+                        + t * t * t * pts.endX;
 
-                float py = oneMinusT * oneMinusT * oneMinusT * startY
-                        + 3f * oneMinusT * oneMinusT * t * control1Y
-                        + 3f * oneMinusT * t * t * control2Y
-                        + t * t * t * endY;
+                float py = oneMinusT * oneMinusT * oneMinusT * pts.startY
+                        + 3f * oneMinusT * oneMinusT * t * pts.c1y
+                        + 3f * oneMinusT * t * t * pts.c2y
+                        + t * t * t * pts.endY;
 
                 float dist = (float) Math.hypot(canvasX - px, canvasY - py);
                 if (dist < minDistance) {
@@ -639,10 +749,8 @@ public class FranchiseMapGraphView extends ViewGroup {
         boolean isSelectionActive = !connectedNodeIds.isEmpty() || selectedNodeId > 0;
 
         for (FranchiseResponse.LinkItem link : franchiseData.getLinks()) {
-            RectF sourceRect = nodeBoundsMap.get(link.getSourceId());
-            RectF targetRect = nodeBoundsMap.get(link.getTargetId());
-
-            if (sourceRect == null || targetRect == null) continue;
+            CurvePoints pts = calculateCurvePoints(link, density);
+            if (pts == null) continue;
 
             boolean isLinkInActiveBranch = isSelectionActive &&
                     connectedNodeIds.contains(link.getSourceId()) &&
@@ -655,49 +763,19 @@ public class FranchiseMapGraphView extends ViewGroup {
                 paintToUse = getPaintForRelation(link.getRelation());
             }
 
-            float startX, startY, endX, endY;
-
-            if (sourceRect.left < targetRect.left) {
-                startX = sourceRect.right;
-                startY = sourceRect.centerY();
-                endX = targetRect.left;
-                endY = targetRect.centerY();
-            } else if (sourceRect.left > targetRect.left) {
-                startX = sourceRect.left;
-                startY = sourceRect.centerY();
-                endX = targetRect.right;
-                endY = targetRect.centerY();
-            } else {
-                startX = sourceRect.right;
-                startY = sourceRect.centerY();
-                endX = targetRect.right;
-                endY = targetRect.centerY();
-            }
-
             bezierPath.reset();
-            bezierPath.moveTo(startX, startY);
-
-            float dx = Math.abs(endX - startX) / 2f;
-            float curveOffset = Math.max(dx, 36f * density);
-
-            if (sourceRect.left == targetRect.left) {
-                float controlX = startX + 50f * density;
-                bezierPath.cubicTo(controlX, startY, controlX, endY, endX, endY);
-            } else {
-                float control1X = (startX < endX) ? (startX + curveOffset) : (startX - curveOffset);
-                float control2X = (startX < endX) ? (endX - curveOffset) : (endX + curveOffset);
-                bezierPath.cubicTo(control1X, startY, control2X, endY, endX, endY);
-            }
+            bezierPath.moveTo(pts.startX, pts.startY);
+            bezierPath.cubicTo(pts.c1x, pts.c1y, pts.c2x, pts.c2y, pts.endX, pts.endY);
 
             float origWidth = paintToUse.getStrokeWidth();
             if (isSelectionActive && isLinkInActiveBranch) {
-                paintToUse.setStrokeWidth(3.0f * density);
+                paintToUse.setStrokeWidth(2.2f * density);
             }
 
             canvas.drawPath(bezierPath, paintToUse);
 
             arrowPaint.setColor(paintToUse.getColor());
-            canvas.drawCircle(endX, endY, 3.0f * density, arrowPaint);
+            canvas.drawCircle(pts.endX, pts.endY, 2.2f * density, arrowPaint);
 
             if (isSelectionActive && isLinkInActiveBranch) {
                 paintToUse.setStrokeWidth(origWidth);

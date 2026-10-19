@@ -8,6 +8,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.ImageButton;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -73,10 +74,14 @@ public class FranchiseChronologyBottomSheet extends FlexibleBottomSheetDialog {
         processFranchiseData();
     }
 
+    private View btnSortChronology;
+    private TextView tvSortChronologyText;
+
     private void initViews() {
         tvFranchiseCountBadge = findViewById(R.id.tvFranchiseCountBadge);
         btnCloseFranchise = findViewById(R.id.btnCloseFranchise);
-        btnToggleSortOrder = findViewById(R.id.btnToggleSortOrder);
+        btnSortChronology = findViewById(R.id.btnSortChronology);
+        tvSortChronologyText = findViewById(R.id.tvSortChronologyText);
         rvFranchiseList = findViewById(R.id.rvFranchiseList);
         franchiseProgress = findViewById(R.id.franchiseProgress);
         tvFranchiseError = findViewById(R.id.tvFranchiseError);
@@ -91,37 +96,105 @@ public class FranchiseChronologyBottomSheet extends FlexibleBottomSheetDialog {
             rvFranchiseList.setAdapter(adapter);
         }
 
-        if (btnToggleSortOrder != null) {
-            btnToggleSortOrder.setOnClickListener(v -> {
-                List<String> options = new ArrayList<>();
-                List<String> values = new ArrayList<>();
-
-                options.add("Хронологически (сначала старые)");
-                values.add("asc");
-
-                options.add("Новые сначала");
-                values.add("desc");
-
-                options.add("По названию (А-Я)");
-                values.add("name_asc");
-
-                options.add("По названию (Я-А)");
-                values.add("name_desc");
-
-                CustomSelectBottomSheet selectSheet = new CustomSelectBottomSheet(
-                        getContext(),
-                        options,
-                        values,
-                        currentSortMode,
-                        (selectedVal, selectedText) -> {
-                            currentSortMode = selectedVal;
-                            btnToggleSortOrder.setText(selectedText);
-                            applySorting();
-                        }
-                );
-                selectSheet.show();
-            });
+        if (btnSortChronology != null) {
+            btnSortChronology.setOnClickListener(v -> showSortPopupWindow(btnSortChronology));
         }
+    }
+
+    private void showSortPopupWindow(View anchorView) {
+        Context context = getContext();
+        if (context == null || anchorView == null) return;
+
+        try {
+            View popupView = android.view.LayoutInflater.from(context).inflate(R.layout.popup_chronology_sort, null);
+
+            float density = context.getResources().getDisplayMetrics().density;
+            int popupWidth = (int) (190 * density);
+
+            android.widget.PopupWindow popupWindow = new android.widget.PopupWindow(
+                    popupView,
+                    popupWidth,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    true
+            );
+
+            popupWindow.setOutsideTouchable(true);
+            popupWindow.setFocusable(true);
+            popupWindow.setElevation(12 * density);
+            popupWindow.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+
+            TextView itemAsc = popupView.findViewById(R.id.item_sort_asc);
+            TextView itemDesc = popupView.findViewById(R.id.item_sort_desc);
+            TextView itemNameAsc = popupView.findViewById(R.id.item_sort_name_asc);
+            TextView itemNameDesc = popupView.findViewById(R.id.item_sort_name_desc);
+
+            resetPopupItemStyle(itemAsc);
+            resetPopupItemStyle(itemDesc);
+            resetPopupItemStyle(itemNameAsc);
+            resetPopupItemStyle(itemNameDesc);
+
+            if ("desc".equals(currentSortMode)) {
+                setPopupItemSelectedStyle(itemDesc);
+            } else if ("name_asc".equals(currentSortMode)) {
+                setPopupItemSelectedStyle(itemNameAsc);
+            } else if ("name_desc".equals(currentSortMode)) {
+                setPopupItemSelectedStyle(itemNameDesc);
+            } else {
+                setPopupItemSelectedStyle(itemAsc);
+            }
+
+            if (itemAsc != null) {
+                itemAsc.setOnClickListener(v -> {
+                    popupWindow.dismiss();
+                    currentSortMode = "asc";
+                    if (tvSortChronologyText != null) tvSortChronologyText.setText("Хронологически");
+                    applySorting();
+                });
+            }
+
+            if (itemDesc != null) {
+                itemDesc.setOnClickListener(v -> {
+                    popupWindow.dismiss();
+                    currentSortMode = "desc";
+                    if (tvSortChronologyText != null) tvSortChronologyText.setText("Новые сначала");
+                    applySorting();
+                });
+            }
+
+            if (itemNameAsc != null) {
+                itemNameAsc.setOnClickListener(v -> {
+                    popupWindow.dismiss();
+                    currentSortMode = "name_asc";
+                    if (tvSortChronologyText != null) tvSortChronologyText.setText("По названию (А-Я)");
+                    applySorting();
+                });
+            }
+
+            if (itemNameDesc != null) {
+                itemNameDesc.setOnClickListener(v -> {
+                    popupWindow.dismiss();
+                    currentSortMode = "name_desc";
+                    if (tvSortChronologyText != null) tvSortChronologyText.setText("По названию (Я-А)");
+                    applySorting();
+                });
+            }
+
+            popupWindow.showAsDropDown(anchorView, 0, (int) (6 * density));
+        } catch (Exception e) {
+            Log.e(TAG, "Error showing chronology sort popup", e);
+        }
+    }
+
+    private void resetPopupItemStyle(TextView textView) {
+        if (textView == null) return;
+        textView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        textView.setTextColor(androidx.core.content.ContextCompat.getColor(getContext(), R.color.accent_text_color));
+    }
+
+    private void setPopupItemSelectedStyle(TextView textView) {
+        if (textView == null) return;
+        textView.setBackgroundResource(R.drawable.bg_sort_popup_item_selected);
+        textView.setTextColor(androidx.core.content.ContextCompat.getColor(getContext(), R.color.sort_popup_item_selected_text));
     }
 
     private String currentSortMode = "asc";
@@ -173,7 +246,7 @@ public class FranchiseChronologyBottomSheet extends FlexibleBottomSheetDialog {
     }
 
     /**
-     * Топологическая сортировка франшизы по графу связей и дате (совпадает с Shikimori 1:1)
+     * Сортировка франшизы по дате выхода (совпадает с Shikimori 1:1)
      */
     public static List<FranchiseResponse.NodeItem> sortNodesChronologically(FranchiseResponse franchise) {
         if (franchise == null || franchise.getNodes() == null) return new ArrayList<>();
@@ -181,100 +254,20 @@ public class FranchiseChronologyBottomSheet extends FlexibleBottomSheetDialog {
         List<FranchiseResponse.NodeItem> nodes = new ArrayList<>(franchise.getNodes());
         if (nodes.size() <= 1) return nodes;
 
-        Map<Long, FranchiseResponse.NodeItem> nodeMap = new HashMap<>();
-        Map<Long, Integer> inDegree = new HashMap<>();
-        Map<Long, List<Long>> adjacency = new HashMap<>();
-
-        for (FranchiseResponse.NodeItem node : nodes) {
-            nodeMap.put(node.getId(), node);
-            inDegree.put(node.getId(), 0);
-            adjacency.put(node.getId(), new ArrayList<>());
-        }
-
-        if (franchise.getLinks() != null) {
-            for (FranchiseResponse.LinkItem link : franchise.getLinks()) {
-                long source = link.getSourceId();
-                long target = link.getTargetId();
-
-                if (!nodeMap.containsKey(source) || !nodeMap.containsKey(target)) continue;
-
-                String rel = link.getRelation() != null ? link.getRelation().toLowerCase().trim() : "";
-                long from = -1, to = -1;
-
-                if (rel.equals("sequel") || rel.equals("side_story") || rel.equals("spin_off") || rel.equals("summary")) {
-                    from = source;
-                    to = target;
-                } else if (rel.equals("prequel") || rel.equals("parent_story") || rel.equals("full_story")) {
-                    from = target;
-                    to = source;
-                }
-
-                if (from != -1 && to != -1 && from != to) {
-                    if (!adjacency.get(from).contains(to)) {
-                        adjacency.get(from).add(to);
-                        inDegree.put(to, inDegree.get(to) + 1);
-                    }
-                }
+        Collections.sort(nodes, (n1, n2) -> {
+            if (n1.getYear() > 0 && n2.getYear() > 0 && n1.getYear() != n2.getYear()) {
+                return Integer.compare(n1.getYear(), n2.getYear());
             }
-        }
-
-        List<FranchiseResponse.NodeItem> sorted = new ArrayList<>();
-        List<FranchiseResponse.NodeItem> zeroDegreeList = new ArrayList<>();
-
-        for (FranchiseResponse.NodeItem node : nodes) {
-            if (inDegree.get(node.getId()) == 0) {
-                zeroDegreeList.add(node);
+            if (n1.getDate() > 0 && n2.getDate() > 0 && n1.getDate() != n2.getDate()) {
+                return Long.compare(n1.getDate(), n2.getDate());
             }
-        }
-
-        // Sort root candidates by date/year
-        Collections.sort(zeroDegreeList, (n1, n2) -> {
-            if (n1.getDate() != n2.getDate()) return Long.compare(n1.getDate(), n2.getDate());
-            if (n1.getYear() != n2.getYear()) return Integer.compare(n1.getYear(), n2.getYear());
+            if (n1.getWeight() != n2.getWeight()) {
+                return Integer.compare(n1.getWeight(), n2.getWeight());
+            }
             return Long.compare(n1.getId(), n2.getId());
         });
 
-        List<FranchiseResponse.NodeItem> queue = new ArrayList<>(zeroDegreeList);
-        int head = 0;
-        while (head < queue.size()) {
-            FranchiseResponse.NodeItem current = queue.get(head++);
-            sorted.add(current);
-
-            List<Long> neighbors = adjacency.get(current.getId());
-            if (neighbors != null) {
-                List<FranchiseResponse.NodeItem> nextNodes = new ArrayList<>();
-                for (long neighborId : neighbors) {
-                    int newInDegree = inDegree.get(neighborId) - 1;
-                    inDegree.put(neighborId, newInDegree);
-                    if (newInDegree == 0) {
-                        nextNodes.add(nodeMap.get(neighborId));
-                    }
-                }
-                Collections.sort(nextNodes, (n1, n2) -> {
-                    if (n1.getDate() != n2.getDate()) return Long.compare(n1.getDate(), n2.getDate());
-                    if (n1.getYear() != n2.getYear()) return Integer.compare(n1.getYear(), n2.getYear());
-                    return Long.compare(n1.getId(), n2.getId());
-                });
-                queue.addAll(nextNodes);
-            }
-        }
-
-        // Fallback for cycles/isolated nodes
-        if (sorted.size() < nodes.size()) {
-            Set<Long> addedIds = new HashSet<>();
-            for (FranchiseResponse.NodeItem n : sorted) addedIds.add(n.getId());
-
-            List<FranchiseResponse.NodeItem> remaining = new ArrayList<>();
-            for (FranchiseResponse.NodeItem n : nodes) {
-                if (!addedIds.contains(n.getId())) {
-                    remaining.add(n);
-                }
-            }
-            Collections.sort(remaining, (n1, n2) -> Long.compare(n1.getDate(), n2.getDate()));
-            sorted.addAll(remaining);
-        }
-
-        return sorted;
+        return nodes;
     }
 
     public static Map<Long, String> buildRelationsMap(FranchiseResponse franchise) {
