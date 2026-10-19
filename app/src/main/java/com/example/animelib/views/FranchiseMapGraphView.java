@@ -5,6 +5,7 @@ import android.graphics.Canvas;
 import android.graphics.DashPathEffect;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PointF;
 import android.graphics.RectF;
 import android.text.TextUtils;
 import android.util.AttributeSet;
@@ -35,8 +36,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Интерактивная карта франшизы аниме с поддержкой зума (Pinch-to-Zoom),
- * табличной группировкой по годам и плавными кривыми Безье.
+ * Интерактивная граф-карта франшизы аниме с выделенной главной веткой,
+ * разветвлениями (сайд-стори, спин-оффами, рекапами) и поддержкой зума (Pinch-to-Zoom).
  */
 public class FranchiseMapGraphView extends ViewGroup {
 
@@ -54,8 +55,10 @@ public class FranchiseMapGraphView extends ViewGroup {
     private OnNodeClickListener listener;
     private OnZoomChangeListener zoomChangeListener;
 
-    private final List<Integer> yearList = new ArrayList<>();
-    private final Map<Integer, List<FranchiseResponse.NodeItem>> yearNodesMap = new HashMap<>();
+    private final List<FranchiseResponse.NodeItem> mainTrunkNodes = new ArrayList<>();
+    private final Map<Long, List<FranchiseResponse.NodeItem>> branchNodesMap = new HashMap<>();
+    private final Map<Long, PointF> nodePositionsMap = new HashMap<>();
+
     private final Map<Long, View> nodeViewsMap = new HashMap<>();
     private final Map<Long, RectF> nodeBoundsMap = new HashMap<>();
     private final Map<Long, String> nodeRelationsMap = new HashMap<>();
@@ -75,15 +78,13 @@ public class FranchiseMapGraphView extends ViewGroup {
     private int contentWidth = 0;
     private int contentHeight = 0;
 
-    // Paints for Canvas curves & header
+    // Paints for Canvas curves
     private Paint linePaintSequel;
     private Paint linePaintSide;
     private Paint linePaintSummary;
     private Paint linePaintMain;
     private Paint linePaintDefault;
     private Paint linePaintDimmed;
-    private Paint headerTextPaint;
-    private Paint columnDividerPaint;
     private Paint arrowPaint;
 
     // Layout dimensions in dp
@@ -91,7 +92,6 @@ public class FranchiseMapGraphView extends ViewGroup {
     private int cardHeightPx;
     private int colSpacingPx;
     private int rowSpacingPx;
-    private int headerHeightPx;
     private int paddingX;
     private int paddingY;
 
@@ -118,13 +118,12 @@ public class FranchiseMapGraphView extends ViewGroup {
         scroller = new OverScroller(context);
 
         float density = context.getResources().getDisplayMetrics().density;
-        cardWidthPx = (int) (168 * density);
-        cardHeightPx = (int) (88 * density);
-        colSpacingPx = (int) (56 * density);
-        rowSpacingPx = (int) (20 * density);
-        headerHeightPx = (int) (48 * density);
-        paddingX = (int) (24 * density);
-        paddingY = (int) (20 * density);
+        cardWidthPx = (int) (180 * density);
+        cardHeightPx = (int) (90 * density);
+        colSpacingPx = (int) (64 * density);
+        rowSpacingPx = (int) (32 * density);
+        paddingX = (int) (32 * density);
+        paddingY = (int) (32 * density);
 
         initPaints(context, density);
 
@@ -148,7 +147,7 @@ public class FranchiseMapGraphView extends ViewGroup {
                     selectBranchLink(clickedLink);
                     return true;
                 } else {
-                    // Tap on empty space clears selection
+                    // Tap on empty background clears selection
                     selectBranchLink(null);
                     return super.onSingleTapUp(e);
                 }
@@ -188,19 +187,6 @@ public class FranchiseMapGraphView extends ViewGroup {
         linePaintSummary = createCurvePaint(0xFFF59E0B, 1.6f * density, false); // Янтарный рекап
         linePaintDefault = createCurvePaint(0xFF8E8E93, 1.5f * density, false); // Серый по умолчанию
         linePaintDimmed = createCurvePaint(0x338E8E93, 1.0f * density, false);  // Приглушенный
-
-        int textColor = ContextCompat.getColor(context, R.color.primary_text_color);
-        headerTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        headerTextPaint.setColor(textColor);
-        headerTextPaint.setTextSize(15f * density);
-        headerTextPaint.setTextAlign(Paint.Align.LEFT);
-        headerTextPaint.setFakeBoldText(true);
-
-        int strokeColor = ContextCompat.getColor(context, R.color.chip_unselected_stroke);
-        columnDividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        columnDividerPaint.setColor(strokeColor);
-        columnDividerPaint.setStrokeWidth(1.5f * density);
-        columnDividerPaint.setStyle(Paint.Style.STROKE);
 
         arrowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         arrowPaint.setStyle(Paint.Style.FILL);
@@ -254,8 +240,9 @@ public class FranchiseMapGraphView extends ViewGroup {
         this.listener = listener;
 
         removeAllViews();
-        yearList.clear();
-        yearNodesMap.clear();
+        mainTrunkNodes.clear();
+        branchNodesMap.clear();
+        nodePositionsMap.clear();
         nodeViewsMap.clear();
         nodeBoundsMap.clear();
         nodeRelationsMap.clear();
@@ -272,39 +259,123 @@ public class FranchiseMapGraphView extends ViewGroup {
 
         nodeRelationsMap.putAll(FranchiseChronologyBottomSheet.buildRelationsMap(franchise));
 
-        // Group nodes by year
-        for (FranchiseResponse.NodeItem node : franchise.getNodes()) {
-            int year = node.getYear() > 0 ? node.getYear() : 2000;
-            if (!yearNodesMap.containsKey(year)) {
-                yearNodesMap.put(year, new ArrayList<>());
-                yearList.add(year);
-            }
-            yearNodesMap.get(year).add(node);
-        }
+        calculateTreeLayout();
 
-        Collections.sort(yearList);
-
-        // Populate node views
         LayoutInflater inflater = LayoutInflater.from(getContext());
-        for (int col = 0; col < yearList.size(); col++) {
-            int year = yearList.get(col);
-            List<FranchiseResponse.NodeItem> nodes = yearNodesMap.get(year);
-
-            if (nodes != null) {
-                // Sort nodes inside year by date ascending
-                Collections.sort(nodes, (n1, n2) -> Long.compare(n1.getDate(), n2.getDate()));
-
-                for (int row = 0; row < nodes.size(); row++) {
-                    FranchiseResponse.NodeItem node = nodes.get(row);
-                    View cardView = createNodeCardView(inflater, node, franchise.getCurrentId());
-                    nodeViewsMap.put(node.getId(), cardView);
-                    addView(cardView);
-                }
-            }
+        for (FranchiseResponse.NodeItem node : franchise.getNodes()) {
+            View cardView = createNodeCardView(inflater, node, franchise.getCurrentId());
+            nodeViewsMap.put(node.getId(), cardView);
+            addView(cardView);
         }
 
         requestLayout();
         invalidate();
+    }
+
+    private void calculateTreeLayout() {
+        if (franchiseData == null || franchiseData.getNodes() == null || franchiseData.getNodes().isEmpty()) return;
+
+        List<FranchiseResponse.NodeItem> allSorted = FranchiseChronologyBottomSheet.sortNodesChronologically(franchiseData);
+
+        Map<Long, Long> parentMap = new HashMap<>();
+        if (franchiseData.getLinks() != null) {
+            for (FranchiseResponse.LinkItem link : franchiseData.getLinks()) {
+                String rel = link.getRelation() != null ? link.getRelation().toLowerCase().trim() : "";
+                if (rel.equals("sequel")) {
+                    parentMap.put(link.getTargetId(), link.getSourceId());
+                } else if (rel.equals("prequel")) {
+                    parentMap.put(link.getSourceId(), link.getTargetId());
+                } else if (rel.equals("side_story") || rel.equals("spin_off") || rel.equals("summary")) {
+                    parentMap.put(link.getTargetId(), link.getSourceId());
+                }
+            }
+        }
+
+        Set<Long> mainSet = new HashSet<>();
+        for (FranchiseResponse.NodeItem node : allSorted) {
+            String kind = node.getFormattedKind() != null ? node.getFormattedKind().toLowerCase() : "";
+            String rel = nodeRelationsMap.get(node.getId());
+            String relLower = rel != null ? rel.toLowerCase() : "";
+
+            boolean isMainType = (kind.contains("tv") || kind.contains("сериал") || kind.contains("фильм") ||
+                    relLower.contains("сиквел") || relLower.contains("приквел") || relLower.contains("основной") || relLower.contains("оригинал"));
+
+            if (isMainType || !parentMap.containsKey(node.getId())) {
+                mainTrunkNodes.add(node);
+                mainSet.add(node.getId());
+            }
+        }
+
+        if (mainTrunkNodes.isEmpty()) {
+            mainTrunkNodes.addAll(allSorted);
+            for (FranchiseResponse.NodeItem n : allSorted) mainSet.add(n.getId());
+        }
+
+        for (FranchiseResponse.NodeItem node : allSorted) {
+            if (!mainSet.contains(node.getId())) {
+                long parentId = parentMap.containsKey(node.getId()) ? parentMap.get(node.getId()) : -1;
+                while (parentId > 0 && !mainSet.contains(parentId) && parentMap.containsKey(parentId)) {
+                    parentId = parentMap.get(parentId);
+                }
+                if (parentId <= 0 || !mainSet.contains(parentId)) {
+                    parentId = mainTrunkNodes.get(0).getId();
+                }
+
+                if (!branchNodesMap.containsKey(parentId)) {
+                    branchNodesMap.put(parentId, new ArrayList<>());
+                }
+                branchNodesMap.get(parentId).add(node);
+            }
+        }
+
+        int maxTopBranches = 0;
+        int maxBottomBranches = 0;
+        for (List<FranchiseResponse.NodeItem> branches : branchNodesMap.values()) {
+            int top = (branches.size() + 1) / 2;
+            int bottom = branches.size() / 2;
+            if (top > maxTopBranches) maxTopBranches = top;
+            if (bottom > maxBottomBranches) maxBottomBranches = bottom;
+        }
+
+        int yCenter = paddingY + maxTopBranches * (cardHeightPx + rowSpacingPx);
+
+        int currentX = paddingX;
+        for (int i = 0; i < mainTrunkNodes.size(); i++) {
+            FranchiseResponse.NodeItem mainNode = mainTrunkNodes.get(i);
+            nodePositionsMap.put(mainNode.getId(), new PointF(currentX, yCenter));
+
+            List<FranchiseResponse.NodeItem> branches = branchNodesMap.get(mainNode.getId());
+            if (branches != null && !branches.isEmpty()) {
+                int topIdx = 1;
+                int bottomIdx = 1;
+                for (int b = 0; b < branches.size(); b++) {
+                    FranchiseResponse.NodeItem branch = branches.get(b);
+                    float bx = currentX + (b + 1) * (colSpacingPx * 0.35f);
+                    float by;
+                    if (b % 2 == 0) {
+                        by = yCenter - topIdx * (cardHeightPx + rowSpacingPx);
+                        topIdx++;
+                    } else {
+                        by = yCenter + bottomIdx * (cardHeightPx + rowSpacingPx);
+                        bottomIdx++;
+                    }
+                    nodePositionsMap.put(branch.getId(), new PointF(bx, by));
+                }
+            }
+
+            int extraWidth = branches != null ? (int) (branches.size() * colSpacingPx * 0.35f) : 0;
+            currentX += cardWidthPx + colSpacingPx + extraWidth;
+        }
+
+        float maxX = 0;
+        float maxY = 0;
+        for (PointF pt : nodePositionsMap.values()) {
+            if (pt.x + cardWidthPx > maxX) maxX = pt.x + cardWidthPx;
+            if (pt.y + cardHeightPx > maxY) maxY = pt.y + cardHeightPx;
+        }
+
+        contentWidth = (int) (maxX + paddingX);
+        contentHeight = (int) (maxY + paddingY);
     }
 
     private View createNodeCardView(LayoutInflater inflater, FranchiseResponse.NodeItem node, long currentId) {
@@ -371,7 +442,6 @@ public class FranchiseMapGraphView extends ViewGroup {
             }
         }
 
-        // Highlight connected cards
         for (Map.Entry<Long, View> entry : nodeViewsMap.entrySet()) {
             View view = entry.getValue();
             long id = entry.getKey();
@@ -443,7 +513,7 @@ public class FranchiseMapGraphView extends ViewGroup {
         if (franchiseData == null || franchiseData.getLinks() == null) return null;
 
         float density = getResources().getDisplayMetrics().density;
-        float maxTouchDistPx = 28f * density; // Touch tolerance around curve
+        float maxTouchDistPx = 28f * density;
         FranchiseResponse.LinkItem bestLink = null;
         float minDistance = maxTouchDistPx;
 
@@ -512,27 +582,6 @@ public class FranchiseMapGraphView extends ViewGroup {
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        int maxRows = 0;
-        for (List<FranchiseResponse.NodeItem> list : yearNodesMap.values()) {
-            if (list.size() > maxRows) {
-                maxRows = list.size();
-            }
-        }
-
-        int numCols = yearList.size();
-        if (numCols > 0) {
-            contentWidth = paddingX * 2 + numCols * cardWidthPx + Math.max(0, numCols - 1) * colSpacingPx;
-        } else {
-            contentWidth = getPaddingLeft() + getPaddingRight();
-        }
-
-        if (maxRows > 0) {
-            contentHeight = paddingY * 2 + headerHeightPx + maxRows * cardHeightPx + Math.max(0, maxRows - 1) * rowSpacingPx;
-        } else {
-            contentHeight = getPaddingTop() + getPaddingBottom();
-        }
-
-        // Measure children
         int childWidthSpec = MeasureSpec.makeMeasureSpec(cardWidthPx, MeasureSpec.EXACTLY);
         int childHeightSpec = MeasureSpec.makeMeasureSpec(cardHeightPx, MeasureSpec.EXACTLY);
 
@@ -550,32 +599,20 @@ public class FranchiseMapGraphView extends ViewGroup {
     protected void onLayout(boolean changed, int l, int t, int r, int b) {
         nodeBoundsMap.clear();
 
-        int currentX = paddingX;
+        for (Map.Entry<Long, PointF> entry : nodePositionsMap.entrySet()) {
+            long nodeId = entry.getKey();
+            PointF pos = entry.getValue();
+            View child = nodeViewsMap.get(nodeId);
 
-        for (int col = 0; col < yearList.size(); col++) {
-            int year = yearList.get(col);
-            List<FranchiseResponse.NodeItem> nodes = yearNodesMap.get(year);
+            if (child != null && pos != null) {
+                int left = (int) pos.x;
+                int top = (int) pos.y;
+                int right = left + cardWidthPx;
+                int bottom = top + cardHeightPx;
 
-            int currentY = paddingY + headerHeightPx;
-
-            if (nodes != null) {
-                for (FranchiseResponse.NodeItem node : nodes) {
-                    View child = nodeViewsMap.get(node.getId());
-                    if (child != null) {
-                        int left = currentX;
-                        int top = currentY;
-                        int right = left + cardWidthPx;
-                        int bottom = top + cardHeightPx;
-
-                        child.layout(left, top, right, bottom);
-                        nodeBoundsMap.put(node.getId(), new RectF(left, top, right, bottom));
-
-                        currentY += cardHeightPx + rowSpacingPx;
-                    }
-                }
+                child.layout(left, top, right, bottom);
+                nodeBoundsMap.put(nodeId, new RectF(left, top, right, bottom));
             }
-
-            currentX += cardWidthPx + colSpacingPx;
         }
     }
 
@@ -584,50 +621,13 @@ public class FranchiseMapGraphView extends ViewGroup {
         canvas.save();
         canvas.scale(scaleFactor, scaleFactor);
 
-        // 1. Draw Year Headers (without pill) and Vertical Column Divider Lines (on left of each year)
-        drawYearHeadersAndColumns(canvas);
-
-        // 2. Draw Connecting Bezier Curves between nodes
+        // 1. Draw Connecting Bezier Curves between nodes
         drawConnectionCurves(canvas);
 
-        // 3. Draw native Child Views (Node Cards) on top
+        // 2. Draw native Child Views (Node Cards) on top
         super.dispatchDraw(canvas);
 
         canvas.restore();
-    }
-
-    private void drawYearHeadersAndColumns(Canvas canvas) {
-        float density = getResources().getDisplayMetrics().density;
-        int currentX = paddingX;
-
-        float tableTop = paddingY;
-        float tableBottom = contentHeight - paddingY;
-
-        for (int col = 0; col < yearList.size(); col++) {
-            int year = yearList.get(col);
-
-            // Left vertical divider line for this year column (spanning full table height)
-            float lineX = currentX - (colSpacingPx / 2f);
-            canvas.drawLine(lineX, tableTop, lineX, tableBottom, columnDividerPaint);
-
-            // Year Header Text (no background pill, clear text above column)
-            float textY = tableTop + 22f * density;
-            canvas.drawText(String.valueOf(year), currentX, textY, headerTextPaint);
-
-            currentX += cardWidthPx + colSpacingPx;
-        }
-
-        // Draw right vertical border line for the last column
-        if (!yearList.isEmpty()) {
-            float lineXRight = currentX - (colSpacingPx / 2f);
-            canvas.drawLine(lineXRight, tableTop, lineXRight, tableBottom, columnDividerPaint);
-        }
-
-        // Draw horizontal divider line separating year header row from title cards
-        float headerLineY = tableTop + headerHeightPx - (rowSpacingPx / 2f);
-        float startX = paddingX - (colSpacingPx / 2f);
-        float endX = currentX - (colSpacingPx / 2f);
-        canvas.drawLine(startX, headerLineY, endX, headerLineY, columnDividerPaint);
     }
 
     private void drawConnectionCurves(Canvas canvas) {
@@ -655,7 +655,6 @@ public class FranchiseMapGraphView extends ViewGroup {
                 paintToUse = getPaintForRelation(link.getRelation());
             }
 
-            // Determine Anchor points (right side of source -> left side of target)
             float startX, startY, endX, endY;
 
             if (sourceRect.left < targetRect.left) {
@@ -669,7 +668,6 @@ public class FranchiseMapGraphView extends ViewGroup {
                 endX = targetRect.right;
                 endY = targetRect.centerY();
             } else {
-                // Same column
                 startX = sourceRect.right;
                 startY = sourceRect.centerY();
                 endX = targetRect.right;
@@ -683,7 +681,6 @@ public class FranchiseMapGraphView extends ViewGroup {
             float curveOffset = Math.max(dx, 36f * density);
 
             if (sourceRect.left == targetRect.left) {
-                // Same column loop curve
                 float controlX = startX + 50f * density;
                 bezierPath.cubicTo(controlX, startY, controlX, endY, endX, endY);
             } else {
@@ -699,7 +696,6 @@ public class FranchiseMapGraphView extends ViewGroup {
 
             canvas.drawPath(bezierPath, paintToUse);
 
-            // Draw target endpoint dot
             arrowPaint.setColor(paintToUse.getColor());
             canvas.drawCircle(endX, endY, 3.0f * density, arrowPaint);
 
@@ -728,7 +724,6 @@ public class FranchiseMapGraphView extends ViewGroup {
         }
     }
 
-    // Touch & Scaling
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
         if (getParent() != null) {

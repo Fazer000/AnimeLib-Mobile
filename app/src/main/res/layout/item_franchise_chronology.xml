@@ -2,25 +2,26 @@
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/cardFranchiseItem"
-    android:layout_width="280dp"
-    android:layout_height="116dp"
-    android:layout_marginEnd="10dp"
+    android:layout_width="match_parent"
+    android:layout_height="110dp"
+    android:layout_marginHorizontal="4dp"
+    android:layout_marginTop="4dp"
+    android:layout_marginBottom="8dp"
     android:clickable="true"
     android:focusable="true"
     app:cardBackgroundColor="@color/card_bg_color"
-    app:cardCornerRadius="14dp"
+    app:cardCornerRadius="12dp"
     app:cardElevation="2dp"
-    app:strokeWidth="1dp"
-    app:strokeColor="@color/chip_unselected_stroke">
+    app:strokeWidth="0dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="horizontal">
 
-        <!-- Обложка с номером шага и плашкой "Текущее" -->
+        <!-- Poster Cover -->
         <FrameLayout
-            android:layout_width="86dp"
+            android:layout_width="82dp"
             android:layout_height="match_parent">
 
             <ImageView
@@ -31,15 +32,14 @@
                 android:src="@drawable/ic_image_placeholder"
                 android:contentDescription="Poster" />
 
-            <!-- Градиент затемнения снизу обложки -->
             <View
                 android:layout_width="match_parent"
-                android:layout_height="36dp"
+                android:layout_height="32dp"
                 android:layout_gravity="bottom"
                 android:background="@drawable/bg_carousel_gradient_right_dark"
                 android:rotation="90" />
 
-            <!-- Номер порядка в хронологии (например #1) -->
+            <!-- Sequence step number -->
             <TextView
                 android:id="@+id/tvFranchiseStepNumber"
                 android:layout_width="wrap_content"
@@ -54,7 +54,7 @@
                 android:textSize="11sp"
                 android:fontFamily="@font/open_sans_bold" />
 
-            <!-- Метка текущего аниме -->
+            <!-- Current anime badge -->
             <TextView
                 android:id="@+id/tvFranchiseCurrentBadge"
                 android:layout_width="wrap_content"
@@ -67,12 +67,12 @@
                 android:paddingVertical="2dp"
                 android:text="Текущее"
                 android:textColor="@android:color/white"
-                android:textSize="10sp"
+                android:textSize="9.5sp"
                 android:fontFamily="@font/open_sans_bold"
                 android:visibility="gone" />
         </FrameLayout>
 
-        <!-- Информация справа -->
+        <!-- Node details -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
@@ -81,38 +81,35 @@
             android:paddingVertical="8dp"
             android:gravity="center_vertical">
 
-            <!-- Связь / Отношение (например "Сиквел", "Приквел", "Сайд-стори") -->
+            <!-- Relation / Type in blue at top -->
             <TextView
                 android:id="@+id/tvFranchiseRelation"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:background="@drawable/bg_anime_info_accent_pill"
-                android:paddingHorizontal="6dp"
-                android:paddingVertical="2dp"
-                android:textColor="@color/purple_primary"
-                android:textSize="10.5sp"
+                android:textColor="@color/app_text_accent_blue"
+                android:textSize="11.5sp"
                 android:fontFamily="@font/open_sans_bold"
                 android:maxLines="1"
                 android:ellipsize="end"
-                android:layout_marginBottom="4dp" />
+                android:layout_marginBottom="2dp" />
 
-            <!-- Название тайтла -->
+            <!-- Title name -->
             <TextView
                 android:id="@+id/tvFranchiseTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textColor="@color/primary_text_color"
-                android:textSize="13sp"
+                android:textSize="13.5sp"
                 android:fontFamily="@font/open_sans_bold"
                 android:maxLines="2"
                 android:ellipsize="end"
                 android:lineSpacingExtra="1dp" />
 
-            <!-- Год и Тип -->
+            <!-- Kind & Year -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
+                android:layout_marginTop="4dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
@@ -120,11 +117,8 @@
                     android:id="@+id/tvFranchiseKind"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:background="@drawable/bg_anime_info_stat_pill"
-                    android:paddingHorizontal="6dp"
-                    android:paddingVertical="2dp"
                     android:textColor="@color/accent_text_color"
-                    android:textSize="10.5sp"
+                    android:textSize="11sp"
                     android:fontFamily="@font/open_sans" />
 
                 <TextView

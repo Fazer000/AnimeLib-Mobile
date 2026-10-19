@@ -33,6 +33,8 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
 
 /**
  * Всплывающее окно полной хронологии франшизы аниме
@@ -91,16 +93,38 @@ public class FranchiseChronologyBottomSheet extends FlexibleBottomSheetDialog {
 
         if (btnToggleSortOrder != null) {
             btnToggleSortOrder.setOnClickListener(v -> {
-                isAscendingSort = !isAscendingSort;
-                if (isAscendingSort) {
-                    btnToggleSortOrder.setText("Хронологически (сначала старые)");
-                } else {
-                    btnToggleSortOrder.setText("Новые сначала");
-                }
-                applySorting();
+                List<String> options = new ArrayList<>();
+                List<String> values = new ArrayList<>();
+
+                options.add("Хронологически (сначала старые)");
+                values.add("asc");
+
+                options.add("Новые сначала");
+                values.add("desc");
+
+                options.add("По названию (А-Я)");
+                values.add("name_asc");
+
+                options.add("По названию (Я-А)");
+                values.add("name_desc");
+
+                CustomSelectBottomSheet selectSheet = new CustomSelectBottomSheet(
+                        getContext(),
+                        options,
+                        values,
+                        currentSortMode,
+                        (selectedVal, selectedText) -> {
+                            currentSortMode = selectedVal;
+                            btnToggleSortOrder.setText(selectedText);
+                            applySorting();
+                        }
+                );
+                selectSheet.show();
             });
         }
     }
+
+    private String currentSortMode = "asc";
 
     private void processFranchiseData() {
         if (franchiseResponse == null || franchiseResponse.getNodes() == null || franchiseResponse.getNodes().isEmpty()) {
@@ -120,27 +144,137 @@ public class FranchiseChronologyBottomSheet extends FlexibleBottomSheetDialog {
         // Строим карту связей для узлов
         relationsMap = buildRelationsMap(franchiseResponse);
 
-        sortedNodes = new ArrayList<>(franchiseResponse.getNodes());
+        sortedNodes = sortNodesChronologically(franchiseResponse);
         applySorting();
     }
 
     private void applySorting() {
         if (sortedNodes == null) return;
 
-        Collections.sort(sortedNodes, (n1, n2) -> {
-            int cmp = Long.compare(n1.getDate(), n2.getDate());
-            if (cmp == 0) {
-                cmp = Integer.compare(n1.getYear(), n2.getYear());
-            }
-            if (cmp == 0) {
-                cmp = Long.compare(n1.getId(), n2.getId());
-            }
-            return isAscendingSort ? cmp : -cmp;
-        });
+        if ("desc".equals(currentSortMode)) {
+            List<FranchiseResponse.NodeItem> list = sortNodesChronologically(franchiseResponse);
+            Collections.reverse(list);
+            sortedNodes = list;
+        } else if ("name_asc".equals(currentSortMode)) {
+            List<FranchiseResponse.NodeItem> list = new ArrayList<>(franchiseResponse.getNodes());
+            Collections.sort(list, (n1, n2) -> n1.getName().compareToIgnoreCase(n2.getName()));
+            sortedNodes = list;
+        } else if ("name_desc".equals(currentSortMode)) {
+            List<FranchiseResponse.NodeItem> list = new ArrayList<>(franchiseResponse.getNodes());
+            Collections.sort(list, (n1, n2) -> n2.getName().compareToIgnoreCase(n1.getName()));
+            sortedNodes = list;
+        } else { // "asc"
+            sortedNodes = sortNodesChronologically(franchiseResponse);
+        }
 
         if (adapter != null) {
             adapter.updateData(sortedNodes, relationsMap, franchiseResponse.getCurrentId());
         }
+    }
+
+    /**
+     * Топологическая сортировка франшизы по графу связей и дате (совпадает с Shikimori 1:1)
+     */
+    public static List<FranchiseResponse.NodeItem> sortNodesChronologically(FranchiseResponse franchise) {
+        if (franchise == null || franchise.getNodes() == null) return new ArrayList<>();
+
+        List<FranchiseResponse.NodeItem> nodes = new ArrayList<>(franchise.getNodes());
+        if (nodes.size() <= 1) return nodes;
+
+        Map<Long, FranchiseResponse.NodeItem> nodeMap = new HashMap<>();
+        Map<Long, Integer> inDegree = new HashMap<>();
+        Map<Long, List<Long>> adjacency = new HashMap<>();
+
+        for (FranchiseResponse.NodeItem node : nodes) {
+            nodeMap.put(node.getId(), node);
+            inDegree.put(node.getId(), 0);
+            adjacency.put(node.getId(), new ArrayList<>());
+        }
+
+        if (franchise.getLinks() != null) {
+            for (FranchiseResponse.LinkItem link : franchise.getLinks()) {
+                long source = link.getSourceId();
+                long target = link.getTargetId();
+
+                if (!nodeMap.containsKey(source) || !nodeMap.containsKey(target)) continue;
+
+                String rel = link.getRelation() != null ? link.getRelation().toLowerCase().trim() : "";
+                long from = -1, to = -1;
+
+                if (rel.equals("sequel") || rel.equals("side_story") || rel.equals("spin_off") || rel.equals("summary")) {
+                    from = source;
+                    to = target;
+                } else if (rel.equals("prequel") || rel.equals("parent_story") || rel.equals("full_story")) {
+                    from = target;
+                    to = source;
+                }
+
+                if (from != -1 && to != -1 && from != to) {
+                    if (!adjacency.get(from).contains(to)) {
+                        adjacency.get(from).add(to);
+                        inDegree.put(to, inDegree.get(to) + 1);
+                    }
+                }
+            }
+        }
+
+        List<FranchiseResponse.NodeItem> sorted = new ArrayList<>();
+        List<FranchiseResponse.NodeItem> zeroDegreeList = new ArrayList<>();
+
+        for (FranchiseResponse.NodeItem node : nodes) {
+            if (inDegree.get(node.getId()) == 0) {
+                zeroDegreeList.add(node);
+            }
+        }
+
+        // Sort root candidates by date/year
+        Collections.sort(zeroDegreeList, (n1, n2) -> {
+            if (n1.getDate() != n2.getDate()) return Long.compare(n1.getDate(), n2.getDate());
+            if (n1.getYear() != n2.getYear()) return Integer.compare(n1.getYear(), n2.getYear());
+            return Long.compare(n1.getId(), n2.getId());
+        });
+
+        List<FranchiseResponse.NodeItem> queue = new ArrayList<>(zeroDegreeList);
+        int head = 0;
+        while (head < queue.size()) {
+            FranchiseResponse.NodeItem current = queue.get(head++);
+            sorted.add(current);
+
+            List<Long> neighbors = adjacency.get(current.getId());
+            if (neighbors != null) {
+                List<FranchiseResponse.NodeItem> nextNodes = new ArrayList<>();
+                for (long neighborId : neighbors) {
+                    int newInDegree = inDegree.get(neighborId) - 1;
+                    inDegree.put(neighborId, newInDegree);
+                    if (newInDegree == 0) {
+                        nextNodes.add(nodeMap.get(neighborId));
+                    }
+                }
+                Collections.sort(nextNodes, (n1, n2) -> {
+                    if (n1.getDate() != n2.getDate()) return Long.compare(n1.getDate(), n2.getDate());
+                    if (n1.getYear() != n2.getYear()) return Integer.compare(n1.getYear(), n2.getYear());
+                    return Long.compare(n1.getId(), n2.getId());
+                });
+                queue.addAll(nextNodes);
+            }
+        }
+
+        // Fallback for cycles/isolated nodes
+        if (sorted.size() < nodes.size()) {
+            Set<Long> addedIds = new HashSet<>();
+            for (FranchiseResponse.NodeItem n : sorted) addedIds.add(n.getId());
+
+            List<FranchiseResponse.NodeItem> remaining = new ArrayList<>();
+            for (FranchiseResponse.NodeItem n : nodes) {
+                if (!addedIds.contains(n.getId())) {
+                    remaining.add(n);
+                }
+            }
+            Collections.sort(remaining, (n1, n2) -> Long.compare(n1.getDate(), n2.getDate()));
+            sorted.addAll(remaining);
+        }
+
+        return sorted;
     }
 
     public static Map<Long, String> buildRelationsMap(FranchiseResponse franchise) {

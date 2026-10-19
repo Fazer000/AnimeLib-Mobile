@@ -697,7 +697,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Хронология франшизы"
+                        android:text="Хронология"
                         android:textColor="@color/primary_text_color"
                         android:textSize="16sp"
                         android:fontFamily="@font/open_sans_bold" />

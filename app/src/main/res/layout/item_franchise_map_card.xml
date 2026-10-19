@@ -2,24 +2,23 @@
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/cardMapNode"
-    android:layout_width="168dp"
-    android:layout_height="88dp"
+    android:layout_width="180dp"
+    android:layout_height="90dp"
     android:clickable="true"
     android:focusable="true"
     app:cardBackgroundColor="@color/card_bg_color"
     app:cardCornerRadius="12dp"
-    app:cardElevation="3dp"
-    app:strokeWidth="1dp"
-    app:strokeColor="@color/chip_unselected_stroke">
+    app:cardElevation="2dp"
+    app:strokeWidth="0dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="horizontal">
 
-        <!-- Thumbnail poster -->
+        <!-- Poster Cover -->
         <FrameLayout
-            android:layout_width="60dp"
+            android:layout_width="64dp"
             android:layout_height="match_parent">
 
             <ImageView
@@ -37,7 +36,7 @@
                 android:layout_gravity="bottom"
                 android:background="#D9A855F7"
                 android:gravity="center"
-                android:paddingVertical="1dp"
+                android:paddingVertical="1.5dp"
                 android:text="СМОТРИТЕ"
                 android:textColor="@android:color/white"
                 android:textSize="8.5sp"
@@ -45,12 +44,12 @@
                 android:visibility="gone" />
         </FrameLayout>
 
-        <!-- Node details -->
+        <!-- Node info (Title type in blue at top, title name, kind/year) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="vertical"
-            android:paddingHorizontal="7dp"
+            android:paddingHorizontal="8dp"
             android:paddingVertical="6dp"
             android:gravity="center_vertical">
 
@@ -58,11 +57,8 @@
                 android:id="@+id/tvMapCardRelation"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:background="@drawable/bg_anime_info_accent_pill"
-                android:paddingHorizontal="5dp"
-                android:paddingVertical="1dp"
-                android:textColor="@color/purple_primary"
-                android:textSize="9.5sp"
+                android:textColor="@color/app_text_accent_blue"
+                android:textSize="11sp"
                 android:fontFamily="@font/open_sans_bold"
                 android:maxLines="1"
                 android:ellipsize="end"
@@ -73,11 +69,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textColor="@color/primary_text_color"
-                android:textSize="11.5sp"
+                android:textSize="12.5sp"
                 android:fontFamily="@font/open_sans_bold"
                 android:maxLines="2"
                 android:ellipsize="end"
-                android:lineSpacingExtra="0.5dp" />
+                android:lineSpacingExtra="1dp" />
 
             <TextView
                 android:id="@+id/tvMapCardKind"
@@ -85,7 +81,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="3dp"
                 android:textColor="@color/accent_text_color"
-                android:textSize="10sp"
+                android:textSize="10.5sp"
                 android:fontFamily="@font/open_sans"
                 android:maxLines="1"
                 android:ellipsize="end" />

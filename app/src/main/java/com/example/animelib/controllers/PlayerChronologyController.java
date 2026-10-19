@@ -162,17 +162,7 @@ public class PlayerChronologyController {
         this.currentFranchiseResponse = response;
         this.currentRelationsMap = FranchiseChronologyBottomSheet.buildRelationsMap(response);
 
-        List<FranchiseResponse.NodeItem> sortedChronologicalNodes = new ArrayList<>(response.getNodes());
-        Collections.sort(sortedChronologicalNodes, (n1, n2) -> {
-            int cmp = Long.compare(n1.getDate(), n2.getDate());
-            if (cmp == 0) {
-                cmp = Integer.compare(n1.getYear(), n2.getYear());
-            }
-            if (cmp == 0) {
-                cmp = Long.compare(n1.getId(), n2.getId());
-            }
-            return cmp;
-        });
+        List<FranchiseResponse.NodeItem> sortedChronologicalNodes = FranchiseChronologyBottomSheet.sortNodesChronologically(response);
 
         if (tvPortraitChronologyCount != null) {
             tvPortraitChronologyCount.setText(String.valueOf(sortedChronologicalNodes.size()));

@@ -56,13 +56,17 @@ public class FranchiseChronologyAdapter extends RecyclerView.Adapter<FranchiseCh
         View view = LayoutInflater.from(parent.getContext())
                 .inflate(R.layout.item_franchise_chronology, parent, false);
 
-        if (isFullListMode) {
-            ViewGroup.LayoutParams lp = view.getLayoutParams();
-            if (lp != null) {
+        ViewGroup.LayoutParams lp = view.getLayoutParams();
+        if (lp != null) {
+            if (isFullListMode) {
                 lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
                 lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-                view.setLayoutParams(lp);
+            } else {
+                float density = parent.getContext().getResources().getDisplayMetrics().density;
+                lp.width = (int) (280 * density);
+                lp.height = (int) (110 * density);
             }
+            view.setLayoutParams(lp);
         }
         return new ChronologyViewHolder(view);
     }
@@ -108,12 +112,9 @@ public class FranchiseChronologyAdapter extends RecyclerView.Adapter<FranchiseCh
             holder.tvCurrentBadge.setVisibility(View.VISIBLE);
             holder.card.setStrokeColor(ContextCompat.getColor(context, R.color.purple_primary));
             holder.card.setStrokeWidth(dpToPx(context, 2f));
-            holder.card.setCardBackgroundColor(ContextCompat.getColor(context, R.color.card_bg_color));
         } else {
             holder.tvCurrentBadge.setVisibility(View.GONE);
-            holder.card.setStrokeColor(ContextCompat.getColor(context, R.color.chip_unselected_stroke));
-            holder.card.setStrokeWidth(dpToPx(context, 1f));
-            holder.card.setCardBackgroundColor(ContextCompat.getColor(context, R.color.card_bg_color));
+            holder.card.setStrokeWidth(0);
         }
 
         // Клик по карточке
