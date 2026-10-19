@@ -716,21 +716,42 @@
                         android:visibility="gone" />
                 </LinearLayout>
 
-                <TextView
-                    android:id="@+id/btnOpenFullChronology"
+                <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_alignParentEnd="true"
                     android:layout_centerVertical="true"
-                    android:background="@drawable/bg_rules_button"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:paddingHorizontal="10dp"
-                    android:paddingVertical="5dp"
-                    android:text="ВСЕ ЧАСТИ"
-                    android:textColor="@color/purple_primary"
-                    android:textSize="11sp"
-                    android:fontFamily="@font/open_sans_bold" />
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/btnOpenChronologyMap"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="6dp"
+                        android:background="@drawable/bg_rules_button"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:paddingHorizontal="9dp"
+                        android:paddingVertical="5dp"
+                        android:text="КАРТА"
+                        android:textColor="@color/purple_primary"
+                        android:textSize="11sp"
+                        android:fontFamily="@font/open_sans_bold" />
+
+                    <TextView
+                        android:id="@+id/btnOpenFullChronology"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_rules_button"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:paddingHorizontal="9dp"
+                        android:paddingVertical="5dp"
+                        android:text="СПИСОК"
+                        android:textColor="@color/purple_primary"
+                        android:textSize="11sp"
+                        android:fontFamily="@font/open_sans_bold" />
+                </LinearLayout>
             </RelativeLayout>
 
             <!-- Loading Indicator -->

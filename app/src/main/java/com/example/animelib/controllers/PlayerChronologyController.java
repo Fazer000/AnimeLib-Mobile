@@ -42,6 +42,7 @@ public class PlayerChronologyController {
     private View portraitChronologyContainer;
     private TextView tvPortraitChronologyCount;
     private View btnOpenFullChronology;
+    private View btnOpenChronologyMap;
     private View portraitChronologyLoadingIndicator;
     private RecyclerView portraitChronologyRecyclerView;
 
@@ -59,6 +60,7 @@ public class PlayerChronologyController {
         portraitChronologyContainer = rootView.findViewById(R.id.portraitChronologyContainer);
         tvPortraitChronologyCount = rootView.findViewById(R.id.tvPortraitChronologyCount);
         btnOpenFullChronology = rootView.findViewById(R.id.btnOpenFullChronology);
+        btnOpenChronologyMap = rootView.findViewById(R.id.btnOpenChronologyMap);
         portraitChronologyLoadingIndicator = rootView.findViewById(R.id.portraitChronologyLoadingIndicator);
         portraitChronologyRecyclerView = rootView.findViewById(R.id.portraitChronologyRecyclerView);
 
@@ -73,6 +75,10 @@ public class PlayerChronologyController {
 
         if (btnOpenFullChronology != null) {
             btnOpenFullChronology.setOnClickListener(v -> openFullChronologySheet());
+        }
+
+        if (btnOpenChronologyMap != null) {
+            btnOpenChronologyMap.setOnClickListener(v -> openChronologyMapSheet());
         }
     }
 
@@ -196,6 +202,19 @@ public class PlayerChronologyController {
             sheet.show();
         } catch (Exception e) {
             Log.e(TAG, "Error showing FranchiseChronologyBottomSheet", e);
+        }
+    }
+
+    public void openChronologyMapSheet() {
+        if (currentFranchiseResponse == null || callback == null) return;
+        Context context = callback.getContext();
+        if (context == null) return;
+
+        try {
+            com.example.animelib.ui.FranchiseMapBottomSheet sheet = new com.example.animelib.ui.FranchiseMapBottomSheet(context, currentFranchiseResponse);
+            sheet.show();
+        } catch (Exception e) {
+            Log.e(TAG, "Error showing FranchiseMapBottomSheet", e);
         }
     }
 

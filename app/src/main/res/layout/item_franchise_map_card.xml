@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/cardMapNode"
+    android:layout_width="168dp"
+    android:layout_height="88dp"
+    android:clickable="true"
+    android:focusable="true"
+    app:cardBackgroundColor="@color/card_bg_color"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="3dp"
+    app:strokeWidth="1dp"
+    app:strokeColor="@color/chip_unselected_stroke">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="horizontal">
+
+        <!-- Thumbnail poster -->
+        <FrameLayout
+            android:layout_width="60dp"
+            android:layout_height="match_parent">
+
+            <ImageView
+                android:id="@+id/ivMapCardCover"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:src="@drawable/ic_image_placeholder"
+                android:contentDescription="Cover" />
+
+            <TextView
+                android:id="@+id/tvMapCardCurrentBadge"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom"
+                android:background="#D9A855F7"
+                android:gravity="center"
+                android:paddingVertical="1dp"
+                android:text="СМОТРИТЕ"
+                android:textColor="@android:color/white"
+                android:textSize="8.5sp"
+                android:fontFamily="@font/open_sans_bold"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <!-- Node details -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:paddingHorizontal="7dp"
+            android:paddingVertical="6dp"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tvMapCardRelation"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_anime_info_accent_pill"
+                android:paddingHorizontal="5dp"
+                android:paddingVertical="1dp"
+                android:textColor="@color/purple_primary"
+                android:textSize="9.5sp"
+                android:fontFamily="@font/open_sans_bold"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:layout_marginBottom="2dp" />
+
+            <TextView
+                android:id="@+id/tvMapCardTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/primary_text_color"
+                android:textSize="11.5sp"
+                android:fontFamily="@font/open_sans_bold"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:lineSpacingExtra="0.5dp" />
+
+            <TextView
+                android:id="@+id/tvMapCardKind"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:textColor="@color/accent_text_color"
+                android:textSize="10sp"
+                android:fontFamily="@font/open_sans"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>
