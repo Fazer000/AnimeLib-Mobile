@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/cardFranchiseItem"
+    android:layout_width="280dp"
+    android:layout_height="116dp"
+    android:layout_marginEnd="10dp"
+    android:clickable="true"
+    android:focusable="true"
+    app:cardBackgroundColor="@color/card_bg_color"
+    app:cardCornerRadius="14dp"
+    app:cardElevation="2dp"
+    app:strokeWidth="1dp"
+    app:strokeColor="@color/chip_unselected_stroke">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="horizontal">
+
+        <!-- Обложка с номером шага и плашкой "Текущее" -->
+        <FrameLayout
+            android:layout_width="86dp"
+            android:layout_height="match_parent">
+
+            <ImageView
+                android:id="@+id/ivFranchiseCover"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:src="@drawable/ic_image_placeholder"
+                android:contentDescription="Poster" />
+
+            <!-- Градиент затемнения снизу обложки -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="36dp"
+                android:layout_gravity="bottom"
+                android:background="@drawable/bg_carousel_gradient_right_dark"
+                android:rotation="90" />
+
+            <!-- Номер порядка в хронологии (например #1) -->
+            <TextView
+                android:id="@+id/tvFranchiseStepNumber"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|start"
+                android:layout_margin="5dp"
+                android:background="@drawable/bg_rules_number_circle"
+                android:gravity="center"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="2dp"
+                android:textColor="@android:color/white"
+                android:textSize="11sp"
+                android:fontFamily="@font/open_sans_bold" />
+
+            <!-- Метка текущего аниме -->
+            <TextView
+                android:id="@+id/tvFranchiseCurrentBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|center_horizontal"
+                android:layout_marginBottom="4dp"
+                android:background="@drawable/bg_sticky_badge"
+                android:gravity="center"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="2dp"
+                android:text="Текущее"
+                android:textColor="@android:color/white"
+                android:textSize="10sp"
+                android:fontFamily="@font/open_sans_bold"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <!-- Информация справа -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="8dp"
+            android:gravity="center_vertical">
+
+            <!-- Связь / Отношение (например "Сиквел", "Приквел", "Сайд-стори") -->
+            <TextView
+                android:id="@+id/tvFranchiseRelation"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_anime_info_accent_pill"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="2dp"
+                android:textColor="@color/purple_primary"
+                android:textSize="10.5sp"
+                android:fontFamily="@font/open_sans_bold"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:layout_marginBottom="4dp" />
+
+            <!-- Название тайтла -->
+            <TextView
+                android:id="@+id/tvFranchiseTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/primary_text_color"
+                android:textSize="13sp"
+                android:fontFamily="@font/open_sans_bold"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:lineSpacingExtra="1dp" />
+
+            <!-- Год и Тип -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/tvFranchiseKind"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_anime_info_stat_pill"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="2dp"
+                    android:textColor="@color/accent_text_color"
+                    android:textSize="10.5sp"
+                    android:fontFamily="@font/open_sans" />
+
+                <TextView
+                    android:id="@+id/tvFranchiseYear"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:textColor="@color/secondary_text_color"
+                    android:textSize="11sp"
+                    android:fontFamily="@font/open_sans_semibold" />
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

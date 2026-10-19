@@ -58,6 +58,11 @@ public class ApiService {
         void onRelatedTitlesReceived(RelatedTitlesResponse response);
         void onError(String error);
     }
+
+    public interface FranchiseCallback {
+        void onFranchiseReceived(FranchiseResponse response);
+        void onError(String error);
+    }
     
     public interface EpisodeCommentsCallback {
         void onCommentsReceived(CommentsResponse response);
@@ -1993,6 +1998,115 @@ public class ApiService {
                 callback.onError("Request error: " + e.getMessage());
             }
         });
+    }
+
+    /**
+     * Извлекает числовой ID Шикимори из ссылки shikimori_href
+     */
+    public static long extractShikimoriId(String shikimoriHref) {
+        if (shikimoriHref == null || shikimoriHref.trim().isEmpty()) {
+            return -1;
+        }
+        String href = shikimoriHref.trim();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("/animes/[zZ]?(\\d+)").matcher(href);
+        if (matcher.find()) {
+            try {
+                return Long.parseLong(matcher.group(1));
+            } catch (Exception ignored) {}
+        }
+        java.util.regex.Matcher digitsMatcher = java.util.regex.Pattern.compile("(\\d+)").matcher(href);
+        if (digitsMatcher.find()) {
+            try {
+                return Long.parseLong(digitsMatcher.group(1));
+            } catch (Exception ignored) {}
+        }
+        return -1;
+    }
+
+    /**
+     * Запрос к API Шикимори для получения франшизы и хронологии
+     */
+    public void getFranchise(long shikimoriId, FranchiseCallback callback) {
+        safeExecute(() -> {
+            try {
+                if (shikimoriId <= 0) {
+                    callback.onError("Invalid Shikimori ID");
+                    return;
+                }
+                String url = "https://shikimori.one/api/animes/" + shikimoriId + "/franchise";
+                Log.d("ApiService", "Fetching franchise from Shikimori: " + url);
+
+                Request request = new Request.Builder()
+                        .url(url)
+                        .header("User-Agent", "AnimeLib/1.8.9 (Android)")
+                        .header("Accept", "application/json")
+                        .get()
+                        .build();
+
+                httpClient.newCall(request).enqueue(new Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        String fallbackUrl = "http://shikimori.io/api/animes/" + shikimoriId + "/franchise";
+                        Log.w("ApiService", "Primary Shikimori endpoint failed, trying fallback: " + fallbackUrl, e);
+                        Request fallbackRequest = new Request.Builder()
+                                .url(fallbackUrl)
+                                .header("User-Agent", "AnimeLib/1.8.9 (Android)")
+                                .header("Accept", "application/json")
+                                .get()
+                                .build();
+
+                        httpClient.newCall(fallbackRequest).enqueue(new Callback() {
+                            @Override
+                            public void onFailure(@NonNull Call call2, @NonNull IOException e2) {
+                                Log.e("ApiService", "Failed to fetch franchise from fallback", e2);
+                                callback.onError("Network error: " + e2.getMessage());
+                            }
+
+                            @Override
+                            public void onResponse(@NonNull Call call2, @NonNull Response response2) throws IOException {
+                                processFranchiseResponse(response2, callback);
+                            }
+                        });
+                    }
+
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                        processFranchiseResponse(response, callback);
+                    }
+                });
+
+            } catch (Exception e) {
+                Log.e("ApiService", "Error in getFranchise", e);
+                callback.onError("Request error: " + e.getMessage());
+            }
+        });
+    }
+
+    private void processFranchiseResponse(Response response, FranchiseCallback callback) {
+        try {
+            if (response.isSuccessful() && response.body() != null) {
+                String responseBody = response.body().string();
+                Log.d("ApiService", "Franchise response length: " + responseBody.length());
+
+                Gson gson = new Gson();
+                FranchiseResponse franchiseResponse = gson.fromJson(responseBody, FranchiseResponse.class);
+
+                if (franchiseResponse != null && franchiseResponse.getNodes() != null) {
+                    callback.onFranchiseReceived(franchiseResponse);
+                } else {
+                    callback.onError("Empty franchise response");
+                }
+            } else {
+                String errorBody = response.body() != null ? response.body().string() : "Unknown error";
+                Log.e("ApiService", "Failed to fetch franchise: " + response.code() + " - " + errorBody);
+                callback.onError("Server error: " + response.code());
+            }
+        } catch (Exception e) {
+            Log.e("ApiService", "Error parsing franchise response", e);
+            callback.onError("Parse error: " + e.getMessage());
+        } finally {
+            response.close();
+        }
     }
 
     private String extractServerErrorMessage(String responseBody, int responseCode) {

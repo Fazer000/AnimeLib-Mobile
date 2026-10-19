@@ -668,6 +668,97 @@
             </LinearLayout>
         </LinearLayout>
 
+        <!-- Блок Хронология (карусель хронологии франшизы из Shikimori) -->
+        <LinearLayout
+            android:id="@+id/portraitChronologyContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="16dp"
+            android:clipChildren="false"
+            android:clipToPadding="false"
+            android:visibility="gone">
+
+            <!-- Заголовок и кнопка ВСЕ ЧАСТИ -->
+            <RelativeLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="16dp"
+                android:paddingBottom="8dp">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_alignParentStart="true"
+                    android:layout_centerVertical="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Хронология франшизы"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="16sp"
+                        android:fontFamily="@font/open_sans_bold" />
+
+                    <TextView
+                        android:id="@+id/tvPortraitChronologyCount"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:background="@drawable/bg_sticky_badge"
+                        android:paddingHorizontal="7dp"
+                        android:paddingVertical="2dp"
+                        android:textColor="@android:color/white"
+                        android:textSize="11sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:visibility="gone" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/btnOpenFullChronology"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_alignParentEnd="true"
+                    android:layout_centerVertical="true"
+                    android:background="@drawable/bg_rules_button"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="5dp"
+                    android:text="ВСЕ ЧАСТИ"
+                    android:textColor="@color/purple_primary"
+                    android:textSize="11sp"
+                    android:fontFamily="@font/open_sans_bold" />
+            </RelativeLayout>
+
+            <!-- Loading Indicator -->
+            <com.google.android.material.progressindicator.CircularProgressIndicator
+                android:id="@+id/portraitChronologyLoadingIndicator"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginVertical="12dp"
+                android:indeterminate="true"
+                android:visibility="gone"
+                app:indicatorSize="32dp"
+                app:indicatorColor="@color/purple_primary" />
+
+            <!-- Горизонтальная карусель хронологии -->
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/portraitChronologyRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="6dp"
+                android:clipToPadding="false"
+                android:clipChildren="false"
+                android:orientation="horizontal"
+                android:overScrollMode="never" />
+
+        </LinearLayout>
+
         <!-- Блок Связанное (карусель связанных тайтлов) в вертикальном режиме -->
         <LinearLayout
             android:id="@+id/portraitRelatedTitlesContainer"

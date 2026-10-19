@@ -297,6 +297,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private com.example.animelib.controllers.PlayerEpisodesController playerEpisodesController;
     private com.example.animelib.controllers.PlayerVideoResolverController playerVideoResolverController;
     private com.example.animelib.controllers.PlayerLockController playerLockController;
+    private com.example.animelib.controllers.PlayerChronologyController playerChronologyController;
 
     // Subtitle settings
     private boolean subtitlesEnabled = true;
@@ -813,6 +814,34 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         playerAnimeInfoController = new com.example.animelib.controllers.PlayerAnimeInfoController();
         playerAnimeInfoController.initViews(findViewById(android.R.id.content));
+
+        playerChronologyController = new com.example.animelib.controllers.PlayerChronologyController(new com.example.animelib.controllers.PlayerChronologyController.ChronologyCallback() {
+            @Override
+            public Context getContext() {
+                return VideoPlayerActivity.this;
+            }
+
+            @Override
+            public ApiService getApiService() {
+                return apiService;
+            }
+
+            @Override
+            public void safeRunOnUiThread(Runnable runnable) {
+                VideoPlayerActivity.this.safeRunOnUiThread(runnable);
+            }
+
+            @Override
+            public com.example.animelib.controllers.PlayerDialogsController getPlayerDialogsController() {
+                return playerDialogsController;
+            }
+
+            @Override
+            public boolean isOfflineMode() {
+                return isOfflineMode;
+            }
+        });
+        playerChronologyController.initViews(findViewById(android.R.id.content));
 
         playerOrientationController = new com.example.animelib.controllers.PlayerOrientationController(this);
         playerOrientationController.init();
@@ -3408,6 +3437,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
             if (playerAnimeInfoController.getCurrentPosterUrl() != null) {
                 currentPosterUrl = playerAnimeInfoController.getCurrentPosterUrl();
             }
+        }
+
+        if (playerChronologyController != null) {
+            playerChronologyController.loadChronologyForAnime(animeInfo);
         }
 
         String rus = animeInfo.getData().getRus_name();
