@@ -2,8 +2,8 @@
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/cardMapNode"
-    android:layout_width="250dp"
-    android:layout_height="105dp"
+    android:layout_width="310dp"
+    android:layout_height="110dp"
     android:clickable="true"
     android:focusable="true"
     app:cardBackgroundColor="@color/card_bg_color"
@@ -18,7 +18,7 @@
 
         <!-- Poster Cover: Frameless (0dp margin), rounded on all corners -->
         <com.google.android.material.card.MaterialCardView
-            android:layout_width="76dp"
+            android:layout_width="84dp"
             android:layout_height="match_parent"
             android:layout_margin="0dp"
             app:cardCornerRadius="12dp"
@@ -60,7 +60,7 @@
             android:layout_height="match_parent"
             android:layout_marginStart="10dp"
             android:orientation="vertical"
-            android:paddingEnd="8dp"
+            android:paddingEnd="10dp"
             android:paddingVertical="8dp">
 
             <!-- Top section: Relation type in blue and Title name -->
@@ -87,7 +87,7 @@
                     android:textColor="@color/primary_text_color"
                     android:textSize="13sp"
                     android:fontFamily="@font/open_sans_bold"
-                    android:maxLines="2"
+                    android:maxLines="3"
                     android:ellipsize="end"
                     android:lineSpacingExtra="1dp" />
             </LinearLayout>

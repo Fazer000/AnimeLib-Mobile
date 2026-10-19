@@ -144,10 +144,23 @@ public class FranchiseMapGraphView extends ViewGroup {
                 float canvasX = (e.getX() + getScrollX()) / scaleFactor;
                 float canvasY = (e.getY() + getScrollY()) / scaleFactor;
 
-                // 1. If tap is inside any card rectangle, let card View process click natively!
-                for (RectF rect : nodeBoundsMap.values()) {
-                    if (rect != null && rect.contains(canvasX, canvasY)) {
-                        return false;
+                // 1. Check if tap falls strictly inside any card bounds on canvas
+                for (Map.Entry<Long, RectF> entry : nodeBoundsMap.entrySet()) {
+                    RectF bounds = entry.getValue();
+                    if (bounds != null && bounds.contains(canvasX, canvasY)) {
+                        long nodeId = entry.getKey();
+                        if (franchiseData != null && franchiseData.getNodes() != null) {
+                            for (FranchiseResponse.NodeItem node : franchiseData.getNodes()) {
+                                if (node.getId() == nodeId) {
+                                    selectNode(node.getId());
+                                    if (listener != null) {
+                                        String relation = nodeRelationsMap.get(node.getId());
+                                        listener.onNodeClick(node, relation);
+                                    }
+                                    return true;
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -159,7 +172,7 @@ public class FranchiseMapGraphView extends ViewGroup {
                 } else {
                     // Tap on empty background clears selection
                     selectBranchLink(null);
-                    return false;
+                    return true;
                 }
             }
 
