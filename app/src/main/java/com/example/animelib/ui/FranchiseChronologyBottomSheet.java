@@ -303,6 +303,10 @@ public class FranchiseChronologyBottomSheet extends FlexibleBottomSheetDialog {
                 return "Основной сюжет";
             case "character":
                 return "Про персонажа";
+            case "alternative_setting":
+                return "Альт. сеттинг";
+            case "alternative_version":
+                return "Альт. версия";
             case "other":
                 return "Другое";
             default:

@@ -727,36 +727,60 @@
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
-                    <TextView
+                    <!-- Выпадающее меню фильтрации слева от кнопки Карта -->
+                    <LinearLayout
+                        android:id="@+id/btnChronologyFilterDropdown"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="@drawable/player_episode_item_normal"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="12dp">
+
+                        <TextView
+                            android:id="@+id/tvChronologyFilterText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="@font/open_sans_bold"
+                            android:text="Все"
+                            android:textColor="@color/accent_text_color"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <ImageView
+                            android:layout_width="14dp"
+                            android:layout_height="14dp"
+                            android:layout_marginStart="6dp"
+                            android:src="@drawable/ic_chevron_down"
+                            app:tint="@color/accent_text_color" />
+                    </LinearLayout>
+
+                    <!-- Кнопка Карта в стиле айтема эпизода портретного режима -->
+                    <LinearLayout
                         android:id="@+id/btnOpenChronologyMap"
                         android:layout_width="wrap_content"
-                        android:layout_height="32dp"
-                        android:layout_marginEnd="6dp"
-                        android:background="@drawable/bg_rules_button"
+                        android:layout_height="38dp"
+                        android:background="@drawable/player_episode_item_normal"
                         android:clickable="true"
                         android:focusable="true"
                         android:gravity="center"
-                        android:includeFontPadding="false"
-                        android:paddingHorizontal="12dp"
-                        android:text="КАРТА"
-                        android:textColor="@color/purple_primary"
-                        android:textSize="11sp"
-                        android:fontFamily="@font/open_sans_bold" />
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="16dp">
 
-                    <TextView
-                        android:id="@+id/btnOpenFullChronology"
-                        android:layout_width="wrap_content"
-                        android:layout_height="32dp"
-                        android:background="@drawable/bg_rules_button"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:gravity="center"
-                        android:includeFontPadding="false"
-                        android:paddingHorizontal="12dp"
-                        android:text="СПИСОК"
-                        android:textColor="@color/purple_primary"
-                        android:textSize="11sp"
-                        android:fontFamily="@font/open_sans_bold" />
+                        <TextView
+                            android:id="@+id/tvOpenChronologyMapText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="@font/open_sans_bold"
+                            android:gravity="center"
+                            android:text="Карта"
+                            android:textColor="@color/accent_text_color"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
                 </LinearLayout>
             </RelativeLayout>
 

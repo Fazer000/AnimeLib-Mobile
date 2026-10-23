@@ -106,6 +106,7 @@ public class FranchiseMapGraphView extends ViewGroup {
     private Paint linePaintMain;
     private Paint linePaintDefault;
     private Paint linePaintDimmed;
+    private Paint linePaintAlternative;
     private Paint arrowPaint;
 
     // Layout dimensions in dp
@@ -228,6 +229,7 @@ public class FranchiseMapGraphView extends ViewGroup {
         linePaintSequel = createCurvePaint(0xFFA855F7, 3.2f * density, false);  // Фиолетовый сиквел/приквел (основная линия заметно толще)
         linePaintMain = createCurvePaint(0xFF3B82F6, 3.2f * density, false);    // Синий основной сюжет (основная линия заметно толще)
         linePaintSide = createCurvePaint(0xFF06B6D4, 1.4f * density, true);     // Бирюзовый пунктир сайд-стори
+        linePaintAlternative = createCurvePaint(0xFF10B981, 1.6f * density, true); // Изумрудный пунктир альтернативный сеттинг
         linePaintSummary = createCurvePaint(0xFFF59E0B, 1.4f * density, false); // Янтарный рекап
         linePaintDefault = createCurvePaint(0xFF8E8E93, 1.4f * density, false); // Серый по умолчанию
         linePaintDimmed = createCurvePaint(0x338E8E93, 0.9f * density, false);  // Приглушенный
@@ -1092,6 +1094,9 @@ public class FranchiseMapGraphView extends ViewGroup {
             case "side_story":
             case "spin_off":
                 return linePaintSide;
+            case "alternative_setting":
+            case "alternative_version":
+                return linePaintAlternative;
             case "summary":
                 return linePaintSummary;
             default:

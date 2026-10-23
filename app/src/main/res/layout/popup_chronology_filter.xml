@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="190dp"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_sort_popup"
+    android:orientation="vertical"
+    android:padding="6dp">
+
+    <TextView
+        android:id="@+id/item_filter_all"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="12dp"
+        android:text="Все"
+        android:textColor="@color/primary_text_color"
+        android:textSize="13.5sp"
+        android:fontFamily="@font/open_sans_semibold"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <TextView
+        android:id="@+id/item_filter_no_fillers"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="12dp"
+        android:text="Без филлеров"
+        android:textColor="@color/primary_text_color"
+        android:textSize="13.5sp"
+        android:fontFamily="@font/open_sans_semibold"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <TextView
+        android:id="@+id/item_filter_main_only"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="12dp"
+        android:text="Только основное"
+        android:textColor="@color/primary_text_color"
+        android:textSize="13.5sp"
+        android:fontFamily="@font/open_sans_semibold"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:layout_marginVertical="4dp"
+        android:layout_marginHorizontal="8dp"
+        android:background="@color/chip_unselected_stroke" />
+
+    <TextView
+        android:id="@+id/item_sort_chrono"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="12dp"
+        android:text="Хронологически"
+        android:textColor="@color/primary_text_color"
+        android:textSize="13.5sp"
+        android:fontFamily="@font/open_sans_semibold"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <TextView
+        android:id="@+id/item_sort_newest"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="12dp"
+        android:text="Новые сначала"
+        android:textColor="@color/primary_text_color"
+        android:textSize="13.5sp"
+        android:fontFamily="@font/open_sans_semibold"
+        android:clickable="true"
+        android:focusable="true" />
+
+</LinearLayout>
