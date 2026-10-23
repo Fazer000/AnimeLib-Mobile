@@ -128,6 +128,10 @@ public class HorizontalRelatedTitlesAdapter extends RecyclerView.Adapter<Horizon
         if (slugUrl == null || slugUrl.trim().isEmpty()) {
             slugUrl = media.getSlug();
         }
+        return buildWebUrl(slugUrl, media.getModel(), media.getSite(), context);
+    }
+
+    public static String buildWebUrl(String slugUrl, String model, int site, android.content.Context context) {
         if (slugUrl == null || slugUrl.trim().isEmpty()) {
             return null;
         }
@@ -136,23 +140,22 @@ public class HorizontalRelatedTitlesAdapter extends RecyclerView.Adapter<Horizon
             return slugUrl;
         }
 
-        String model = media.getModel() != null && !media.getModel().trim().isEmpty() 
-                ? media.getModel().trim().toLowerCase() : "";
-        int site = media.getSite();
+        String modelStr = model != null && !model.trim().isEmpty() 
+                ? model.trim().toLowerCase() : "";
 
         String path = slugUrl;
         if (!path.startsWith("/")) {
             path = "/" + path;
         }
 
-        boolean isManga = "manga".equals(model) || model.contains("manga") || site == 1 || path.contains("/manga/");
-        boolean isRanobe = "ranobe".equals(model) || "novel".equals(model) || model.contains("ranobe") || site == 2 || path.contains("/ranobe/");
+        boolean isManga = "manga".equals(modelStr) || modelStr.contains("manga") || site == 1 || path.contains("/manga/");
+        boolean isRanobe = "ranobe".equals(modelStr) || "novel".equals(modelStr) || modelStr.contains("ranobe") || site == 2 || path.contains("/ranobe/");
 
         if (!path.startsWith("/ru/")) {
             if (path.startsWith("/manga/") || path.startsWith("/ranobe/") || path.startsWith("/anime/")) {
                 path = "/ru" + path;
             } else {
-                String targetModel = isManga ? "manga" : (isRanobe ? "ranobe" : (!model.isEmpty() ? model : "anime"));
+                String targetModel = isManga ? "manga" : (isRanobe ? "ranobe" : (!modelStr.isEmpty() ? modelStr : "anime"));
                 path = "/ru/" + targetModel + path;
             }
         }
@@ -181,6 +184,10 @@ public class HorizontalRelatedTitlesAdapter extends RecyclerView.Adapter<Horizon
             baseUrl = mainSiteUrl;
         }
         return baseUrl + path;
+    }
+
+    public static String buildWebUrl(String slugUrl, String model, android.content.Context context) {
+        return buildWebUrl(slugUrl, model, 0, context);
     }
 
     public static String buildWebUrl(RelatedTitlesResponse.Media media) {

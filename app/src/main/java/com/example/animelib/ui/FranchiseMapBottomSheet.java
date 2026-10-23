@@ -262,17 +262,28 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
                     if (response != null && response.getData() != null && !response.getData().isEmpty()) {
                         SearchResponse.AnimeSearchItem bestMatch = response.getData().get(0);
                         String slugUrl = bestMatch.getSlugUrl();
+                        if (slugUrl == null || slugUrl.trim().isEmpty()) {
+                            slugUrl = bestMatch.getSlug();
+                        }
 
                         if (mapLoadingProgress != null) mapLoadingProgress.setVisibility(View.GONE);
                         dismiss();
 
-                        String webViewUrl = "/ru/anime/" + slugUrl;
-                        if (act instanceof MainActivity) {
-                            ((MainActivity) act).loadUrlInWebView(webViewUrl);
-                        } else {
-                            TitleWebViewBottomSheet webSheet = new TitleWebViewBottomSheet(act, bestMatch.getRusName(), webViewUrl);
-                            webSheet.show();
+                        String titleName = bestMatch.getRusName();
+                        if (titleName == null || titleName.trim().isEmpty()) {
+                            titleName = bestMatch.getName();
                         }
+                        if (titleName == null || titleName.trim().isEmpty()) {
+                            titleName = searchQuery;
+                        }
+
+                        String webUrl = com.example.animelib.adapters.HorizontalRelatedTitlesAdapter.buildWebUrl(slugUrl, bestMatch.getModel(), getContext());
+                        if (webUrl == null || webUrl.isEmpty()) {
+                            webUrl = "https://v5.animelib.org/ru/anime/" + slugUrl;
+                        }
+
+                        TitleWebViewBottomSheet webSheet = new TitleWebViewBottomSheet(act, titleName, webUrl);
+                        webSheet.show();
                     } else if (fallbackQuery != null && !fallbackQuery.equals(searchQuery)) {
                         performAnimelibSearchAndNavigate(node, fallbackQuery, null);
                     } else {

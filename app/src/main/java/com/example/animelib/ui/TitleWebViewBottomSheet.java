@@ -58,7 +58,29 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
     public TitleWebViewBottomSheet(@NonNull Context context, String titleName, String targetUrl) {
         super(context);
         this.titleName = titleName;
-        this.targetUrl = targetUrl;
+        this.targetUrl = ensureAbsoluteUrl(context, targetUrl);
+    }
+
+    public static String ensureAbsoluteUrl(Context context, String url) {
+        if (url == null || url.trim().isEmpty()) return url;
+        String trimmed = url.trim();
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            return trimmed;
+        }
+        String baseUrl = "https://v5.animelib.org";
+        if (context != null) {
+            try {
+                com.example.animelib.data.DatabaseManager db = new com.example.animelib.data.DatabaseManager(context);
+                String dbUrl = db.getSiteUrl();
+                if (dbUrl != null && !dbUrl.trim().isEmpty()) {
+                    baseUrl = dbUrl;
+                }
+            } catch (Exception ignored) {}
+        }
+        if (!trimmed.startsWith("/")) {
+            trimmed = "/" + trimmed;
+        }
+        return baseUrl + trimmed;
     }
 
     private Activity getActivityFromContext(Context ctx) {
