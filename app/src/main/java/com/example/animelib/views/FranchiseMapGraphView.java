@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -51,6 +52,25 @@ public class FranchiseMapGraphView extends ViewGroup {
         void onZoomChanged(float scaleFactor);
     }
 
+    public static class MapLink {
+        private final long id;
+        private final long sourceId;
+        private final long targetId;
+        private final String relation;
+
+        public MapLink(long id, long sourceId, long targetId, String relation) {
+            this.id = id;
+            this.sourceId = sourceId;
+            this.targetId = targetId;
+            this.relation = relation;
+        }
+
+        public long getId() { return id; }
+        public long getSourceId() { return sourceId; }
+        public long getTargetId() { return targetId; }
+        public String getRelation() { return relation; }
+    }
+
     private FranchiseResponse franchiseData;
     private OnNodeClickListener listener;
     private OnZoomChangeListener zoomChangeListener;
@@ -58,6 +78,7 @@ public class FranchiseMapGraphView extends ViewGroup {
     private final List<FranchiseResponse.NodeItem> mainTrunkNodes = new ArrayList<>();
     private final Map<Long, List<FranchiseResponse.NodeItem>> branchNodesMap = new HashMap<>();
     private final Map<Long, PointF> nodePositionsMap = new HashMap<>();
+    private final List<MapLink> canonicalLinks = new ArrayList<>();
 
     private final Map<Long, View> nodeViewsMap = new HashMap<>();
     private final Map<Long, RectF> nodeBoundsMap = new HashMap<>();
@@ -120,10 +141,10 @@ public class FranchiseMapGraphView extends ViewGroup {
         float density = context.getResources().getDisplayMetrics().density;
         cardWidthPx = (int) (250 * density);
         cardHeightPx = (int) (105 * density);
-        colSpacingPx = (int) (80 * density);
-        rowSpacingPx = (int) (50 * density);
-        paddingX = (int) (60 * density);
-        paddingY = (int) (80 * density);
+        colSpacingPx = (int) (110 * density);
+        rowSpacingPx = (int) (65 * density);
+        paddingX = (int) (70 * density);
+        paddingY = (int) (90 * density);
 
         initPaints(context, density);
 
@@ -165,7 +186,7 @@ public class FranchiseMapGraphView extends ViewGroup {
                 }
 
                 // 2. Tap on empty space: check for branch curve selection
-                FranchiseResponse.LinkItem clickedLink = findLinkAt(canvasX, canvasY);
+                MapLink clickedLink = findLinkAt(canvasX, canvasY);
                 if (clickedLink != null) {
                     selectBranchLink(clickedLink);
                     return true;
@@ -294,6 +315,7 @@ public class FranchiseMapGraphView extends ViewGroup {
         nodeViewsMap.clear();
         nodeBoundsMap.clear();
         nodeRelationsMap.clear();
+        canonicalLinks.clear();
         selectedNodeId = -1;
         connectedNodeIds.clear();
 
@@ -305,6 +327,7 @@ public class FranchiseMapGraphView extends ViewGroup {
             return;
         }
 
+        buildCanonicalLinks();
         nodeRelationsMap.putAll(FranchiseChronologyBottomSheet.buildRelationsMap(franchise));
 
         calculateTreeLayout();
@@ -320,48 +343,110 @@ public class FranchiseMapGraphView extends ViewGroup {
         invalidate();
     }
 
+    private void buildCanonicalLinks() {
+        canonicalLinks.clear();
+        if (franchiseData == null || franchiseData.getLinks() == null) return;
+
+        Map<Long, Long> nodeDateMap = new HashMap<>();
+        if (franchiseData.getNodes() != null) {
+            for (FranchiseResponse.NodeItem node : franchiseData.getNodes()) {
+                long sortKey = (node.getYear() > 0 ? (long) node.getYear() * 10000000000L : 0L) + node.getDate();
+                nodeDateMap.put(node.getId(), sortKey);
+            }
+        }
+
+        Map<String, MapLink> deduplicated = new LinkedHashMap<>();
+
+        for (FranchiseResponse.LinkItem link : franchiseData.getLinks()) {
+            long s = link.getSourceId();
+            long t = link.getTargetId();
+            if (s <= 0 || t <= 0 || s == t) continue;
+
+            String rel = link.getRelation() != null ? link.getRelation().toLowerCase().trim() : "";
+
+            long normSource = s;
+            long normTarget = t;
+            String normRel = rel;
+
+            // Normalize direction so canonical flow is always Parent/Predecessor -> Child/Branch
+            if (rel.equals("prequel")) {
+                normSource = t;
+                normTarget = s;
+                normRel = "sequel";
+            } else if (rel.equals("parent_story") || rel.equals("full_story")) {
+                normSource = t;
+                normTarget = s;
+                normRel = "side_story";
+            } else if (rel.equals("sequel") || rel.equals("side_story") || rel.equals("spin_off") || rel.equals("summary")) {
+                normSource = s;
+                normTarget = t;
+                normRel = rel;
+            } else {
+                long dateS = nodeDateMap.containsKey(s) ? nodeDateMap.get(s) : 0L;
+                long dateT = nodeDateMap.containsKey(t) ? nodeDateMap.get(t) : 0L;
+                if (dateS > dateT || (dateS == dateT && s > t)) {
+                    normSource = t;
+                    normTarget = s;
+                } else {
+                    normSource = s;
+                    normTarget = t;
+                }
+                normRel = rel;
+            }
+
+            String pairKey = Math.min(s, t) + "_" + Math.max(s, t);
+            MapLink candidate = new MapLink(link.getId(), normSource, normTarget, normRel);
+
+            if (!deduplicated.containsKey(pairKey)) {
+                deduplicated.put(pairKey, candidate);
+            } else {
+                MapLink existing = deduplicated.get(pairKey);
+                int existingPriority = getRelationPriority(existing.getRelation());
+                int candidatePriority = getRelationPriority(candidate.getRelation());
+                if (candidatePriority < existingPriority) {
+                    deduplicated.put(pairKey, candidate);
+                }
+            }
+        }
+
+        canonicalLinks.addAll(deduplicated.values());
+    }
+
+    private static int getRelationPriority(String relation) {
+        if (relation == null) return 10;
+        switch (relation.toLowerCase().trim()) {
+            case "sequel": return 1;
+            case "side_story": return 2;
+            case "spin_off": return 3;
+            case "summary": return 4;
+            case "alternative_version": return 5;
+            case "alternative_setting": return 6;
+            case "character": return 7;
+            default: return 8;
+        }
+    }
+
     private void calculateTreeLayout() {
         if (franchiseData == null || franchiseData.getNodes() == null || franchiseData.getNodes().isEmpty()) return;
 
         float density = getResources().getDisplayMetrics().density;
         List<FranchiseResponse.NodeItem> allSorted = FranchiseChronologyBottomSheet.sortNodesChronologically(franchiseData);
 
-        // 1. Build directed graph relationships
+        // 1. Build directed graph relationships from canonical deduplicated links
         Map<Long, Long> parentMap = new HashMap<>();
         Map<Long, List<Long>> childrenMap = new HashMap<>();
 
-        if (franchiseData.getLinks() != null) {
-            for (FranchiseResponse.LinkItem link : franchiseData.getLinks()) {
-                long src = link.getSourceId();
-                long tgt = link.getTargetId();
-                String rel = link.getRelation() != null ? link.getRelation().toLowerCase().trim() : "";
-
-                long p = -1;
-                long c = -1;
-                if (rel.equals("sequel") || rel.equals("parent_story") || rel.equals("full_story")) {
-                    p = src;
-                    c = tgt;
-                } else if (rel.equals("prequel")) {
-                    p = tgt;
-                    c = src;
-                } else if (rel.equals("side_story") || rel.equals("spin_off") || rel.equals("summary")
-                        || rel.equals("alternative_version") || rel.equals("alternative_setting")
-                        || rel.equals("other") || rel.equals("character")) {
-                    p = src;
-                    c = tgt;
-                }
-
-                if (p > 0 && c > 0) {
-                    if (!parentMap.containsKey(c)) {
-                        parentMap.put(c, p);
-                    }
-                    if (!childrenMap.containsKey(p)) {
-                        childrenMap.put(p, new ArrayList<>());
-                    }
-                    if (!childrenMap.get(p).contains(c)) {
-                        childrenMap.get(p).add(c);
-                    }
-                }
+        for (MapLink link : canonicalLinks) {
+            long p = link.getSourceId();
+            long c = link.getTargetId();
+            if (!parentMap.containsKey(c)) {
+                parentMap.put(c, p);
+            }
+            if (!childrenMap.containsKey(p)) {
+                childrenMap.put(p, new ArrayList<>());
+            }
+            if (!childrenMap.get(p).contains(c)) {
+                childrenMap.get(p).add(c);
             }
         }
 
@@ -414,7 +499,7 @@ public class FranchiseMapGraphView extends ViewGroup {
             if (bottom > maxBottomBranches) maxBottomBranches = bottom;
         }
 
-        float yCenter = paddingY + Math.max(1, maxTopBranches) * (cardHeightPx + rowSpacingPx * 1.3f);
+        float yCenter = paddingY + Math.max(1, maxTopBranches) * (cardHeightPx + rowSpacingPx * 1.35f);
         float currentX = paddingX;
 
         for (int i = 0; i < mainTrunkNodes.size(); i++) {
@@ -423,8 +508,8 @@ public class FranchiseMapGraphView extends ViewGroup {
             int branchCount = (branches != null) ? branches.size() : 0;
 
             // Gentle organic vertical wave for main storyline
-            float trunkWave = (float) Math.sin(i * 1.25f) * (cardHeightPx * 0.22f);
-            float trunkJitterX = ((float) Math.sin(mainNode.getId() * 0.31f)) * (14f * density);
+            float trunkWave = (float) Math.sin(i * 1.25f) * (cardHeightPx * 0.20f);
+            float trunkJitterX = ((float) Math.sin(mainNode.getId() * 0.31f)) * (12f * density);
             float trunkY = yCenter + trunkWave;
             float trunkX = currentX + trunkJitterX;
 
@@ -432,8 +517,7 @@ public class FranchiseMapGraphView extends ViewGroup {
 
             if (branches != null && !branches.isEmpty()) {
                 // Organic radial/diagonal fan-out around the trunk node
-                // We scatter them into staggered quadrants (top-right, bottom-right, mid-top, mid-bottom, etc.)
-                // so they are never in a rigid vertical stack!
+                // Offset is always forward (>= 0) so branches never sit on incoming trunk links!
                 int topCount = 0;
                 int bottomCount = 0;
 
@@ -444,24 +528,24 @@ public class FranchiseMapGraphView extends ViewGroup {
                     float bx;
                     float by;
 
-                    // Pseudo-random organic jitter
-                    float jx = ((float) Math.sin(branch.getId() * 1.73f)) * (20f * density);
-                    float jy = ((float) Math.cos(branch.getId() * 2.19f)) * (15f * density);
+                    // Deterministic subtle organic jitter
+                    float jx = ((float) Math.sin(branch.getId() * 1.73f)) * (14f * density);
+                    float jy = ((float) Math.cos(branch.getId() * 2.19f)) * (10f * density);
 
                     if (isTop) {
                         topCount++;
                         int tier = (topCount - 1) / 2 + 1;
-                        boolean shiftRight = (topCount % 2 == 1);
-                        float offsetX = shiftRight ? (cardWidthPx * 0.42f) : -(cardWidthPx * 0.28f);
+                        boolean farShift = (topCount % 2 == 1);
+                        float offsetX = farShift ? (cardWidthPx * 0.45f) : (cardWidthPx * 0.12f);
                         bx = trunkX + offsetX + (tier - 1) * (cardWidthPx * 0.35f) + jx;
-                        by = trunkY - tier * (cardHeightPx + rowSpacingPx * 1.15f) + jy;
+                        by = trunkY - tier * (cardHeightPx + rowSpacingPx * 1.35f) + jy;
                     } else {
                         bottomCount++;
                         int tier = (bottomCount - 1) / 2 + 1;
-                        boolean shiftRight = (bottomCount % 2 == 1);
-                        float offsetX = shiftRight ? (cardWidthPx * 0.42f) : -(cardWidthPx * 0.28f);
+                        boolean farShift = (bottomCount % 2 == 1);
+                        float offsetX = farShift ? (cardWidthPx * 0.45f) : (cardWidthPx * 0.12f);
                         bx = trunkX + offsetX + (tier - 1) * (cardWidthPx * 0.35f) + jx;
-                        by = trunkY + tier * (cardHeightPx + rowSpacingPx * 1.15f) + jy;
+                        by = trunkY + tier * (cardHeightPx + rowSpacingPx * 1.35f) + jy;
                     }
 
                     nodePositionsMap.put(branch.getId(), new PointF(bx, by));
@@ -469,17 +553,16 @@ public class FranchiseMapGraphView extends ViewGroup {
             }
 
             // Variable spacing between main nodes based on how many branches occupy the space
-            float step = cardWidthPx + colSpacingPx + (branchCount * (cardWidthPx * 0.32f));
+            float step = cardWidthPx + colSpacingPx + (branchCount * (cardWidthPx * 0.42f));
             currentX += step;
         }
 
-        // 5. Overlap Prevention & Physics Relaxation (Pass 2)
-        // Ensures no two cards overlap while keeping the organic scattered feel
-        float minGapX = cardWidthPx + (36f * density);
-        float minGapY = cardHeightPx + (28f * density);
+        // 5. Overlap Prevention, Line Clearance & Physics Relaxation (Pass 2)
+        float minGapX = cardWidthPx + (40f * density);
+        float minGapY = cardHeightPx + (32f * density);
 
-        for (int iter = 0; iter < 35; iter++) {
-            // Collision repulsion between all pairs of nodes
+        for (int iter = 0; iter < 40; iter++) {
+            // A. Collision repulsion between all pairs of nodes
             for (int i = 0; i < allSorted.size(); i++) {
                 long idA = allSorted.get(i).getId();
                 PointF posA = nodePositionsMap.get(idA);
@@ -517,19 +600,59 @@ public class FranchiseMapGraphView extends ViewGroup {
                 }
             }
 
-            // Directional link flow: target should be to the right of source for forward links
-            if (franchiseData.getLinks() != null) {
-                for (FranchiseResponse.LinkItem link : franchiseData.getLinks()) {
-                    PointF pSrc = nodePositionsMap.get(link.getSourceId());
-                    PointF pTgt = nodePositionsMap.get(link.getTargetId());
-                    if (pSrc == null || pTgt == null) continue;
+            // B. Line-to-card clearance pass: actively push cards away from intersecting connection lines
+            for (MapLink link : canonicalLinks) {
+                PointF pA = nodePositionsMap.get(link.getSourceId());
+                PointF pB = nodePositionsMap.get(link.getTargetId());
+                if (pA == null || pB == null) continue;
 
-                    String rel = link.getRelation() != null ? link.getRelation().toLowerCase() : "";
-                    boolean isForward = rel.equals("sequel") || rel.equals("side_story") || rel.equals("spin_off") || rel.equals("summary");
-                    if (isForward && pTgt.x < pSrc.x + 20f * density) {
-                        float push = (pSrc.x + 20f * density - pTgt.x) * 0.25f;
-                        pTgt.x += push;
+                float ax = pA.x + cardWidthPx / 2f;
+                float ay = pA.y + cardHeightPx / 2f;
+                float bx = pB.x + cardWidthPx / 2f;
+                float by = pB.y + cardHeightPx / 2f;
+
+                float segMinX = Math.min(ax, bx) - 16f * density;
+                float segMaxX = Math.max(ax, bx) + 16f * density;
+                float denom = bx - ax;
+
+                for (FranchiseResponse.NodeItem node : allSorted) {
+                    long nId = node.getId();
+                    if (nId == link.getSourceId() || nId == link.getTargetId()) continue;
+
+                    PointF pC = nodePositionsMap.get(nId);
+                    if (pC == null) continue;
+
+                    float cx = pC.x + cardWidthPx / 2f;
+                    float cy = pC.y + cardHeightPx / 2f;
+
+                    if (cx > segMinX && cx < segMaxX && Math.abs(denom) > 10f * density) {
+                        float t = Math.max(0.05f, Math.min(0.95f, (cx - ax) / denom));
+                        float lineY = ay + t * (by - ay);
+
+                        float reqClearanceY = (cardHeightPx / 2f) + (36f * density);
+                        float diffY = cy - lineY;
+
+                        if (Math.abs(diffY) < reqClearanceY) {
+                            float push = (reqClearanceY - Math.abs(diffY)) * 0.50f;
+                            if (diffY >= 0) {
+                                pC.y += push;
+                            } else {
+                                pC.y -= push;
+                            }
+                        }
                     }
+                }
+            }
+
+            // C. Directional link flow: target should be to the right of source
+            for (MapLink link : canonicalLinks) {
+                PointF pSrc = nodePositionsMap.get(link.getSourceId());
+                PointF pTgt = nodePositionsMap.get(link.getTargetId());
+                if (pSrc == null || pTgt == null) continue;
+
+                if (pTgt.x < pSrc.x + 24f * density) {
+                    float push = (pSrc.x + 24f * density - pTgt.x) * 0.25f;
+                    pTgt.x += push;
                 }
             }
         }
@@ -561,7 +684,7 @@ public class FranchiseMapGraphView extends ViewGroup {
         }
 
         contentWidth = (int) (maxX + paddingX * 1.5f);
-        contentHeight = Math.max((int) (650 * density), (int) (maxY + paddingY * 1.5f));
+        contentHeight = Math.max((int) (680 * density), (int) (maxY + paddingY * 1.5f));
     }
 
     private View createNodeCardView(LayoutInflater inflater, FranchiseResponse.NodeItem node, long currentId) {
@@ -617,9 +740,9 @@ public class FranchiseMapGraphView extends ViewGroup {
         this.selectedNodeId = nodeId;
         this.connectedNodeIds.clear();
 
-        if (nodeId > 0 && franchiseData != null && franchiseData.getLinks() != null) {
+        if (nodeId > 0) {
             connectedNodeIds.add(nodeId);
-            for (FranchiseResponse.LinkItem link : franchiseData.getLinks()) {
+            for (MapLink link : canonicalLinks) {
                 if (link.getSourceId() == nodeId) {
                     connectedNodeIds.add(link.getTargetId());
                 } else if (link.getTargetId() == nodeId) {
@@ -641,7 +764,7 @@ public class FranchiseMapGraphView extends ViewGroup {
         invalidate();
     }
 
-    public void selectBranchLink(FranchiseResponse.LinkItem link) {
+    public void selectBranchLink(MapLink link) {
         if (link == null) {
             this.selectedNodeId = -1;
             this.connectedNodeIds.clear();
@@ -674,7 +797,7 @@ public class FranchiseMapGraphView extends ViewGroup {
     }
 
     private void collectBranchNodes(long startNodeId, Set<Long> visited) {
-        if (franchiseData == null || franchiseData.getLinks() == null) return;
+        if (canonicalLinks.isEmpty()) return;
 
         List<Long> queue = new ArrayList<>();
         queue.add(startNodeId);
@@ -683,7 +806,7 @@ public class FranchiseMapGraphView extends ViewGroup {
         int head = 0;
         while (head < queue.size()) {
             long current = queue.get(head++);
-            for (FranchiseResponse.LinkItem link : franchiseData.getLinks()) {
+            for (MapLink link : canonicalLinks) {
                 if (link.getSourceId() == current && !visited.contains(link.getTargetId())) {
                     visited.add(link.getTargetId());
                     queue.add(link.getTargetId());
@@ -702,7 +825,7 @@ public class FranchiseMapGraphView extends ViewGroup {
         float endX, endY;
     }
 
-    private CurvePoints calculateCurvePoints(FranchiseResponse.LinkItem link, float density) {
+    private CurvePoints calculateCurvePoints(MapLink link, float density) {
         RectF sourceRect = nodeBoundsMap.get(link.getSourceId());
         RectF targetRect = nodeBoundsMap.get(link.getTargetId());
         if (sourceRect == null || targetRect == null) return null;
@@ -773,7 +896,7 @@ public class FranchiseMapGraphView extends ViewGroup {
             pts.c2y = pts.endY - dy * 0.35f;
         }
 
-        // 2. Obstacle Avoidance: bypass intermediate card rects
+        // 2. Obstacle Avoidance: bypass intermediate card rects using 5-point curve sampling
         float minX = Math.min(pts.startX, pts.endX) - 10f * density;
         float maxX = Math.max(pts.startX, pts.endX) + 10f * density;
 
@@ -786,31 +909,36 @@ public class FranchiseMapGraphView extends ViewGroup {
 
             if (rect.right < minX || rect.left > maxX) continue;
 
-            // Compute curve Y coordinate at rect.centerX()
-            float denom = pts.endX - pts.startX;
-            if (Math.abs(denom) > 1f) {
-                float t = (rect.centerX() - pts.startX) / denom;
-                if (t >= 0.15f && t <= 0.85f) {
-                    float oneMinusT = 1f - t;
-                    float curveY = oneMinusT * oneMinusT * oneMinusT * pts.startY
-                            + 3f * oneMinusT * oneMinusT * t * pts.c1y
-                            + 3f * oneMinusT * t * t * pts.c2y
-                            + t * t * t * pts.endY;
+            boolean intersects = false;
+            for (int s = 1; s <= 5; s++) {
+                float t = s / 6.0f;
+                float oneMinusT = 1f - t;
+                float px = oneMinusT * oneMinusT * oneMinusT * pts.startX
+                        + 3f * oneMinusT * oneMinusT * t * pts.c1x
+                        + 3f * oneMinusT * t * t * pts.c2x
+                        + t * t * t * pts.endX;
+                float py = oneMinusT * oneMinusT * oneMinusT * pts.startY
+                        + 3f * oneMinusT * oneMinusT * t * pts.c1y
+                        + 3f * oneMinusT * t * t * pts.c2y
+                        + t * t * t * pts.endY;
 
-                    // If curve Y intersects or passes through intermediate card
-                    if (curveY >= rect.top - 12f * density && curveY <= rect.bottom + 12f * density) {
-                        if (pts.startY <= rect.top || pts.endY <= rect.top) {
-                            // Route curve ABOVE card
-                            float avoidY = rect.top - 20f * density;
-                            pts.c1y = Math.min(pts.c1y, avoidY);
-                            pts.c2y = Math.min(pts.c2y, avoidY);
-                        } else {
-                            // Route curve BELOW card
-                            float avoidY = rect.bottom + 20f * density;
-                            pts.c1y = Math.max(pts.c1y, avoidY);
-                            pts.c2y = Math.max(pts.c2y, avoidY);
-                        }
-                    }
+                if (px >= rect.left - 12f * density && px <= rect.right + 12f * density
+                        && py >= rect.top - 12f * density && py <= rect.bottom + 12f * density) {
+                    intersects = true;
+                    break;
+                }
+            }
+
+            if (intersects) {
+                float midY = (pts.startY + pts.endY) / 2f;
+                if (midY < rect.centerY()) {
+                    float avoidY = rect.top - 24f * density;
+                    pts.c1y = Math.min(pts.c1y, avoidY);
+                    pts.c2y = Math.min(pts.c2y, avoidY);
+                } else {
+                    float avoidY = rect.bottom + 24f * density;
+                    pts.c1y = Math.max(pts.c1y, avoidY);
+                    pts.c2y = Math.max(pts.c2y, avoidY);
                 }
             }
         }
@@ -818,15 +946,15 @@ public class FranchiseMapGraphView extends ViewGroup {
         return pts;
     }
 
-    private FranchiseResponse.LinkItem findLinkAt(float canvasX, float canvasY) {
-        if (franchiseData == null || franchiseData.getLinks() == null) return null;
+    private MapLink findLinkAt(float canvasX, float canvasY) {
+        if (canonicalLinks.isEmpty()) return null;
 
         float density = getResources().getDisplayMetrics().density;
         float maxTouchDistPx = 14f * density;
-        FranchiseResponse.LinkItem bestLink = null;
+        MapLink bestLink = null;
         float minDistance = maxTouchDistPx;
 
-        for (FranchiseResponse.LinkItem link : franchiseData.getLinks()) {
+        for (MapLink link : canonicalLinks) {
             CurvePoints pts = calculateCurvePoints(link, density);
             if (pts == null) continue;
 
@@ -905,14 +1033,14 @@ public class FranchiseMapGraphView extends ViewGroup {
     }
 
     private void drawConnectionCurves(Canvas canvas) {
-        if (franchiseData == null || franchiseData.getLinks() == null) return;
+        if (canonicalLinks.isEmpty()) return;
 
         float density = getResources().getDisplayMetrics().density;
         Path bezierPath = new Path();
 
         boolean isSelectionActive = !connectedNodeIds.isEmpty() || selectedNodeId > 0;
 
-        for (FranchiseResponse.LinkItem link : franchiseData.getLinks()) {
+        for (MapLink link : canonicalLinks) {
             CurvePoints pts = calculateCurvePoints(link, density);
             if (pts == null) continue;
 
