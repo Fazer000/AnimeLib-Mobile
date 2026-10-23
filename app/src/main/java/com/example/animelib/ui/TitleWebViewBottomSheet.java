@@ -334,6 +334,11 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
                     if (layoutWebError != null) {
                         layoutWebError.setVisibility(View.GONE);
                     }
+                    if (JSInjectionsHandler.isIgnoredColorDomain(url)) {
+                        view.getSettings().setForceDark(WebSettings.FORCE_DARK_OFF);
+                    } else {
+                        view.getSettings().setForceDark(WebSettings.FORCE_DARK_AUTO);
+                    }
                     if (jsInjectionsHandler != null) {
                         jsInjectionsHandler.setupPlayerButtonListeners(view);
                         jsInjectionsHandler.setupBottomSheetInjections(view);
@@ -347,6 +352,11 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
                     CookieSyncManager.syncFromUrl(url);
                     CookieSyncManager.injectAuthLocalStorage(view);
                     com.example.animelib.util.LatestViewsManager.injectLatestViewsToWebView(view);
+                    if (JSInjectionsHandler.isIgnoredColorDomain(url)) {
+                        view.getSettings().setForceDark(WebSettings.FORCE_DARK_OFF);
+                    } else {
+                        view.getSettings().setForceDark(WebSettings.FORCE_DARK_AUTO);
+                    }
                     if (progressBarWeb != null) {
                         progressBarWeb.setVisibility(View.GONE);
                     }

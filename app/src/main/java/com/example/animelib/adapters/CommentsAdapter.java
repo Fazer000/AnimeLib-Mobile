@@ -38,6 +38,7 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
 
     public interface CommentActionListener {
         void onReplyClicked(CommentsResponse.CommentItem comment);
+        void onReplyCancelled(CommentsResponse.CommentItem comment);
         void onSendInlineReply(CommentsResponse.CommentItem comment, CharSequence rawText, EditText inputField);
         void onVoteClicked(CommentsResponse.CommentItem comment, int targetVote);
         void onMoreActionsClicked(View anchorView, CommentsResponse.CommentItem comment);
@@ -68,7 +69,9 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
 
     public void setActiveReplyCommentId(Long commentId) {
         this.activeReplyCommentId = commentId;
-        notifyDataSetChanged();
+        try {
+            notifyDataSetChanged();
+        } catch (Exception ignored) {}
     }
 
     public Long getActiveReplyCommentId() {
@@ -498,7 +501,12 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                     holder.tvInlineReplyToText.setText("Ответ для @" + replyToUsername);
                 }
                 if (holder.btnInlineCancelReply != null) {
-                    holder.btnInlineCancelReply.setOnClickListener(v -> setActiveReplyCommentId(null));
+                    holder.btnInlineCancelReply.setOnClickListener(v -> {
+                        setActiveReplyCommentId(null);
+                        if (commentActionListener != null) {
+                            commentActionListener.onReplyCancelled(item);
+                        }
+                    });
                 }
                 if (holder.inlineCommentInputField != null) {
                     com.example.animelib.util.CommentFormattingHelper.attachFormattingTextWatcher(holder.inlineCommentInputField);
@@ -557,6 +565,9 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             holder.replyActionView.setOnClickListener(v -> {
                 if (isReplyingToThis) {
                     setActiveReplyCommentId(null);
+                    if (commentActionListener != null) {
+                        commentActionListener.onReplyCancelled(item);
+                    }
                 } else {
                     setActiveReplyCommentId(item.getId());
                     if (commentActionListener != null) {

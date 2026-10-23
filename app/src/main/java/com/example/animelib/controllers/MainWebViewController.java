@@ -316,6 +316,12 @@ public class MainWebViewController {
                 CookieSyncManager.syncFromUrl(url);
                 CookieSyncManager.injectAuthLocalStorage(view);
 
+                if (JSInjectionsHandler.isIgnoredColorDomain(url)) {
+                    view.getSettings().setForceDark(WebSettings.FORCE_DARK_OFF);
+                } else {
+                    view.getSettings().setForceDark(WebSettings.FORCE_DARK_AUTO);
+                }
+
                 if (jsInjectionsHandler != null) {
                     jsInjectionsHandler.setupPlayerButtonListeners(view);
                 }
@@ -328,6 +334,12 @@ public class MainWebViewController {
                 }
 
                 hideDomainChangeSpinner();
+
+                if (JSInjectionsHandler.isIgnoredColorDomain(url)) {
+                    view.getSettings().setForceDark(WebSettings.FORCE_DARK_OFF);
+                } else {
+                    view.getSettings().setForceDark(WebSettings.FORCE_DARK_AUTO);
+                }
 
                 if (jsInjectionsHandler != null) {
                     jsInjectionsHandler.reinjectDomListeners(view);

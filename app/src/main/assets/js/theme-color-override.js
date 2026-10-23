@@ -2,7 +2,37 @@
     try {
         var STYLE_ID = 'animelib-player-theme-colors-override';
 
+        function isIgnoredDomain() {
+            try {
+                var host = (window.location && window.location.hostname) ? window.location.hostname.toLowerCase() : '';
+                var href = (window.location && window.location.href) ? window.location.href.toLowerCase() : '';
+                if (host === 'auth.hentaicdn.org' || host.indexOf('auth.hentaicdn.org') !== -1 ||
+                    href.indexOf('auth.hentaicdn.org') !== -1 || href.indexOf('hentaicdn.org/auth') !== -1) {
+                    return true;
+                }
+            } catch (e) {}
+            return false;
+        }
+
+        if (isIgnoredDomain()) {
+            var existingStyle = document.getElementById(STYLE_ID);
+            if (existingStyle) {
+                existingStyle.remove();
+                console.log('[AnimeLIB] Removed theme color overrides on ignored domain: ' + (window.location ? window.location.href : ''));
+            }
+            return;
+        }
+
         function applyThemeColorOverrides() {
+            if (isIgnoredDomain()) {
+                var existingStyle = document.getElementById(STYLE_ID);
+                if (existingStyle) {
+                    existingStyle.remove();
+                    console.log('[AnimeLIB] Removed player dark theme color overrides on ignored domain');
+                }
+                return;
+            }
+
             var docEl = document.documentElement;
             if (!docEl) return;
 

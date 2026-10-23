@@ -32,17 +32,29 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
 
     private static final String TAG = "FranchiseMapBS";
 
-    private final FranchiseResponse franchiseResponse;
+    private FranchiseResponse franchiseResponse;
+    private final long shikimoriId;
     private final ApiService apiService;
 
     private TextView tvMapCountBadge;
     private ImageButton btnCloseMap;
     private FranchiseMapGraphView franchiseGraphView;
     private View mapGraphContainer;
+    private View mapLoadingProgress;
+    private View mapErrorContainer;
+    private View zoomControlsCard;
+    private ImageButton btnZoomIn;
+    private ImageButton btnZoomOut;
+    private TextView tvZoomPercentage;
 
     public FranchiseMapBottomSheet(@NonNull Context context, FranchiseResponse response) {
+        this(context, response, -1);
+    }
+
+    public FranchiseMapBottomSheet(@NonNull Context context, FranchiseResponse response, long shikimoriId) {
         super(context);
         this.franchiseResponse = response;
+        this.shikimoriId = shikimoriId;
         this.apiService = new ApiService(context);
     }
 
@@ -53,6 +65,14 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
 
         initViews();
         setupBottomSheetHeightAndTouch();
+
+        if (franchiseResponse != null && franchiseResponse.getNodes() != null && !franchiseResponse.getNodes().isEmpty()) {
+            bindFranchiseData(franchiseResponse);
+        } else if (shikimoriId > 0) {
+            loadMapData();
+        } else {
+            showError("Не удалось определить ID франшизы");
+        }
     }
 
     private void initViews() {
@@ -60,38 +80,107 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
         btnCloseMap = findViewById(R.id.btnCloseMap);
         franchiseGraphView = findViewById(R.id.franchiseGraphView);
         mapGraphContainer = findViewById(R.id.mapGraphContainer);
+        mapLoadingProgress = findViewById(R.id.mapLoadingProgress);
+        mapErrorContainer = findViewById(R.id.mapErrorContainer);
+        zoomControlsCard = findViewById(R.id.zoomControlsCard);
 
-        ImageButton btnZoomIn = findViewById(R.id.btnZoomIn);
-        ImageButton btnZoomOut = findViewById(R.id.btnZoomOut);
-        TextView tvZoomPercentage = findViewById(R.id.tvZoomPercentage);
+        btnZoomIn = findViewById(R.id.btnZoomIn);
+        btnZoomOut = findViewById(R.id.btnZoomOut);
+        tvZoomPercentage = findViewById(R.id.tvZoomPercentage);
+
+        View btnRetry = findViewById(R.id.btnRetryMapLoad);
+        if (btnRetry != null) {
+            btnRetry.setOnClickListener(v -> loadMapData());
+        }
 
         if (btnCloseMap != null) {
             btnCloseMap.setOnClickListener(v -> dismiss());
         }
+    }
 
-        if (franchiseResponse != null && franchiseResponse.getNodes() != null) {
-            if (tvMapCountBadge != null) {
-                tvMapCountBadge.setText(franchiseResponse.getNodes().size() + " частей");
+    private void loadMapData() {
+        if (shikimoriId <= 0) {
+            showError("Некорректный ID Shikimori");
+            return;
+        }
+
+        if (mapLoadingProgress != null) mapLoadingProgress.setVisibility(View.VISIBLE);
+        if (mapErrorContainer != null) mapErrorContainer.setVisibility(View.GONE);
+        if (franchiseGraphView != null) franchiseGraphView.setVisibility(View.GONE);
+        if (zoomControlsCard != null) zoomControlsCard.setVisibility(View.GONE);
+
+        apiService.getFranchise(shikimoriId, new ApiService.FranchiseCallback() {
+            @Override
+            public void onFranchiseReceived(FranchiseResponse response) {
+                Activity act = getActivityFromContext(getContext());
+                if (act == null || act.isFinishing()) return;
+
+                act.runOnUiThread(() -> {
+                    franchiseResponse = response;
+                    if (mapLoadingProgress != null) mapLoadingProgress.setVisibility(View.GONE);
+                    if (mapErrorContainer != null) mapErrorContainer.setVisibility(View.GONE);
+                    if (franchiseGraphView != null) franchiseGraphView.setVisibility(View.VISIBLE);
+                    if (zoomControlsCard != null) zoomControlsCard.setVisibility(View.VISIBLE);
+                    bindFranchiseData(response);
+                });
             }
 
-            if (franchiseGraphView != null) {
-                // Instantly navigate on node click (Requirement #5)
-                franchiseGraphView.setFranchiseData(franchiseResponse, (node, relation) -> watchSelectedNode(node));
+            @Override
+            public void onError(String error) {
+                Activity act = getActivityFromContext(getContext());
+                if (act == null || act.isFinishing()) return;
 
-                // Wire up zoom controls (Requirement #6)
-                if (btnZoomIn != null) {
-                    btnZoomIn.setOnClickListener(v -> franchiseGraphView.zoomIn());
-                }
-                if (btnZoomOut != null) {
-                    btnZoomOut.setOnClickListener(v -> franchiseGraphView.zoomOut());
-                }
-                if (tvZoomPercentage != null) {
-                    tvZoomPercentage.setText(Math.round(franchiseGraphView.getScaleFactor() * 100) + "%");
-                    franchiseGraphView.setOnZoomChangeListener(scale ->
-                            tvZoomPercentage.setText(Math.round(scale * 100) + "%")
-                    );
-                }
+                act.runOnUiThread(() -> {
+                    if (mapLoadingProgress != null) mapLoadingProgress.setVisibility(View.GONE);
+                    showError("Не удалось загрузить карту франшизы");
+                });
             }
+        });
+    }
+
+    private void showError(String message) {
+        if (mapLoadingProgress != null) mapLoadingProgress.setVisibility(View.GONE);
+        if (franchiseGraphView != null) franchiseGraphView.setVisibility(View.GONE);
+        if (zoomControlsCard != null) zoomControlsCard.setVisibility(View.GONE);
+        if (mapErrorContainer != null) {
+            TextView tvMsg = mapErrorContainer.findViewById(R.id.tvMapErrorMessage);
+            if (tvMsg != null && message != null) {
+                tvMsg.setText(message);
+            }
+            mapErrorContainer.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void bindFranchiseData(FranchiseResponse response) {
+        if (response == null || response.getNodes() == null) {
+            showError("Нет данных для отображения карты");
+            return;
+        }
+
+        if (tvMapCountBadge != null) {
+            tvMapCountBadge.setText(response.getNodes().size() + " частей");
+        }
+
+        if (franchiseGraphView != null) {
+            franchiseGraphView.setVisibility(View.VISIBLE);
+            franchiseGraphView.setFranchiseData(response, (node, relation) -> watchSelectedNode(node));
+
+            if (btnZoomIn != null) {
+                btnZoomIn.setOnClickListener(v -> franchiseGraphView.zoomIn());
+            }
+            if (btnZoomOut != null) {
+                btnZoomOut.setOnClickListener(v -> franchiseGraphView.zoomOut());
+            }
+            if (tvZoomPercentage != null) {
+                tvZoomPercentage.setText(Math.round(franchiseGraphView.getScaleFactor() * 100) + "%");
+                franchiseGraphView.setOnZoomChangeListener(scale ->
+                        tvZoomPercentage.setText(Math.round(scale * 100) + "%")
+                );
+            }
+        }
+
+        if (zoomControlsCard != null) {
+            zoomControlsCard.setVisibility(View.VISIBLE);
         }
     }
 

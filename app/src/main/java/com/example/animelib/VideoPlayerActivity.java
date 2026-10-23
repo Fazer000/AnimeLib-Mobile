@@ -3443,6 +3443,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
             playerChronologyController.loadChronologyForAnime(animeInfo);
         }
 
+        if (playerRelatedTitlesController != null && currentAnimeId != null && !isOfflineMode) {
+            playerRelatedTitlesController.loadRelatedTitles(currentAnimeId, animeUrl);
+        }
+
         String rus = animeInfo.getData().getRus_name();
         if (rus == null || rus.isEmpty()) rus = animeInfo.getData().getName();
         if (rus != null && !rus.isEmpty() && animeTitleView != null) {

@@ -668,9 +668,9 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Блок Хронология (карусель хронологии франшизы из Shikimori) -->
+        <!-- Блок Связанное (карусель связанных тайтлов из AnimeLib API) -->
         <LinearLayout
-            android:id="@+id/portraitChronologyContainer"
+            android:id="@+id/portraitRelatedTitlesContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
@@ -679,7 +679,7 @@
             android:clipToPadding="false"
             android:visibility="gone">
 
-            <!-- Заголовок и кнопки КАРТА / СПИСОК -->
+            <!-- Заголовок Связанное и кнопка КАРТА -->
             <RelativeLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -700,13 +700,13 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Хронология"
+                        android:text="Связанное"
                         android:textColor="@color/primary_text_color"
                         android:textSize="16sp"
                         android:fontFamily="@font/open_sans_bold" />
 
                     <TextView
-                        android:id="@+id/tvPortraitChronologyCount"
+                        android:id="@+id/tvPortraitRelatedCount"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
@@ -726,37 +726,6 @@
                     android:layout_centerVertical="true"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
-
-                    <!-- Выпадающее меню фильтрации слева от кнопки Карта -->
-                    <LinearLayout
-                        android:id="@+id/btnChronologyFilterDropdown"
-                        android:layout_width="wrap_content"
-                        android:layout_height="38dp"
-                        android:layout_marginEnd="8dp"
-                        android:background="@drawable/player_episode_item_normal"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal"
-                        android:paddingHorizontal="12dp">
-
-                        <TextView
-                            android:id="@+id/tvChronologyFilterText"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:fontFamily="@font/open_sans_bold"
-                            android:text="Все"
-                            android:textColor="@color/accent_text_color"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
-
-                        <ImageView
-                            android:layout_width="14dp"
-                            android:layout_height="14dp"
-                            android:layout_marginStart="6dp"
-                            android:src="@drawable/ic_chevron_down"
-                            app:tint="@color/accent_text_color" />
-                    </LinearLayout>
 
                     <!-- Кнопка Карта в стиле айтема эпизода портретного режима -->
                     <LinearLayout
@@ -783,43 +752,6 @@
                     </LinearLayout>
                 </LinearLayout>
             </RelativeLayout>
-
-            <!-- Loading Indicator -->
-            <com.google.android.material.progressindicator.CircularProgressIndicator
-                android:id="@+id/portraitChronologyLoadingIndicator"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:layout_gravity="center_horizontal"
-                android:layout_marginVertical="12dp"
-                android:indeterminate="true"
-                android:visibility="gone"
-                app:indicatorSize="32dp"
-                app:indicatorColor="@color/purple_primary" />
-
-            <!-- Горизонтальная карусель хронологии -->
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/portraitChronologyRecyclerView"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="6dp"
-                android:clipToPadding="false"
-                android:clipChildren="false"
-                android:orientation="horizontal"
-                android:overScrollMode="never" />
-
-        </LinearLayout>
-
-        <!-- Блок Связанное (карусель связанных тайтлов) в вертикальном режиме -->
-        <LinearLayout
-            android:id="@+id/portraitRelatedTitlesContainer"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginBottom="16dp"
-            android:clipChildren="false"
-            android:clipToPadding="false"
-            android:visibility="gone">
 
             <com.google.android.material.progressindicator.CircularProgressIndicator
                 android:id="@+id/portraitRelatedLoadingIndicator"

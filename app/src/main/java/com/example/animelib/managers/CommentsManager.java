@@ -815,10 +815,19 @@ public class CommentsManager {
         commentsAdapter.setCommentActionListener(new CommentsAdapter.CommentActionListener() {
             @Override
             public void onReplyClicked(CommentsResponse.CommentItem comment) {
-                if (portraitCommentsAdapter != null) {
-                    portraitCommentsAdapter.setActiveReplyCommentId(comment != null ? comment.getId() : null);
+                Long targetId = comment != null ? comment.getId() : null;
+                if (portraitCommentsAdapter != null && portraitCommentsAdapter != commentsAdapter) {
+                    portraitCommentsAdapter.setActiveReplyCommentId(targetId);
                 }
-                startReplyMode(comment);
+                cancelMainInputReplyMode();
+            }
+
+            @Override
+            public void onReplyCancelled(CommentsResponse.CommentItem comment) {
+                if (portraitCommentsAdapter != null && portraitCommentsAdapter != commentsAdapter) {
+                    portraitCommentsAdapter.setActiveReplyCommentId(null);
+                }
+                cancelMainInputReplyMode();
             }
 
             @Override
@@ -1314,10 +1323,19 @@ public class CommentsManager {
             this.portraitCommentsAdapter.setCommentActionListener(new CommentsAdapter.CommentActionListener() {
                 @Override
                 public void onReplyClicked(CommentsResponse.CommentItem comment) {
-                    if (commentsAdapter != null) {
-                        commentsAdapter.setActiveReplyCommentId(comment != null ? comment.getId() : null);
+                    Long targetId = comment != null ? comment.getId() : null;
+                    if (commentsAdapter != null && commentsAdapter != portraitCommentsAdapter) {
+                        commentsAdapter.setActiveReplyCommentId(targetId);
                     }
-                    startReplyMode(comment);
+                    cancelMainInputReplyMode();
+                }
+
+                @Override
+                public void onReplyCancelled(CommentsResponse.CommentItem comment) {
+                    if (commentsAdapter != null && commentsAdapter != portraitCommentsAdapter) {
+                        commentsAdapter.setActiveReplyCommentId(null);
+                    }
+                    cancelMainInputReplyMode();
                 }
 
                 @Override
@@ -1925,25 +1943,29 @@ public class CommentsManager {
         } catch (Exception ignored) {}
     }
 
-    public void cancelReplyMode() {
+    public void cancelMainInputReplyMode() {
         editingComment = null;
         replyParentCommentId = null;
         replyRootId = null;
         replyCommentLevel = 0;
         replyUsername = null;
 
-        if (commentsAdapter != null) {
-            commentsAdapter.setActiveReplyCommentId(null);
-        }
-        if (portraitCommentsAdapter != null) {
-            portraitCommentsAdapter.setActiveReplyCommentId(null);
-        }
-
         if (replyBar != null) {
             replyBar.setVisibility(View.GONE);
         }
         if (portraitReplyBar != null) {
             portraitReplyBar.setVisibility(View.GONE);
+        }
+    }
+
+    public void cancelReplyMode() {
+        cancelMainInputReplyMode();
+
+        if (commentsAdapter != null) {
+            commentsAdapter.setActiveReplyCommentId(null);
+        }
+        if (portraitCommentsAdapter != null) {
+            portraitCommentsAdapter.setActiveReplyCommentId(null);
         }
     }
 

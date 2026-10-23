@@ -51,6 +51,7 @@ public class PlayerRelatedTitlesController {
     private View relatedTitlesDimOverlay;
     private RecyclerView relatedTitlesRecyclerView;
     private View portraitRelatedTitlesContainer;
+    private TextView tvPortraitRelatedCount;
     private RecyclerView portraitRelatedTitlesRecyclerView;
     private View portraitRelatedLoadingIndicator;
     private View portraitRelatedSkeletonContainer;
@@ -142,6 +143,7 @@ public class PlayerRelatedTitlesController {
 
         // Setup Portrait RecyclerView and controls
         if (portraitRelatedTitlesContainer != null) {
+            tvPortraitRelatedCount = portraitRelatedTitlesContainer.findViewById(R.id.tvPortraitRelatedCount);
             portraitRelatedSkeletonContainer = portraitRelatedTitlesContainer.findViewById(R.id.portraitRelatedSkeletonContainer);
             portraitRelatedLoadingIndicator = portraitRelatedTitlesContainer.findViewById(R.id.portraitRelatedLoadingIndicator);
             portraitRelatedErrorContainer = portraitRelatedTitlesContainer.findViewById(R.id.portraitRelatedErrorContainer);
@@ -335,11 +337,14 @@ public class PlayerRelatedTitlesController {
 
         if (isPortrait) {
             if (portraitRelatedTitlesContainer != null) {
-                portraitRelatedTitlesContainer.setVisibility(View.GONE);
+                portraitRelatedTitlesContainer.setVisibility(View.VISIBLE);
             }
             if (portraitRelatedSkeletonContainer != null) {
                 portraitRelatedSkeletonContainer.setVisibility(View.VISIBLE);
                 startSkeletonShimmer();
+            }
+            if (portraitRelatedTitlesRecyclerView != null) {
+                portraitRelatedTitlesRecyclerView.setVisibility(View.GONE);
             }
         } else {
             if (portraitRelatedTitlesContainer != null) {
@@ -352,9 +357,6 @@ public class PlayerRelatedTitlesController {
         }
         if (portraitRelatedErrorContainer != null) {
             portraitRelatedErrorContainer.setVisibility(View.GONE);
-        }
-        if (portraitRelatedTitlesRecyclerView != null) {
-            portraitRelatedTitlesRecyclerView.setVisibility(isPortrait ? View.GONE : View.GONE);
         }
 
         if (relatedTitlesManager != null) {
@@ -399,10 +401,24 @@ public class PlayerRelatedTitlesController {
                             if (portraitRelatedTitlesRecyclerView != null) {
                                 portraitRelatedTitlesRecyclerView.setVisibility(View.VISIBLE);
                             }
+                            if (portraitRelatedTitlesContainer != null) {
+                                portraitRelatedTitlesContainer.setVisibility(View.VISIBLE);
+                            }
+                            if (tvPortraitRelatedCount != null) {
+                                tvPortraitRelatedCount.setText(String.valueOf(response.getData().size()));
+                                tvPortraitRelatedCount.setVisibility(View.VISIBLE);
+                            }
                             showRelatedTitles(response.getData());
                         } else {
                             Log.d(TAG, "No related titles found");
-                            if (portraitRelatedTitlesContainer != null) {
+                            if (tvPortraitRelatedCount != null) {
+                                tvPortraitRelatedCount.setVisibility(View.GONE);
+                            }
+                            if (portraitRelatedTitlesRecyclerView != null) {
+                                portraitRelatedTitlesRecyclerView.setVisibility(View.GONE);
+                            }
+                            View btnMap = portraitRelatedTitlesContainer != null ? portraitRelatedTitlesContainer.findViewById(R.id.btnOpenChronologyMap) : null;
+                            if (portraitRelatedTitlesContainer != null && (btnMap == null || btnMap.getVisibility() != View.VISIBLE)) {
                                 portraitRelatedTitlesContainer.setVisibility(View.GONE);
                             }
                         }
@@ -446,7 +462,14 @@ public class PlayerRelatedTitlesController {
         if (isPortrait && portraitRelatedTitlesAdapter != null) {
             portraitRelatedTitlesAdapter.updateData(relatedTitles);
             if (portraitRelatedTitlesContainer != null) {
-                portraitRelatedTitlesContainer.setVisibility(View.GONE);
+                portraitRelatedTitlesContainer.setVisibility(View.VISIBLE);
+            }
+            if (portraitRelatedTitlesRecyclerView != null) {
+                portraitRelatedTitlesRecyclerView.setVisibility(View.VISIBLE);
+            }
+            if (tvPortraitRelatedCount != null && relatedTitles != null && !relatedTitles.isEmpty()) {
+                tvPortraitRelatedCount.setText(String.valueOf(relatedTitles.size()));
+                tvPortraitRelatedCount.setVisibility(View.VISIBLE);
             }
         }
     }

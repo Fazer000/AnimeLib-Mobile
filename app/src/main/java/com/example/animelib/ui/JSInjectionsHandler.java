@@ -68,7 +68,7 @@ public class JSInjectionsHandler {
         loadAndExecuteJS(webView, "js/debug-info.js", "Debug info");
         loadAndExecuteJS(webView, "js/button-checker.js", "Button checker");
         loadAndExecuteJS(webView, "js/site-logo-long-press.js", "Site logo long press listener");
-        loadAndExecuteJS(webView, "js/theme-color-override.js", "Theme color override");
+        injectThemeColorOverride(webView);
 
     }
 
@@ -86,6 +86,26 @@ public class JSInjectionsHandler {
         loadAndExecuteJS(webView, "js/carousel-fix.js", "Carousel scroll fix");
         loadAndExecuteJS(webView, "js/auth-handler.js", "Auth handler");
         loadAndExecuteJS(webView, "js/site-logo-long-press.js", "Site logo long press listener");
+        injectThemeColorOverride(webView);
+    }
+
+    public static boolean isIgnoredColorDomain(String url) {
+        if (url == null) return false;
+        String lowerUrl = url.toLowerCase();
+        return lowerUrl.contains("auth.hentaicdn.org") || lowerUrl.contains("hentaicdn.org/auth");
+    }
+
+    private void injectThemeColorOverride(WebView webView) {
+        if (webView == null) return;
+        String url = webView.getUrl();
+        if (isIgnoredColorDomain(url)) {
+            Log.d(TAG, "Skipping theme-color-override.js for ignored color domain: " + url);
+            webView.evaluateJavascript(
+                "(function(){ var el = document.getElementById('animelib-player-theme-colors-override'); if (el) el.remove(); })();",
+                null
+            );
+            return;
+        }
         loadAndExecuteJS(webView, "js/theme-color-override.js", "Theme color override");
     }
 
