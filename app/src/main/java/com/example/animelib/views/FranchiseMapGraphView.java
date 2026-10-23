@@ -225,12 +225,12 @@ public class FranchiseMapGraphView extends ViewGroup {
     }
 
     private void initPaints(Context context, float density) {
-        linePaintSequel = createCurvePaint(0xFFA855F7, 1.4f * density, false);  // Фиолетовый сиквел/приквел
-        linePaintMain = createCurvePaint(0xFF3B82F6, 1.4f * density, false);    // Синий основной сюжет
-        linePaintSide = createCurvePaint(0xFF06B6D4, 1.1f * density, true);     // Бирюзовый пунктир сайд-стори
-        linePaintSummary = createCurvePaint(0xFFF59E0B, 1.0f * density, false); // Янтарный рекап
-        linePaintDefault = createCurvePaint(0xFF8E8E93, 1.0f * density, false); // Серый по умолчанию
-        linePaintDimmed = createCurvePaint(0x338E8E93, 0.8f * density, false);  // Приглушенный
+        linePaintSequel = createCurvePaint(0xFFA855F7, 3.2f * density, false);  // Фиолетовый сиквел/приквел (основная линия заметно толще)
+        linePaintMain = createCurvePaint(0xFF3B82F6, 3.2f * density, false);    // Синий основной сюжет (основная линия заметно толще)
+        linePaintSide = createCurvePaint(0xFF06B6D4, 1.4f * density, true);     // Бирюзовый пунктир сайд-стори
+        linePaintSummary = createCurvePaint(0xFFF59E0B, 1.4f * density, false); // Янтарный рекап
+        linePaintDefault = createCurvePaint(0xFF8E8E93, 1.4f * density, false); // Серый по умолчанию
+        linePaintDimmed = createCurvePaint(0x338E8E93, 0.9f * density, false);  // Приглушенный
 
         arrowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         arrowPaint.setStyle(Paint.Style.FILL);
@@ -489,80 +489,96 @@ public class FranchiseMapGraphView extends ViewGroup {
             }
         }
 
-        // 4. Calculate initial organic 2D constellation layout
-        int maxTopBranches = 0;
-        int maxBottomBranches = 0;
+        // 4. Calculate structured branch clusters with clear main corridor
+        int maxTopRows = 1;
+        int maxBottomRows = 1;
+
         for (List<FranchiseResponse.NodeItem> branches : branchNodesMap.values()) {
-            int top = (branches.size() + 1) / 2;
-            int bottom = branches.size() / 2;
-            if (top > maxTopBranches) maxTopBranches = top;
-            if (bottom > maxBottomBranches) maxBottomBranches = bottom;
+            if (branches == null || branches.isEmpty()) continue;
+            int topCount = (branches.size() + 1) / 2;
+            int bottomCount = branches.size() / 2;
+            int topRows = (topCount <= 2) ? 1 : 2;
+            int bottomRows = (bottomCount <= 2) ? 1 : 2;
+            if (topRows > maxTopRows) maxTopRows = topRows;
+            if (bottomRows > maxBottomRows) maxBottomRows = bottomRows;
         }
 
-        float yCenter = paddingY + Math.max(1, maxTopBranches) * (cardHeightPx + rowSpacingPx * 1.35f);
+        float yCenter = paddingY + maxTopRows * (cardHeightPx + rowSpacingPx * 1.15f);
         float currentX = paddingX;
+
+        Map<Long, PointF> idealPositionsMap = new HashMap<>();
 
         for (int i = 0; i < mainTrunkNodes.size(); i++) {
             FranchiseResponse.NodeItem mainNode = mainTrunkNodes.get(i);
             List<FranchiseResponse.NodeItem> branches = branchNodesMap.get(mainNode.getId());
             int branchCount = (branches != null) ? branches.size() : 0;
 
-            // Gentle organic vertical wave for main storyline
-            float trunkWave = (float) Math.sin(i * 1.25f) * (cardHeightPx * 0.20f);
-            float trunkJitterX = ((float) Math.sin(mainNode.getId() * 0.31f)) * (12f * density);
-            float trunkY = yCenter + trunkWave;
-            float trunkX = currentX + trunkJitterX;
+            float trunkX = currentX;
+            float trunkY = yCenter;
 
             nodePositionsMap.put(mainNode.getId(), new PointF(trunkX, trunkY));
+            idealPositionsMap.put(mainNode.getId(), new PointF(trunkX, trunkY));
+
+            int clusterCols = 0;
 
             if (branches != null && !branches.isEmpty()) {
-                // Organic radial/diagonal fan-out around the trunk node
-                // Offset is always forward (>= 0) so branches never sit on incoming trunk links!
-                int topCount = 0;
-                int bottomCount = 0;
+                List<FranchiseResponse.NodeItem> topBranches = new ArrayList<>();
+                List<FranchiseResponse.NodeItem> bottomBranches = new ArrayList<>();
 
                 for (int b = 0; b < branches.size(); b++) {
-                    FranchiseResponse.NodeItem branch = branches.get(b);
-                    boolean isTop = (b % 2 == 0);
-
-                    float bx;
-                    float by;
-
-                    // Deterministic subtle organic jitter
-                    float jx = ((float) Math.sin(branch.getId() * 1.73f)) * (14f * density);
-                    float jy = ((float) Math.cos(branch.getId() * 2.19f)) * (10f * density);
-
-                    if (isTop) {
-                        topCount++;
-                        int tier = (topCount - 1) / 2 + 1;
-                        boolean farShift = (topCount % 2 == 1);
-                        float offsetX = farShift ? (cardWidthPx * 0.45f) : (cardWidthPx * 0.12f);
-                        bx = trunkX + offsetX + (tier - 1) * (cardWidthPx * 0.35f) + jx;
-                        by = trunkY - tier * (cardHeightPx + rowSpacingPx * 1.35f) + jy;
+                    if (b % 2 == 0) {
+                        topBranches.add(branches.get(b));
                     } else {
-                        bottomCount++;
-                        int tier = (bottomCount - 1) / 2 + 1;
-                        boolean farShift = (bottomCount % 2 == 1);
-                        float offsetX = farShift ? (cardWidthPx * 0.45f) : (cardWidthPx * 0.12f);
-                        bx = trunkX + offsetX + (tier - 1) * (cardWidthPx * 0.35f) + jx;
-                        by = trunkY + tier * (cardHeightPx + rowSpacingPx * 1.35f) + jy;
+                        bottomBranches.add(branches.get(b));
                     }
+                }
+
+                // Keep branches clustered closely around parent (up to 2 rows per half)
+                int topCols = (topBranches.size() <= 2) ? topBranches.size() : (topBranches.size() + 1) / 2;
+                int bottomCols = (bottomBranches.size() <= 2) ? bottomBranches.size() : (bottomBranches.size() + 1) / 2;
+                clusterCols = Math.max(1, Math.max(topCols, bottomCols));
+
+                float clusterStartX = trunkX + cardWidthPx + colSpacingPx * 0.45f;
+                float branchColWidth = cardWidthPx + colSpacingPx * 0.40f;
+                float branchRowHeight = cardHeightPx + rowSpacingPx * 0.85f;
+
+                for (int t = 0; t < topBranches.size(); t++) {
+                    FranchiseResponse.NodeItem branch = topBranches.get(t);
+                    int col = t % clusterCols;
+                    int row = t / clusterCols;
+
+                    float bx = clusterStartX + col * branchColWidth;
+                    float by = trunkY - (row + 1) * branchRowHeight;
 
                     nodePositionsMap.put(branch.getId(), new PointF(bx, by));
+                    idealPositionsMap.put(branch.getId(), new PointF(bx, by));
+                }
+
+                for (int b = 0; b < bottomBranches.size(); b++) {
+                    FranchiseResponse.NodeItem branch = bottomBranches.get(b);
+                    int col = b % clusterCols;
+                    int row = b / clusterCols;
+
+                    float bx = clusterStartX + col * branchColWidth;
+                    float by = trunkY + (row + 1) * branchRowHeight;
+
+                    nodePositionsMap.put(branch.getId(), new PointF(bx, by));
+                    idealPositionsMap.put(branch.getId(), new PointF(bx, by));
                 }
             }
 
-            // Variable spacing between main nodes based on how many branches occupy the space
-            float step = cardWidthPx + colSpacingPx + (branchCount * (cardWidthPx * 0.42f));
+            // Guaranteed horizontal space allocated for this trunk node and its entire branch cluster
+            float clusterWidth = (clusterCols > 0) ? (clusterCols * (cardWidthPx + colSpacingPx * 0.40f)) : 0f;
+            float step = cardWidthPx + colSpacingPx * 0.55f + clusterWidth;
             currentX += step;
         }
 
-        // 5. Overlap Prevention, Line Clearance & Physics Relaxation (Pass 2)
-        float minGapX = cardWidthPx + (40f * density);
-        float minGapY = cardHeightPx + (32f * density);
+        // 5. Physics Relaxation with Anchor Tethering (Cards strictly stay within their parent cluster)
+        float minGapX = cardWidthPx + (24f * density);
+        float minGapY = cardHeightPx + (20f * density);
 
-        for (int iter = 0; iter < 40; iter++) {
-            // A. Collision repulsion between all pairs of nodes
+        for (int iter = 0; iter < 10; iter++) {
+            // A. Gentle overlap push if cards touch
             for (int i = 0; i < allSorted.size(); i++) {
                 long idA = allSorted.get(i).getId();
                 PointF posA = nodePositionsMap.get(idA);
@@ -585,11 +601,10 @@ public class FranchiseMapGraphView extends ViewGroup {
                         float signX = (dx >= 0) ? 1.0f : -1.0f;
                         float signY = (dy >= 0) ? 1.0f : -1.0f;
 
-                        float pushX = signX * overlapX * 0.50f;
-                        float pushY = signY * overlapY * 0.50f;
+                        float pushX = signX * overlapX * 0.20f;
+                        float pushY = signY * overlapY * 0.20f;
 
-                        // Main trunk nodes are more rigid, branch nodes take more displacement
-                        float weightA = isMainA ? (isMainB ? 0.5f : 0.15f) : (isMainB ? 0.85f : 0.5f);
+                        float weightA = isMainA ? 0.2f : 0.5f;
                         float weightB = 1.0f - weightA;
 
                         posA.x -= pushX * weightA;
@@ -600,60 +615,19 @@ public class FranchiseMapGraphView extends ViewGroup {
                 }
             }
 
-            // B. Line-to-card clearance pass: actively push cards away from intersecting connection lines
-            for (MapLink link : canonicalLinks) {
-                PointF pA = nodePositionsMap.get(link.getSourceId());
-                PointF pB = nodePositionsMap.get(link.getTargetId());
-                if (pA == null || pB == null) continue;
+            // B. Anchor spring force & hard clamp to keep branch groups tightly cohesive
+            for (FranchiseResponse.NodeItem node : allSorted) {
+                PointF ideal = idealPositionsMap.get(node.getId());
+                PointF pos = nodePositionsMap.get(node.getId());
+                if (ideal == null || pos == null) continue;
 
-                float ax = pA.x + cardWidthPx / 2f;
-                float ay = pA.y + cardHeightPx / 2f;
-                float bx = pB.x + cardWidthPx / 2f;
-                float by = pB.y + cardHeightPx / 2f;
+                pos.x += (ideal.x - pos.x) * 0.45f;
+                pos.y += (ideal.y - pos.y) * 0.45f;
 
-                float segMinX = Math.min(ax, bx) - 16f * density;
-                float segMaxX = Math.max(ax, bx) + 16f * density;
-                float denom = bx - ax;
-
-                for (FranchiseResponse.NodeItem node : allSorted) {
-                    long nId = node.getId();
-                    if (nId == link.getSourceId() || nId == link.getTargetId()) continue;
-
-                    PointF pC = nodePositionsMap.get(nId);
-                    if (pC == null) continue;
-
-                    float cx = pC.x + cardWidthPx / 2f;
-                    float cy = pC.y + cardHeightPx / 2f;
-
-                    if (cx > segMinX && cx < segMaxX && Math.abs(denom) > 10f * density) {
-                        float t = Math.max(0.05f, Math.min(0.95f, (cx - ax) / denom));
-                        float lineY = ay + t * (by - ay);
-
-                        float reqClearanceY = (cardHeightPx / 2f) + (36f * density);
-                        float diffY = cy - lineY;
-
-                        if (Math.abs(diffY) < reqClearanceY) {
-                            float push = (reqClearanceY - Math.abs(diffY)) * 0.50f;
-                            if (diffY >= 0) {
-                                pC.y += push;
-                            } else {
-                                pC.y -= push;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // C. Directional link flow: target should be to the right of source
-            for (MapLink link : canonicalLinks) {
-                PointF pSrc = nodePositionsMap.get(link.getSourceId());
-                PointF pTgt = nodePositionsMap.get(link.getTargetId());
-                if (pSrc == null || pTgt == null) continue;
-
-                if (pTgt.x < pSrc.x + 24f * density) {
-                    float push = (pSrc.x + 24f * density - pTgt.x) * 0.25f;
-                    pTgt.x += push;
-                }
+                float maxDriftX = 18f * density;
+                float maxDriftY = 14f * density;
+                pos.x = Math.max(ideal.x - maxDriftX, Math.min(ideal.x + maxDriftX, pos.x));
+                pos.y = Math.max(ideal.y - maxDriftY, Math.min(ideal.y + maxDriftY, pos.y));
             }
         }
 
@@ -832,113 +806,133 @@ public class FranchiseMapGraphView extends ViewGroup {
 
         CurvePoints pts = new CurvePoints();
 
-        float dx = targetRect.centerX() - sourceRect.centerX();
-        float dy = targetRect.centerY() - sourceRect.centerY();
+        // 1. STRICT PORTS: Connection exclusively exits RIGHT edge CENTER and arrives LEFT edge CENTER
+        pts.startX = sourceRect.right;
+        pts.startY = sourceRect.centerY();
+        pts.endX = targetRect.left;
+        pts.endY = targetRect.centerY();
 
-        // 1. Dynamic Port Anchor Points Selection based on relative vector
-        if (dx >= 20f * density) {
-            // Target is to the RIGHT of source (forward flow)
-            pts.startX = sourceRect.right;
-            pts.endX = targetRect.left;
+        float dx = pts.endX - pts.startX;
+        float leadX = Math.max(36f * density, dx * 0.42f);
 
-            if (dy < -40f * density) {
-                // Target is higher up
-                pts.startY = sourceRect.top + 22f * density;
-                pts.endY = targetRect.bottom - 22f * density;
-            } else if (dy > 40f * density) {
-                // Target is lower down
-                pts.startY = sourceRect.bottom - 22f * density;
-                pts.endY = targetRect.top + 22f * density;
-            } else {
-                // Roughly in the same horizontal band
-                pts.startY = sourceRect.centerY();
-                pts.endY = targetRect.centerY();
-            }
+        pts.c1x = pts.startX + leadX;
+        pts.c1y = pts.startY;
+        pts.c2x = pts.endX - leadX;
+        pts.c2y = pts.endY;
 
-            float curveOffset = Math.max(38f * density, dx * 0.45f);
-            pts.c1x = pts.startX + curveOffset;
-            pts.c1y = pts.startY;
-            pts.c2x = pts.endX - curveOffset;
-            pts.c2y = pts.endY;
+        // 2. OBSTACLE AVOIDANCE: Smooth cubic Bezier bypass arches around any cards in the path
+        float minX = pts.startX + 6f * density;
+        float maxX = pts.endX - 6f * density;
 
-        } else if (dx <= -20f * density) {
-            // Target is to the LEFT of source
-            pts.startX = sourceRect.left;
-            pts.endX = targetRect.right;
-            pts.startY = sourceRect.centerY();
-            pts.endY = targetRect.centerY();
+        if (maxX > minX) {
+            List<RectF> collidingObstacles = new ArrayList<>();
 
-            float curveOffset = Math.max(38f * density, -dx * 0.45f);
-            pts.c1x = pts.startX - curveOffset;
-            pts.c1y = pts.startY;
-            pts.c2x = pts.endX + curveOffset;
-            pts.c2y = pts.endY;
+            for (Map.Entry<Long, RectF> entry : nodeBoundsMap.entrySet()) {
+                long nodeId = entry.getKey();
+                if (nodeId == link.getSourceId() || nodeId == link.getTargetId()) continue;
 
-        } else {
-            // Nearly vertical alignment (|dx| < 20dp)
-            pts.startX = sourceRect.centerX();
-            pts.endX = targetRect.centerX();
+                RectF rect = entry.getValue();
+                if (rect == null) continue;
 
-            if (dy > 0) {
-                // Target is below
-                pts.startY = sourceRect.bottom;
-                pts.endY = targetRect.top;
-            } else {
-                // Target is above
-                pts.startY = sourceRect.top;
-                pts.endY = targetRect.bottom;
-            }
+                // Only consider cards lying horizontally between source and target
+                if (rect.right <= minX || rect.left >= maxX) continue;
 
-            float arcOffset = 30f * density;
-            pts.c1x = pts.startX + arcOffset;
-            pts.c1y = pts.startY + dy * 0.35f;
-            pts.c2x = pts.endX + arcOffset;
-            pts.c2y = pts.endY - dy * 0.35f;
-        }
+                // 9-point sample check along the Bezier curve
+                boolean intersects = false;
+                for (int s = 1; s <= 9; s++) {
+                    float t = s / 10.0f;
+                    float oneMinusT = 1f - t;
+                    float px = oneMinusT * oneMinusT * oneMinusT * pts.startX
+                            + 3f * oneMinusT * oneMinusT * t * pts.c1x
+                            + 3f * oneMinusT * t * t * pts.c2x
+                            + t * t * t * pts.endX;
+                    float py = oneMinusT * oneMinusT * oneMinusT * pts.startY
+                            + 3f * oneMinusT * oneMinusT * t * pts.c1y
+                            + 3f * oneMinusT * t * t * pts.c2y
+                            + t * t * t * pts.endY;
 
-        // 2. Obstacle Avoidance: bypass intermediate card rects using 5-point curve sampling
-        float minX = Math.min(pts.startX, pts.endX) - 10f * density;
-        float maxX = Math.max(pts.startX, pts.endX) + 10f * density;
+                    if (px >= rect.left - 10f * density && px <= rect.right + 10f * density
+                            && py >= rect.top - 10f * density && py <= rect.bottom + 10f * density) {
+                        intersects = true;
+                        break;
+                    }
+                }
 
-        for (Map.Entry<Long, RectF> entry : nodeBoundsMap.entrySet()) {
-            long nodeId = entry.getKey();
-            if (nodeId == link.getSourceId() || nodeId == link.getTargetId()) continue;
-
-            RectF rect = entry.getValue();
-            if (rect == null) continue;
-
-            if (rect.right < minX || rect.left > maxX) continue;
-
-            boolean intersects = false;
-            for (int s = 1; s <= 5; s++) {
-                float t = s / 6.0f;
-                float oneMinusT = 1f - t;
-                float px = oneMinusT * oneMinusT * oneMinusT * pts.startX
-                        + 3f * oneMinusT * oneMinusT * t * pts.c1x
-                        + 3f * oneMinusT * t * t * pts.c2x
-                        + t * t * t * pts.endX;
-                float py = oneMinusT * oneMinusT * oneMinusT * pts.startY
-                        + 3f * oneMinusT * oneMinusT * t * pts.c1y
-                        + 3f * oneMinusT * t * t * pts.c2y
-                        + t * t * t * pts.endY;
-
-                if (px >= rect.left - 12f * density && px <= rect.right + 12f * density
-                        && py >= rect.top - 12f * density && py <= rect.bottom + 12f * density) {
-                    intersects = true;
-                    break;
+                if (intersects) {
+                    collidingObstacles.add(rect);
                 }
             }
 
-            if (intersects) {
-                float midY = (pts.startY + pts.endY) / 2f;
-                if (midY < rect.centerY()) {
-                    float avoidY = rect.top - 24f * density;
-                    pts.c1y = Math.min(pts.c1y, avoidY);
-                    pts.c2y = Math.min(pts.c2y, avoidY);
-                } else {
-                    float avoidY = rect.bottom + 24f * density;
-                    pts.c1y = Math.max(pts.c1y, avoidY);
-                    pts.c2y = Math.max(pts.c2y, avoidY);
+            if (!collidingObstacles.isEmpty()) {
+                float lineMidY = (pts.startY + pts.endY) / 2f;
+                float totalObsCenterX = 0f;
+                float minTop = Float.MAX_VALUE;
+                float maxBottom = -Float.MAX_VALUE;
+                int countOver = 0;
+                int countUnder = 0;
+
+                for (RectF obs : collidingObstacles) {
+                    totalObsCenterX += obs.centerX();
+                    if (obs.top < minTop) minTop = obs.top;
+                    if (obs.bottom > maxBottom) maxBottom = obs.bottom;
+                    if (lineMidY < obs.centerY()) {
+                        countOver++;
+                    } else {
+                        countUnder++;
+                    }
+                }
+
+                float avgObsCenterX = totalObsCenterX / collidingObstacles.size();
+                boolean vaultOver = (countOver >= countUnder);
+                float clearanceMargin = 24f * density;
+
+                float targetApexY = vaultOver ? (minTop - clearanceMargin) : (maxBottom + clearanceMargin);
+
+                // Control points centered over the obstacle with horizontal lead-in/lead-out
+                float distFromStart = Math.max(20f * density, avgObsCenterX - pts.startX);
+                float distToEnd = Math.max(20f * density, pts.endX - avgObsCenterX);
+
+                pts.c1x = pts.startX + Math.max(28f * density, Math.min(leadX, distFromStart * 0.70f));
+                pts.c2x = pts.endX - Math.max(28f * density, Math.min(leadX, distToEnd * 0.70f));
+
+                // Set apex of cubic Bezier to reach targetApexY smoothly
+                float cY = (targetApexY - 0.25f * lineMidY) / 0.75f;
+                pts.c1y = cY;
+                pts.c2y = cY;
+
+                // Safety verification: ensure no sample point gets within safety margin of any obstacle
+                for (int pass = 0; pass < 3; pass++) {
+                    boolean stillHits = false;
+                    for (RectF obs : collidingObstacles) {
+                        for (int s = 1; s <= 9; s++) {
+                            float t = s / 10.0f;
+                            float oneMinusT = 1f - t;
+                            float px = oneMinusT * oneMinusT * oneMinusT * pts.startX
+                                    + 3f * oneMinusT * oneMinusT * t * pts.c1x
+                                    + 3f * oneMinusT * t * t * pts.c2x
+                                    + t * t * t * pts.endX;
+                            float py = oneMinusT * oneMinusT * oneMinusT * pts.startY
+                                    + 3f * oneMinusT * oneMinusT * t * pts.c1y
+                                    + 3f * oneMinusT * t * t * pts.c2y
+                                    + t * t * t * pts.endY;
+
+                            if (px >= obs.left - 6f * density && px <= obs.right + 6f * density
+                                    && py >= obs.top - 6f * density && py <= obs.bottom + 6f * density) {
+                                stillHits = true;
+                                break;
+                            }
+                        }
+                        if (stillHits) break;
+                    }
+
+                    if (stillHits) {
+                        targetApexY += vaultOver ? (-12f * density) : (12f * density);
+                        cY = (targetApexY - 0.25f * lineMidY) / 0.75f;
+                        pts.c1y = cY;
+                        pts.c2y = cY;
+                    } else {
+                        break;
+                    }
                 }
             }
         }
@@ -1059,20 +1053,31 @@ public class FranchiseMapGraphView extends ViewGroup {
             bezierPath.moveTo(pts.startX, pts.startY);
             bezierPath.cubicTo(pts.c1x, pts.c1y, pts.c2x, pts.c2y, pts.endX, pts.endY);
 
+            boolean isMain = isMainRelation(link.getRelation());
             float origWidth = paintToUse.getStrokeWidth();
             if (isSelectionActive && isLinkInActiveBranch) {
-                paintToUse.setStrokeWidth(2.2f * density);
+                paintToUse.setStrokeWidth(isMain ? (4.4f * density) : (2.6f * density));
             }
 
             canvas.drawPath(bezierPath, paintToUse);
 
             arrowPaint.setColor(paintToUse.getColor());
-            canvas.drawCircle(pts.endX, pts.endY, 2.2f * density, arrowPaint);
+            float dotRadius = isMain ? (4.0f * density) : (2.5f * density);
+            canvas.drawCircle(pts.endX, pts.endY, dotRadius, arrowPaint);
 
             if (isSelectionActive && isLinkInActiveBranch) {
                 paintToUse.setStrokeWidth(origWidth);
             }
         }
+    }
+
+    private boolean isMainRelation(String relation) {
+        if (relation == null) return false;
+        String r = relation.toLowerCase().trim();
+        return r.contains("sequel") || r.contains("prequel") ||
+                r.contains("parent") || r.contains("full") ||
+                r.contains("main") || r.contains("сиквел") ||
+                r.contains("приквел") || r.contains("основной");
     }
 
     private Paint getPaintForRelation(String relation) {
