@@ -6912,30 +6912,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
         return baseSiteUrl + "/ru/anime/" + slug;
     }
 
-    private void navigateToAnimePageInWebView() {
-        if (isOfflineMode || isNavigatingToAnimePage) {
-            return;
-        }
-        isNavigatingToAnimePage = true;
-        try {
-            String animePageUrl = getAnimePageUrl();
-            if (animePageUrl != null && !animePageUrl.isEmpty()) {
-                Log.d("VideoPlayer", "Navigating to anime page in WebView on player exit: " + animePageUrl);
-                Intent intent = new Intent(this, MainActivity.class);
-                intent.putExtra("EXTRA_OPEN_URL", animePageUrl);
-                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                startActivity(intent);
-            }
-        } catch (Exception e) {
-            Log.e("VideoPlayer", "Error navigating to anime page in WebView on exit", e);
-        }
-    }
-
     @Override
     public void finish() {
-        if (!isOfflineMode && !isNavigatingToAnimePage) {
-            navigateToAnimePageInWebView();
-        }
         super.finish();
     }
 

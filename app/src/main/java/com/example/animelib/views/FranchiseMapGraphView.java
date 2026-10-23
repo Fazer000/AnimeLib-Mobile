@@ -85,6 +85,7 @@ public class FranchiseMapGraphView extends ViewGroup {
     private final Map<Long, String> nodeRelationsMap = new HashMap<>();
 
     private long selectedNodeId = -1;
+    private MapLink selectedLink = null;
     private final Set<Long> connectedNodeIds = new HashSet<>();
 
     // Zoom & Scale
@@ -319,6 +320,7 @@ public class FranchiseMapGraphView extends ViewGroup {
         nodeRelationsMap.clear();
         canonicalLinks.clear();
         selectedNodeId = -1;
+        selectedLink = null;
         connectedNodeIds.clear();
 
         if (franchise == null || franchise.getNodes() == null || franchise.getNodes().isEmpty()) {
@@ -713,6 +715,7 @@ public class FranchiseMapGraphView extends ViewGroup {
     }
 
     public void selectNode(long nodeId) {
+        this.selectedLink = null;
         this.selectedNodeId = nodeId;
         this.connectedNodeIds.clear();
 
@@ -733,7 +736,7 @@ public class FranchiseMapGraphView extends ViewGroup {
             if (selectedNodeId <= 0 || connectedNodeIds.contains(id)) {
                 view.setAlpha(1.0f);
             } else {
-                view.setAlpha(0.35f);
+                view.setAlpha(0.25f);
             }
         }
 
@@ -741,7 +744,9 @@ public class FranchiseMapGraphView extends ViewGroup {
     }
 
     public void selectBranchLink(MapLink link) {
-        if (link == null) {
+        if (link == null || (selectedLink != null && (selectedLink.getId() == link.getId() ||
+                (selectedLink.getSourceId() == link.getSourceId() && selectedLink.getTargetId() == link.getTargetId())))) {
+            this.selectedLink = null;
             this.selectedNodeId = -1;
             this.connectedNodeIds.clear();
             for (View view : nodeViewsMap.values()) {
@@ -751,13 +756,12 @@ public class FranchiseMapGraphView extends ViewGroup {
             return;
         }
 
+        this.selectedLink = link;
         this.selectedNodeId = -1;
         this.connectedNodeIds.clear();
 
-        Set<Long> branchNodes = new HashSet<>();
-        collectBranchNodes(link.getSourceId(), branchNodes);
-        collectBranchNodes(link.getTargetId(), branchNodes);
-        this.connectedNodeIds.addAll(branchNodes);
+        Set<Long> lineNodes = findNodesForLine(link);
+        this.connectedNodeIds.addAll(lineNodes);
 
         for (Map.Entry<Long, View> entry : nodeViewsMap.entrySet()) {
             View view = entry.getValue();
@@ -765,33 +769,97 @@ public class FranchiseMapGraphView extends ViewGroup {
             if (connectedNodeIds.contains(id)) {
                 view.setAlpha(1.0f);
             } else {
-                view.setAlpha(0.30f);
+                view.setAlpha(0.25f);
             }
         }
 
         invalidate();
     }
 
-    private void collectBranchNodes(long startNodeId, Set<Long> visited) {
-        if (canonicalLinks.isEmpty()) return;
+    private Set<Long> findNodesForLine(MapLink link) {
+        Set<Long> result = new HashSet<>();
+        if (link == null) return result;
 
-        List<Long> queue = new ArrayList<>();
-        queue.add(startNodeId);
-        visited.add(startNodeId);
+        Set<Long> mainTrunkIdSet = new HashSet<>();
+        for (FranchiseResponse.NodeItem node : mainTrunkNodes) {
+            mainTrunkIdSet.add(node.getId());
+        }
 
-        int head = 0;
-        while (head < queue.size()) {
-            long current = queue.get(head++);
-            for (MapLink link : canonicalLinks) {
-                if (link.getSourceId() == current && !visited.contains(link.getTargetId())) {
-                    visited.add(link.getTargetId());
-                    queue.add(link.getTargetId());
-                } else if (link.getTargetId() == current && !visited.contains(link.getSourceId())) {
-                    visited.add(link.getSourceId());
-                    queue.add(link.getSourceId());
+        long s = link.getSourceId();
+        long t = link.getTargetId();
+
+        boolean isSourceMain = mainTrunkIdSet.contains(s);
+        boolean isTargetMain = mainTrunkIdSet.contains(t);
+
+        // 1. Tapped on the main storyline line
+        if (isSourceMain && isTargetMain) {
+            result.addAll(mainTrunkIdSet);
+            return result;
+        }
+
+        // 2. Tapped on a branch / side storyline line
+        long branchRoot = t;
+        long anchorTrunkId = -1;
+
+        if (isSourceMain) {
+            anchorTrunkId = s;
+            branchRoot = t;
+        } else {
+            // Walk upstream along the branch until reaching the trunk node anchor
+            long curr = s;
+            while (!mainTrunkIdSet.contains(curr)) {
+                branchRoot = curr;
+                long parentId = -1;
+                for (MapLink l : canonicalLinks) {
+                    if (l.getTargetId() == curr) {
+                        parentId = l.getSourceId();
+                        break;
+                    }
+                }
+                if (parentId > 0) {
+                    if (mainTrunkIdSet.contains(parentId)) {
+                        anchorTrunkId = parentId;
+                        break;
+                    }
+                    curr = parentId;
+                } else {
+                    break;
                 }
             }
         }
+
+        if (anchorTrunkId > 0) {
+            result.add(anchorTrunkId);
+        }
+        result.add(branchRoot);
+        result.add(s);
+        result.add(t);
+
+        // Collect all descendant nodes of this branch
+        List<Long> queue = new ArrayList<>();
+        queue.add(branchRoot);
+        if (t != branchRoot) {
+            queue.add(t);
+        }
+        int head = 0;
+        while (head < queue.size()) {
+            long curr = queue.get(head++);
+            for (MapLink l : canonicalLinks) {
+                if (l.getSourceId() == curr) {
+                    long childId = l.getTargetId();
+                    if (!mainTrunkIdSet.contains(childId) && !result.contains(childId)) {
+                        result.add(childId);
+                        queue.add(childId);
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    public MapLink getSelectedLink() {
+        return selectedLink;
     }
 
     private static class CurvePoints {
@@ -946,16 +1014,22 @@ public class FranchiseMapGraphView extends ViewGroup {
         if (canonicalLinks.isEmpty()) return null;
 
         float density = getResources().getDisplayMetrics().density;
-        float maxTouchDistPx = 14f * density;
+        float effectiveScale = Math.max(0.35f, Math.min(1.5f, scaleFactor));
+        float maxTouchDistPx = (24f * density) / effectiveScale;
         MapLink bestLink = null;
         float minDistance = maxTouchDistPx;
+
+        final int sampleSteps = 24;
 
         for (MapLink link : canonicalLinks) {
             CurvePoints pts = calculateCurvePoints(link, density);
             if (pts == null) continue;
 
-            for (int i = 0; i <= 16; i++) {
-                float t = i / 16f;
+            float prevPx = pts.startX;
+            float prevPy = pts.startY;
+
+            for (int i = 1; i <= sampleSteps; i++) {
+                float t = (float) i / sampleSteps;
                 float oneMinusT = 1f - t;
 
                 float px = oneMinusT * oneMinusT * oneMinusT * pts.startX
@@ -968,14 +1042,30 @@ public class FranchiseMapGraphView extends ViewGroup {
                         + 3f * oneMinusT * t * t * pts.c2y
                         + t * t * t * pts.endY;
 
-                float dist = (float) Math.hypot(canvasX - px, canvasY - py);
+                float dist = distanceToSegment(canvasX, canvasY, prevPx, prevPy, px, py);
                 if (dist < minDistance) {
                     minDistance = dist;
                     bestLink = link;
                 }
+
+                prevPx = px;
+                prevPy = py;
             }
         }
         return bestLink;
+    }
+
+    private static float distanceToSegment(float px, float py, float x1, float y1, float x2, float y2) {
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        float lenSq = dx * dx + dy * dy;
+        if (lenSq == 0f) {
+            return (float) Math.hypot(px - x1, py - y1);
+        }
+        float t = Math.max(0f, Math.min(1f, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+        float projX = x1 + t * dx;
+        float projY = y1 + t * dy;
+        return (float) Math.hypot(px - projX, py - projY);
     }
 
     @Override

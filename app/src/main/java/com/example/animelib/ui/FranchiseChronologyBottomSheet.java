@@ -318,24 +318,40 @@ public class FranchiseChronologyBottomSheet extends FlexibleBottomSheetDialog {
         if (node == null) return;
 
         Log.d(TAG, "Selected franchise node: " + node.getName() + " (ID: " + node.getId() + ")");
-        CustomToast.showInfo(getContext(), "Поиск: " + node.getName());
 
         if (franchiseProgress != null) franchiseProgress.setVisibility(View.VISIBLE);
 
-        apiService.searchAnime(node.getName(), new ApiService.SearchCallback() {
+        long animeId = node.getId();
+
+        apiService.fetchShikimoriAnimeDetails(animeId, new ApiService.ShikimoriAnimeDetailsCallback() {
+            @Override
+            public void onSuccess(String name, String russianName) {
+                String searchQuery = (name != null && !name.trim().isEmpty()) ? name.trim() : node.getName();
+                performAnimelibSearchAndNavigate(node, searchQuery, russianName);
+            }
+
+            @Override
+            public void onError(String error) {
+                performAnimelibSearchAndNavigate(node, node.getName(), null);
+            }
+        });
+    }
+
+    private void performAnimelibSearchAndNavigate(FranchiseResponse.NodeItem node, String searchQuery, String fallbackQuery) {
+        CustomToast.showInfo(getContext(), "Поиск: " + searchQuery);
+
+        apiService.searchAnime(searchQuery, new ApiService.SearchCallback() {
             @Override
             public void onSearchResults(SearchResponse response) {
                 Activity act = getActivityFromContext(getContext());
                 if (act == null || act.isFinishing()) return;
 
                 act.runOnUiThread(() -> {
-                    if (franchiseProgress != null) franchiseProgress.setVisibility(View.GONE);
-
                     if (response != null && response.getData() != null && !response.getData().isEmpty()) {
                         SearchResponse.AnimeSearchItem bestMatch = response.getData().get(0);
                         String slugUrl = bestMatch.getSlugUrl();
 
-                        Log.d(TAG, "Found anime on AnimeLib: " + bestMatch.getRusName() + " (slug: " + slugUrl + ")");
+                        if (franchiseProgress != null) franchiseProgress.setVisibility(View.GONE);
                         dismiss();
 
                         String webViewUrl = "/ru/anime/" + slugUrl;
@@ -345,12 +361,13 @@ public class FranchiseChronologyBottomSheet extends FlexibleBottomSheetDialog {
                             TitleWebViewBottomSheet webSheet = new TitleWebViewBottomSheet(act, bestMatch.getRusName(), webViewUrl);
                             webSheet.show();
                         }
+                    } else if (fallbackQuery != null && !fallbackQuery.equals(searchQuery)) {
+                        performAnimelibSearchAndNavigate(node, fallbackQuery, null);
                     } else {
-                        // Fallback: search by query on site
-                        Log.w(TAG, "No direct result found on AnimeLib for " + node.getName() + ", opening search query");
+                        if (franchiseProgress != null) franchiseProgress.setVisibility(View.GONE);
                         dismiss();
-                        String searchUrl = "https://v5.animelib.org/ru/anime?q=" + Uri.encode(node.getName());
-                        TitleWebViewBottomSheet webSheet = new TitleWebViewBottomSheet(act, node.getName(), searchUrl);
+                        String searchUrl = "https://v5.animelib.org/ru/anime?q=" + Uri.encode(searchQuery);
+                        TitleWebViewBottomSheet webSheet = new TitleWebViewBottomSheet(act, searchQuery, searchUrl);
                         webSheet.show();
                     }
                 });
@@ -362,11 +379,15 @@ public class FranchiseChronologyBottomSheet extends FlexibleBottomSheetDialog {
                 if (act == null || act.isFinishing()) return;
 
                 act.runOnUiThread(() -> {
-                    if (franchiseProgress != null) franchiseProgress.setVisibility(View.GONE);
-                    dismiss();
-                    String searchUrl = "https://v5.animelib.org/ru/anime?q=" + Uri.encode(node.getName());
-                    TitleWebViewBottomSheet webSheet = new TitleWebViewBottomSheet(act, node.getName(), searchUrl);
-                    webSheet.show();
+                    if (fallbackQuery != null && !fallbackQuery.equals(searchQuery)) {
+                        performAnimelibSearchAndNavigate(node, fallbackQuery, null);
+                    } else {
+                        if (franchiseProgress != null) franchiseProgress.setVisibility(View.GONE);
+                        dismiss();
+                        String searchUrl = "https://v5.animelib.org/ru/anime?q=" + Uri.encode(searchQuery);
+                        TitleWebViewBottomSheet webSheet = new TitleWebViewBottomSheet(act, searchQuery, searchUrl);
+                        webSheet.show();
+                    }
                 });
             }
         });

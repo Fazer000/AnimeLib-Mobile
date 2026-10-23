@@ -108,7 +108,7 @@ public class FranchiseResponse {
                 return "https:" + imageUrl;
             }
             if (imageUrl.startsWith("/")) {
-                return "https://shikimori.one" + imageUrl;
+                return "https://shikimori.io" + imageUrl;
             }
             return imageUrl;
         }

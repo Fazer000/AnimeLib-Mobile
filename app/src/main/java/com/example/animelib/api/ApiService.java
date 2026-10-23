@@ -2064,14 +2064,11 @@ public class ApiService {
 
         safeExecute(() -> {
             try {
-                // Multi-mirror fallback chain:
-                // 1. https://shikimori.me (official mirror for RU/CIS, fast and unblocked)
-                // 2. https://shikimori.one (international endpoint)
-                // 3. https://shikimori.io (fallback HTTPS)
+                // Primary endpoint: https://shikimori.io
                 String[] endpoints = new String[]{
-                        "https://shikimori.me/api/animes/" + shikimoriId + "/franchise",
+                        "https://shikimori.io/api/animes/" + shikimoriId + "/franchise",
                         "https://shikimori.one/api/animes/" + shikimoriId + "/franchise",
-                        "https://shikimori.io/api/animes/" + shikimoriId + "/franchise"
+                        "https://shikimori.me/api/animes/" + shikimoriId + "/franchise"
                 };
 
                 fetchFranchiseWithFallback(endpoints, 0, shikimoriId, callback);
@@ -2134,6 +2131,81 @@ public class ApiService {
 
                 // If parsing failed or HTTP non-200, try next mirror
                 fetchFranchiseWithFallback(endpoints, index + 1, shikimoriId, callback);
+            }
+        });
+    }
+
+    public interface ShikimoriAnimeDetailsCallback {
+        void onSuccess(String name, String russianName);
+        void onError(String error);
+    }
+
+    public void fetchShikimoriAnimeDetails(long animeId, ShikimoriAnimeDetailsCallback callback) {
+        if (animeId <= 0) {
+            if (callback != null) callback.onError("Invalid Shikimori ID");
+            return;
+        }
+
+        safeExecute(() -> {
+            try {
+                String[] endpoints = new String[]{
+                        "https://shikimori.io/api/animes/" + animeId,
+                        "https://shikimori.one/api/animes/" + animeId,
+                        "https://shikimori.me/api/animes/" + animeId
+                };
+                fetchShikimoriAnimeDetailsWithFallback(endpoints, 0, animeId, callback);
+            } catch (Exception e) {
+                Log.e("ApiService", "Error in fetchShikimoriAnimeDetails", e);
+                if (callback != null) callback.onError("Request error: " + e.getMessage());
+            }
+        });
+    }
+
+    private void fetchShikimoriAnimeDetailsWithFallback(String[] endpoints, int index, long animeId, ShikimoriAnimeDetailsCallback callback) {
+        if (index >= endpoints.length) {
+            Log.e("ApiService", "All Shikimori anime details endpoints failed for ID: " + animeId);
+            if (callback != null) callback.onError("Все серверы Shikimori недоступны");
+            return;
+        }
+
+        String url = endpoints[index];
+        Log.d("ApiService", "Fetching Shikimori anime details from: " + url);
+
+        Request request = new Request.Builder()
+                .url(url)
+                .header("User-Agent", "AnimeLib-App/1.8.9 (Android; Mobile)")
+                .header("Accept", "application/json")
+                .get()
+                .build();
+
+        shikimoriHttpClient.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                Log.w("ApiService", "Shikimori anime details failed for " + url + ": " + e.getMessage());
+                fetchShikimoriAnimeDetailsWithFallback(endpoints, index + 1, animeId, callback);
+            }
+
+            @Override
+            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                if (response.isSuccessful() && response.body() != null) {
+                    try {
+                        String responseBody = response.body().string();
+                        org.json.JSONObject json = new org.json.JSONObject(responseBody);
+                        String name = json.optString("name", null);
+                        String russian = json.optString("russian", null);
+                        if (callback != null) {
+                            callback.onSuccess(name, russian);
+                        }
+                        return;
+                    } catch (Exception e) {
+                        Log.e("ApiService", "Error parsing Shikimori details JSON from: " + url, e);
+                    } finally {
+                        response.close();
+                    }
+                } else {
+                    response.close();
+                }
+                fetchShikimoriAnimeDetailsWithFallback(endpoints, index + 1, animeId, callback);
             }
         });
     }

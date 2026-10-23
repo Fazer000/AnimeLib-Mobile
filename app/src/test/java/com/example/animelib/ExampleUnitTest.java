@@ -61,4 +61,14 @@ public class ExampleUnitTest {
         adapter.setActiveReplyCommentId(null);
         assertNull(adapter.getActiveReplyCommentId());
     }
+
+    @Test
+    public void testMapLinkCreation() {
+        com.example.animelib.views.FranchiseMapGraphView.MapLink link =
+                new com.example.animelib.views.FranchiseMapGraphView.MapLink(101L, 1L, 2L, "sequel");
+        assertEquals(101L, link.getId());
+        assertEquals(1L, link.getSourceId());
+        assertEquals(2L, link.getTargetId());
+        assertEquals("sequel", link.getRelation());
+    }
 }
