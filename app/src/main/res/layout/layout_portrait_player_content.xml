@@ -727,29 +727,21 @@
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
-                    <!-- Кнопка Карта в стиле айтема эпизода портретного режима -->
-                    <LinearLayout
+                    <!-- Кнопка Карта в стиле кнопки Правила из комментариев -->
+                    <TextView
                         android:id="@+id/btnOpenChronologyMap"
                         android:layout_width="wrap_content"
-                        android:layout_height="38dp"
-                        android:background="@drawable/player_episode_item_normal"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_rules_button"
                         android:clickable="true"
                         android:focusable="true"
-                        android:gravity="center"
-                        android:orientation="horizontal"
-                        android:paddingHorizontal="16dp">
-
-                        <TextView
-                            android:id="@+id/tvOpenChronologyMapText"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:fontFamily="@font/open_sans_bold"
-                            android:gravity="center"
-                            android:text="Карта"
-                            android:textColor="@color/accent_text_color"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="7dp"
+                        android:text="КАРТА"
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="11sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:letterSpacing="0.06" />
                 </LinearLayout>
             </RelativeLayout>
 

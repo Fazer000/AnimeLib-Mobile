@@ -338,8 +338,6 @@ public class FranchiseChronologyBottomSheet extends FlexibleBottomSheetDialog {
     }
 
     private void performAnimelibSearchAndNavigate(FranchiseResponse.NodeItem node, String searchQuery, String fallbackQuery) {
-        CustomToast.showInfo(getContext(), "Поиск: " + searchQuery);
-
         apiService.searchAnime(searchQuery, new ApiService.SearchCallback() {
             @Override
             public void onSearchResults(SearchResponse response) {
