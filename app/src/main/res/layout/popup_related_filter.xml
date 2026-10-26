@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="165dp"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_sort_popup"
+    android:orientation="vertical"
+    android:padding="6dp">
+
+    <TextView
+        android:id="@+id/item_filter_all"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="12dp"
+        android:text="Все"
+        android:textColor="@color/primary_text_color"
+        android:textSize="14sp"
+        android:fontFamily="@font/open_sans_semibold"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <TextView
+        android:id="@+id/item_filter_anime"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="12dp"
+        android:text="Аниме"
+        android:textColor="@color/primary_text_color"
+        android:textSize="14sp"
+        android:fontFamily="@font/open_sans_semibold"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <TextView
+        android:id="@+id/item_filter_manga"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="12dp"
+        android:text="Манга"
+        android:textColor="@color/primary_text_color"
+        android:textSize="14sp"
+        android:fontFamily="@font/open_sans_semibold"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <TextView
+        android:id="@+id/item_filter_ranobe"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="12dp"
+        android:text="Ранобэ"
+        android:textColor="@color/primary_text_color"
+        android:textSize="14sp"
+        android:fontFamily="@font/open_sans_semibold"
+        android:clickable="true"
+        android:focusable="true" />
+
+</LinearLayout>

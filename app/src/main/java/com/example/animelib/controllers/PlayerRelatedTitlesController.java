@@ -7,6 +7,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.animation.DecelerateInterpolator;
+import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -57,6 +58,10 @@ public class PlayerRelatedTitlesController {
     private View portraitRelatedSkeletonContainer;
     private View portraitRelatedErrorContainer;
     private View btnRetryPortraitRelated;
+    private View btnPortraitSortRelated;
+    private TextView tvPortraitSortRelated;
+    private List<RelatedTitlesResponse.RelatedTitle> allLoadedRelatedTitles = new java.util.ArrayList<>();
+    private String currentRelatedFilter = "all";
 
     private final List<com.example.animelib.util.SkeletonHelper.SkeletonShimmerDrawable> activeShimmers = new ArrayList<>();
 
@@ -148,6 +153,8 @@ public class PlayerRelatedTitlesController {
             portraitRelatedLoadingIndicator = portraitRelatedTitlesContainer.findViewById(R.id.portraitRelatedLoadingIndicator);
             portraitRelatedErrorContainer = portraitRelatedTitlesContainer.findViewById(R.id.portraitRelatedErrorContainer);
             btnRetryPortraitRelated = portraitRelatedTitlesContainer.findViewById(R.id.btnRetryPortraitRelated);
+            btnPortraitSortRelated = portraitRelatedTitlesContainer.findViewById(R.id.btnPortraitSortRelated);
+            tvPortraitSortRelated = portraitRelatedTitlesContainer.findViewById(R.id.tvPortraitSortRelated);
 
             View.OnClickListener retryListener = v -> {
                 if (lastAnimeId != null || lastAnimeUrl != null) {
@@ -158,6 +165,10 @@ public class PlayerRelatedTitlesController {
 
             if (btnRetryPortraitRelated != null) {
                 btnRetryPortraitRelated.setOnClickListener(retryListener);
+            }
+
+            if (btnPortraitSortRelated != null) {
+                btnPortraitSortRelated.setOnClickListener(v -> showRelatedFilterPopup(v));
             }
         }
 
@@ -454,24 +465,132 @@ public class PlayerRelatedTitlesController {
     }
 
     public void showRelatedTitles(List<RelatedTitlesResponse.RelatedTitle> relatedTitles) {
+        if (relatedTitles != null) {
+            this.allLoadedRelatedTitles = new ArrayList<>(relatedTitles);
+        } else {
+            this.allLoadedRelatedTitles.clear();
+        }
+
+        List<RelatedTitlesResponse.RelatedTitle> filtered = getFilteredRelatedTitles(currentRelatedFilter);
+
         if (relatedTitlesManager != null) {
-            relatedTitlesManager.updateRelatedTitles(relatedTitles);
+            relatedTitlesManager.updateRelatedTitles(allLoadedRelatedTitles);
         }
         Context ctx = callback != null ? callback.getContext() : null;
         boolean isPortrait = ctx != null && ctx.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT;
         if (isPortrait && portraitRelatedTitlesAdapter != null) {
-            portraitRelatedTitlesAdapter.updateData(relatedTitles);
+            portraitRelatedTitlesAdapter.updateData(filtered);
             if (portraitRelatedTitlesContainer != null) {
                 portraitRelatedTitlesContainer.setVisibility(View.VISIBLE);
             }
             if (portraitRelatedTitlesRecyclerView != null) {
                 portraitRelatedTitlesRecyclerView.setVisibility(View.VISIBLE);
             }
-            if (tvPortraitRelatedCount != null && relatedTitles != null && !relatedTitles.isEmpty()) {
-                tvPortraitRelatedCount.setText(String.valueOf(relatedTitles.size()));
+            if (tvPortraitRelatedCount != null && allLoadedRelatedTitles != null && !allLoadedRelatedTitles.isEmpty()) {
+                tvPortraitRelatedCount.setText(String.valueOf(filtered.size()));
                 tvPortraitRelatedCount.setVisibility(View.VISIBLE);
             }
         }
+    }
+
+    private List<RelatedTitlesResponse.RelatedTitle> getFilteredRelatedTitles(String filter) {
+        if (allLoadedRelatedTitles == null || allLoadedRelatedTitles.isEmpty()) {
+            return new ArrayList<>();
+        }
+        if ("all".equals(filter)) {
+            return new ArrayList<>(allLoadedRelatedTitles);
+        }
+
+        List<RelatedTitlesResponse.RelatedTitle> result = new ArrayList<>();
+        for (RelatedTitlesResponse.RelatedTitle item : allLoadedRelatedTitles) {
+            if (item == null || item.getMedia() == null) continue;
+            RelatedTitlesResponse.Media m = item.getMedia();
+            String model = m.getModel() != null ? m.getModel().toLowerCase() : "";
+            if ("anime".equals(filter)) {
+                if (model.contains("anime") || (!model.contains("manga") && !model.contains("ranobe") && !model.contains("novel"))) {
+                    result.add(item);
+                }
+            } else if ("manga".equals(filter)) {
+                if (model.contains("manga")) {
+                    result.add(item);
+                }
+            } else if ("ranobe".equals(filter)) {
+                if (model.contains("ranobe") || model.contains("novel")) {
+                    result.add(item);
+                }
+            }
+        }
+        return result;
+    }
+
+    private void showRelatedFilterPopup(View anchor) {
+        if (anchor == null) return;
+        Context context = callback != null ? callback.getContext() : null;
+        if (context == null) return;
+        if (!anchor.isAttachedToWindow()) return;
+        if (context instanceof android.app.Activity) {
+            android.app.Activity act = (android.app.Activity) context;
+            if (act.isFinishing() || act.isDestroyed()) return;
+        }
+
+        try {
+            View popupView = android.view.LayoutInflater.from(context).inflate(R.layout.popup_related_filter, null);
+            android.widget.PopupWindow popupWindow = new android.widget.PopupWindow(
+                    popupView,
+                    dpToPx(context, 165),
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    true
+            );
+
+            popupWindow.setOutsideTouchable(true);
+            popupWindow.setFocusable(true);
+            popupWindow.setElevation(dpToPx(context, 12));
+            popupWindow.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+
+            TextView itemAll = popupView.findViewById(R.id.item_filter_all);
+            TextView itemAnime = popupView.findViewById(R.id.item_filter_anime);
+            TextView itemManga = popupView.findViewById(R.id.item_filter_manga);
+            TextView itemRanobe = popupView.findViewById(R.id.item_filter_ranobe);
+
+            if (itemAll != null) itemAll.setOnClickListener(v -> {
+                popupWindow.dismiss();
+                applyRelatedFilter("all", "Все");
+            });
+            if (itemAnime != null) itemAnime.setOnClickListener(v -> {
+                popupWindow.dismiss();
+                applyRelatedFilter("anime", "Аниме");
+            });
+            if (itemManga != null) itemManga.setOnClickListener(v -> {
+                popupWindow.dismiss();
+                applyRelatedFilter("manga", "Манга");
+            });
+            if (itemRanobe != null) itemRanobe.setOnClickListener(v -> {
+                popupWindow.dismiss();
+                applyRelatedFilter("ranobe", "Ранобэ");
+            });
+
+            popupWindow.showAsDropDown(anchor, 0, dpToPx(context, 6));
+        } catch (Exception e) {
+            Log.e(TAG, "Error showing related filter popup", e);
+        }
+    }
+
+    private void applyRelatedFilter(String filterKey, String filterName) {
+        this.currentRelatedFilter = filterKey;
+        if (tvPortraitSortRelated != null) {
+            tvPortraitSortRelated.setText(filterName);
+        }
+        List<RelatedTitlesResponse.RelatedTitle> filtered = getFilteredRelatedTitles(filterKey);
+        if (portraitRelatedTitlesAdapter != null) {
+            portraitRelatedTitlesAdapter.updateData(filtered);
+        }
+        if (tvPortraitRelatedCount != null) {
+            tvPortraitRelatedCount.setText(String.valueOf(filtered.size()));
+        }
+    }
+
+    private int dpToPx(Context context, int dp) {
+        return (int) (dp * context.getResources().getDisplayMetrics().density + 0.5f);
     }
 
     public void setAnimeInfoToRelatedPanel(AnimeInfoResponse.Data animeData) {

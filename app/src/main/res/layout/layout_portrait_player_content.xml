@@ -685,7 +685,7 @@
                 android:layout_height="wrap_content"
                 android:paddingHorizontal="16dp"
                 android:paddingTop="8dp"
-                android:paddingBottom="10dp"
+                android:paddingBottom="2dp"
                 android:clipChildren="false"
                 android:clipToPadding="false">
 
@@ -702,7 +702,7 @@
                         android:layout_height="wrap_content"
                         android:text="Связанное"
                         android:textColor="@color/primary_text_color"
-                        android:textSize="16sp"
+                        android:textSize="18sp"
                         android:fontFamily="@font/open_sans_bold" />
 
                     <TextView
@@ -710,11 +710,12 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
-                        android:background="@drawable/bg_sticky_badge"
-                        android:paddingHorizontal="7dp"
-                        android:paddingVertical="2dp"
-                        android:textColor="@android:color/white"
-                        android:textSize="11sp"
+                        android:layout_marginTop="1dp"
+                        android:background="@drawable/tag_fhd_background"
+                        android:paddingHorizontal="6dp"
+                        android:paddingVertical="1.5dp"
+                        android:textColor="#FFFFFF"
+                        android:textSize="9.5sp"
                         android:fontFamily="@font/open_sans_bold"
                         android:visibility="gone" />
                 </LinearLayout>
@@ -726,6 +727,38 @@
                     android:layout_centerVertical="true"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
+
+                    <!-- Кнопка сортировки/фильтрации связанных -->
+                    <LinearLayout
+                        android:id="@+id/btnPortraitSortRelated"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:background="@drawable/bg_comment_header_button"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="10dp"
+                        android:paddingVertical="7dp">
+
+                        <ImageView
+                            android:layout_width="15dp"
+                            android:layout_height="15dp"
+                            android:src="@drawable/ic_sort_arrows"
+                            app:tint="@color/accent_text_color"
+                            android:contentDescription="Filter" />
+
+                        <TextView
+                            android:id="@+id/tvPortraitSortRelated"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:text="Все"
+                            android:textColor="@color/accent_text_color"
+                            android:textSize="11sp"
+                            android:fontFamily="@font/open_sans_bold" />
+                    </LinearLayout>
 
                     <!-- Кнопка Карта в стиле кнопки Правила из комментариев -->
                     <TextView
