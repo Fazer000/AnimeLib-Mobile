@@ -552,6 +552,21 @@ public class PlayerRelatedTitlesController {
             TextView itemManga = popupView.findViewById(R.id.item_filter_manga);
             TextView itemRanobe = popupView.findViewById(R.id.item_filter_ranobe);
 
+            if (itemAll != null) resetPopupItemStyle(context, itemAll);
+            if (itemAnime != null) resetPopupItemStyle(context, itemAnime);
+            if (itemManga != null) resetPopupItemStyle(context, itemManga);
+            if (itemRanobe != null) resetPopupItemStyle(context, itemRanobe);
+
+            if ("anime".equals(currentRelatedFilter)) {
+                if (itemAnime != null) setPopupItemSelectedStyle(context, itemAnime);
+            } else if ("manga".equals(currentRelatedFilter)) {
+                if (itemManga != null) setPopupItemSelectedStyle(context, itemManga);
+            } else if ("ranobe".equals(currentRelatedFilter)) {
+                if (itemRanobe != null) setPopupItemSelectedStyle(context, itemRanobe);
+            } else {
+                if (itemAll != null) setPopupItemSelectedStyle(context, itemAll);
+            }
+
             if (itemAll != null) itemAll.setOnClickListener(v -> {
                 popupWindow.dismiss();
                 applyRelatedFilter("all", "Все");
@@ -573,6 +588,18 @@ public class PlayerRelatedTitlesController {
         } catch (Exception e) {
             Log.e(TAG, "Error showing related filter popup", e);
         }
+    }
+
+    private void resetPopupItemStyle(Context context, TextView textView) {
+        if (textView == null || context == null) return;
+        textView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        textView.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.accent_text_color));
+    }
+
+    private void setPopupItemSelectedStyle(Context context, TextView textView) {
+        if (textView == null || context == null) return;
+        textView.setBackgroundResource(R.drawable.bg_sort_popup_item_selected);
+        textView.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.sort_popup_item_selected_text));
     }
 
     private void applyRelatedFilter(String filterKey, String filterName) {
