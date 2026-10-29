@@ -111,12 +111,7 @@ public class PlayerVideoResolverController {
             }
 
             if (!isAuto && !hasMatch) {
-                Log.d(TAG, "Preferred quality '" + preferredQuality + "' not available in Animelib episode. Defaulting to Auto.");
-                preferredQuality = "Авто";
-                provider.setPreferredQuality("Авто");
-                if (apiService != null && playerData.getPlayer() != null && playerData.getTeam() != null) {
-                    apiService.savePlayerPreferences(playerData.getPlayer(), playerData.getTeam().getId(), "Авто");
-                }
+                Log.d(TAG, "Preferred quality '" + preferredQuality + "' not in exact list for this Animelib episode. Using auto-fallback for resolution without modifying saved preference.");
             }
 
             long estimate = 0;
@@ -292,15 +287,7 @@ public class PlayerVideoResolverController {
         }
 
         if (!isAuto && !hasMatch) {
-            Log.d(TAG, "Preferred quality '" + preferredQuality + "' not available in Kodik episode. Defaulting to Auto.");
-            preferredQuality = "Авто";
-            provider.setPreferredQuality("Авто");
-            if (apiService != null && playersManager != null && playersManager.getCurrentPlayerData() != null) {
-                EpisodeResponse.PlayerData cp = playersManager.getCurrentPlayerData();
-                if (cp.getPlayer() != null && cp.getTeam() != null) {
-                    apiService.savePlayerPreferences(cp.getPlayer(), cp.getTeam().getId(), "Авто");
-                }
-            }
+            Log.d(TAG, "Preferred quality '" + preferredQuality + "' not in exact list for this Kodik episode. Using auto-fallback for resolution without modifying saved preference.");
         }
 
         long estimate = 0;

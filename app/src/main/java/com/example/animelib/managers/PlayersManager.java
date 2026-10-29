@@ -275,6 +275,10 @@ public class PlayersManager {
      * Показать BottomSheet с озвучками для портретного режима
      */
     public void showVoiceoverBottomSheet() {
+        if (context instanceof com.example.animelib.VideoPlayerActivity) {
+            ((com.example.animelib.VideoPlayerActivity) context).syncCurrentPlayerDataForDownloadedIfNeeded();
+        }
+
         if (voiceoverBottomSheet != null && voiceoverBottomSheet.isShowing()) {
             voiceoverBottomSheet.dismiss();
         }
@@ -603,6 +607,10 @@ public class PlayersManager {
      * Обновление меню с данными плееров
      */
     public void updateMenuWithData() {
+        if (context instanceof com.example.animelib.VideoPlayerActivity) {
+            ((com.example.animelib.VideoPlayerActivity) context).syncCurrentPlayerDataForDownloadedIfNeeded();
+        }
+
         if (voiceoverBottomSheet != null && voiceoverBottomSheet.isShowing()) {
             voiceoverBottomSheet.updateData(animelibPlayers, kodikPlayers, currentPlayerData);
         }

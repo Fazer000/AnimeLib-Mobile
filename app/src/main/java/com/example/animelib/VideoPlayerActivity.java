@@ -2151,6 +2151,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                      (currentVideoUrl == null || currentVideoUrl.startsWith("file:") || currentVideoUrl.startsWith("/") || isDownloadedQuality(preferredQuality)));
 
             if (isPlayingDownloaded && downloadedEp != null) {
+                syncCurrentPlayerDataForDownloadedIfNeeded();
                 String voiceoverName = downloadedEp.getTeamName() != null && !downloadedEp.getTeamName().trim().isEmpty()
                         ? downloadedEp.getTeamName().trim() : getOfflineVoiceoverName();
                 String playerTypeName = downloadedEp.getPlayerType() != null && !downloadedEp.getPlayerType().trim().isEmpty()
@@ -3714,18 +3715,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
                         newPreferredQuality = "Скачанный файл (" + dq + ")";
                         Log.d("VideoPlayer", "Downloaded episode found, preferring downloaded quality: " + newPreferredQuality);
                     } else {
-                        if (savedQuality != null && !savedQuality.trim().isEmpty()) {
-                            if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(savedQuality)) {
-                                newPreferredQuality = "Авто";
-                            } else {
-                                for (String q : newQualities) {
-                                    if (!com.example.animelib.util.AutoQualityHelper.isAutoQuality(q) &&
-                                            com.example.animelib.util.AutoQualityHelper.matchQuality(q, savedQuality)) {
-                                        newPreferredQuality = q;
-                                        break;
-                                    }
-                                }
-                            }
+                        if (savedQuality != null && !savedQuality.trim().isEmpty() && !com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(savedQuality)) {
+                            newPreferredQuality = savedQuality;
                         }
                         if (newPreferredQuality == null) {
                             if (newQualities.contains("Авто")) {
@@ -3882,6 +3873,47 @@ public class VideoPlayerActivity extends AppCompatActivity {
         team.setName(downloadedEp.getTeamName() != null ? downloadedEp.getTeamName() : "Офлайн");
         pd.setTeam(team);
         return pd;
+    }
+
+    public void syncCurrentPlayerDataForDownloadedIfNeeded() {
+        com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+        if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists() && isPlayingDownloadedVideo()) {
+            if (playersManager == null) return;
+            List<EpisodeResponse.PlayerData> allPlayers = new ArrayList<>();
+            if (playersManager.getAnimelibPlayers() != null) allPlayers.addAll(playersManager.getAnimelibPlayers());
+            if (playersManager.getKodikPlayers() != null) allPlayers.addAll(playersManager.getKodikPlayers());
+
+            EpisodeResponse.PlayerData matchedPlayer = null;
+
+            if (downloadedEp.getTeamName() != null && !downloadedEp.getTeamName().trim().isEmpty()) {
+                String targetName = downloadedEp.getTeamName().trim();
+                for (EpisodeResponse.PlayerData p : allPlayers) {
+                    String teamName = p.getTeam() != null && p.getTeam().getName() != null ? p.getTeam().getName().trim() : null;
+                    if (teamName != null && targetName.equalsIgnoreCase(teamName)) {
+                        if (downloadedEp.getPlayerType() == null || p.getPlayer() == null ||
+                                downloadedEp.getPlayerType().equalsIgnoreCase(p.getPlayer())) {
+                            matchedPlayer = p;
+                            break;
+                        }
+                    }
+                }
+                if (matchedPlayer == null) {
+                    for (EpisodeResponse.PlayerData p : allPlayers) {
+                        String teamName = p.getTeam() != null && p.getTeam().getName() != null ? p.getTeam().getName().trim() : null;
+                        if (teamName != null && targetName.equalsIgnoreCase(teamName)) {
+                            matchedPlayer = p;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (matchedPlayer != null) {
+                playersManager.setCurrentPlayerData(matchedPlayer);
+            } else {
+                playersManager.setCurrentPlayerData(createSyntheticPlayerDataForDownloaded(downloadedEp));
+            }
+        }
     }
 
     private List<String> getQualitiesWithDownloadedOption(List<String> onlineQualities) {
@@ -5359,6 +5391,19 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         Log.d("VideoPlayer", "showPlayerSelectionDialogWithAutoSelect called with " + players.size() + " players");
         Log.d("VideoPlayer", "NOTE: setPlayersData already called by PlayersManager, only checking for auto-select");
+
+        com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+        if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists() && isPlayingDownloadedVideo()) {
+            syncCurrentPlayerDataForDownloadedIfNeeded();
+            safeRunOnUiThread(() -> {
+                EpisodeResponse.PlayerData currentDownloaded = playersManager != null ? playersManager.getCurrentPlayerData() : null;
+                if (currentDownloaded != null) {
+                    onPlayerSelected(currentDownloaded);
+                }
+                if (menuLoadingOverlay != null) menuLoadingOverlay.setVisibility(View.GONE);
+            });
+            return;
+        }
 
         // Попытка автоматического выбора плеера на основе сохраненных предпочтений
         // ВАЖНО: setPlayersData уже вызван в PlayersManager.loadPlayersForEpisode()!
