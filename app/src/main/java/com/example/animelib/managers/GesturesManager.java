@@ -343,7 +343,10 @@ public class GesturesManager {
                     if (seekPreviewText != null) {
                         seekPreviewText.setVisibility(View.GONE);
                         if (seekPreviewText instanceof android.widget.TextView) {
-                            ((android.widget.TextView) seekPreviewText).setText("0 c");
+                            long dur = player != null ? player.getDuration() : 0;
+                            String currentFormatted = com.example.animelib.api.ApiService.formatTimecode(basePositionMs);
+                            String durationFormatted = com.example.animelib.api.ApiService.formatTimecode(dur);
+                            ((android.widget.TextView) seekPreviewText).setText("+0 [" + currentFormatted + " / " + durationFormatted + "]");
                         }
                     }
                     return false; // НЕ перехватываем событие, позволяем контролам работать
@@ -416,8 +419,15 @@ public class GesturesManager {
                             android.view.ViewParent p = v.getParent();
                             if (p != null) p.requestDisallowInterceptTouchEvent(true);
                             // показать превью
-                            if (seekPreviewText != null)
+                            if (seekPreviewText != null) {
+                                if (seekPreviewText instanceof android.widget.TextView) {
+                                    long dur = player != null ? player.getDuration() : 0;
+                                    String currentFormatted = com.example.animelib.api.ApiService.formatTimecode(basePositionMs);
+                                    String durationFormatted = com.example.animelib.api.ApiService.formatTimecode(dur);
+                                    ((android.widget.TextView) seekPreviewText).setText("+0 [" + currentFormatted + " / " + durationFormatted + "]");
+                                }
                                 seekPreviewText.setVisibility(View.VISIBLE);
+                            }
                             if (gestureCallback != null && player != null) {
                                 gestureCallback.updatePlayLoadingIndicator(player.getPlaybackState());
                             }
@@ -440,9 +450,17 @@ public class GesturesManager {
                     lastSwipeX = currentX;
                     swipeAccumulatedDx += delta;
                     long offsetSec = Math.round(swipeAccumulatedDx / 12f);
+                    long offsetMs = offsetSec * 1000L;
+                    long dragNewPos = Math.max(0, basePositionMs + offsetMs);
+                    long dragDur = player != null ? player.getDuration() : 0;
+                    if (dragDur > 0) dragNewPos = Math.min(dragNewPos, dragDur);
+
                     if (seekPreviewText != null && seekPreviewText instanceof android.widget.TextView) {
-                        String sign = offsetSec >= 0 ? "+" : "";
-                        ((android.widget.TextView) seekPreviewText).setText(sign + offsetSec + " c");
+                        String offsetStr = (offsetSec >= 0 ? "+" : "") + offsetSec;
+                        String currentFormatted = com.example.animelib.api.ApiService.formatTimecode(dragNewPos);
+                        String durationFormatted = com.example.animelib.api.ApiService.formatTimecode(dragDur);
+                        String previewText = offsetStr + " [" + currentFormatted + " / " + durationFormatted + "]";
+                        ((android.widget.TextView) seekPreviewText).setText(previewText);
                     }
                     if (gestureCallback != null && player != null) {
                         gestureCallback.updatePlayLoadingIndicator(player.getPlaybackState());
@@ -1077,6 +1095,12 @@ public class GesturesManager {
                 params.topMargin = (int) ((isPortrait ? 20 : 80) * density);
                 seekPreviewText.setLayoutParams(params);
             }
+            if (seekPreviewText instanceof android.widget.TextView) {
+                ((android.widget.TextView) seekPreviewText).setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, isPortrait ? 12f : 16f);
+                int padH = (int) ((isPortrait ? 10 : 14) * density);
+                int padV = (int) ((isPortrait ? 5 : 8) * density);
+                seekPreviewText.setPadding(padH, padV, padH, padV);
+            }
         }
 
         if (holdSpeedToast != null) {
@@ -1085,6 +1109,12 @@ public class GesturesManager {
                 android.widget.FrameLayout.LayoutParams params = (android.widget.FrameLayout.LayoutParams) lp;
                 params.topMargin = (int) ((isPortrait ? 20 : 80) * density);
                 holdSpeedToast.setLayoutParams(params);
+            }
+            if (holdSpeedToast instanceof android.widget.TextView) {
+                ((android.widget.TextView) holdSpeedToast).setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, isPortrait ? 13f : 18f);
+                int padH = (int) ((isPortrait ? 12 : 16) * density);
+                int padV = (int) ((isPortrait ? 3 : 4) * density);
+                holdSpeedToast.setPadding(padH, padV, padH, padV);
             }
         }
     }

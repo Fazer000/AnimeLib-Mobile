@@ -155,7 +155,7 @@ public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdap
 
         android.content.Context context = holder.itemView.getContext();
         if (isCurrentPlayer) {
-            holder.firstRow.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.secondary_text_color));
+            holder.firstRow.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.purple_primary));
         } else {
             holder.firstRow.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.primary_text_color));
         }

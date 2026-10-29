@@ -979,6 +979,9 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             if (holder.unselectedIndicator != null) {
                 holder.unselectedIndicator.setVisibility(isSelected ? View.GONE : View.VISIBLE);
             }
+            if (holder.tvVoiceoverName != null) {
+                holder.tvVoiceoverName.setTextColor(androidx.core.content.ContextCompat.getColor(holder.itemView.getContext(), isSelected ? R.color.purple_primary : R.color.primary_text_color));
+            }
 
             holder.itemContainer.setScaleX(1.0f);
             holder.itemContainer.setScaleY(1.0f);

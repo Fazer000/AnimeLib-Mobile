@@ -66,9 +66,10 @@
                 android:layout_height="32dp"
                 android:layout_alignParentEnd="true"
                 android:layout_centerVertical="true"
-                android:background="?attr/selectableItemBackgroundBorderless"
+                android:background="@drawable/button_close_background"
                 android:contentDescription="Close"
-                android:padding="4dp"
+                android:padding="6dp"
+                android:scaleType="fitCenter"
                 android:src="@drawable/ic_close"
                 app:tint="@color/accent_text_color" />
         </RelativeLayout>

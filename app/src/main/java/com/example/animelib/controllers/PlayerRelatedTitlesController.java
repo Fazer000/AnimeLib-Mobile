@@ -67,6 +67,8 @@ public class PlayerRelatedTitlesController {
 
     private String lastAnimeId;
     private String lastAnimeUrl;
+    private boolean isLoading = false;
+    private boolean isLoaded = false;
 
     public PlayerRelatedTitlesController(RelatedTitlesCallback callback) {
         this.callback = callback;
@@ -159,6 +161,8 @@ public class PlayerRelatedTitlesController {
             View.OnClickListener retryListener = v -> {
                 if (lastAnimeId != null || lastAnimeUrl != null) {
                     CustomToast.showInfo(context, "Повторная загрузка связанного...");
+                    isLoading = false;
+                    isLoaded = false;
                     loadRelatedTitles(lastAnimeId, lastAnimeUrl);
                 }
             };
@@ -320,6 +324,18 @@ public class PlayerRelatedTitlesController {
             return;
         }
 
+        if (currentAnimeId.equals(lastAnimeId) && (isLoading || isLoaded)) {
+            Log.d(TAG, "Related titles already loading or loaded for anime: " + currentAnimeId);
+            return;
+        }
+
+        if (!currentAnimeId.equals(lastAnimeId)) {
+            isLoading = false;
+            isLoaded = false;
+        }
+
+        isLoading = true;
+        isLoaded = false;
         this.lastAnimeId = currentAnimeId;
         this.lastAnimeUrl = animeUrl;
 
@@ -395,6 +411,8 @@ public class PlayerRelatedTitlesController {
         apiService.getRelatedTitles(animeSlug, new ApiService.RelatedTitlesCallback() {
             @Override
             public void onRelatedTitlesReceived(RelatedTitlesResponse response) {
+                isLoading = false;
+                isLoaded = true;
                 if (callback != null) {
                     callback.safeRunOnUiThread(() -> {
                         if (portraitRelatedSkeletonContainer != null) {
@@ -439,6 +457,8 @@ public class PlayerRelatedTitlesController {
 
             @Override
             public void onError(String error) {
+                isLoading = false;
+                isLoaded = false;
                 Log.e(TAG, "Error loading related titles: " + error);
                 if (callback != null) {
                     callback.safeRunOnUiThread(() -> {
