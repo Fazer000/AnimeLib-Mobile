@@ -696,7 +696,7 @@
                 android:id="@+id/playerSplashStatusText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
+                android:layout_marginTop="20dp"
                 android:fontFamily="@font/open_sans"
                 android:text="Загрузка информации…"
                 android:textColor="@color/secondary_text_color"

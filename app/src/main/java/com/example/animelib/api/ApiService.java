@@ -138,8 +138,24 @@ public class ApiService {
     // In-memory caches for frequent API responses to prevent HTTP 429
     private static final java.util.Map<String, CachedResponse<AnimeInfoResponse>> ANIME_INFO_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.Map<String, CachedResponse<EpisodesListResponse>> EPISODES_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<Integer, CachedResponse<EpisodeResponse>> EPISODE_DATA_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, CachedResponse<AnimeBookmarkResponse>> ANIME_BOOKMARK_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, CachedResponse<RelatedTitlesResponse>> RELATED_TITLES_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, CachedResponse<KodikResponse>> KODIK_LINKS_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, CachedResponse<CommentsResponse>> COMMENTS_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<Long, CachedResponse<List<CommentsResponse.CommentItem>>> STICKY_COMMENTS_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, CachedResponse<SearchResponse>> SEARCH_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    // In-flight request deduplication maps
     private static final java.util.Map<String, List<AnimeInfoCallback>> PENDING_ANIME_INFO = new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.Map<String, List<EpisodesCallback>> PENDING_EPISODES = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<Integer, List<EpisodeDataCallback>> PENDING_EPISODE_DATA = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, List<AnimeBookmarkCallback>> PENDING_ANIME_BOOKMARK = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, List<RelatedTitlesCallback>> PENDING_RELATED_TITLES = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, List<KodikVideoCallback>> PENDING_KODIK_LINKS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, List<EpisodeCommentsCallback>> PENDING_COMMENTS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<Long, List<StickyCommentsCallback>> PENDING_STICKY_COMMENTS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, List<SearchCallback>> PENDING_SEARCH = new java.util.concurrent.ConcurrentHashMap<>();
 
     private static class CachedResponse<T> {
         final T data;
@@ -624,6 +640,30 @@ public class ApiService {
     }
 
     public void fetchEpisodeData(int episodeId, EpisodeDataCallback callback) {
+        if (episodeId <= 0) {
+            if (callback != null) callback.onError("Неверный ID эпизода");
+            return;
+        }
+
+        CachedResponse<EpisodeResponse> cached = EPISODE_DATA_CACHE.get(episodeId);
+        if (cached != null && cached.isValid(5 * 60 * 1000L)) {
+            Log.d("AnimeApiService", "fetchEpisodeData: returning cached result for episodeId " + episodeId);
+            if (callback != null) callback.onEpisodeDataReceived(cached.data);
+            return;
+        }
+
+        synchronized (PENDING_EPISODE_DATA) {
+            List<EpisodeDataCallback> pending = PENDING_EPISODE_DATA.get(episodeId);
+            if (pending != null) {
+                if (callback != null) pending.add(callback);
+                Log.d("AnimeApiService", "fetchEpisodeData: attached to in-flight request for episodeId " + episodeId);
+                return;
+            }
+            pending = new java.util.ArrayList<>();
+            if (callback != null) pending.add(callback);
+            PENDING_EPISODE_DATA.put(episodeId, pending);
+        }
+
         safeExecute(() -> {
             try {
                 String apiUrl = "https://api.cdnlibs.org/api/episodes/" + episodeId;
@@ -635,7 +675,7 @@ public class ApiService {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
                         Log.e("AnimeApiService", "Episode data request failed", e);
-                        callback.onError("Ошибка загрузки данных эпизода: " + e.getMessage());
+                        dispatchEpisodeDataError(episodeId, "Ошибка загрузки данных эпизода: " + e.getMessage());
                     }
 
                     @Override
@@ -644,50 +684,153 @@ public class ApiService {
                             if (response.isSuccessful()) {
                                 assert response.body() != null;
                                 String responseBody = response.body().string();
-                                Log.d("AnimeApiService", "Episode data response received");
-
                                 EpisodeResponse episodeResponse = gson.fromJson(responseBody, EpisodeResponse.class);
                                 if (episodeResponse != null && episodeResponse.getData() != null) {
-                                    callback.onEpisodeDataReceived(episodeResponse);
+                                    EPISODE_DATA_CACHE.put(episodeId, new CachedResponse<>(episodeResponse));
+                                    dispatchEpisodeDataSuccess(episodeId, episodeResponse);
                                 } else {
-                                    callback.onError("Неверный формат ответа эпизода");
+                                    dispatchEpisodeDataError(episodeId, "Неверный формат ответа эпизода");
                                 }
                             } else {
-                                callback.onError("HTTP ошибка: " + response.code());
+                                if (response.code() == 429 && cached != null) {
+                                    Log.w("AnimeApiService", "HTTP 429 for episodeId " + episodeId + " - using stale cached data");
+                                    dispatchEpisodeDataSuccess(episodeId, cached.data);
+                                } else {
+                                    dispatchEpisodeDataError(episodeId, "HTTP ошибка: " + response.code());
+                                }
                             }
                         } catch (Exception e) {
                             Log.e("AnimeApiService", "Error processing episode data response", e);
-                            callback.onError("Ошибка обработки данных эпизода: " + e.getMessage());
+                            dispatchEpisodeDataError(episodeId, "Ошибка обработки данных эпизода: " + e.getMessage());
                         }
                     }
                 });
             } catch (Exception e) {
                 Log.e("AnimeApiService", "Error in episode data API call", e);
-                callback.onError("Ошибка выполнения запроса: " + e.getMessage());
+                dispatchEpisodeDataError(episodeId, "Ошибка выполнения запроса: " + e.getMessage());
             }
         });
+    }
+
+    private void dispatchEpisodeDataSuccess(int key, EpisodeResponse response) {
+        List<EpisodeDataCallback> callbacks;
+        synchronized (PENDING_EPISODE_DATA) {
+            callbacks = PENDING_EPISODE_DATA.remove(key);
+        }
+        if (callbacks != null) {
+            for (EpisodeDataCallback cb : callbacks) {
+                try {
+                    cb.onEpisodeDataReceived(response);
+                } catch (Exception e) {
+                    Log.e("AnimeApiService", "Error in EpisodeDataCallback", e);
+                }
+            }
+        }
+    }
+
+    private void dispatchEpisodeDataError(int key, String error) {
+        List<EpisodeDataCallback> callbacks;
+        synchronized (PENDING_EPISODE_DATA) {
+            callbacks = PENDING_EPISODE_DATA.remove(key);
+        }
+        if (callbacks != null) {
+            for (EpisodeDataCallback cb : callbacks) {
+                try {
+                    cb.onError(error);
+                } catch (Exception e) {
+                    Log.e("AnimeApiService", "Error in EpisodeDataCallback", e);
+                }
+            }
+        }
     }
 
     /**
      * Получает ссылки Kodik напрямую, без внешнего сервиса.
      */
     public void fetchKodikVideoLinks(String kodikSrc, KodikVideoCallback callback) {
+        if (kodikSrc == null || kodikSrc.trim().isEmpty()) {
+            if (callback != null) callback.onError("Пустая ссылка Kodik");
+            return;
+        }
+
+        final String cacheKey = kodikSrc.trim();
+
+        CachedResponse<KodikResponse> cached = KODIK_LINKS_CACHE.get(cacheKey);
+        if (cached != null && cached.isValid(10 * 60 * 1000L)) {
+            Log.d("AnimeApiService", "fetchKodikVideoLinks: returning cached result for " + cacheKey);
+            if (callback != null) callback.onKodikVideoReceived(cached.data);
+            return;
+        }
+
+        synchronized (PENDING_KODIK_LINKS) {
+            List<KodikVideoCallback> pending = PENDING_KODIK_LINKS.get(cacheKey);
+            if (pending != null) {
+                if (callback != null) pending.add(callback);
+                Log.d("AnimeApiService", "fetchKodikVideoLinks: attached to in-flight request for " + cacheKey);
+                return;
+            }
+            pending = new java.util.ArrayList<>();
+            if (callback != null) pending.add(callback);
+            PENDING_KODIK_LINKS.put(cacheKey, pending);
+        }
+
+        final String requestKey = cacheKey;
         safeExecute(() -> {
             try {
-                Log.d("AnimeApiService", "Fetching Kodik video links for src: " + kodikSrc);
-                KodikResponse kodikResponse = kodikLinksExtractor.getLinks(kodikSrc);
+                Log.d("AnimeApiService", "Fetching Kodik video links for src: " + requestKey);
+                KodikResponse kodikResponse = kodikLinksExtractor.getLinks(requestKey);
 
-                if (kodikResponse.isSuccess() && kodikResponse.getData() != null
-                        && !kodikResponse.getData().isEmpty()) {
-                    callback.onKodikVideoReceived(kodikResponse);
+                if (kodikResponse.isSuccess() && kodikResponse.getData() != null && !kodikResponse.getData().isEmpty()) {
+                    KODIK_LINKS_CACHE.put(requestKey, new CachedResponse<>(kodikResponse));
+                    dispatchKodikSuccess(requestKey, kodikResponse);
                 } else {
-                    callback.onError("Kodik не вернул доступных качеств");
+                    if (cached != null) {
+                        dispatchKodikSuccess(requestKey, cached.data);
+                    } else {
+                        dispatchKodikError(requestKey, "Kodik не вернул доступных качеств");
+                    }
                 }
             } catch (Exception e) {
                 Log.e("AnimeApiService", "Error in Kodik links extraction", e);
-                callback.onError("Ошибка получения ссылок Kodik: " + e.getMessage());
+                if (cached != null) {
+                    dispatchKodikSuccess(requestKey, cached.data);
+                } else {
+                    dispatchKodikError(requestKey, "Ошибка получения ссылок Kodik: " + e.getMessage());
+                }
             }
         });
+    }
+
+    private void dispatchKodikSuccess(String key, KodikResponse response) {
+        List<KodikVideoCallback> callbacks;
+        synchronized (PENDING_KODIK_LINKS) {
+            callbacks = PENDING_KODIK_LINKS.remove(key);
+        }
+        if (callbacks != null) {
+            for (KodikVideoCallback cb : callbacks) {
+                try {
+                    cb.onKodikVideoReceived(response);
+                } catch (Exception e) {
+                    Log.e("AnimeApiService", "Error in KodikVideoCallback", e);
+                }
+            }
+        }
+    }
+
+    private void dispatchKodikError(String key, String error) {
+        List<KodikVideoCallback> callbacks;
+        synchronized (PENDING_KODIK_LINKS) {
+            callbacks = PENDING_KODIK_LINKS.remove(key);
+        }
+        if (callbacks != null) {
+            for (KodikVideoCallback cb : callbacks) {
+                try {
+                    cb.onError(error);
+                } catch (Exception e) {
+                    Log.e("AnimeApiService", "Error in KodikVideoCallback", e);
+                }
+            }
+        }
     }
 
     public void fetchEpisodeComments(long episodeId, String sortType, EpisodeCommentsCallback callback) {
@@ -695,6 +838,28 @@ public class ApiService {
     }
 
     public void fetchEpisodeComments(long episodeId, String sortType, int page, EpisodeCommentsCallback callback) {
+        final String cacheKey = episodeId + "_" + (sortType != null ? sortType : "best") + "_" + page;
+
+        CachedResponse<CommentsResponse> cached = COMMENTS_CACHE.get(cacheKey);
+        if (cached != null && cached.isValid(2 * 60 * 1000L)) {
+            Log.d("ApiService", "fetchEpisodeComments: returning cached result for " + cacheKey);
+            if (callback != null) safeRunOnUiThread(() -> callback.onCommentsReceived(cached.data));
+            return;
+        }
+
+        synchronized (PENDING_COMMENTS) {
+            List<EpisodeCommentsCallback> pending = PENDING_COMMENTS.get(cacheKey);
+            if (pending != null) {
+                if (callback != null) pending.add(callback);
+                Log.d("ApiService", "fetchEpisodeComments: attached to in-flight request for " + cacheKey);
+                return;
+            }
+            pending = new java.util.ArrayList<>();
+            if (callback != null) pending.add(callback);
+            PENDING_COMMENTS.put(cacheKey, pending);
+        }
+
+        final String requestKey = cacheKey;
         safeExecute(() -> {
             try {
                 String apiUrl = getSort(episodeId, sortType, page);
@@ -704,35 +869,92 @@ public class ApiService {
                 httpClient.newCall(request).enqueue(new Callback() {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        safeRunOnUiThread(() -> callback.onError("Ошибка сети: " + e.getMessage()));
+                        dispatchCommentsError(requestKey, "Ошибка сети: " + e.getMessage());
                     }
 
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                        if (!response.isSuccessful()) {
-                            safeRunOnUiThread(() -> callback.onError("HTTP " + response.code()));
-                            return;
-                        }
-                        if (response.body() == null) {
-                            safeRunOnUiThread(() -> callback.onError("Пустой ответ сервера"));
-                            return;
-                        }
-                        String body = response.body().string();
-                        try {
-                            CommentsResponse comments = gson.fromJson(body, CommentsResponse.class);
-                            safeRunOnUiThread(() -> callback.onCommentsReceived(comments));
+                        try (response) {
+                            if (response.isSuccessful() && response.body() != null) {
+                                String body = response.body().string();
+                                CommentsResponse comments = gson.fromJson(body, CommentsResponse.class);
+                                if (comments != null) {
+                                    COMMENTS_CACHE.put(requestKey, new CachedResponse<>(comments));
+                                    dispatchCommentsSuccess(requestKey, comments);
+                                } else {
+                                    dispatchCommentsError(requestKey, "Ошибка парсинга");
+                                }
+                            } else {
+                                if (response.code() == 429 && cached != null) {
+                                    Log.w("ApiService", "HTTP 429 for comments " + requestKey + " - using stale cached data");
+                                    dispatchCommentsSuccess(requestKey, cached.data);
+                                } else {
+                                    dispatchCommentsError(requestKey, "HTTP " + response.code());
+                                }
+                            }
                         } catch (Exception ex) {
-                            safeRunOnUiThread(() -> callback.onError("Ошибка парсинга"));
+                            dispatchCommentsError(requestKey, "Ошибка парсинга: " + ex.getMessage());
                         }
                     }
                 });
             } catch (Exception e) {
-                safeRunOnUiThread(() -> callback.onError("Ошибка запроса: " + e.getMessage()));
+                dispatchCommentsError(requestKey, "Ошибка запроса: " + e.getMessage());
             }
         });
     }
 
+    private void dispatchCommentsSuccess(String key, CommentsResponse response) {
+        List<EpisodeCommentsCallback> callbacks;
+        synchronized (PENDING_COMMENTS) {
+            callbacks = PENDING_COMMENTS.remove(key);
+        }
+        if (callbacks != null) {
+            for (EpisodeCommentsCallback cb : callbacks) {
+                try {
+                    safeRunOnUiThread(() -> cb.onCommentsReceived(response));
+                } catch (Exception e) {
+                    Log.e("ApiService", "Error in EpisodeCommentsCallback", e);
+                }
+            }
+        }
+    }
+
+    private void dispatchCommentsError(String key, String error) {
+        List<EpisodeCommentsCallback> callbacks;
+        synchronized (PENDING_COMMENTS) {
+            callbacks = PENDING_COMMENTS.remove(key);
+        }
+        if (callbacks != null) {
+            for (EpisodeCommentsCallback cb : callbacks) {
+                try {
+                    safeRunOnUiThread(() -> cb.onError(error));
+                } catch (Exception e) {
+                    Log.e("ApiService", "Error in EpisodeCommentsCallback", e);
+                }
+            }
+        }
+    }
+
     public void fetchStickyComments(long episodeId, StickyCommentsCallback callback) {
+        CachedResponse<List<CommentsResponse.CommentItem>> cached = STICKY_COMMENTS_CACHE.get(episodeId);
+        if (cached != null && cached.isValid(5 * 60 * 1000L)) {
+            Log.d("ApiService", "fetchStickyComments: returning cached result for episode " + episodeId);
+            if (callback != null) safeRunOnUiThread(() -> callback.onStickyCommentsReceived(cached.data));
+            return;
+        }
+
+        synchronized (PENDING_STICKY_COMMENTS) {
+            List<StickyCommentsCallback> pending = PENDING_STICKY_COMMENTS.get(episodeId);
+            if (pending != null) {
+                if (callback != null) pending.add(callback);
+                Log.d("ApiService", "fetchStickyComments: attached to in-flight request for episode " + episodeId);
+                return;
+            }
+            pending = new java.util.ArrayList<>();
+            if (callback != null) pending.add(callback);
+            PENDING_STICKY_COMMENTS.put(episodeId, pending);
+        }
+
         safeExecute(() -> {
             try {
                 String apiUrl = "https://hapi.hentaicdn.org/api/comments/sticky?post_id=" + episodeId + "&post_type=episodes";
@@ -741,39 +963,72 @@ public class ApiService {
                 httpClient.newCall(request).enqueue(new Callback() {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        safeRunOnUiThread(() -> callback.onError("Ошибка сети: " + e.getMessage()));
+                        dispatchStickyCommentsError(episodeId, "Ошибка сети: " + e.getMessage());
                     }
 
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                        if (!response.isSuccessful()) {
-                            safeRunOnUiThread(() -> callback.onError("HTTP " + response.code()));
-                            return;
-                        }
-                        if (response.body() == null) {
-                            safeRunOnUiThread(() -> callback.onError("Пустой ответ сервера"));
-                            return;
-                        }
-                        String body = response.body().string();
-                        try {
-                            com.example.animelib.models.StickyCommentsResponse stickyResp = gson.fromJson(body, com.example.animelib.models.StickyCommentsResponse.class);
-                            List<CommentsResponse.CommentItem> list = (stickyResp != null && stickyResp.getData() != null)
-                                    ? stickyResp.getData() : new ArrayList<>();
-                            for (CommentsResponse.CommentItem item : list) {
-                                if (item != null) {
-                                    item.setSticky(true);
+                        try (response) {
+                            if (response.isSuccessful() && response.body() != null) {
+                                String body = response.body().string();
+                                com.example.animelib.models.StickyCommentsResponse stickyResp = gson.fromJson(body, com.example.animelib.models.StickyCommentsResponse.class);
+                                List<CommentsResponse.CommentItem> list = (stickyResp != null && stickyResp.getData() != null)
+                                        ? stickyResp.getData() : new ArrayList<>();
+                                for (CommentsResponse.CommentItem item : list) {
+                                    if (item != null) {
+                                        item.setSticky(true);
+                                    }
+                                }
+                                STICKY_COMMENTS_CACHE.put(episodeId, new CachedResponse<>(list));
+                                dispatchStickyCommentsSuccess(episodeId, list);
+                            } else {
+                                if (response.code() == 429 && cached != null) {
+                                    dispatchStickyCommentsSuccess(episodeId, cached.data);
+                                } else {
+                                    dispatchStickyCommentsError(episodeId, "HTTP " + response.code());
                                 }
                             }
-                            safeRunOnUiThread(() -> callback.onStickyCommentsReceived(list));
                         } catch (Exception ex) {
-                            safeRunOnUiThread(() -> callback.onError("Ошибка парсинга"));
+                            dispatchStickyCommentsError(episodeId, "Ошибка парсинга: " + ex.getMessage());
                         }
                     }
                 });
             } catch (Exception e) {
-                safeRunOnUiThread(() -> callback.onError("Ошибка запроса: " + e.getMessage()));
+                dispatchStickyCommentsError(episodeId, "Ошибка запроса: " + e.getMessage());
             }
         });
+    }
+
+    private void dispatchStickyCommentsSuccess(long key, List<CommentsResponse.CommentItem> list) {
+        List<StickyCommentsCallback> callbacks;
+        synchronized (PENDING_STICKY_COMMENTS) {
+            callbacks = PENDING_STICKY_COMMENTS.remove(key);
+        }
+        if (callbacks != null) {
+            for (StickyCommentsCallback cb : callbacks) {
+                try {
+                    safeRunOnUiThread(() -> cb.onStickyCommentsReceived(list));
+                } catch (Exception e) {
+                    Log.e("ApiService", "Error in StickyCommentsCallback", e);
+                }
+            }
+        }
+    }
+
+    private void dispatchStickyCommentsError(long key, String error) {
+        List<StickyCommentsCallback> callbacks;
+        synchronized (PENDING_STICKY_COMMENTS) {
+            callbacks = PENDING_STICKY_COMMENTS.remove(key);
+        }
+        if (callbacks != null) {
+            for (StickyCommentsCallback cb : callbacks) {
+                try {
+                    safeRunOnUiThread(() -> cb.onError(error));
+                } catch (Exception e) {
+                    Log.e("ApiService", "Error in StickyCommentsCallback", e);
+                }
+            }
+        }
     }
 
     @NonNull
@@ -1942,56 +2197,108 @@ public class ApiService {
      * @param callback Колбэк для результата операции
      */
     public void fetchAnimeBookmark(String mediaSlug, AnimeBookmarkCallback callback) {
-        Log.d("ApiService", "Fetching anime bookmark for mediaSlug: " + mediaSlug);
-        
+        if (mediaSlug == null || mediaSlug.trim().isEmpty()) {
+            if (callback != null) safeRunOnUiThread(() -> callback.onError("Пустой mediaSlug"));
+            return;
+        }
+
+        final String cacheKey = mediaSlug.trim().toLowerCase();
+
+        CachedResponse<AnimeBookmarkResponse> cached = ANIME_BOOKMARK_CACHE.get(cacheKey);
+        if (cached != null && cached.isValid(2 * 60 * 1000L)) {
+            Log.d("ApiService", "fetchAnimeBookmark: returning cached result for " + cacheKey);
+            if (callback != null) safeRunOnUiThread(() -> callback.onBookmarkReceived(cached.data));
+            return;
+        }
+
+        synchronized (PENDING_ANIME_BOOKMARK) {
+            List<AnimeBookmarkCallback> pending = PENDING_ANIME_BOOKMARK.get(cacheKey);
+            if (pending != null) {
+                if (callback != null) pending.add(callback);
+                Log.d("ApiService", "fetchAnimeBookmark: attached to in-flight request for " + cacheKey);
+                return;
+            }
+            pending = new java.util.ArrayList<>();
+            if (callback != null) pending.add(callback);
+            PENDING_ANIME_BOOKMARK.put(cacheKey, pending);
+        }
+
+        final String requestKey = cacheKey;
         safeExecute(() -> {
             try {
-                String apiUrl = "https://api.cdnlibs.org/api/anime/" + mediaSlug + "/bookmark";
+                String apiUrl = "https://api.cdnlibs.org/api/anime/" + requestKey + "/bookmark";
                 Request request = buildApiRequest(apiUrl).build();
-                
+
                 httpClient.newCall(request).enqueue(new Callback() {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
                         Log.e("ApiService", "Anime bookmark request failed", e);
-                        // Вызываем колбэк в главном потоке
-                        safeRunOnUiThread(() -> callback.onError("Ошибка сети: " + e.getMessage()));
+                        dispatchAnimeBookmarkError(requestKey, "Ошибка сети: " + e.getMessage());
                     }
-                    
+
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                         try (response) {
                             if (response.isSuccessful()) {
                                 String responseBody = response.body() != null ? response.body().string() : "";
-                                Log.d("ApiService", "Anime bookmark response: " + responseBody);
-                                
                                 AnimeBookmarkResponse bookmarkResponse = gson.fromJson(responseBody, AnimeBookmarkResponse.class);
                                 if (bookmarkResponse != null) {
-                                    // Вызываем колбэк в главном потоке (даже если data == null, это нормально - нет закладки)
-                                    safeRunOnUiThread(() -> callback.onBookmarkReceived(bookmarkResponse));
+                                    ANIME_BOOKMARK_CACHE.put(requestKey, new CachedResponse<>(bookmarkResponse));
+                                    dispatchAnimeBookmarkSuccess(requestKey, bookmarkResponse);
                                 } else {
-                                    // Вызываем колбэк в главном потоке
-                                    safeRunOnUiThread(() -> callback.onError("Неверный формат ответа закладки"));
+                                    dispatchAnimeBookmarkError(requestKey, "Неверный формат ответа закладки");
                                 }
                             } else {
-                                String errorBody = response.body() != null ? response.body().string() : "";
-                                Log.e("ApiService", "Failed to fetch anime bookmark. Code: " + response.code() + ", Body: " + errorBody);
-                                // Вызываем колбэк в главном потоке
-                                safeRunOnUiThread(() -> callback.onError("Ошибка при получении закладки: " + response.code()));
+                                if (response.code() == 429 && cached != null) {
+                                    Log.w("ApiService", "HTTP 429 for bookmark " + requestKey + " - using stale cached data");
+                                    dispatchAnimeBookmarkSuccess(requestKey, cached.data);
+                                } else {
+                                    dispatchAnimeBookmarkError(requestKey, "Ошибка при получении закладки: " + response.code());
+                                }
                             }
                         } catch (Exception e) {
                             Log.e("ApiService", "Error processing anime bookmark response", e);
-                            // Вызываем колбэк в главном потоке
-                            safeRunOnUiThread(() -> callback.onError("Ошибка обработки ответа: " + e.getMessage()));
+                            dispatchAnimeBookmarkError(requestKey, "Ошибка обработки ответа: " + e.getMessage());
                         }
                     }
                 });
-                
             } catch (Exception e) {
                 Log.e("ApiService", "Unexpected error while fetching anime bookmark", e);
-                // Вызываем колбэк в главном потоке
-                safeRunOnUiThread(() -> callback.onError("Неожиданная ошибка: " + e.getMessage()));
+                dispatchAnimeBookmarkError(requestKey, "Неожиданная ошибка: " + e.getMessage());
             }
         });
+    }
+
+    private void dispatchAnimeBookmarkSuccess(String key, AnimeBookmarkResponse response) {
+        List<AnimeBookmarkCallback> callbacks;
+        synchronized (PENDING_ANIME_BOOKMARK) {
+            callbacks = PENDING_ANIME_BOOKMARK.remove(key);
+        }
+        if (callbacks != null) {
+            for (AnimeBookmarkCallback cb : callbacks) {
+                try {
+                    safeRunOnUiThread(() -> cb.onBookmarkReceived(response));
+                } catch (Exception e) {
+                    Log.e("ApiService", "Error in AnimeBookmarkCallback", e);
+                }
+            }
+        }
+    }
+
+    private void dispatchAnimeBookmarkError(String key, String error) {
+        List<AnimeBookmarkCallback> callbacks;
+        synchronized (PENDING_ANIME_BOOKMARK) {
+            callbacks = PENDING_ANIME_BOOKMARK.remove(key);
+        }
+        if (callbacks != null) {
+            for (AnimeBookmarkCallback cb : callbacks) {
+                try {
+                    safeRunOnUiThread(() -> cb.onError(error));
+                } catch (Exception e) {
+                    Log.e("ApiService", "Error in AnimeBookmarkCallback", e);
+                }
+            }
+        }
     }
 
     /**
@@ -2101,13 +2408,41 @@ public class ApiService {
      * @param callback Callback для получения результата
      */
     public void getRelatedTitles(String animeSlug, RelatedTitlesCallback callback) {
+        if (animeSlug == null || animeSlug.trim().isEmpty()) {
+            if (callback != null) safeRunOnUiThread(() -> callback.onError("Пустой slug"));
+            return;
+        }
+
+        String cleanSlug = animeSlug.trim();
+        if (cleanSlug.contains("?")) cleanSlug = cleanSlug.substring(0, cleanSlug.indexOf("?"));
+        if (cleanSlug.contains("#")) cleanSlug = cleanSlug.substring(0, cleanSlug.indexOf("#"));
+        while (cleanSlug.endsWith("/")) cleanSlug = cleanSlug.substring(0, cleanSlug.length() - 1);
+
+        final String cacheKey = cleanSlug.toLowerCase();
+
+        CachedResponse<RelatedTitlesResponse> cached = RELATED_TITLES_CACHE.get(cacheKey);
+        if (cached != null && cached.isValid(10 * 60 * 1000L)) {
+            Log.d("ApiService", "getRelatedTitles: returning cached result for " + cacheKey);
+            if (callback != null) safeRunOnUiThread(() -> callback.onRelatedTitlesReceived(cached.data));
+            return;
+        }
+
+        synchronized (PENDING_RELATED_TITLES) {
+            List<RelatedTitlesCallback> pending = PENDING_RELATED_TITLES.get(cacheKey);
+            if (pending != null) {
+                if (callback != null) pending.add(callback);
+                Log.d("ApiService", "getRelatedTitles: attached to in-flight request for " + cacheKey);
+                return;
+            }
+            pending = new java.util.ArrayList<>();
+            if (callback != null) pending.add(callback);
+            PENDING_RELATED_TITLES.put(cacheKey, pending);
+        }
+
+        final String requestKey = cacheKey;
         safeExecute(() -> {
             try {
-                String cleanSlug = animeSlug != null ? animeSlug.trim() : "";
-                if (cleanSlug.contains("?")) cleanSlug = cleanSlug.substring(0, cleanSlug.indexOf("?"));
-                if (cleanSlug.contains("#")) cleanSlug = cleanSlug.substring(0, cleanSlug.indexOf("#"));
-                while (cleanSlug.endsWith("/")) cleanSlug = cleanSlug.substring(0, cleanSlug.length() - 1);
-                String url = "https://api.cdnlibs.org/api/anime/" + cleanSlug + "/relations";
+                String url = "https://api.cdnlibs.org/api/anime/" + requestKey + "/relations";
                 Log.d("ApiService", "Fetching related titles from: " + url);
 
                 Request request = buildApiRequest(url).build();
@@ -2116,39 +2451,73 @@ public class ApiService {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
                         Log.e("ApiService", "Failed to fetch related titles", e);
-                        callback.onError("Network error: " + e.getMessage());
+                        dispatchRelatedTitlesError(requestKey, "Network error: " + e.getMessage());
                     }
 
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                        try {
+                        try (response) {
                             if (response.isSuccessful()) {
-                                String responseBody = response.body().string();
-                                Log.d("ApiService", "Related titles response: " + responseBody);
-
-                                Gson gson = new Gson();
+                                String responseBody = response.body() != null ? response.body().string() : "";
                                 RelatedTitlesResponse relatedTitlesResponse = gson.fromJson(responseBody, RelatedTitlesResponse.class);
-
-                                callback.onRelatedTitlesReceived(relatedTitlesResponse);
+                                if (relatedTitlesResponse != null) {
+                                    RELATED_TITLES_CACHE.put(requestKey, new CachedResponse<>(relatedTitlesResponse));
+                                    dispatchRelatedTitlesSuccess(requestKey, relatedTitlesResponse);
+                                } else {
+                                    dispatchRelatedTitlesError(requestKey, "Parse error: empty response");
+                                }
                             } else {
-                                String errorBody = response.body() != null ? response.body().string() : "Unknown error";
-                                Log.e("ApiService", "Failed to fetch related titles: " + response.code() + " - " + errorBody);
-                                callback.onError("Server error: " + response.code());
+                                if (response.code() == 429 && cached != null) {
+                                    Log.w("ApiService", "HTTP 429 for related titles " + requestKey + " - using stale cached data");
+                                    dispatchRelatedTitlesSuccess(requestKey, cached.data);
+                                } else {
+                                    dispatchRelatedTitlesError(requestKey, "Server error: " + response.code());
+                                }
                             }
                         } catch (Exception e) {
                             Log.e("ApiService", "Error parsing related titles response", e);
-                            callback.onError("Parse error: " + e.getMessage());
-                        } finally {
-                            response.close();
+                            dispatchRelatedTitlesError(requestKey, "Parse error: " + e.getMessage());
                         }
                     }
                 });
 
             } catch (Exception e) {
                 Log.e("ApiService", "Error in getRelatedTitles", e);
-                callback.onError("Request error: " + e.getMessage());
+                dispatchRelatedTitlesError(requestKey, "Request error: " + e.getMessage());
             }
         });
+    }
+
+    private void dispatchRelatedTitlesSuccess(String key, RelatedTitlesResponse response) {
+        List<RelatedTitlesCallback> callbacks;
+        synchronized (PENDING_RELATED_TITLES) {
+            callbacks = PENDING_RELATED_TITLES.remove(key);
+        }
+        if (callbacks != null) {
+            for (RelatedTitlesCallback cb : callbacks) {
+                try {
+                    safeRunOnUiThread(() -> cb.onRelatedTitlesReceived(response));
+                } catch (Exception e) {
+                    Log.e("ApiService", "Error in RelatedTitlesCallback", e);
+                }
+            }
+        }
+    }
+
+    private void dispatchRelatedTitlesError(String key, String error) {
+        List<RelatedTitlesCallback> callbacks;
+        synchronized (PENDING_RELATED_TITLES) {
+            callbacks = PENDING_RELATED_TITLES.remove(key);
+        }
+        if (callbacks != null) {
+            for (RelatedTitlesCallback cb : callbacks) {
+                try {
+                    safeRunOnUiThread(() -> cb.onError(error));
+                } catch (Exception e) {
+                    Log.e("ApiService", "Error in RelatedTitlesCallback", e);
+                }
+            }
+        }
     }
 
     /**
