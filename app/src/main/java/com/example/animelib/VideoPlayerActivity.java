@@ -299,6 +299,15 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private com.example.animelib.controllers.PlayerLockController playerLockController;
     private com.example.animelib.controllers.PlayerChronologyController playerChronologyController;
     private com.example.animelib.controllers.PlayerSplashScreenController playerSplashScreenController;
+    private boolean isAnimeInfoLoaded = false;
+    private boolean isEpisodeAndVoiceoversLoaded = false;
+
+    private void checkAndDismissSplashScreen() {
+        if (playerSplashScreenController == null) return;
+        if (isAnimeInfoLoaded && isEpisodeAndVoiceoversLoaded) {
+            playerSplashScreenController.dismissWithAnimation(null);
+        }
+    }
 
     // Subtitle settings
     private boolean subtitlesEnabled = true;
@@ -3238,7 +3247,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
         episodesManager.setDataCallback(new EpisodesManager.EpisodesDataCallback() {
             @Override
             public void onEpisodesLoaded(List<EpisodesListResponse.EpisodeItem> episodes) {
-                Log.d("VideoPlayer", "Episodes loaded: " + episodes.size());
+                Log.d("VideoPlayer", "Episodes loaded: " + (episodes != null ? episodes.size() : 0));
+                if (episodes == null || episodes.isEmpty()) {
+                    isEpisodeAndVoiceoversLoaded = true;
+                    checkAndDismissSplashScreen();
+                }
                 
                 // Сначала пытаемся загрузить эпизод из закладки
                 if (currentAnimeId != null) {
@@ -3305,6 +3318,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
             @Override
             public void onEpisodesError(String error) {
                 Log.e("VideoPlayer", "Error loading episodes: " + error);
+                isEpisodeAndVoiceoversLoaded = true;
+                if (playerSplashScreenController != null && playerSplashScreenController.isShowing()) {
+                    playerSplashScreenController.dismissWithAnimation(null);
+                }
                 showVideoErrorDialog("Ошибка загрузки озвучек", "Не удалось загрузить список эпизодов и озвучек.", error, () -> {
                     if (currentAnimeId != null) {
                         loadEpisodes(currentAnimeId);
@@ -3324,6 +3341,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 Log.d("VideoPlayer", "Players loaded: " + players.size() + " for episode: " + 
                       (episodesManager.getCurrentEpisode() != null ? episodesManager.getCurrentEpisode().getNumber() : "unknown"));
                 
+                isEpisodeAndVoiceoversLoaded = true;
+                checkAndDismissSplashScreen();
+                
                 // Проверяем нужно ли показывать меню
                 // Показываем только если нет выбранной озвучки (первая загрузка)
                 if (playersManager.getCurrentPlayerData() == null) {
@@ -3340,6 +3360,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
             @Override
             public void onPlayersError(String error) {
                 Log.e("VideoPlayer", "Error loading players: " + error);
+                isEpisodeAndVoiceoversLoaded = true;
+                if (playerSplashScreenController != null && playerSplashScreenController.isShowing()) {
+                    playerSplashScreenController.dismissWithAnimation(null);
+                }
                 com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
                 if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists()) {
                     Log.d("VideoPlayer", "Online players fetch failed, but episode is downloaded locally: " + downloadedEp.getLocalFilePath());
@@ -3424,6 +3448,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             public void onError(String errorMessage) {
                 Log.e("VideoPlayer", "Failed to load anime info: " + errorMessage);
                 runOnUiThread(() -> {
+                    isAnimeInfoLoaded = true;
                     if (playerSplashScreenController != null && playerSplashScreenController.isShowing()) {
                         playerSplashScreenController.dismissWithAnimation(null);
                     }
@@ -3437,9 +3462,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     @SuppressLint("SetTextI18n")
     private void displayAnimeInfo(AnimeInfoResponse animeInfo) {
-        if (playerSplashScreenController != null && playerSplashScreenController.isShowing()) {
-            playerSplashScreenController.dismissWithAnimation(null);
-        }
+        isAnimeInfoLoaded = true;
+        checkAndDismissSplashScreen();
 
         if (animeInfo == null || animeInfo.getData() == null) return;
         this.currentAnimeInfo = animeInfo;
@@ -3514,7 +3538,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     private void onPlayerSelected(EpisodeResponse.PlayerData playerData) {
-        Log.d("VideoPlayer", "Player selected: " + playerData.getPlayer());
+        Log.d("VideoPlayer", "Player selected: " + (playerData != null ? playerData.getPlayer() : "null"));
+        isEpisodeAndVoiceoversLoaded = true;
+        checkAndDismissSplashScreen();
 
         if (playerData != null && "animelib".equalsIgnoreCase(playerData.getPlayer())) {
             if (playerData.getVideoDomain() != null && !playerData.getVideoDomain().isEmpty()) {
@@ -4199,6 +4225,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     private void playOfflineFile(String localPath, String animeTitle, String episodeTitle) {
+        isAnimeInfoLoaded = true;
+        isEpisodeAndVoiceoversLoaded = true;
         if (playerSplashScreenController != null) {
             playerSplashScreenController.dismissImmediately();
         }
@@ -5292,6 +5320,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             public void onError(String errorMessage) {
                 Log.w("VideoPlayer", "Failed to fetch anime info in loadAnimeFromUrl: " + errorMessage);
                 safeRunOnUiThread(() -> {
+                    isAnimeInfoLoaded = true;
                     if (playerSplashScreenController != null && playerSplashScreenController.isShowing()) {
                         playerSplashScreenController.dismissWithAnimation(null);
                     }

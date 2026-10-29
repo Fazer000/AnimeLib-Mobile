@@ -21,6 +21,7 @@
     <color name="app_text_secondary">#6B7280</color>
     <color name="app_text_brand_button">@color/purple_primary</color>
     <color name="app_text_accent_blue">#1D4ED8</color>
+    <color name="player_splash_logo_a">#1E1B26</color>
 
     <!-- Dark Theme -->
     <!-- General Colors -->
