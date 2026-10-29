@@ -182,7 +182,7 @@
                     android:paddingHorizontal="12dp"
                     android:paddingVertical="6dp"
                     android:text="-85 сек"
-                    android:textColor="?attr/primaryTextColor"
+                    android:textColor="@color/player_item_inactive_text"
                     android:textSize="14sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -216,7 +216,7 @@
                     android:paddingHorizontal="12dp"
                     android:paddingVertical="6dp"
                     android:text="+85 сек"
-                    android:textColor="?attr/primaryTextColor"
+                    android:textColor="@color/player_item_inactive_text"
                     android:textSize="14sp"
                     android:textStyle="bold" />
             </LinearLayout>

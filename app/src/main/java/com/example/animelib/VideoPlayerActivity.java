@@ -569,6 +569,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        if (!isTaskRoot()) {
+            Intent intent = getIntent();
+            if (intent != null && intent.hasCategory(Intent.CATEGORY_LAUNCHER) && Intent.ACTION_MAIN.equals(intent.getAction())) {
+                finish();
+                return;
+            }
+        }
         super.onCreate(savedInstanceState);
         setTheme(R.style.Theme_AnimeLIB_VideoPlayer);
         setContentView(R.layout.activity_video_player);

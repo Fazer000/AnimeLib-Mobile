@@ -904,6 +904,13 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             return;
         }
 
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(requireContext(), android.Manifest.permission.POST_NOTIFICATIONS)
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 4201);
+            }
+        }
+
         DownloadService.startQueue(requireContext(), tasks);
         com.example.animelib.util.CustomToast.showSuccess(requireContext(), "Скачивание запущено в фоне (" + tasks.size() + " серий)");
         dismiss();

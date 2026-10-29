@@ -13,6 +13,12 @@ import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.ServiceCompat;
+import androidx.core.content.ContextCompat;
+
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 
 import com.example.animelib.R;
 import com.example.animelib.managers.DownloadsManager;
@@ -26,7 +32,7 @@ import java.util.List;
  */
 public class DownloadService extends Service {
     private static final String TAG = "DownloadService";
-    private static final String CHANNEL_ID = "animelib_downloads";
+    private static final String CHANNEL_ID = "animelib_downloads_v2";
     private static final int PROGRESS_NOTIFICATION_ID = 4201;
     private static final int RESULT_NOTIFICATION_ID = 4202;
 
@@ -443,10 +449,50 @@ public class DownloadService extends Service {
     }
 
     private void createChannel() {
+        if (notificationManager == null) return;
+        try {
+            notificationManager.deleteNotificationChannel("animelib_downloads");
+        } catch (Exception ignored) {}
+
         NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID, "Скачивание", NotificationManager.IMPORTANCE_LOW);
+                CHANNEL_ID, "Скачивание", NotificationManager.IMPORTANCE_DEFAULT);
         channel.setDescription("Прогресс скачивания серий");
+        channel.setSound(null, null);
+        channel.enableVibration(false);
+        channel.setShowBadge(true);
+        channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
         notificationManager.createNotificationChannel(channel);
+    }
+
+    private Bitmap cachedAppIconBitmap;
+
+    private Bitmap getAppIconBitmap() {
+        if (cachedAppIconBitmap != null && !cachedAppIconBitmap.isRecycled()) {
+            return cachedAppIconBitmap;
+        }
+        try {
+            Drawable drawable = ContextCompat.getDrawable(this, R.mipmap.ic_launcher);
+            if (drawable == null) {
+                drawable = getApplicationInfo().loadIcon(getPackageManager());
+            }
+            if (drawable != null) {
+                if (drawable instanceof BitmapDrawable) {
+                    cachedAppIconBitmap = ((BitmapDrawable) drawable).getBitmap();
+                    return cachedAppIconBitmap;
+                }
+                int width = drawable.getIntrinsicWidth() > 0 ? drawable.getIntrinsicWidth() : 128;
+                int height = drawable.getIntrinsicHeight() > 0 ? drawable.getIntrinsicHeight() : 128;
+                Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+                Canvas canvas = new Canvas(bitmap);
+                drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
+                drawable.draw(canvas);
+                cachedAppIconBitmap = bitmap;
+                return cachedAppIconBitmap;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error generating app icon bitmap for notification", e);
+        }
+        return null;
     }
 
     private Notification buildProgressNotification(String title, int percent) {
@@ -461,16 +507,28 @@ public class DownloadService extends Service {
 
         String subtext = "Серия " + currentTaskIndex + " из " + totalTasks + " (" + percent + "%)";
 
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_download)
+        Bitmap appIcon = getAppIconBitmap();
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setColor(ContextCompat.getColor(this, R.color.purple_primary))
                 .setContentTitle(title)
                 .setContentText(subtext)
                 .setContentIntent(contentPending)
                 .setProgress(100, percent, percent == 0)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
-                .addAction(R.drawable.ic_close, "Отмена", cancelPending)
-                .build();
+                .setSound(null)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+                .addAction(R.drawable.ic_close, "Отмена", cancelPending);
+
+        if (appIcon != null) {
+            builder.setLargeIcon(appIcon);
+        }
+
+        return builder.build();
     }
 
     private void showResultNotification(String title, String text) {
@@ -479,14 +537,23 @@ public class DownloadService extends Service {
         PendingIntent contentPending = PendingIntent.getActivity(this, 0, contentIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_download)
+        Bitmap appIcon = getAppIconBitmap();
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setColor(ContextCompat.getColor(this, R.color.purple_primary))
                 .setContentTitle(title)
                 .setContentText(text)
                 .setContentIntent(contentPending)
                 .setAutoCancel(true)
-                .build();
-        notificationManager.notify(RESULT_NOTIFICATION_ID, notification);
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
+
+        if (appIcon != null) {
+            builder.setLargeIcon(appIcon);
+        }
+
+        notificationManager.notify(RESULT_NOTIFICATION_ID, builder.build());
     }
 
     private void stopAfterResult() {

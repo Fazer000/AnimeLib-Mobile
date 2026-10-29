@@ -43,6 +43,13 @@ public class UrlInputActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        if (!isTaskRoot()) {
+            Intent intent = getIntent();
+            if (intent != null && intent.hasCategory(Intent.CATEGORY_LAUNCHER) && Intent.ACTION_MAIN.equals(intent.getAction())) {
+                finish();
+                return;
+            }
+        }
         int initialTheme = ThemeUtils.getSavedThemePreference(this);
         ThemeUtils.applyThemeToActivity(this, initialTheme);
 
