@@ -689,7 +689,8 @@
                 android:letterSpacing="0.10"
                 android:text="ANIMELIB"
                 android:textColor="@color/primary_text_color"
-                android:textSize="18sp" />
+                android:textSize="18sp"
+                android:visibility="gone" />
 
             <TextView
                 android:id="@+id/playerSplashStatusText"

@@ -135,6 +135,24 @@ public class ApiService {
     // In-memory cache for Shikimori franchise data
     private static final java.util.Map<Long, FranchiseResponse> FRANCHISE_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
 
+    // In-memory caches for frequent API responses to prevent HTTP 429
+    private static final java.util.Map<String, CachedResponse<AnimeInfoResponse>> ANIME_INFO_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, CachedResponse<EpisodesListResponse>> EPISODES_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, List<AnimeInfoCallback>> PENDING_ANIME_INFO = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, List<EpisodesCallback>> PENDING_EPISODES = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static class CachedResponse<T> {
+        final T data;
+        final long timestamp;
+        CachedResponse(T data) {
+            this.data = data;
+            this.timestamp = System.currentTimeMillis();
+        }
+        boolean isValid(long maxAgeMs) {
+            return (System.currentTimeMillis() - timestamp) < maxAgeMs;
+        }
+    }
+
     // Database manager for all DB operations
     private final com.example.animelib.data.DatabaseManager databaseManager;
 
@@ -349,42 +367,105 @@ public class ApiService {
     }
 
     public void fetchAnimeInfo(String animeSlugOrId, AnimeInfoCallback callback) {
+        if (animeSlugOrId == null || animeSlugOrId.trim().isEmpty()) {
+            if (callback != null) callback.onError("Пустой slug или ID");
+            return;
+        }
+
+        String cleanSlugOrId = animeSlugOrId.trim();
+        if (cleanSlugOrId.contains("?")) cleanSlugOrId = cleanSlugOrId.substring(0, cleanSlugOrId.indexOf("?"));
+        if (cleanSlugOrId.contains("#")) cleanSlugOrId = cleanSlugOrId.substring(0, cleanSlugOrId.indexOf("#"));
+        while (cleanSlugOrId.endsWith("/")) cleanSlugOrId = cleanSlugOrId.substring(0, cleanSlugOrId.length() - 1);
+
+        final String cacheKey = cleanSlugOrId.toLowerCase();
+
+        CachedResponse<AnimeInfoResponse> cached = ANIME_INFO_CACHE.get(cacheKey);
+        if (cached != null && cached.isValid(5 * 60 * 1000L)) {
+            Log.d("ApiService", "fetchAnimeInfo: returning cached result for " + cacheKey);
+            if (callback != null) callback.onAnimeInfoReceived(cached.data);
+            return;
+        }
+
+        synchronized (PENDING_ANIME_INFO) {
+            List<AnimeInfoCallback> pending = PENDING_ANIME_INFO.get(cacheKey);
+            if (pending != null) {
+                if (callback != null) pending.add(callback);
+                Log.d("ApiService", "fetchAnimeInfo: attached to in-flight request for " + cacheKey);
+                return;
+            }
+            pending = new java.util.ArrayList<>();
+            if (callback != null) pending.add(callback);
+            PENDING_ANIME_INFO.put(cacheKey, pending);
+        }
+
+        final String requestKey = cacheKey;
         safeExecute(() -> {
             try {
-                String cleanSlugOrId = animeSlugOrId != null ? animeSlugOrId.trim() : "";
-                if (cleanSlugOrId.contains("?")) cleanSlugOrId = cleanSlugOrId.substring(0, cleanSlugOrId.indexOf("?"));
-                if (cleanSlugOrId.contains("#")) cleanSlugOrId = cleanSlugOrId.substring(0, cleanSlugOrId.indexOf("#"));
-                while (cleanSlugOrId.endsWith("/")) cleanSlugOrId = cleanSlugOrId.substring(0, cleanSlugOrId.length() - 1);
-                String apiUrl = "https://api.cdnlibs.org/api/anime/" + cleanSlugOrId + "?fields[]=background&fields[]=eng_name&fields[]=otherNames&fields[]=summary&fields[]=releaseDate&fields[]=type_id&fields[]=caution&fields[]=views&fields[]=close_view&fields[]=rate_avg&fields[]=rate&fields[]=genres&fields[]=tags&fields[]=teams&fields[]=authors&fields[]=publisher&fields[]=userRating&fields[]=anime_status_id&fields[]=episodes&fields[]=episodes_count&fields[]=shiki_rate";
+                String apiUrl = "https://api.cdnlibs.org/api/anime/" + requestKey + "?fields[]=background&fields[]=eng_name&fields[]=otherNames&fields[]=summary&fields[]=releaseDate&fields[]=type_id&fields[]=caution&fields[]=views&fields[]=close_view&fields[]=rate_avg&fields[]=rate&fields[]=genres&fields[]=tags&fields[]=teams&fields[]=authors&fields[]=publisher&fields[]=userRating&fields[]=anime_status_id&fields[]=episodes&fields[]=episodes_count&fields[]=shiki_rate";
                 Request request = buildApiRequest(apiUrl).build();
 
                 httpClient.newCall(request).enqueue(new Callback() {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        callback.onError("Ошибка сети: " + e.getMessage());
+                        dispatchAnimeInfoError(requestKey, "Ошибка сети: " + e.getMessage());
                     }
 
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                         if (!response.isSuccessful()) {
-                            callback.onError("HTTP " + response.code());
+                            dispatchAnimeInfoError(requestKey, "HTTP " + response.code());
                             return;
                         }
                         assert response.body() != null;
                         String body = response.body().string();
                         try {
                             AnimeInfoResponse info = gson.fromJson(body, AnimeInfoResponse.class);
-                            callback.onAnimeInfoReceived(info);
+                            if (info != null && info.getData() != null) {
+                                ANIME_INFO_CACHE.put(requestKey, new CachedResponse<>(info));
+                            }
+                            dispatchAnimeInfoSuccess(requestKey, info);
                         } catch (Exception ex) {
                             Log.e("ApiService", "Failed to parse anime info JSON: " + ex.getMessage(), ex);
-                            callback.onError("Ошибка парсинга: " + ex.getMessage());
+                            dispatchAnimeInfoError(requestKey, "Ошибка парсинга: " + ex.getMessage());
                         }
                     }
                 });
             } catch (Exception e) {
-                callback.onError("Ошибка запроса: " + e.getMessage());
+                dispatchAnimeInfoError(requestKey, "Ошибка запроса: " + e.getMessage());
             }
         });
+    }
+
+    private void dispatchAnimeInfoSuccess(String key, AnimeInfoResponse response) {
+        List<AnimeInfoCallback> callbacks;
+        synchronized (PENDING_ANIME_INFO) {
+            callbacks = PENDING_ANIME_INFO.remove(key);
+        }
+        if (callbacks != null) {
+            for (AnimeInfoCallback cb : callbacks) {
+                try {
+                    cb.onAnimeInfoReceived(response);
+                } catch (Exception e) {
+                    Log.e("ApiService", "Error in AnimeInfoCallback", e);
+                }
+            }
+        }
+    }
+
+    private void dispatchAnimeInfoError(String key, String error) {
+        List<AnimeInfoCallback> callbacks;
+        synchronized (PENDING_ANIME_INFO) {
+            callbacks = PENDING_ANIME_INFO.remove(key);
+        }
+        if (callbacks != null) {
+            for (AnimeInfoCallback cb : callbacks) {
+                try {
+                    cb.onError(error);
+                } catch (Exception e) {
+                    Log.e("ApiService", "Error in AnimeInfoCallback", e);
+                }
+            }
+        }
     }
     
     /**
@@ -438,11 +519,37 @@ public class ApiService {
     }
 
     public void fetchEpisodesList(String animeId, EpisodesCallback callback) {
-        Log.d("AnimeApiService", "fetchEpisodesList called with animeId: " + animeId);
+        if (animeId == null || animeId.trim().isEmpty()) {
+            if (callback != null) callback.onError("Пустой animeId");
+            return;
+        }
+
+        final String cacheKey = animeId.trim();
+
+        CachedResponse<EpisodesListResponse> cached = EPISODES_CACHE.get(cacheKey);
+        if (cached != null && cached.isValid(3 * 60 * 1000L)) {
+            Log.d("AnimeApiService", "fetchEpisodesList: returning cached result for " + cacheKey);
+            if (callback != null) callback.onEpisodesReceived(cached.data);
+            return;
+        }
+
+        synchronized (PENDING_EPISODES) {
+            List<EpisodesCallback> pending = PENDING_EPISODES.get(cacheKey);
+            if (pending != null) {
+                if (callback != null) pending.add(callback);
+                Log.d("AnimeApiService", "fetchEpisodesList: attached to in-flight request for " + cacheKey);
+                return;
+            }
+            pending = new java.util.ArrayList<>();
+            if (callback != null) pending.add(callback);
+            PENDING_EPISODES.put(cacheKey, pending);
+        }
+
+        final String requestKey = cacheKey;
         safeExecute(() -> {
             try {
-                String apiUrl = "https://api.cdnlibs.org/api/episodes?anime_id=" + animeId;
-                Log.d("AnimeApiService", "Fetching episodes list for anime_id: " + animeId);
+                String apiUrl = "https://api.cdnlibs.org/api/episodes?anime_id=" + requestKey;
+                Log.d("AnimeApiService", "Fetching episodes list for anime_id: " + requestKey);
 
                 Request request = buildApiRequest(apiUrl).build();
 
@@ -450,7 +557,7 @@ public class ApiService {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
                         Log.e("AnimeApiService", "Episodes list request failed", e);
-                        callback.onError("Ошибка загрузки эпизодов: " + e.getMessage());
+                        dispatchEpisodesError(requestKey, "Ошибка загрузки эпизодов: " + e.getMessage());
                     }
 
                     @Override
@@ -463,24 +570,57 @@ public class ApiService {
 
                                 EpisodesListResponse episodesResponse = gson.fromJson(responseBody, EpisodesListResponse.class);
                                 if (episodesResponse != null && episodesResponse.getData() != null) {
-                                    callback.onEpisodesReceived(episodesResponse);
+                                    EPISODES_CACHE.put(requestKey, new CachedResponse<>(episodesResponse));
+                                    dispatchEpisodesSuccess(requestKey, episodesResponse);
                                 } else {
-                                    callback.onError("Неверный формат ответа эпизодов");
+                                    dispatchEpisodesError(requestKey, "Неверный формат ответа эпизодов");
                                 }
                             } else {
-                                callback.onError("HTTP ошибка: " + response.code());
+                                dispatchEpisodesError(requestKey, "HTTP ошибка: " + response.code());
                             }
                         } catch (Exception e) {
                             Log.e("AnimeApiService", "Error processing episodes response", e);
-                            callback.onError("Ошибка обработки данных эпизодов: " + e.getMessage());
+                            dispatchEpisodesError(requestKey, "Ошибка обработки данных эпизодов: " + e.getMessage());
                         }
                     }
                 });
             } catch (Exception e) {
                 Log.e("AnimeApiService", "Error in episodes API call", e);
-                callback.onError("Ошибка выполнения запроса: " + e.getMessage());
+                dispatchEpisodesError(requestKey, "Ошибка выполнения запроса: " + e.getMessage());
             }
         });
+    }
+
+    private void dispatchEpisodesSuccess(String key, EpisodesListResponse response) {
+        List<EpisodesCallback> callbacks;
+        synchronized (PENDING_EPISODES) {
+            callbacks = PENDING_EPISODES.remove(key);
+        }
+        if (callbacks != null) {
+            for (EpisodesCallback cb : callbacks) {
+                try {
+                    cb.onEpisodesReceived(response);
+                } catch (Exception e) {
+                    Log.e("AnimeApiService", "Error in EpisodesCallback", e);
+                }
+            }
+        }
+    }
+
+    private void dispatchEpisodesError(String key, String error) {
+        List<EpisodesCallback> callbacks;
+        synchronized (PENDING_EPISODES) {
+            callbacks = PENDING_EPISODES.remove(key);
+        }
+        if (callbacks != null) {
+            for (EpisodesCallback cb : callbacks) {
+                try {
+                    cb.onError(error);
+                } catch (Exception e) {
+                    Log.e("AnimeApiService", "Error in EpisodesCallback", e);
+                }
+            }
+        }
     }
 
     public void fetchEpisodeData(int episodeId, EpisodeDataCallback callback) {

@@ -105,6 +105,8 @@ public class BookmarkManager {
         }
     }
     
+    private final java.util.Map<String, AnimeBookmarkResponse> bookmarkCache = new java.util.HashMap<>();
+
     /**
      * Получает закладку аниме
      * @param mediaSlug Слаг медиа
@@ -113,6 +115,17 @@ public class BookmarkManager {
     public void fetchAnimeBookmark(String mediaSlug, AnimeBookmarkCallback callback) {
         Log.d(TAG, "Fetching anime bookmark for mediaSlug: " + mediaSlug);
         
+        if (mediaSlug != null && bookmarkCache.containsKey(mediaSlug)) {
+            AnimeBookmarkResponse cached = bookmarkCache.get(mediaSlug);
+            if (cached != null) {
+                Log.d(TAG, "Returning cached anime bookmark for: " + mediaSlug);
+                if (callback != null) {
+                    callback.onBookmarkReceived(cached);
+                }
+                return;
+            }
+        }
+
         // Проверяем что ApiService еще активен
         if (apiService == null) {
             Log.w(TAG, "ApiService is null, skipping bookmark fetch");
@@ -125,6 +138,9 @@ public class BookmarkManager {
         apiService.fetchAnimeBookmark(mediaSlug, new ApiService.AnimeBookmarkCallback() {
             @Override
             public void onBookmarkReceived(AnimeBookmarkResponse response) {
+                if (response != null && mediaSlug != null) {
+                    bookmarkCache.put(mediaSlug, response);
+                }
                 if (callback != null) {
                     callback.onBookmarkReceived(response);
                 }

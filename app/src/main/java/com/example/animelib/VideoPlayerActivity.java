@@ -1966,7 +1966,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
 
             if (playerAnimeInfoController != null) {
-                playerAnimeInfoController.setOfflineMode(true);
+                if (isOfflineMode) {
+                    playerAnimeInfoController.setOfflineMode(true);
+                }
                 playerAnimeInfoController.hideSkeletons(animeTitle);
             }
 
@@ -5655,6 +5657,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
             updatePortraitHeaderTitlesUI();
         }
         
+        if (currentAnimeInfo != null && currentAnimeInfo.getData() != null) {
+            displayAnimeInfo(currentAnimeInfo);
+            return;
+        }
+
         // Затем асинхронно загружаем название аниме
         if (animeTitleView == null) return;
         String slugOrId = apiService.extractAnimeSlug(animeUrl);

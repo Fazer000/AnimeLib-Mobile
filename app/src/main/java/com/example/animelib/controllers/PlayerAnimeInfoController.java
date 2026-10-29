@@ -267,6 +267,17 @@ public class PlayerAnimeInfoController {
     }
 
     public void displayAnimeInfo(Context context, AnimeInfoResponse animeInfo) {
+        if (!isOfflineMode) {
+            if (portraitTitleContainer != null) {
+                portraitTitleContainer.setEnabled(true);
+                portraitTitleContainer.setClickable(true);
+                portraitTitleContainer.setFocusable(true);
+            }
+            if (ivPortraitAnimeTitleChevron != null) {
+                ivPortraitAnimeTitleChevron.setVisibility(View.VISIBLE);
+            }
+        }
+
         if (portraitInfoErrorLayout != null) portraitInfoErrorLayout.setVisibility(View.GONE);
         if (portraitInfoContentLayout != null) portraitInfoContentLayout.setVisibility(View.VISIBLE);
 

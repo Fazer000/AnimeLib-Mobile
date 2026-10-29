@@ -610,18 +610,35 @@ public class PlayersManager {
         boolean hasAnimelib = animelibPlayers != null && !animelibPlayers.isEmpty();
         boolean hasKodik = kodikPlayers != null && !kodikPlayers.isEmpty();
 
-        if (currentPlayerData != null && currentPlayerData.getPlayer() != null) {
-            String p = currentPlayerData.getPlayer().toLowerCase();
-            if ("kodik".equals(p) && hasKodik) {
-                sidePanelActiveTab = "kodik";
-            } else if ("animelib".equals(p) && hasAnimelib) {
-                sidePanelActiveTab = "animelib";
-            } else if (hasAnimelib) {
-                sidePanelActiveTab = "animelib";
-            } else if (hasKodik) {
-                sidePanelActiveTab = "kodik";
-            } else {
-                sidePanelActiveTab = "animelib";
+        if (currentPlayerData != null) {
+            if (currentPlayerData.getPlayer() != null) {
+                String p = currentPlayerData.getPlayer().toLowerCase();
+                if ("kodik".equals(p) && hasKodik) {
+                    sidePanelActiveTab = "kodik";
+                } else if ("animelib".equals(p) && hasAnimelib) {
+                    sidePanelActiveTab = "animelib";
+                } else if (hasAnimelib) {
+                    sidePanelActiveTab = "animelib";
+                } else if (hasKodik) {
+                    sidePanelActiveTab = "kodik";
+                } else {
+                    sidePanelActiveTab = "animelib";
+                }
+            } else if (currentPlayerData.getTeam() != null && currentPlayerData.getTeam().getName() != null) {
+                String teamName = currentPlayerData.getTeam().getName().trim();
+                boolean foundInKodik = false;
+                if (hasKodik) {
+                    for (EpisodeResponse.PlayerData p : kodikPlayers) {
+                        if (p.getTeam() != null && p.getTeam().getName() != null && teamName.equalsIgnoreCase(p.getTeam().getName().trim())) {
+                            sidePanelActiveTab = "kodik";
+                            foundInKodik = true;
+                            break;
+                        }
+                    }
+                }
+                if (!foundInKodik) {
+                    sidePanelActiveTab = "animelib";
+                }
             }
         } else if (!hasAnimelib && hasKodik) {
             sidePanelActiveTab = "kodik";
