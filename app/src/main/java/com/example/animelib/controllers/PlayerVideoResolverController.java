@@ -68,26 +68,20 @@ public class PlayerVideoResolverController {
         provider.setHasRenderedFirstFrame(false);
         provider.updatePlayPauseAndLoadingState(true);
 
-        // Если эпизод скачан локально и выбрано Авто/Скачанный режим — воспроизводим локальный файл
-        String prefQualAnimelib = provider.getPreferredQuality();
-        boolean isAutoAnimelib = com.example.animelib.util.AutoQualityHelper.isAutoQuality(prefQualAnimelib);
-        boolean isDownloadedAnimelib = com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(prefQualAnimelib);
-
-        if (isAutoAnimelib || isDownloadedAnimelib || prefQualAnimelib == null || prefQualAnimelib.isEmpty() || playerData == null || playerData.getVideo() == null) {
-            DownloadedEpisodeEntity downloadedEp = provider.getDownloadedEpisodeForActive();
-            if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
-                File file = new File(downloadedEp.getLocalFilePath());
-                if (file.exists() && file.length() > 0) {
-                    provider.setCurrentVideoUrl(Uri.fromFile(file).toString());
-                    if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
-                    provider.initializePlayer();
-                    ExoPlayer player = provider.getPlayer();
-                    if (seekToPosition > 0 && player != null) {
-                        player.seekTo(seekToPosition);
-                    }
-                    Log.d(TAG, "Playing downloaded local file: " + file.getAbsolutePath());
-                    return;
+        // Если эпизод скачан локально — воспроизводим локальный файл в любом случае
+        DownloadedEpisodeEntity downloadedEp = provider.getDownloadedEpisodeForActive();
+        if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
+            File file = new File(downloadedEp.getLocalFilePath());
+            if (file.exists() && file.length() > 0) {
+                provider.setCurrentVideoUrl(Uri.fromFile(file).toString());
+                if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
+                provider.initializePlayer();
+                ExoPlayer player = provider.getPlayer();
+                if (seekToPosition > 0 && player != null) {
+                    player.seekTo(seekToPosition);
                 }
+                Log.d(TAG, "Playing downloaded local file: " + file.getAbsolutePath());
+                return;
             }
         }
 
@@ -181,26 +175,20 @@ public class PlayerVideoResolverController {
         if (provider == null) return;
         Log.d(TAG, "Handling Kodik player");
 
-        // Если эпизод скачан локально и выбрано Авто/Скачанный режим — воспроизводим локальный файл
-        String prefQualKodik = provider.getPreferredQuality();
-        boolean isAutoKodik = com.example.animelib.util.AutoQualityHelper.isAutoQuality(prefQualKodik);
-        boolean isDownloadedKodik = com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(prefQualKodik);
-
-        if (isAutoKodik || isDownloadedKodik || prefQualKodik == null || prefQualKodik.isEmpty() || playerData == null || playerData.getSrc() == null) {
-            DownloadedEpisodeEntity downloadedEp = provider.getDownloadedEpisodeForActive();
-            if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
-                File file = new File(downloadedEp.getLocalFilePath());
-                if (file.exists() && file.length() > 0) {
-                    provider.setCurrentVideoUrl(Uri.fromFile(file).toString());
-                    if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
-                    provider.initializePlayer();
-                    ExoPlayer player = provider.getPlayer();
-                    if (seekToPosition > 0 && player != null) {
-                        player.seekTo(seekToPosition);
-                    }
-                    Log.d(TAG, "Playing downloaded local file: " + file.getAbsolutePath());
-                    return;
+        // Если эпизод скачан локально — воспроизводим локальный файл в любом случае
+        DownloadedEpisodeEntity downloadedEp = provider.getDownloadedEpisodeForActive();
+        if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
+            File file = new File(downloadedEp.getLocalFilePath());
+            if (file.exists() && file.length() > 0) {
+                provider.setCurrentVideoUrl(Uri.fromFile(file).toString());
+                if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
+                provider.initializePlayer();
+                ExoPlayer player = provider.getPlayer();
+                if (seekToPosition > 0 && player != null) {
+                    player.seekTo(seekToPosition);
                 }
+                Log.d(TAG, "Playing downloaded local file: " + file.getAbsolutePath());
+                return;
             }
         }
 

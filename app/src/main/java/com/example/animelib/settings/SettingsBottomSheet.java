@@ -664,8 +664,14 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
         TextView currentQualityTagText = findViewById(R.id.currentQualityTagText);
         if (currentQualityText == null) return;
 
+        boolean isDownloaded = isOfflineMode || isDownloadedVideo || isDownloadedQuality(quality);
+
         if (quality == null) {
-            quality = isOfflineMode ? "Загруженное" : "Авто";
+            quality = isDownloaded ? "Скачанный файл" : "Авто";
+        }
+
+        if (isDownloaded && com.example.animelib.util.AutoQualityHelper.isAutoQuality(quality)) {
+            quality = "Скачанный файл";
         }
 
         if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(quality)) {

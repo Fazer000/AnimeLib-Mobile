@@ -3822,7 +3822,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         episodesManager.setCurrentEpisode(episode);
         com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
-        if ((isDownloadedQuality(preferredQuality) || isOfflineMode) && downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists()) {
+        if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists()) {
             Log.d("VideoPlayer", "Downloaded episode playback directly on episode change.");
             if (playerCommentsController != null) {
                 playerCommentsController.setCurrentEpisode(episode);
@@ -3909,6 +3909,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
         if (currentVideoUrl != null && (currentVideoUrl.startsWith("file:") || currentVideoUrl.startsWith("/"))) {
             return true;
         }
+        com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+        if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new java.io.File(downloadedEp.getLocalFilePath()).exists()) {
+            return true;
+        }
         return false;
     }
 
@@ -3942,6 +3946,15 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
             @Override
             public String getPreferredQuality() {
+                if (isPlayingDownloadedVideo()) {
+                    com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+                    if (downloadedEp != null) {
+                        String dq = downloadedEp.getQuality();
+                        if (dq == null || dq.isEmpty()) dq = "1080p";
+                        else if (!dq.endsWith("p") && !dq.equalsIgnoreCase("4k")) dq += "p";
+                        return "Скачанный файл (" + dq + ")";
+                    }
+                }
                 return preferredQuality;
             }
 
@@ -3954,7 +3967,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
                 EpisodeResponse.PlayerData currentPlayer = playersManager.getCurrentPlayerData();
                 if (currentPlayer != null && currentPlayer.getPlayer() != null && currentPlayer.getTeam() != null) {
-                    if (!com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(quality)) {
+                    if (!isPlayingDownloadedVideo() && !com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(quality)) {
                         apiService.savePlayerPreferences(currentPlayer.getPlayer(), 
                                                         currentPlayer.getTeam().getId(), 
                                                         quality);
@@ -4679,13 +4692,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private String resolveUrlForQuality(EpisodeResponse.PlayerData playerData, String targetQuality) {
         if (playerData == null) return null;
 
-        if (isDownloadedQuality(targetQuality)) {
-            com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
-            if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
-                java.io.File file = new java.io.File(downloadedEp.getLocalFilePath());
-                if (file.exists() && file.length() > 0) {
-                    return Uri.fromFile(file).toString();
-                }
+        com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+        if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
+            java.io.File file = new java.io.File(downloadedEp.getLocalFilePath());
+            if (file.exists() && file.length() > 0) {
+                return Uri.fromFile(file).toString();
             }
         }
 
