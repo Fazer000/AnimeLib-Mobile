@@ -158,16 +158,44 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
-        <!-- Loading Progress Indicator -->
-        <com.google.android.material.progressindicator.CircularProgressIndicator
-            android:id="@+id/mapLoadingProgress"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_gravity="center"
-            android:indeterminate="true"
-            android:visibility="gone"
-            app:indicatorSize="48dp"
-            app:indicatorColor="@color/purple_primary" />
+        <!-- Loading Overlay across entire map area -->
+        <FrameLayout
+            android:id="@+id/mapLoadingOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/map_loading_overlay_bg"
+            android:clickable="true"
+            android:focusable="true"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:orientation="vertical">
+
+                <com.google.android.material.progressindicator.CircularProgressIndicator
+                    android:id="@+id/mapLoadingProgress"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:indeterminate="true"
+                    app:indicatorSize="44dp"
+                    app:trackThickness="4dp"
+                    app:indicatorColor="@color/purple_primary" />
+
+                <TextView
+                    android:id="@+id/tvMapLoadingText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="Загрузка тайтла…"
+                    android:textColor="@color/primary_text_color"
+                    android:textSize="13.5sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </FrameLayout>
 
         <!-- Error / Retry Container -->
         <LinearLayout
@@ -222,18 +250,48 @@
                 app:cornerRadius="12dp" />
         </LinearLayout>
 
-        <!-- Floating Zoom Control Buttons (+ / - / %) -->
+        <!-- Pinned Watermark: Shikimori API (Frameless in Bottom-Left Corner) -->
+        <LinearLayout
+            android:id="@+id/shikimoriWatermarkContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|start"
+            android:layout_margin="14dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="4dp"
+            android:paddingVertical="4dp">
+
+            <ImageView
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:src="@drawable/ic_shikimori"
+                app:tint="@color/purple_primary"
+                android:contentDescription="Shikimori Icon" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
+                android:text="Shikimori API"
+                android:textColor="@color/accent_text_color"
+                android:textSize="10.5sp"
+                android:fontFamily="@font/open_sans_bold"
+                android:letterSpacing="0.04" />
+        </LinearLayout>
+
+        <!-- Floating Zoom Control Buttons (+ / - / %) in Bottom-Right Corner -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/zoomControlsCard"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="bottom|end"
-            android:layout_margin="16dp"
+            android:layout_margin="14dp"
             app:cardBackgroundColor="@color/card_bg_color"
-            app:cardCornerRadius="16dp"
+            app:cardCornerRadius="12dp"
             app:cardElevation="6dp"
             app:strokeColor="@color/chip_unselected_stroke"
-            app:strokeWidth="1dp">
+            app:strokeWidth="0.5dp">
 
             <LinearLayout
                 android:layout_width="wrap_content"

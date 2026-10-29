@@ -42,6 +42,7 @@
     <color name="player_item_inactive_stroke">#33FFFFFF</color>
     <color name="player_item_active_text">#FFFFFF</color>
     <color name="player_item_active_stroke">@color/purple_primary</color>
+    <color name="map_loading_overlay_bg">#E6131316</color>
 
     <!-- Dialog Colors (Dark Theme Overrides) -->
     <color name="dialog_bg">#131316</color>

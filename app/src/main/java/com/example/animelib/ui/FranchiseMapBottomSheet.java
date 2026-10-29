@@ -40,7 +40,9 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
     private ImageButton btnCloseMap;
     private FranchiseMapGraphView franchiseGraphView;
     private View mapGraphContainer;
+    private View mapLoadingOverlay;
     private View mapLoadingProgress;
+    private TextView tvMapLoadingText;
     private View mapErrorContainer;
     private View zoomControlsCard;
     private ImageButton btnZoomIn;
@@ -80,7 +82,9 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
         btnCloseMap = findViewById(R.id.btnCloseMap);
         franchiseGraphView = findViewById(R.id.franchiseGraphView);
         mapGraphContainer = findViewById(R.id.mapGraphContainer);
+        mapLoadingOverlay = findViewById(R.id.mapLoadingOverlay);
         mapLoadingProgress = findViewById(R.id.mapLoadingProgress);
+        tvMapLoadingText = findViewById(R.id.tvMapLoadingText);
         mapErrorContainer = findViewById(R.id.mapErrorContainer);
         zoomControlsCard = findViewById(R.id.zoomControlsCard);
 
@@ -98,13 +102,62 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
         }
     }
 
+    private void showLoadingOverlay(boolean animate, String message) {
+        if (mapLoadingOverlay == null) return;
+
+        if (tvMapLoadingText != null) {
+            if (message != null && !message.trim().isEmpty()) {
+                tvMapLoadingText.setText(message);
+                tvMapLoadingText.setVisibility(View.VISIBLE);
+            } else {
+                tvMapLoadingText.setVisibility(View.GONE);
+            }
+        }
+
+        mapLoadingOverlay.animate().cancel();
+        if (animate) {
+            mapLoadingOverlay.setAlpha(0f);
+            mapLoadingOverlay.setVisibility(View.VISIBLE);
+            mapLoadingOverlay.animate()
+                    .alpha(1.0f)
+                    .setDuration(240)
+                    .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
+                    .start();
+        } else {
+            mapLoadingOverlay.setAlpha(1.0f);
+            mapLoadingOverlay.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void hideLoadingOverlay(boolean animate) {
+        if (mapLoadingOverlay == null) return;
+
+        mapLoadingOverlay.animate().cancel();
+        if (animate && mapLoadingOverlay.getVisibility() == View.VISIBLE) {
+            mapLoadingOverlay.animate()
+                    .alpha(0f)
+                    .setDuration(180)
+                    .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
+                    .withEndAction(() -> {
+                        if (mapLoadingOverlay != null) {
+                            mapLoadingOverlay.setVisibility(View.GONE);
+                            mapLoadingOverlay.setAlpha(1.0f);
+                        }
+                    })
+                    .start();
+        } else {
+            mapLoadingOverlay.setVisibility(View.GONE);
+            mapLoadingOverlay.setAlpha(1.0f);
+        }
+    }
+
     private void loadMapData() {
         if (shikimoriId <= 0) {
             showError("Некорректный ID Shikimori");
             return;
         }
 
-        if (mapLoadingProgress != null) mapLoadingProgress.setVisibility(View.VISIBLE);
+        showLoadingOverlay(false, null);
         if (mapErrorContainer != null) mapErrorContainer.setVisibility(View.GONE);
         if (franchiseGraphView != null) franchiseGraphView.setVisibility(View.GONE);
         if (zoomControlsCard != null) zoomControlsCard.setVisibility(View.GONE);
@@ -117,7 +170,7 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
 
                 act.runOnUiThread(() -> {
                     franchiseResponse = response;
-                    if (mapLoadingProgress != null) mapLoadingProgress.setVisibility(View.GONE);
+                    hideLoadingOverlay(true);
                     if (mapErrorContainer != null) mapErrorContainer.setVisibility(View.GONE);
                     if (franchiseGraphView != null) franchiseGraphView.setVisibility(View.VISIBLE);
                     if (zoomControlsCard != null) zoomControlsCard.setVisibility(View.VISIBLE);
@@ -131,7 +184,7 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
                 if (act == null || act.isFinishing()) return;
 
                 act.runOnUiThread(() -> {
-                    if (mapLoadingProgress != null) mapLoadingProgress.setVisibility(View.GONE);
+                    hideLoadingOverlay(false);
                     showError("Не удалось загрузить карту франшизы");
                 });
             }
@@ -139,7 +192,7 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
     }
 
     private void showError(String message) {
-        if (mapLoadingProgress != null) mapLoadingProgress.setVisibility(View.GONE);
+        hideLoadingOverlay(false);
         if (franchiseGraphView != null) franchiseGraphView.setVisibility(View.GONE);
         if (zoomControlsCard != null) zoomControlsCard.setVisibility(View.GONE);
         if (mapErrorContainer != null) {
@@ -235,7 +288,7 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
 
         Log.d(TAG, "Navigating to node: " + node.getName() + " (ID: " + node.getId() + ")");
 
-        if (mapLoadingProgress != null) mapLoadingProgress.setVisibility(View.VISIBLE);
+        showLoadingOverlay(true, "Открываем " + node.getName() + "…");
 
         long animeId = node.getId();
 
@@ -268,7 +321,7 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
                             slugUrl = bestMatch.getSlug();
                         }
 
-                        if (mapLoadingProgress != null) mapLoadingProgress.setVisibility(View.GONE);
+                        hideLoadingOverlay(false);
                         dismiss();
 
                         String titleName = bestMatch.getRusName();
@@ -289,7 +342,7 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
                     } else if (fallbackQuery != null && !fallbackQuery.equals(searchQuery)) {
                         performAnimelibSearchAndNavigate(node, fallbackQuery, null);
                     } else {
-                        if (mapLoadingProgress != null) mapLoadingProgress.setVisibility(View.GONE);
+                        hideLoadingOverlay(false);
                         dismiss();
                         String searchUrl = "https://v5.animelib.org/ru/anime?q=" + Uri.encode(searchQuery);
                         TitleWebViewBottomSheet webSheet = new TitleWebViewBottomSheet(act, searchQuery, searchUrl);
@@ -307,7 +360,7 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
                     if (fallbackQuery != null && !fallbackQuery.equals(searchQuery)) {
                         performAnimelibSearchAndNavigate(node, fallbackQuery, null);
                     } else {
-                        if (mapLoadingProgress != null) mapLoadingProgress.setVisibility(View.GONE);
+                        hideLoadingOverlay(false);
                         dismiss();
                         String searchUrl = "https://v5.animelib.org/ru/anime?q=" + Uri.encode(searchQuery);
                         TitleWebViewBottomSheet webSheet = new TitleWebViewBottomSheet(act, searchQuery, searchUrl);

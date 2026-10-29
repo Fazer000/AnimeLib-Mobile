@@ -129,6 +129,7 @@
     <color name="player_item_inactive_stroke">#33FFFFFF</color>
     <color name="player_item_active_text">#FFFFFF</color>
     <color name="player_item_active_stroke">@color/purple_primary</color>
+    <color name="map_loading_overlay_bg">#E6FFFFFF</color>
 
     <!-- Dialog Colors (Unified Defaults) -->
     <color name="dialog_bg">#FFFFFF</color>

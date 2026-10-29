@@ -41,19 +41,32 @@ public class PlayerChronologyController {
         btnOpenChronologyMap = rootView.findViewById(R.id.btnOpenChronologyMap);
 
         if (btnOpenChronologyMap != null) {
-            btnOpenChronologyMap.setOnClickListener(v -> openChronologyMapSheet());
+            boolean hasValidId = currentShikimoriId > 0;
+            btnOpenChronologyMap.setEnabled(hasValidId);
+            btnOpenChronologyMap.setAlpha(hasValidId ? 1.0f : 0.4f);
+            btnOpenChronologyMap.setOnClickListener(v -> {
+                if (btnOpenChronologyMap.isEnabled() && currentShikimoriId > 0) {
+                    openChronologyMapSheet();
+                }
+            });
         }
     }
 
     public void loadChronologyForAnime(AnimeInfoResponse animeInfo) {
         if (callback != null && callback.isOfflineMode()) {
-            if (btnOpenChronologyMap != null) btnOpenChronologyMap.setVisibility(View.GONE);
+            if (btnOpenChronologyMap != null) {
+                btnOpenChronologyMap.setEnabled(false);
+                btnOpenChronologyMap.setAlpha(0.4f);
+            }
             return;
         }
 
         if (animeInfo == null || animeInfo.getData() == null) {
             Log.w(TAG, "animeInfo is null, cannot load franchise");
-            if (btnOpenChronologyMap != null) btnOpenChronologyMap.setVisibility(View.GONE);
+            if (btnOpenChronologyMap != null) {
+                btnOpenChronologyMap.setEnabled(false);
+                btnOpenChronologyMap.setAlpha(0.4f);
+            }
             return;
         }
 
@@ -63,13 +76,18 @@ public class PlayerChronologyController {
 
         if (shikimoriId <= 0) {
             Log.d(TAG, "No valid Shikimori ID found in shikimori_href: " + shikimoriHref);
-            if (btnOpenChronologyMap != null) btnOpenChronologyMap.setVisibility(View.GONE);
+            if (btnOpenChronologyMap != null) {
+                btnOpenChronologyMap.setEnabled(false);
+                btnOpenChronologyMap.setAlpha(0.4f);
+            }
             return;
         }
 
-        // Show Map button
+        // Enable Map button now that valid Shikimori ID was received from Animelib API
         if (btnOpenChronologyMap != null) {
             btnOpenChronologyMap.setVisibility(View.VISIBLE);
+            btnOpenChronologyMap.setEnabled(true);
+            btnOpenChronologyMap.setAlpha(1.0f);
         }
 
         // Check if already in cache

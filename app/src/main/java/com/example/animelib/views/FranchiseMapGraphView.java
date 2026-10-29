@@ -160,8 +160,8 @@ public class FranchiseMapGraphView extends ViewGroup {
         float density = context.getResources().getDisplayMetrics().density;
         cardWidthPx = (int) (240 * density);
         cardHeightPx = (int) (100 * density);
-        paddingX = (int) (100 * density);
-        paddingY = (int) (100 * density);
+        paddingX = (int) (650 * density);
+        paddingY = (int) (650 * density);
 
         initPaints(context, density);
 
@@ -715,8 +715,8 @@ public class FranchiseMapGraphView extends ViewGroup {
             nodeBoundsMap.put(nodeId, new RectF(pt.x, pt.y, pt.x + cardWidthPx, pt.y + cardHeightPx));
         }
 
-        contentWidth = Math.max((int) (1600 * density), (int) (maxX + paddingX * 2.5f));
-        contentHeight = Math.max((int) (1400 * density), (int) (maxY + paddingY * 2.5f));
+        contentWidth = Math.max((int) (3200 * density), (int) (maxX + paddingX));
+        contentHeight = Math.max((int) (3000 * density), (int) (maxY + paddingY));
     }
 
     private void distributeNodesArc(List<FranchiseResponse.NodeItem> nodes, float centerAngle, float maxSpan,
