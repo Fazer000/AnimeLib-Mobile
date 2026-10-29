@@ -140,29 +140,22 @@ public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdap
         // Show current player indicator
         boolean isCurrentPlayer = false;
         if (currentPlayer != null && player != null) {
-            boolean playerTypeMatch = (player.getPlayer() == null && currentPlayer.getPlayer() == null) ||
-                    (player.getPlayer() != null && currentPlayer.getPlayer() != null &&
-                            player.getPlayer().equalsIgnoreCase(currentPlayer.getPlayer()));
-
             String playerTeam = (player.getTeam() != null && player.getTeam().getName() != null)
-                    ? player.getTeam().getName().trim() : null;
+                    ? player.getTeam().getName().trim() : "";
             String currentTeam = (currentPlayer.getTeam() != null && currentPlayer.getTeam().getName() != null)
-                    ? currentPlayer.getTeam().getName().trim() : null;
+                    ? currentPlayer.getTeam().getName().trim() : "";
 
-            boolean teamMatch = (playerTeam == null && currentTeam == null) ||
-                    (playerTeam != null && currentTeam != null && playerTeam.equalsIgnoreCase(currentTeam));
+            int playerTeamId = player.getTeam() != null ? player.getTeam().getId() : 0;
+            int currentTeamId = currentPlayer.getTeam() != null ? currentPlayer.getTeam().getId() : 0;
 
-            String playerTrans = (player.getTranslationType() != null && player.getTranslationType().getLabel() != null)
-                    ? player.getTranslationType().getLabel().trim() : null;
-            String currentTrans = (currentPlayer.getTranslationType() != null && currentPlayer.getTranslationType().getLabel() != null)
-                    ? currentPlayer.getTranslationType().getLabel().trim() : null;
+            boolean teamMatch = (!playerTeam.isEmpty() && playerTeam.equalsIgnoreCase(currentTeam)) ||
+                    (playerTeamId > 0 && playerTeamId == currentTeamId);
 
-            boolean transMatch = true;
-            if (playerTrans != null && currentTrans != null && !playerTrans.isEmpty() && !currentTrans.isEmpty()) {
-                transMatch = playerTrans.equalsIgnoreCase(currentTrans);
-            }
+            boolean playerTypeMatch = (player.getPlayer() == null || currentPlayer.getPlayer() == null ||
+                    player.getPlayer().isEmpty() || currentPlayer.getPlayer().isEmpty() ||
+                    player.getPlayer().equalsIgnoreCase(currentPlayer.getPlayer()));
 
-            isCurrentPlayer = playerTypeMatch && teamMatch && transMatch;
+            isCurrentPlayer = teamMatch && playerTypeMatch;
         }
 
         // Set selected state and text color

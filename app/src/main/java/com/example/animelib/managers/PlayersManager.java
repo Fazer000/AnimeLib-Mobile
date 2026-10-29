@@ -607,10 +607,6 @@ public class PlayersManager {
      * Обновление меню с данными плееров
      */
     public void updateMenuWithData() {
-        if (context instanceof com.example.animelib.VideoPlayerActivity) {
-            ((com.example.animelib.VideoPlayerActivity) context).syncCurrentPlayerDataForDownloadedIfNeeded();
-        }
-
         if (voiceoverBottomSheet != null && voiceoverBottomSheet.isShowing()) {
             voiceoverBottomSheet.updateData(animelibPlayers, kodikPlayers, currentPlayerData);
         }
@@ -619,32 +615,33 @@ public class PlayersManager {
         boolean hasKodik = kodikPlayers != null && !kodikPlayers.isEmpty();
 
         if (currentPlayerData != null) {
-            if (currentPlayerData.getPlayer() != null) {
+            if (currentPlayerData.getTeam() != null && currentPlayerData.getTeam().getName() != null) {
+                String teamName = currentPlayerData.getTeam().getName().trim();
+                if (!teamName.isEmpty()) {
+                    boolean foundInAnimelib = false;
+                    if (hasAnimelib) {
+                        for (EpisodeResponse.PlayerData p : animelibPlayers) {
+                            if (p.getTeam() != null && p.getTeam().getName() != null && teamName.equalsIgnoreCase(p.getTeam().getName().trim())) {
+                                sidePanelActiveTab = "animelib";
+                                foundInAnimelib = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!foundInAnimelib && hasKodik) {
+                        for (EpisodeResponse.PlayerData p : kodikPlayers) {
+                            if (p.getTeam() != null && p.getTeam().getName() != null && teamName.equalsIgnoreCase(p.getTeam().getName().trim())) {
+                                sidePanelActiveTab = "kodik";
+                                break;
+                            }
+                        }
+                    }
+                }
+            } else if (currentPlayerData.getPlayer() != null) {
                 String p = currentPlayerData.getPlayer().toLowerCase();
                 if ("kodik".equals(p) && hasKodik) {
                     sidePanelActiveTab = "kodik";
                 } else if ("animelib".equals(p) && hasAnimelib) {
-                    sidePanelActiveTab = "animelib";
-                } else if (hasAnimelib) {
-                    sidePanelActiveTab = "animelib";
-                } else if (hasKodik) {
-                    sidePanelActiveTab = "kodik";
-                } else {
-                    sidePanelActiveTab = "animelib";
-                }
-            } else if (currentPlayerData.getTeam() != null && currentPlayerData.getTeam().getName() != null) {
-                String teamName = currentPlayerData.getTeam().getName().trim();
-                boolean foundInKodik = false;
-                if (hasKodik) {
-                    for (EpisodeResponse.PlayerData p : kodikPlayers) {
-                        if (p.getTeam() != null && p.getTeam().getName() != null && teamName.equalsIgnoreCase(p.getTeam().getName().trim())) {
-                            sidePanelActiveTab = "kodik";
-                            foundInKodik = true;
-                            break;
-                        }
-                    }
-                }
-                if (!foundInKodik) {
                     sidePanelActiveTab = "animelib";
                 }
             }

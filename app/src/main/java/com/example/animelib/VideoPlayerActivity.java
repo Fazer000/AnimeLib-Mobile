@@ -301,6 +301,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private com.example.animelib.controllers.PlayerSplashScreenController playerSplashScreenController;
     private boolean isAnimeInfoLoaded = false;
     private boolean isEpisodeAndVoiceoversLoaded = false;
+    private boolean isSyncingPlayerData = false;
 
     private void checkAndDismissSplashScreen() {
         if (playerSplashScreenController == null) return;
@@ -3876,43 +3877,58 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     public void syncCurrentPlayerDataForDownloadedIfNeeded() {
-        com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
-        if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists() && isPlayingDownloadedVideo()) {
-            if (playersManager == null) return;
-            List<EpisodeResponse.PlayerData> allPlayers = new ArrayList<>();
-            if (playersManager.getAnimelibPlayers() != null) allPlayers.addAll(playersManager.getAnimelibPlayers());
-            if (playersManager.getKodikPlayers() != null) allPlayers.addAll(playersManager.getKodikPlayers());
+        if (isSyncingPlayerData) return;
+        isSyncingPlayerData = true;
+        try {
+            com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+            if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists() && isPlayingDownloadedVideo()) {
+                if (playersManager == null) return;
 
-            EpisodeResponse.PlayerData matchedPlayer = null;
-
-            if (downloadedEp.getTeamName() != null && !downloadedEp.getTeamName().trim().isEmpty()) {
-                String targetName = downloadedEp.getTeamName().trim();
-                for (EpisodeResponse.PlayerData p : allPlayers) {
-                    String teamName = p.getTeam() != null && p.getTeam().getName() != null ? p.getTeam().getName().trim() : null;
-                    if (teamName != null && targetName.equalsIgnoreCase(teamName)) {
-                        if (downloadedEp.getPlayerType() == null || p.getPlayer() == null ||
-                                downloadedEp.getPlayerType().equalsIgnoreCase(p.getPlayer())) {
-                            matchedPlayer = p;
-                            break;
-                        }
+                String targetName = downloadedEp.getTeamName() != null ? downloadedEp.getTeamName().trim() : "";
+                EpisodeResponse.PlayerData currentPD = playersManager.getCurrentPlayerData();
+                if (currentPD != null && currentPD.getTeam() != null && currentPD.getTeam().getName() != null) {
+                    String currentTeamName = currentPD.getTeam().getName().trim();
+                    if (!targetName.isEmpty() && currentTeamName.equalsIgnoreCase(targetName)) {
+                        return;
                     }
                 }
-                if (matchedPlayer == null) {
+
+                List<EpisodeResponse.PlayerData> allPlayers = new ArrayList<>();
+                if (playersManager.getAnimelibPlayers() != null) allPlayers.addAll(playersManager.getAnimelibPlayers());
+                if (playersManager.getKodikPlayers() != null) allPlayers.addAll(playersManager.getKodikPlayers());
+
+                EpisodeResponse.PlayerData matchedPlayer = null;
+
+                if (!targetName.isEmpty()) {
                     for (EpisodeResponse.PlayerData p : allPlayers) {
                         String teamName = p.getTeam() != null && p.getTeam().getName() != null ? p.getTeam().getName().trim() : null;
                         if (teamName != null && targetName.equalsIgnoreCase(teamName)) {
-                            matchedPlayer = p;
-                            break;
+                            if (downloadedEp.getPlayerType() == null || p.getPlayer() == null ||
+                                    downloadedEp.getPlayerType().equalsIgnoreCase(p.getPlayer())) {
+                                matchedPlayer = p;
+                                break;
+                            }
+                        }
+                    }
+                    if (matchedPlayer == null) {
+                        for (EpisodeResponse.PlayerData p : allPlayers) {
+                            String teamName = p.getTeam() != null && p.getTeam().getName() != null ? p.getTeam().getName().trim() : null;
+                            if (teamName != null && targetName.equalsIgnoreCase(teamName)) {
+                                matchedPlayer = p;
+                                break;
+                            }
                         }
                     }
                 }
-            }
 
-            if (matchedPlayer != null) {
-                playersManager.setCurrentPlayerData(matchedPlayer);
-            } else {
-                playersManager.setCurrentPlayerData(createSyntheticPlayerDataForDownloaded(downloadedEp));
+                if (matchedPlayer != null) {
+                    playersManager.setCurrentPlayerData(matchedPlayer);
+                } else {
+                    playersManager.setCurrentPlayerData(createSyntheticPlayerDataForDownloaded(downloadedEp));
+                }
             }
+        } finally {
+            isSyncingPlayerData = false;
         }
     }
 
@@ -5396,10 +5412,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
         if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists() && isPlayingDownloadedVideo()) {
             syncCurrentPlayerDataForDownloadedIfNeeded();
             safeRunOnUiThread(() -> {
-                EpisodeResponse.PlayerData currentDownloaded = playersManager != null ? playersManager.getCurrentPlayerData() : null;
-                if (currentDownloaded != null) {
-                    onPlayerSelected(currentDownloaded);
-                }
+                updatePortraitVoiceoverPlayerUI();
                 if (menuLoadingOverlay != null) menuLoadingOverlay.setVisibility(View.GONE);
             });
             return;
