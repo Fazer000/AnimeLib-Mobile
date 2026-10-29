@@ -652,4 +652,96 @@
 
     </FrameLayout>
 
+    <!-- Player Entry Splash Screen Overlay -->
+    <FrameLayout
+        android:id="@+id/playerSplashScreenOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/black_color"
+        android:clickable="true"
+        android:focusable="true"
+        android:elevation="60dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/playerSplashContent"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <!-- Logo with Ambient Glow -->
+            <FrameLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center">
+
+                <!-- Glowing Halo -->
+                <View
+                    android:id="@+id/playerSplashLogoGlow"
+                    android:layout_width="140dp"
+                    android:layout_height="140dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/bg_splash_glow" />
+
+                <!-- Logo Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/playerSplashLogoCard"
+                    android:layout_width="88dp"
+                    android:layout_height="88dp"
+                    android:layout_gravity="center"
+                    app:cardBackgroundColor="#18181D"
+                    app:cardCornerRadius="26dp"
+                    app:cardElevation="10dp"
+                    app:strokeColor="#4D8852DE"
+                    app:strokeWidth="1.5dp">
+
+                    <ImageView
+                        android:id="@+id/playerSplashLogoImage"
+                        android:layout_width="54dp"
+                        android:layout_height="54dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_logo_non_back_night"
+                        android:contentDescription="AnimeLib Logo" />
+                </com.google.android.material.card.MaterialCardView>
+
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/playerSplashAppName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:fontFamily="@font/open_sans_bold"
+                android:letterSpacing="0.10"
+                android:text="ANIMELIB"
+                android:textColor="#FFFFFF"
+                android:textSize="19sp" />
+
+            <TextView
+                android:id="@+id/playerSplashStatusText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:fontFamily="@font/open_sans"
+                android:text="Загрузка информации…"
+                android:textColor="#8A8A8E"
+                android:textSize="13sp" />
+
+            <com.google.android.material.progressindicator.CircularProgressIndicator
+                android:id="@+id/playerSplashProgress"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginTop="22dp"
+                android:indeterminate="true"
+                app:indicatorColor="@color/purple_primary"
+                app:indicatorSize="28dp"
+                app:trackThickness="3dp"
+                app:trackColor="#20FFFFFF" />
+
+        </LinearLayout>
+
+    </FrameLayout>
+
 </FrameLayout>

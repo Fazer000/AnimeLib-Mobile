@@ -298,6 +298,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private com.example.animelib.controllers.PlayerVideoResolverController playerVideoResolverController;
     private com.example.animelib.controllers.PlayerLockController playerLockController;
     private com.example.animelib.controllers.PlayerChronologyController playerChronologyController;
+    private com.example.animelib.controllers.PlayerSplashScreenController playerSplashScreenController;
 
     // Subtitle settings
     private boolean subtitlesEnabled = true;
@@ -579,6 +580,12 @@ public class VideoPlayerActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setTheme(R.style.Theme_AnimeLIB_VideoPlayer);
         setContentView(R.layout.activity_video_player);
+
+        playerSplashScreenController = new com.example.animelib.controllers.PlayerSplashScreenController();
+        playerSplashScreenController.initViews(findViewById(android.R.id.content));
+        if (getIntent() != null && getIntent().getStringExtra("EXTRA_LOCAL_FILE_PATH") == null) {
+            playerSplashScreenController.showOnEntry();
+        }
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
@@ -3417,6 +3424,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
             public void onError(String errorMessage) {
                 Log.e("VideoPlayer", "Failed to load anime info: " + errorMessage);
                 runOnUiThread(() -> {
+                    if (playerSplashScreenController != null && playerSplashScreenController.isShowing()) {
+                        playerSplashScreenController.dismissWithAnimation(null);
+                    }
                     if (playerAnimeInfoController != null) {
                         playerAnimeInfoController.showError(() -> loadAnimeInfoForPlaceholder());
                     }
@@ -3427,6 +3437,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     @SuppressLint("SetTextI18n")
     private void displayAnimeInfo(AnimeInfoResponse animeInfo) {
+        if (playerSplashScreenController != null && playerSplashScreenController.isShowing()) {
+            playerSplashScreenController.dismissWithAnimation(null);
+        }
+
         if (animeInfo == null || animeInfo.getData() == null) return;
         this.currentAnimeInfo = animeInfo;
         setAnimeInfoToRelatedPanel(animeInfo.getData());
@@ -4185,6 +4199,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     private void playOfflineFile(String localPath, String animeTitle, String episodeTitle) {
+        if (playerSplashScreenController != null) {
+            playerSplashScreenController.dismissImmediately();
+        }
         isOfflineMode = true;
         java.io.File file = new java.io.File(localPath);
         if (!file.exists()) {
@@ -5275,6 +5292,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
             public void onError(String errorMessage) {
                 Log.w("VideoPlayer", "Failed to fetch anime info in loadAnimeFromUrl: " + errorMessage);
                 safeRunOnUiThread(() -> {
+                    if (playerSplashScreenController != null && playerSplashScreenController.isShowing()) {
+                        playerSplashScreenController.dismissWithAnimation(null);
+                    }
                     if (playerAnimeInfoController != null && currentAnimeInfo == null) {
                         playerAnimeInfoController.showError(() -> loadAnimeFromUrl(url));
                     }
@@ -6721,6 +6741,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
         super.onDestroy();
         stopViewProgressTracking();
         stopBufferingMonitoring();
+
+        if (playerSplashScreenController != null) {
+            playerSplashScreenController.dismissImmediately();
+            playerSplashScreenController = null;
+        }
         
         if (playerOrientationController != null) {
             playerOrientationController.cleanup();

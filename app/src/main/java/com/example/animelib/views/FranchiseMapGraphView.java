@@ -97,6 +97,7 @@ public class FranchiseMapGraphView extends ViewGroup {
     private static final float MIN_SCALE = 0.30f;
     private static final float MAX_SCALE = 2.20f;
     private ScaleGestureDetector scaleGestureDetector;
+    private boolean wasMultiTouch = false;
 
     // 2D Scroll & Fling
     private OverScroller scroller;
@@ -1415,32 +1416,40 @@ public class FranchiseMapGraphView extends ViewGroup {
             getParent().requestDisallowInterceptTouchEvent(true);
         }
 
-        // 1. Масштабирование щипком (Pinch-to-zoom)
-        scaleGestureDetector.onTouchEvent(ev);
+        int action = ev.getActionMasked();
 
-        if (scaleGestureDetector.isInProgress()) {
+        if (action == MotionEvent.ACTION_DOWN) {
+            wasMultiTouch = false;
+        }
+
+        if (ev.getPointerCount() > 1 || action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_POINTER_UP) {
+            wasMultiTouch = true;
             if (isDraggingNode) {
                 isDraggingNode = false;
                 draggedNodeId = -1;
                 hasDragged = false;
             }
+        }
+
+        // 1. Масштабирование щипком (Pinch-to-zoom)
+        scaleGestureDetector.onTouchEvent(ev);
+
+        if (scaleGestureDetector.isInProgress() || ev.getPointerCount() > 1) {
             return true;
         }
 
-        // 2. Поглощаем мультитач, предотвращая срыв в драг ноды или рывок скролла
-        if (ev.getPointerCount() > 1) {
-            if (isDraggingNode) {
-                isDraggingNode = false;
-                draggedNodeId = -1;
-                hasDragged = false;
+        // 2. Если Жест был мультитачем (щипком), поглощаем оставшиеся события отпускания пальцев,
+        // предотвращая рывок/сдвиг карты к месту последнего пальца и ложный флинг.
+        if (wasMultiTouch) {
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                wasMultiTouch = false;
+                clampScroll();
             }
             return true;
         }
 
         float canvasX = (ev.getX() + getScrollX()) / scaleFactor;
         float canvasY = (ev.getY() + getScrollY()) / scaleFactor;
-
-        int action = ev.getActionMasked();
 
         switch (action) {
             case MotionEvent.ACTION_DOWN:
