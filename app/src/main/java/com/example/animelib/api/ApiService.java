@@ -2064,16 +2064,13 @@ public class ApiService {
 
         safeExecute(() -> {
             try {
-                // Primary endpoint: https://shikimori.io
+                // Shikimori io domain
                 String[] endpoints = new String[]{
-                        "https://shikimori.io/api/animes/" + shikimoriId + "/franchise",
-                        "https://shikimori.one/api/animes/" + shikimoriId + "/franchise",
-                        "https://shikimori.me/api/animes/" + shikimoriId + "/franchise"
+                        "https://shikimori.io/api/animes/" + shikimoriId + "/franchise"
                 };
-
                 fetchFranchiseWithFallback(endpoints, 0, shikimoriId, callback);
             } catch (Exception e) {
-                Log.e("ApiService", "Error in getFranchise", e);
+                Log.w("ApiService", "Error in getFranchise: " + e.getMessage());
                 if (callback != null) callback.onError("Request error: " + e.getMessage());
             }
         });
@@ -2081,25 +2078,27 @@ public class ApiService {
 
     private void fetchFranchiseWithFallback(String[] endpoints, int index, long shikimoriId, FranchiseCallback callback) {
         if (index >= endpoints.length) {
-            Log.e("ApiService", "All Shikimori franchise endpoints failed for ID: " + shikimoriId);
-            if (callback != null) callback.onError("Все серверы Shikimori недоступны");
+            Log.w("ApiService", "Shikimori franchise request failed for ID: " + shikimoriId);
+            if (callback != null) callback.onError("Сервер Shikimori недоступен");
             return;
         }
 
         String url = endpoints[index];
-        Log.d("ApiService", "Fetching franchise from endpoint [" + index + "]: " + url);
+        Log.d("ApiService", "Fetching franchise from: " + url);
 
         Request request = new Request.Builder()
                 .url(url)
-                .header("User-Agent", "AnimeLib-App/1.8.9 (Android; Mobile)")
-                .header("Accept", "application/json")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .header("Accept", "application/json, text/plain, */*")
+                .header("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
+                .header("Referer", "https://shikimori.io/")
                 .get()
                 .build();
 
         shikimoriHttpClient.newCall(request).enqueue(new Callback() {
             @Override
             public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                Log.w("ApiService", "Franchise fetch failed for " + url + ": " + e.getMessage() + ", trying next endpoint");
+                Log.w("ApiService", "Franchise fetch failed for " + url + ": " + e.getMessage());
                 fetchFranchiseWithFallback(endpoints, index + 1, shikimoriId, callback);
             }
 
@@ -2119,7 +2118,7 @@ public class ApiService {
                             return;
                         }
                     } catch (Exception e) {
-                        Log.e("ApiService", "Error parsing franchise response from: " + url, e);
+                        Log.w("ApiService", "Error parsing franchise response from: " + url + " -> " + e.getMessage());
                     } finally {
                         response.close();
                     }
@@ -2129,7 +2128,6 @@ public class ApiService {
                     Log.w("ApiService", "Endpoint " + url + " returned HTTP " + code);
                 }
 
-                // If parsing failed or HTTP non-200, try next mirror
                 fetchFranchiseWithFallback(endpoints, index + 1, shikimoriId, callback);
             }
         });
@@ -2149,13 +2147,11 @@ public class ApiService {
         safeExecute(() -> {
             try {
                 String[] endpoints = new String[]{
-                        "https://shikimori.io/api/animes/" + animeId,
-                        "https://shikimori.one/api/animes/" + animeId,
-                        "https://shikimori.me/api/animes/" + animeId
+                        "https://shikimori.io/api/animes/" + animeId
                 };
                 fetchShikimoriAnimeDetailsWithFallback(endpoints, 0, animeId, callback);
             } catch (Exception e) {
-                Log.e("ApiService", "Error in fetchShikimoriAnimeDetails", e);
+                Log.w("ApiService", "Error in fetchShikimoriAnimeDetails: " + e.getMessage());
                 if (callback != null) callback.onError("Request error: " + e.getMessage());
             }
         });
@@ -2163,8 +2159,8 @@ public class ApiService {
 
     private void fetchShikimoriAnimeDetailsWithFallback(String[] endpoints, int index, long animeId, ShikimoriAnimeDetailsCallback callback) {
         if (index >= endpoints.length) {
-            Log.e("ApiService", "All Shikimori anime details endpoints failed for ID: " + animeId);
-            if (callback != null) callback.onError("Все серверы Shikimori недоступны");
+            Log.w("ApiService", "Shikimori anime details failed for ID: " + animeId);
+            if (callback != null) callback.onError("Сервер Shikimori недоступен");
             return;
         }
 
@@ -2173,8 +2169,10 @@ public class ApiService {
 
         Request request = new Request.Builder()
                 .url(url)
-                .header("User-Agent", "AnimeLib-App/1.8.9 (Android; Mobile)")
-                .header("Accept", "application/json")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .header("Accept", "application/json, text/plain, */*")
+                .header("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
+                .header("Referer", "https://shikimori.io/")
                 .get()
                 .build();
 
@@ -2198,7 +2196,7 @@ public class ApiService {
                         }
                         return;
                     } catch (Exception e) {
-                        Log.e("ApiService", "Error parsing Shikimori details JSON from: " + url, e);
+                        Log.w("ApiService", "Error parsing Shikimori details JSON from: " + url + " -> " + e.getMessage());
                     } finally {
                         response.close();
                     }

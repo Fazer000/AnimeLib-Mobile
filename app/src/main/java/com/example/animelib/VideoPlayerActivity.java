@@ -444,9 +444,6 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private ImageView ivPortraitVoiceoverChevron;
     private ImageButton portraitBookmarkButton;
     private ImageButton portraitDownloadButton;
-    private View portraitStatusDropdownButton;
-    private ImageView ivPortraitStatusBookmarkIcon;
-    private TextView tvPortraitStatus;
     private Object currentWatchStatusId = null;
     private RecyclerView portraitEpisodesRecyclerView;
     private TextView tvPortraitAnimeTitle;
@@ -1949,9 +1946,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 playerAnimeInfoController.setOfflineMode(true);
                 playerAnimeInfoController.hideSkeletons(animeTitle);
             }
-            if (portraitStatusDropdownButton != null) {
-                portraitStatusDropdownButton.setVisibility(View.VISIBLE);
-            }
+
         });
     }
 
@@ -1964,9 +1959,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
         ivPortraitVoiceoverChevron = findViewById(R.id.ivPortraitVoiceoverChevron);
         portraitBookmarkButton = findViewById(R.id.portraitBookmarkButton);
         portraitDownloadButton = findViewById(R.id.portraitDownloadButton);
-        portraitStatusDropdownButton = findViewById(R.id.portraitStatusDropdownButton);
-        ivPortraitStatusBookmarkIcon = findViewById(R.id.ivPortraitStatusBookmarkIcon);
-        tvPortraitStatus = findViewById(R.id.tvPortraitStatus);
+
         portraitEpisodesRecyclerView = findViewById(R.id.portraitEpisodesRecyclerView);
         tvPortraitAnimeTitle = findViewById(R.id.tvPortraitAnimeTitle);
         tvPortraitEpisodeTitle = findViewById(R.id.tvPortraitEpisodeTitle);
@@ -1987,9 +1980,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             if (portraitRelatedTitlesContainer != null) {
                 portraitRelatedTitlesContainer.setVisibility(View.GONE);
             }
-            if (portraitStatusDropdownButton != null) {
-                portraitStatusDropdownButton.setVisibility(View.VISIBLE);
-            }
+
             if (playerAnimeInfoController != null) {
                 playerAnimeInfoController.setOfflineMode(true);
             }
@@ -2019,16 +2010,17 @@ public class VideoPlayerActivity extends AppCompatActivity {
             });
         }
 
-        if (portraitStatusDropdownButton != null) {
-            portraitStatusDropdownButton.setOnClickListener(v -> showWatchStatusBottomSheet());
-            updatePortraitWatchStatusUI(currentWatchStatusId);
-        }
+
 
         if (portraitBookmarkButton != null) {
             boolean isAuthOrOffline = isOfflineMode || (apiService != null && apiService.isAuthorized());
             portraitBookmarkButton.setAlpha(isAuthOrOffline ? 1.0f : 0.5f);
             portraitBookmarkButton.setOnClickListener(v -> {
                 addBookmark();
+            });
+            portraitBookmarkButton.setOnLongClickListener(v -> {
+                showWatchStatusBottomSheet();
+                return true;
             });
         }
 
@@ -4549,9 +4541,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
         if (ivPortraitVoiceoverChevron != null) {
             ivPortraitVoiceoverChevron.setVisibility(View.GONE);
         }
-        if (portraitStatusDropdownButton != null) {
-            portraitStatusDropdownButton.setVisibility(View.VISIBLE);
-        }
+
         if (playerAnimeInfoController != null) {
             playerAnimeInfoController.setOfflineMode(true);
         }
@@ -6109,33 +6099,6 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     public void updatePortraitWatchStatusUI(Object statusId) {
         this.currentWatchStatusId = statusId;
-        boolean isAuth = apiService != null && apiService.isAuthorized();
-        if (portraitStatusDropdownButton != null) {
-            portraitStatusDropdownButton.setVisibility(View.VISIBLE);
-            portraitStatusDropdownButton.setAlpha(isAuth ? 1.0f : 0.5f);
-        }
-        com.example.animelib.models.WatchStatusItem item = com.example.animelib.managers.WatchStatusManager.getStatusById(statusId);
-        if (tvPortraitStatus == null) return;
-
-        if (item != null) {
-            tvPortraitStatus.setText(item.getLabel());
-            try {
-                int color = android.graphics.Color.parseColor(item.getColorHex());
-                tvPortraitStatus.setTextColor(color);
-                if (ivPortraitStatusBookmarkIcon != null) {
-                    ivPortraitStatusBookmarkIcon.setImageTintList(android.content.res.ColorStateList.valueOf(color));
-                }
-            } catch (Exception e) {
-                Log.e("VideoPlayer", "Error parsing status color: " + item.getColorHex(), e);
-            }
-        } else {
-            tvPortraitStatus.setText("Добавить в список");
-            int defaultColor = androidx.core.content.ContextCompat.getColor(this, R.color.primary_text_color);
-            tvPortraitStatus.setTextColor(defaultColor);
-            if (ivPortraitStatusBookmarkIcon != null) {
-                ivPortraitStatusBookmarkIcon.setImageTintList(android.content.res.ColorStateList.valueOf(defaultColor));
-            }
-        }
     }
 
     public void fetchAndApplyWatchStatus() {
