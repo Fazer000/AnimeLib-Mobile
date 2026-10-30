@@ -177,27 +177,37 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
+                android:layout_marginHorizontal="32dp"
+                android:background="@drawable/card_bg_rounded"
+                android:elevation="6dp"
                 android:gravity="center"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                android:paddingHorizontal="22dp"
+                android:paddingVertical="18dp">
 
                 <com.google.android.material.progressindicator.CircularProgressIndicator
                     android:id="@+id/mapLoadingProgress"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
                     android:indeterminate="true"
-                    app:indicatorSize="44dp"
-                    app:trackThickness="4dp"
-                    app:indicatorColor="@color/purple_primary" />
+                    app:indicatorColor="@color/purple_primary"
+                    app:indicatorSize="40dp"
+                    app:trackThickness="4dp" />
 
                 <TextView
                     android:id="@+id/tvMapLoadingText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
+                    android:layout_marginTop="12dp"
+                    android:ellipsize="end"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:gravity="center"
+                    android:maxLines="2"
+                    android:maxWidth="240dp"
                     android:text="Загрузка тайтла…"
+                    android:textAlignment="center"
                     android:textColor="@color/primary_text_color"
                     android:textSize="13.5sp"
-                    android:fontFamily="@font/open_sans_bold"
                     android:visibility="gone" />
             </LinearLayout>
         </FrameLayout>
