@@ -62,13 +62,13 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <com.google.android.material.imageview.ShapeableImageView
+            <ImageView
                 android:id="@+id/avatarView"
                 android:layout_width="34dp"
                 android:layout_height="34dp"
                 android:scaleType="centerCrop"
                 android:src="@drawable/ic_avatar_placeholder"
-                app:shapeAppearanceOverlay="@style/ShapeAppearance.Material3.Corner.Small" />
+                android:importantForAccessibility="no" />
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -246,205 +246,14 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Inline Reply Input Container -->
-        <LinearLayout
-            android:id="@+id/inlineReplyContainer"
+        <!-- Lazy Inline Reply Input Container (inflated only when user taps reply) -->
+        <ViewStub
+            android:id="@+id/inlineReplyStub"
+            android:inflatedId="@+id/inlineReplyContainer"
+            android:layout="@layout/layout_comment_inline_reply"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:background="@drawable/bg_comment_input"
-            android:orientation="vertical"
-            android:padding="8dp"
-            android:visibility="gone">
-
-            <!-- Header with "Ответ для @username" and cancel button -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingHorizontal="4dp"
-                android:paddingBottom="4dp">
-
-                <TextView
-                    android:id="@+id/tvInlineReplyToText"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:textColor="@color/secondary_color"
-                    android:textSize="12.5sp"
-                    android:fontFamily="@font/open_sans_semibold"
-                    android:ellipsize="end"
-                    android:singleLine="true" />
-
-                <ImageButton
-                    android:id="@+id/btnInlineCancelReply"
-                    android:layout_width="22dp"
-                    android:layout_height="22dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Cancel reply"
-                    android:padding="2dp"
-                    android:src="@drawable/ic_close"
-                    app:tint="@color/accent_text_color" />
-            </LinearLayout>
-
-            <!-- Formatting Bar Row (above input) -->
-            <LinearLayout
-                android:id="@+id/inlineFormattingBar"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingHorizontal="2dp"
-                android:paddingBottom="4dp">
-
-                <TextView
-                    android:id="@+id/btnInlineFormatBold"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:minWidth="36dp"
-                    android:minHeight="36dp"
-                    android:gravity="center"
-                    android:text=" B "
-                    android:textColor="@color/accent_text_color"
-                    android:textSize="15sp"
-                    android:fontFamily="@font/open_sans_bold"
-                    android:paddingHorizontal="6dp"
-                    android:paddingVertical="4dp"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Bold" />
-
-                <TextView
-                    android:id="@+id/btnInlineFormatItalic"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:minWidth="36dp"
-                    android:minHeight="36dp"
-                    android:gravity="center"
-                    android:text=" I "
-                    android:textColor="@color/accent_text_color"
-                    android:textSize="15sp"
-                    android:fontFamily="@font/open_sans_bold"
-                    android:textStyle="italic"
-                    android:paddingHorizontal="6dp"
-                    android:paddingVertical="4dp"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Italic" />
-
-                <TextView
-                    android:id="@+id/btnInlineFormatUnderline"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:minWidth="36dp"
-                    android:minHeight="36dp"
-                    android:gravity="center"
-                    android:text=" U "
-                    android:textColor="@color/accent_text_color"
-                    android:textSize="15sp"
-                    android:fontFamily="@font/open_sans_bold"
-                    android:paddingHorizontal="6dp"
-                    android:paddingVertical="4dp"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Underline" />
-
-                <TextView
-                    android:id="@+id/btnInlineFormatStrike"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:minWidth="36dp"
-                    android:minHeight="36dp"
-                    android:gravity="center"
-                    android:text=" S "
-                    android:textColor="@color/accent_text_color"
-                    android:textSize="15sp"
-                    android:fontFamily="@font/open_sans_bold"
-                    android:paddingHorizontal="6dp"
-                    android:paddingVertical="4dp"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Strikethrough" />
-
-                <TextView
-                    android:id="@+id/btnInlineFormatSpoiler"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:minWidth="36dp"
-                    android:minHeight="36dp"
-                    android:gravity="center"
-                    android:text=" [!] "
-                    android:textColor="@color/accent_text_color"
-                    android:textSize="15sp"
-                    android:fontFamily="@font/open_sans_bold"
-                    android:paddingHorizontal="6dp"
-                    android:paddingVertical="4dp"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Spoiler" />
-
-                <TextView
-                    android:id="@+id/btnInlineFormatQuote"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:minWidth="36dp"
-                    android:minHeight="36dp"
-                    android:gravity="center"
-                    android:text=" ” "
-                    android:textColor="@color/accent_text_color"
-                    android:textSize="16sp"
-                    android:fontFamily="@font/open_sans_bold"
-                    android:paddingHorizontal="6dp"
-                    android:paddingVertical="4dp"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Quote" />
-            </LinearLayout>
-
-            <!-- Field row -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <EditText
-                    android:id="@+id/inlineCommentInputField"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:background="@null"
-                    android:hint="Написать ответ..."
-                    android:textColorHint="@color/accent_text_color"
-                    android:textColor="@color/primary_text_color"
-                    android:textSize="14sp"
-                    android:paddingHorizontal="6dp"
-                    android:paddingVertical="6dp"
-                    android:maxLines="3"
-                    android:inputType="textMultiLine"
-                    android:imeOptions="flagNoExtractUi|flagNoFullscreen" />
-
-                <ImageButton
-                    android:id="@+id/btnInlineSendComment"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:layout_marginStart="4dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Send reply"
-                    android:padding="6dp"
-                    android:scaleType="fitCenter"
-                    android:src="@drawable/ic_send"
-                    app:tint="@color/secondary_color" />
-            </LinearLayout>
-
-        </LinearLayout>
+            android:layout_marginTop="8dp" />
 
     </LinearLayout>
 </LinearLayout>

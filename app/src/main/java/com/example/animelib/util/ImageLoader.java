@@ -8,6 +8,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Process;
 import android.util.LruCache;
 import android.widget.ImageView;
 
@@ -17,7 +18,9 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -25,8 +28,15 @@ public class ImageLoader {
     private static volatile ImageLoader instance;
     private final LruCache<String, Bitmap> memoryCache;
     private final ExecutorService executor;
+    private final ExecutorService avatarExecutor;
+    private final Map<String, List<AvatarCallback>> inFlightAvatars = new HashMap<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private Context appContext;
+    private volatile File cachedDiskCacheDir;
+
+    private interface AvatarCallback {
+        void onComplete(Bitmap bitmap);
+    }
 
     private ImageLoader() {
         final int maxMemory = (int) (Runtime.getRuntime().maxMemory() / 1024);
@@ -38,6 +48,16 @@ public class ImageLoader {
             }
         };
         executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+        avatarExecutor = Executors.newFixedThreadPool(2, r -> {
+            Thread t = new Thread(() -> {
+                try {
+                    Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
+                } catch (Throwable ignored) {}
+                r.run();
+            }, "CommentAvatarLoader");
+            t.setDaemon(true);
+            return t;
+        });
     }
 
     public static ImageLoader getInstance() {
@@ -96,7 +116,7 @@ public class ImageLoader {
         imageView.setTag(url);
 
         executor.submit(() -> {
-            Bitmap bitmap = downloadBitmap(url, 0);
+            Bitmap bitmap = downloadBitmap(url, 0, false);
             if (bitmap != null) memoryCache.put(url, bitmap);
             mainHandler.post(() -> {
                 Object tag = imageView.getTag();
@@ -115,8 +135,8 @@ public class ImageLoader {
     }
 
     /**
-     * Облегчённая загрузка маленьких аватарок (например, в комментариях) без тяжёлых ValueAnimator-шиммеров
-     * и с декодированием уменьшенного Bitmap (inSampleSize), чтобы не нагружать UI-поток плеера.
+     * Облегчённая загрузка маленьких аватарок (например, в комментариях) на выделенном фоновом пуле
+     * с дедупликацией одинаковых URL и пониженным приоритетом потока, чтобы не конкурировать с плеером.
      */
     public void loadAvatarInto(ImageView imageView, String url, int placeholderResId, int targetSizePx) {
         if (imageView == null) return;
@@ -140,24 +160,49 @@ public class ImageLoader {
             return;
         }
 
-        imageView.setTag(cacheKey);
-        imageView.setImageResource(placeholder);
+        if (!cacheKey.equals(imageView.getTag())) {
+            imageView.setTag(cacheKey);
+            imageView.setImageResource(placeholder);
+        }
 
-        executor.submit(() -> {
-            Bitmap bitmap = downloadBitmap(url, reqSize);
+        AvatarCallback uiCallback = bitmap -> {
+            Object tag = imageView.getTag();
+            if (cacheKey.equals(tag)) {
+                if (bitmap != null) {
+                    imageView.setImageBitmap(bitmap);
+                } else {
+                    imageView.setImageResource(placeholder);
+                }
+            }
+        };
+
+        synchronized (inFlightAvatars) {
+            List<AvatarCallback> listeners = inFlightAvatars.get(cacheKey);
+            if (listeners != null) {
+                listeners.add(uiCallback);
+                return;
+            }
+            listeners = new ArrayList<>(2);
+            listeners.add(uiCallback);
+            inFlightAvatars.put(cacheKey, listeners);
+        }
+
+        avatarExecutor.submit(() -> {
+            Bitmap bitmap = downloadBitmap(url, reqSize, true);
             if (bitmap != null) {
                 memoryCache.put(cacheKey, bitmap);
             }
-            mainHandler.post(() -> {
-                Object tag = imageView.getTag();
-                if (cacheKey.equals(tag)) {
-                    if (bitmap != null) {
-                        imageView.setImageBitmap(bitmap);
-                    } else {
-                        imageView.setImageResource(placeholder);
+            final List<AvatarCallback> callbacks;
+            synchronized (inFlightAvatars) {
+                callbacks = inFlightAvatars.remove(cacheKey);
+            }
+            if (callbacks != null && !callbacks.isEmpty()) {
+                mainHandler.post(() -> {
+                    for (int i = 0, size = callbacks.size(); i < size; i++) {
+                        callbacks.get(i).onComplete(bitmap);
                     }
-                }
-            });
+                });
+            }
         });
     }
 
@@ -194,7 +239,22 @@ public class ImageLoader {
         return decoded;
     }
 
-    private Bitmap downloadBitmap(String src, int reqSizePx) {
+    private File getOrInitDiskCacheDir(Context context) {
+        File dir = cachedDiskCacheDir;
+        if (dir != null) {
+            return dir;
+        }
+        if (context == null) return null;
+        File created = new File(context.getCacheDir(), "image_disk_cache");
+        if (!created.exists()) {
+            //noinspection ResultOfMethodCallIgnored
+            created.mkdirs();
+        }
+        cachedDiskCacheDir = created;
+        return created;
+    }
+
+    private Bitmap downloadBitmap(String src, int reqSizePx, boolean skipPosterLookup) {
         if (src == null || src.trim().isEmpty()) return null;
 
         // 1. Direct local file check
@@ -220,8 +280,8 @@ public class ImageLoader {
 
         Context context = getAppContext();
 
-        // 2. Poster directory check (by animeId / filename)
-        if (context != null) {
+        // 2. Poster directory check (skip for comment avatars to avoid unnecessary external storage IPC)
+        if (!skipPosterLookup && context != null) {
             File posterFile = findPosterFileInDirs(context, src);
             if (posterFile != null) {
                 try {
@@ -235,12 +295,13 @@ public class ImageLoader {
         File diskCacheFile = null;
         if (context != null) {
             try {
-                File diskCacheDir = new File(context.getCacheDir(), "image_disk_cache");
-                if (!diskCacheDir.exists()) diskCacheDir.mkdirs();
-                diskCacheFile = new File(diskCacheDir, hashKeyForDisk(src));
-                if (diskCacheFile.exists() && diskCacheFile.length() > 0) {
-                    Bitmap bm = decodeSampledFile(diskCacheFile.getAbsolutePath(), reqSizePx);
-                    if (bm != null) return bm;
+                File diskCacheDir = getOrInitDiskCacheDir(context);
+                if (diskCacheDir != null) {
+                    diskCacheFile = new File(diskCacheDir, hashKeyForDisk(src));
+                    if (diskCacheFile.exists() && diskCacheFile.length() > 0) {
+                        Bitmap bm = decodeSampledFile(diskCacheFile.getAbsolutePath(), reqSizePx);
+                        if (bm != null) return bm;
+                    }
                 }
             } catch (Exception ignored) {}
         }

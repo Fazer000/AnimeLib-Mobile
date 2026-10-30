@@ -151,6 +151,12 @@ public class PlayerCommentsController {
         }
     }
 
+    public void notifyPlayerReady() {
+        if (commentsManager != null) {
+            commentsManager.notifyPlayerReady();
+        }
+    }
+
     public void onPortraitScrollChanged(androidx.core.widget.NestedScrollView scrollView, int scrollY, int oldScrollY) {
         if (commentsManager != null) {
             commentsManager.onPortraitScrollChanged(scrollView, scrollY, oldScrollY);

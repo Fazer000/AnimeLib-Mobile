@@ -61,8 +61,10 @@ public class CommentsManager {
 
     private static final String TAG = "CommentsManager";
     private static final int LANDSCAPE_PREFETCH_THRESHOLD = 6;
+    private static final int PORTRAIT_VIEWPORT_REVEAL_THRESHOLD_DP = 1000;
     private static final int PORTRAIT_SCROLL_THRESHOLD_DP = 650;
-    private static final long INITIAL_PORTRAIT_LOAD_DELAY_MS = 350L;
+    private static final long POST_PLAYBACK_PORTRAIT_LOAD_DELAY_MS = 650L;
+    private static final long FALLBACK_PORTRAIT_LOAD_DELAY_MS = 3800L;
 
     // UI компоненты (Landscape / Side Panel)
     private View commentsPanel;
@@ -136,6 +138,8 @@ public class CommentsManager {
     private String commentsSortType = "desc";
     private int requestGeneration = 0;
     private boolean isPortraitCommentsRequested = false;
+    private boolean isPlayerReadyForComments = false;
+    private float cachedDensity = 0f;
 
     // Кэш загруженных страниц и предварительно распарсенного HTML для мгновенной синхронизации между ориентациями
     private final List<CommentsResponse.CommentItem> loadedStickyComments = new ArrayList<>();
@@ -744,7 +748,10 @@ public class CommentsManager {
 
     private int dpToPx(int dp) {
         if (context == null) return dp;
-        return (int) (dp * context.getResources().getDisplayMetrics().density);
+        if (cachedDensity <= 0f) {
+            cachedDensity = context.getResources().getDisplayMetrics().density;
+        }
+        return (int) (dp * cachedDensity);
     }
 
     private void setupCommentsRecyclerView() {
@@ -845,29 +852,55 @@ public class CommentsManager {
             return;
         }
 
-        if (scrollY >= dpToPx(80) && !isPortraitCommentsRequested) {
-            mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
-            loadCommentsForPortraitIfNeeded();
-            return;
+        if (scrollY >= dpToPx(60)) {
+            if (!isPortraitCommentsRequested || (loadedPageResponses.isEmpty() && !isLoadingComments && currentEpisode != null)) {
+                mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
+                isPortraitCommentsRequested = true;
+                triggerInitialLoadIfNeeded();
+                return;
+            }
+            if (isLoadingComments && commentsCurrentPage == 0
+                    && (portraitCommentsAdapter == null || portraitCommentsAdapter.getCommentDisplayCount() == 0)) {
+                showLoadingOverlay(portraitCommentsLoadingOverlay);
+            }
         }
 
         if (scrollY <= oldScrollY) {
             return;
         }
 
-        if (isLoadingComments || !commentsHasNextPage || currentEpisode == null) {
-            return;
-        }
         if (portraitCommentsAdapter == null || portraitCommentsAdapter.isPendingInsertion()) {
-            return;
-        }
-        if (portraitCommentsAdapter.getCommentDisplayCount() == 0) {
             return;
         }
 
         if (scrollView != null && scrollView.getChildCount() > 0) {
             View content = scrollView.getChildAt(0);
             int remainingPx = content.getMeasuredHeight() - (scrollY + scrollView.getMeasuredHeight());
+
+            // Сначала раскрываем уже распарсенные элементы из локального буфера одним быстрым батчем
+            if (portraitCommentsAdapter.hasDeferredViewportItems()) {
+                if (remainingPx <= dpToPx(PORTRAIT_VIEWPORT_REVEAL_THRESHOLD_DP)) {
+                    portraitCommentsAdapter.revealNextViewportBatch(CommentsAdapter.PORTRAIT_SCROLL_BATCH_SIZE);
+                    scrollView.post(() -> {
+                        if (!isPortraitOrientation() || isOfflineMode || portraitCommentsAdapter == null) return;
+                        if (portraitCommentsAdapter.hasDeferredViewportItems() && scrollView.getChildCount() > 0) {
+                            View c = scrollView.getChildAt(0);
+                            int rem = c.getMeasuredHeight() - (scrollView.getScrollY() + scrollView.getMeasuredHeight());
+                            if (rem <= dpToPx(PORTRAIT_VIEWPORT_REVEAL_THRESHOLD_DP) / 2) {
+                                portraitCommentsAdapter.revealNextViewportBatch(CommentsAdapter.PORTRAIT_SCROLL_BATCH_SIZE);
+                            }
+                        }
+                    });
+                }
+                return;
+            }
+
+            if (isLoadingComments || !commentsHasNextPage || currentEpisode == null) {
+                return;
+            }
+            if (portraitCommentsAdapter.getCommentDisplayCount() == 0) {
+                return;
+            }
             if (remainingPx <= dpToPx(PORTRAIT_SCROLL_THRESHOLD_DP)) {
                 loadNextCommentsPageIfAvailable();
             }
@@ -1043,8 +1076,13 @@ public class CommentsManager {
 
             boolean landscapeEmpty = (commentsAdapter == null || commentsAdapter.getCommentDisplayCount() == 0);
             boolean portraitEmpty = (portraitCommentsAdapter == null || portraitCommentsAdapter.getCommentDisplayCount() == 0);
-            if (landscapeEmpty) showLoadingOverlay(commentsLoadingOverlay);
-            if (portraitEmpty) showLoadingOverlay(portraitCommentsLoadingOverlay);
+            if (!isPortrait && isCommentsVisible && landscapeEmpty) {
+                showLoadingOverlay(commentsLoadingOverlay);
+            }
+            boolean userViewingPortraitComments = isPortrait && (portraitScrollView != null && portraitScrollView.getScrollY() >= dpToPx(40));
+            if (userViewingPortraitComments && portraitEmpty) {
+                showLoadingOverlay(portraitCommentsLoadingOverlay);
+            }
         } else {
             // При бесконечном скролле показываем компактный спиннер внизу списка вместо перекрытия экрана
             if (isPortrait) {
@@ -1279,6 +1317,31 @@ public class CommentsManager {
         }
     }
 
+    public void notifyPlayerReady() {
+        if (isPlayerReadyForComments) return;
+        isPlayerReadyForComments = true;
+        if (!isOfflineMode && !isCommentsDisabledInPlayer() && isPortraitOrientation()
+                && isPortraitCommentsRequested && currentEpisode != null
+                && loadedPageResponses.isEmpty() && !isLoadingComments) {
+            mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
+            mainHandler.postDelayed(deferredPortraitLoadRunnable, POST_PLAYBACK_PORTRAIT_LOAD_DELAY_MS);
+        }
+    }
+
+    private void scheduleDeferredPortraitLoad() {
+        mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
+        if (isOfflineMode || isCommentsDisabledInPlayer() || currentEpisode == null) {
+            return;
+        }
+        boolean userAlreadyScrolled = portraitScrollView != null && portraitScrollView.getScrollY() >= dpToPx(60);
+        if (userAlreadyScrolled) {
+            triggerInitialLoadIfNeeded();
+        } else {
+            long delay = isPlayerReadyForComments ? POST_PLAYBACK_PORTRAIT_LOAD_DELAY_MS : FALLBACK_PORTRAIT_LOAD_DELAY_MS;
+            mainHandler.postDelayed(deferredPortraitLoadRunnable, delay);
+        }
+    }
+
     public void resetCommentsOnEpisodeChange(boolean reloadIfVisible) {
         mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
         boolean wasPortraitRequested = isPortraitCommentsRequested;
@@ -1289,6 +1352,9 @@ public class CommentsManager {
         commentsHasNextPage = false;
         isLoadingComments = false;
         isPortraitCommentsRequested = false;
+        if (reloadIfVisible) {
+            isPlayerReadyForComments = false;
+        }
         landscapeAdapterNeedsSync = false;
         portraitAdapterNeedsSync = false;
         loadedStickyComments.clear();
@@ -1312,7 +1378,7 @@ public class CommentsManager {
         if (reloadIfVisible && currentEpisode != null) {
             if (isPortraitOrientation() && wasPortraitRequested) {
                 isPortraitCommentsRequested = true;
-                mainHandler.postDelayed(deferredPortraitLoadRunnable, INITIAL_PORTRAIT_LOAD_DELAY_MS);
+                scheduleDeferredPortraitLoad();
             } else if (!isPortraitOrientation() && wasLandscapeVisible && !isPanelAnimatingOpen) {
                 loadCommentsPage(1);
             }
@@ -1364,6 +1430,7 @@ public class CommentsManager {
 
             if (isPortrait) {
                 isPortraitCommentsRequested = true;
+                showLoadingOverlay(portraitCommentsLoadingOverlay);
                 loadCommentsPage(1);
             } else if (wasLandscapeVisible) {
                 loadCommentsPage(1);
@@ -1375,14 +1442,15 @@ public class CommentsManager {
         boolean episodeChanged = (this.currentEpisode == null && episode != null)
                 || (this.currentEpisode != null && episode != null && this.currentEpisode.getId() != episode.getId());
         this.currentEpisode = episode;
+        if (episodeChanged) {
+            isPlayerReadyForComments = false;
+        }
 
         if (episode == null) return;
 
         if (shouldLoadComments() && loadedPageResponses.isEmpty() && !isLoadingComments) {
             if (isPortraitOrientation()) {
-                mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
-                long delay = episodeChanged ? INITIAL_PORTRAIT_LOAD_DELAY_MS : 150L;
-                mainHandler.postDelayed(deferredPortraitLoadRunnable, delay);
+                scheduleDeferredPortraitLoad();
             } else if (!isPanelAnimatingOpen) {
                 loadCommentsPage(1);
             }
@@ -1436,6 +1504,7 @@ public class CommentsManager {
             this.portraitCommentsRecyclerView.setNestedScrollingEnabled(false);
 
             this.portraitCommentsAdapter = new CommentsAdapter();
+            this.portraitCommentsAdapter.setPortraitViewportMode(true);
             this.portraitCommentsAdapter.setCommentActionListener(new CommentsAdapter.CommentActionListener() {
                 @Override
                 public void onReplyClicked(CommentsResponse.CommentItem comment) {
@@ -1472,6 +1541,7 @@ public class CommentsManager {
             this.portraitCommentsAdapter.setRepliesLimit(loadSavedRepliesLimit());
             this.portraitCommentsAdapter.setOnBatchCompletedListener(() -> {
                 if (!isPortraitOrientation() || isOfflineMode || isCommentsDisabledInPlayer()) return;
+                if (portraitCommentsAdapter != null && portraitCommentsAdapter.hasDeferredViewportItems()) return;
                 if (isLoadingComments || !commentsHasNextPage || currentEpisode == null) return;
                 if (portraitScrollView != null && portraitScrollView.getScrollY() > 0 && portraitScrollView.getChildCount() > 0) {
                     View content = portraitScrollView.getChildAt(0);
@@ -1726,14 +1796,7 @@ public class CommentsManager {
 
         if (currentEpisode != null && !isLoadingComments && loadedPageResponses.isEmpty()
                 && (portraitCommentsAdapter == null || !portraitCommentsAdapter.hasAnySourceComments())) {
-            mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
-            boolean userAlreadyScrolled = portraitScrollView != null && portraitScrollView.getScrollY() >= dpToPx(80);
-            if (userAlreadyScrolled) {
-                triggerInitialLoadIfNeeded();
-            } else {
-                // Даём видеоплееру спокойно инициализировать декодер и первые кадры без конкуренции за UI-поток
-                mainHandler.postDelayed(deferredPortraitLoadRunnable, INITIAL_PORTRAIT_LOAD_DELAY_MS);
-            }
+            scheduleDeferredPortraitLoad();
         }
     }
 

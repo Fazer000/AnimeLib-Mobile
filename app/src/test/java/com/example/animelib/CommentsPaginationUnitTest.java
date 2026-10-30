@@ -106,4 +106,36 @@ public class CommentsPaginationUnitTest {
         assertTrue(CommentHtmlProcessor.containsBlockStructure("<blockquote>Цитата</blockquote>"));
         assertEquals("Привет\nмир", CommentHtmlProcessor.normalizeHtmlWhitespace("  Привет   \n\n\n   мир  "));
     }
+
+    @Test
+    public void testPortraitViewportModeLimitsInitialInflationAndRevealsBatches() {
+        StringBuilder rootsJson = new StringBuilder();
+        for (int i = 1; i <= 20; i++) {
+            if (i > 1) rootsJson.append(",");
+            rootsJson.append("{\"id\": ").append(i).append(", \"comment\": \"<p>Comment ").append(i).append("</p>\"}");
+        }
+        Gson gson = new Gson();
+        CommentsResponse page1 = gson.fromJson("{"
+                + "\"data\": {\"root\": [" + rootsJson + "], \"replies\": []},"
+                + "\"meta\": {\"page\": 1, \"has_next_page\": true}"
+                + "}", CommentsResponse.class);
+
+        CommentsAdapter portraitAdapter = new CommentsAdapter();
+        portraitAdapter.setPortraitViewportMode(true);
+        portraitAdapter.setInitialComments(Collections.emptyList(), page1);
+
+        assertEquals(CommentsAdapter.INITIAL_PORTRAIT_RENDER_COUNT, portraitAdapter.getCommentDisplayCount());
+        assertTrue(portraitAdapter.hasDeferredViewportItems());
+        assertEquals(20, portraitAdapter.getTotalTargetCount());
+
+        int revealed1 = portraitAdapter.revealNextViewportBatch(CommentsAdapter.PORTRAIT_SCROLL_BATCH_SIZE);
+        assertEquals(12, revealed1);
+        assertEquals(18, portraitAdapter.getCommentDisplayCount());
+        assertTrue(portraitAdapter.hasDeferredViewportItems());
+
+        int revealed2 = portraitAdapter.revealNextViewportBatch(CommentsAdapter.PORTRAIT_SCROLL_BATCH_SIZE);
+        assertEquals(2, revealed2);
+        assertEquals(20, portraitAdapter.getCommentDisplayCount());
+        assertFalse(portraitAdapter.hasDeferredViewportItems());
+    }
 }

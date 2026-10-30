@@ -447,6 +447,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private long bookmarkTimecode = 0; // Таймкод из закладки в миллисекундах
     private long savedPlayerPosition = 0; // Сохраненная позиция при смене плеера
     private boolean autoBookmarkSaved = false; // Флаг для предотвращения дублирования автосохранения
+    private int playbackRestartGeneration = 0;
 
     // Portrait UI components
     private View portraitVoiceoverPlayerButton;
@@ -538,6 +539,17 @@ public class VideoPlayerActivity extends AppCompatActivity {
         autoBookmarkSaved = false;
         bookmarkTimecode = 0;
         savedPlayerPosition = 0;
+        isFirstOfflineLaunch = true;
+        isNewEpisodeSelection = true;
+        if (playersManager != null) {
+            playersManager.cancelPendingPlayerLoads();
+        }
+        if (playerEpisodesController != null) {
+            playerEpisodesController.resetForNewAnime();
+        }
+        if (playerProgressController != null) {
+            playerProgressController.resetProgressForNewEpisode();
+        }
 
         if (playerAnimeInfoController != null) {
             playerAnimeInfoController.collapsePortraitInfo();
@@ -645,25 +657,37 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 updatePortraitWatchStatusUI(currentWatchStatusId);
 
                 EpisodesListResponse.EpisodeItem curEp = episodesManager.getCurrentEpisode();
-                if (curEp != null && (curEp.getId() == bookmarkData.getItemId() || 
-                    (curEp.getNumber() != null && curEp.getNumber().equals(String.valueOf(bookmarkData.getMeta() != null ? bookmarkData.getMeta().getItemNumber() : ""))))) {
-                    
+                boolean isMatchingEpisode = curEp != null && (
+                        curEp.getId() == bookmarkData.getItemId() ||
+                        (bookmarkData.getItemId() <= 0 && curEp.getNumber() != null &&
+                         bookmarkData.getMeta() != null && bookmarkData.getMeta().getItemNumber() > 0 &&
+                         curEp.getNumber().equals(String.valueOf(bookmarkData.getMeta().getItemNumber())))
+                );
+                if (isMatchingEpisode) {
                     updateBookmarkButtonColor(true);
-                    
-                    String progress = bookmarkData.getProgress();
-                    if (progress != null && !progress.trim().isEmpty()) {
-                        long bmMs = episodesManager.getBookmarkManager().parseTimecodeToMilliseconds(progress);
-                        if (bmMs > 0) {
-                            if (playerEpisodesController != null) {
-                                playerEpisodesController.setBookmarkTimecode(bmMs);
-                            } else {
-                                bookmarkTimecode = bmMs;
-                            }
-                            Log.d("VideoPlayer", "OnBookmarkLoaded updated bookmark timecode: " + bmMs + "ms");
-                            
-                            if (player != null && player.getCurrentPosition() < 5000) {
-                                Log.d("VideoPlayer", "Seeking player to newly loaded bookmark timecode: " + bmMs + "ms");
-                                player.seekTo(bmMs);
+
+                    boolean canApplyInitialBookmark = playerEpisodesController == null ||
+                            (!playerEpisodesController.hasUserSwitchedEpisode() && !playerEpisodesController.isInitialBookmarkConsumed());
+                    if (canApplyInitialBookmark) {
+                        String progress = bookmarkData.getProgress();
+                        if (progress != null && !progress.trim().isEmpty()) {
+                            long bmMs = episodesManager.getBookmarkManager().parseTimecodeToMilliseconds(progress);
+                            if (bmMs > 0) {
+                                if (player != null && player.getCurrentPosition() < 5000) {
+                                    Log.d("VideoPlayer", "Seeking player to initial bookmark timecode: " + bmMs + "ms");
+                                    player.seekTo(bmMs);
+                                    if (playerEpisodesController != null) {
+                                        playerEpisodesController.markInitialBookmarkConsumed();
+                                    }
+                                    bookmarkTimecode = 0;
+                                } else {
+                                    if (playerEpisodesController != null) {
+                                        playerEpisodesController.setBookmarkTimecode(bmMs);
+                                    } else {
+                                        bookmarkTimecode = bmMs;
+                                    }
+                                    Log.d("VideoPlayer", "OnBookmarkLoaded stored initial bookmark timecode: " + bmMs + "ms");
+                                }
                             }
                         }
                     }
@@ -2800,6 +2824,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     if (hasRenderedFirstFrame || (player != null && player.isPlaying())) {
                         isVideoLoading = false;
                     }
+                    if (!autoPlayOnPrepare && playerCommentsController != null) {
+                        playerCommentsController.notifyPlayerReady();
+                    }
                 } else if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
                     isSeeking = false;
                     isVideoLoading = false;
@@ -2840,6 +2867,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 startBufferingMonitoring();
                 updatePlayPauseAndLoadingState(true);
                 ensureAnimeTitleSet();
+                if (playerCommentsController != null) {
+                    playerCommentsController.notifyPlayerReady();
+                }
             }
 
             @Override
@@ -3313,40 +3343,51 @@ public class VideoPlayerActivity extends AppCompatActivity {
                             new BookmarkManager.LastEpisodeCallback() {
                                 @Override
                                 public void onLastEpisodeFound(EpisodesListResponse.EpisodeItem episode, String progress) {
-                                    Log.d("VideoPlayer", "Found bookmarked episode: " + episode.getNumber() + 
-                                                         ", progress: " + progress);
-                                    
-                                    // Сохраняем таймкод из закладки
-                                    long parsedBm = episodesManager.getBookmarkManager().parseTimecodeToMilliseconds(progress);
-                                    if (playerEpisodesController != null) {
-                                        playerEpisodesController.setBookmarkTimecode(parsedBm);
-                                        playerEpisodesController.setNewEpisodeSelection(true);
-                                    } else {
-                                        bookmarkTimecode = parsedBm;
-                                        isNewEpisodeSelection = true;
-                                    }
-                                    Log.d("VideoPlayer", "Parsed bookmark timecode: " + progress + " -> " + parsedBm + "ms");
-                                    
-                                    // Устанавливаем красный цвет кнопки для эпизода с закладкой
-                                    updateBookmarkButtonColor(true);
-                                    autoPlayOnPrepare = VideoPlayerActivity.this.autoPlay;
-                                    episodesManager.setCurrentEpisode(episode);
-                                    if (playerCommentsController != null) {
-                                        playerCommentsController.setCurrentEpisode(episode);
-                                    }
-                                    
-                                    // СРАЗУ обновляем заголовок с номером эпизода
-                                    updateEpisodeHeaderQuick();
-                                    
-                                    // ВАЖНО: Загружаем плееры для ПРАВИЛЬНОГО эпизода
-                                    Log.d("VideoPlayer", "Loading players for bookmarked episode: " + episode.getId());
-                                    playersManager.loadPlayersForEpisode(episode.getId());
+                                    safeRunOnUiThread(() -> {
+                                        if (playerEpisodesController != null && playerEpisodesController.hasUserSwitchedEpisode()) {
+                                            Log.d("VideoPlayer", "Ignoring late initial bookmark callback because user already switched episode");
+                                            return;
+                                        }
+                                        Log.d("VideoPlayer", "Found bookmarked episode: " + episode.getNumber() + 
+                                                             ", progress: " + progress);
+                                        
+                                        // Сохраняем таймкод из закладки только для первоначального входа
+                                        long parsedBm = episodesManager.getBookmarkManager().parseTimecodeToMilliseconds(progress);
+                                        if (playerEpisodesController != null) {
+                                            playerEpisodesController.setNewEpisodeSelection(true);
+                                            playerEpisodesController.setBookmarkTimecode(parsedBm);
+                                        } else {
+                                            bookmarkTimecode = parsedBm;
+                                            isNewEpisodeSelection = true;
+                                        }
+                                        Log.d("VideoPlayer", "Parsed bookmark timecode: " + progress + " -> " + parsedBm + "ms");
+                                        
+                                        // Устанавливаем красный цвет кнопки для эпизода с закладкой
+                                        updateBookmarkButtonColor(true);
+                                        autoPlayOnPrepare = VideoPlayerActivity.this.autoPlay;
+                                        episodesManager.setCurrentEpisode(episode);
+                                        if (playerCommentsController != null) {
+                                            playerCommentsController.setCurrentEpisode(episode);
+                                        }
+                                        
+                                        // СРАЗУ обновляем заголовок с номером эпизода
+                                        updateEpisodeHeaderQuick();
+                                        
+                                        // ВАЖНО: Загружаем плееры для ПРАВИЛЬНОГО эпизода
+                                        Log.d("VideoPlayer", "Loading players for bookmarked episode: " + episode.getId());
+                                        playersManager.loadPlayersForEpisode(episode.getId());
+                                    });
                                 }
                                 
                                 @Override
                                 public void onNoBookmarkFound() {
-                                    Log.d("VideoPlayer", "No bookmark found, loading first episode");
-                                    loadFirstEpisode();
+                                    safeRunOnUiThread(() -> {
+                                        if (playerEpisodesController != null && playerEpisodesController.hasUserSwitchedEpisode()) {
+                                            return;
+                                        }
+                                        Log.d("VideoPlayer", "No bookmark found, loading first episode");
+                                        loadFirstEpisode();
+                                    });
                                 }
                             });
                     } else {
@@ -3593,13 +3634,14 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
         }
 
-        boolean isNew = playerEpisodesController != null && playerEpisodesController.isNewEpisodeSelection();
+        boolean isNew = playerEpisodesController != null ? playerEpisodesController.isNewEpisodeSelection() : isNewEpisodeSelection;
         if (isNew) {
             autoPlayOnPrepare = this.autoPlay;
             if (playerEpisodesController != null) {
                 playerEpisodesController.setNewEpisodeSelection(false);
                 playerEpisodesController.setSavedPlayerPosition(0);
             }
+            isNewEpisodeSelection = false;
             savedPlayerPosition = 0;
         } else if (player != null) {
             autoPlayOnPrepare = player.getPlayWhenReady();
@@ -3611,7 +3653,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         updateEpisodeHeaderQuick();
 
-        if (playerData.getPlayer() != null && playerData.getTeam() != null) {
+        if (playerData != null && playerData.getPlayer() != null && playerData.getTeam() != null) {
             apiService.savePlayerPreferences(playerData.getPlayer(), playerData.getTeam().getId());
             Log.d("VideoPlayer", "Immediately saved player preferences: player=" + playerData.getPlayer() + 
                   ", teamId=" + playerData.getTeam().getId());
@@ -3640,76 +3682,88 @@ public class VideoPlayerActivity extends AppCompatActivity {
             updateEpisodeHeaderQuick();
             updatePortraitVoiceoverPlayerUI();
 
-            if ("animelib".equalsIgnoreCase(playerData.getPlayer())) {
-                String newVideoUrl = resolveAnimelibUrl(playerData, preferredQuality);
-                if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
-                    Log.d("VideoPlayer", "Seamlessly switching voiceover (Animelib) to: " + (playerData.getTeam() != null ? playerData.getTeam().getName() : ""));
-                    if (isCurrentlyPlaying) {
-                        switchQualitySeamlessly(preferredQuality, preferredQuality, newVideoUrl);
-                    } else {
-                        currentVideoUrl = newVideoUrl;
-                        if (timecodeManager != null) {
-                            timecodeManager.setTimecodes(playerData);
+            // Бесшовная смена озвучки с сохранением позиции используется ТОЛЬКО внутри текущего эпизода (!isNew).
+            // При запуске нового эпизода (или при первичном входе с закладкой) всегда идем через полный старт,
+            // который атомарно применит и сбросит одноразовую стартовую позицию (закладку при входе или 00:00 при смене серии).
+            if (!isNew) {
+                if ("animelib".equalsIgnoreCase(playerData.getPlayer())) {
+                    String newVideoUrl = resolveAnimelibUrl(playerData, preferredQuality);
+                    if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
+                        Log.d("VideoPlayer", "Seamlessly switching voiceover (Animelib) to: " + (playerData.getTeam() != null ? playerData.getTeam().getName() : ""));
+                        if (isCurrentlyPlaying) {
+                            switchQualitySeamlessly(preferredQuality, preferredQuality, newVideoUrl);
+                        } else {
+                            currentVideoUrl = newVideoUrl;
+                            if (timecodeManager != null) {
+                                timecodeManager.setTimecodes(playerData);
+                            }
+                            updateAnimeInfoHeaderFull();
+                            switchMediaSource(newVideoUrl, currentPos, wasPlaying);
                         }
-                        updateAnimeInfoHeaderFull();
-                        switchMediaSource(newVideoUrl, currentPos, wasPlaying);
+                        return;
                     }
-                    return;
-                }
-            } else if ("kodik".equalsIgnoreCase(playerData.getPlayer())) {
-                String kodikSrc = playerData.getSrc();
-                if (kodikSrc != null && !kodikSrc.isEmpty()) {
-                    if (!kodikSrc.startsWith("http")) kodikSrc = "https:" + kodikSrc;
-                    final String finalKodikSrc = kodikSrc;
-                    final long posToRestore = currentPos;
-                    final boolean playState = wasPlaying;
-                    final boolean shouldBeSeamless = isCurrentlyPlaying;
-                    Log.d("VideoPlayer", "Fetching Kodik voiceover links for: " + (playerData.getTeam() != null ? playerData.getTeam().getName() : ""));
-                    if (!shouldBeSeamless) {
-                        showLoading("Загрузка озвучки...");
-                    }
-                    apiService.fetchKodikVideoLinks(finalKodikSrc, new ApiService.KodikVideoCallback() {
-                        @Override
-                        public void onKodikVideoReceived(KodikResponse response) {
-                            safeRunOnUiThread(() -> {
-                                if (!shouldBeSeamless) {
-                                    hideLoading();
-                                }
-                                currentKodikResponse = response;
-                                if (playerQualityController != null) {
-                                    playerQualityController.setCurrentKodikResponse(response);
-                                }
-                                if (playersManager != null) {
-                                    playersManager.setCurrentKodikResponse(response);
-                                }
-                                String newVideoUrl = resolveKodikHlsUrl(response, preferredQuality);
-                                if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
-                                    Log.d("VideoPlayer", "Seamlessly switching voiceover (Kodik) to: " + (playerData.getTeam() != null ? playerData.getTeam().getName() : ""));
-                                    if (shouldBeSeamless && player != null && (player.isPlaying() || player.getPlaybackState() == Player.STATE_READY)) {
-                                        switchQualitySeamlessly(preferredQuality, preferredQuality, newVideoUrl);
-                                    } else {
-                                        currentVideoUrl = newVideoUrl;
-                                        if (timecodeManager != null) {
-                                            timecodeManager.setTimecodes(playerData);
-                                        }
-                                        updateAnimeInfoHeaderFull();
-                                        switchMediaSource(newVideoUrl, posToRestore, playState);
+                } else if ("kodik".equalsIgnoreCase(playerData.getPlayer())) {
+                    String kodikSrc = playerData.getSrc();
+                    if (kodikSrc != null && !kodikSrc.isEmpty()) {
+                        if (!kodikSrc.startsWith("http")) kodikSrc = "https:" + kodikSrc;
+                        final String finalKodikSrc = kodikSrc;
+                        final long posToRestore = currentPos;
+                        final boolean playState = wasPlaying;
+                        final boolean shouldBeSeamless = isCurrentlyPlaying;
+                        final int switchGen = playbackRestartGeneration;
+                        Log.d("VideoPlayer", "Fetching Kodik voiceover links for: " + (playerData.getTeam() != null ? playerData.getTeam().getName() : ""));
+                        if (!shouldBeSeamless) {
+                            showLoading("Загрузка озвучки...");
+                        }
+                        apiService.fetchKodikVideoLinks(finalKodikSrc, new ApiService.KodikVideoCallback() {
+                            @Override
+                            public void onKodikVideoReceived(KodikResponse response) {
+                                safeRunOnUiThread(() -> {
+                                    if (switchGen != playbackRestartGeneration) {
+                                        return;
                                     }
-                                } else {
-                                    stopCurrentPlaybackAndRestartVoiceover(playerData);
-                                }
-                            });
-                        }
+                                    if (!shouldBeSeamless) {
+                                        hideLoading();
+                                    }
+                                    currentKodikResponse = response;
+                                    if (playerQualityController != null) {
+                                        playerQualityController.setCurrentKodikResponse(response);
+                                    }
+                                    if (playersManager != null) {
+                                        playersManager.setCurrentKodikResponse(response);
+                                    }
+                                    String newVideoUrl = resolveKodikHlsUrl(response, preferredQuality);
+                                    if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
+                                        Log.d("VideoPlayer", "Seamlessly switching voiceover (Kodik) to: " + (playerData.getTeam() != null ? playerData.getTeam().getName() : ""));
+                                        if (shouldBeSeamless && player != null && (player.isPlaying() || player.getPlaybackState() == Player.STATE_READY)) {
+                                            switchQualitySeamlessly(preferredQuality, preferredQuality, newVideoUrl);
+                                        } else {
+                                            currentVideoUrl = newVideoUrl;
+                                            if (timecodeManager != null) {
+                                                timecodeManager.setTimecodes(playerData);
+                                            }
+                                            updateAnimeInfoHeaderFull();
+                                            switchMediaSource(newVideoUrl, posToRestore, playState);
+                                        }
+                                    } else {
+                                        stopCurrentPlaybackAndRestartVoiceover(playerData);
+                                    }
+                                });
+                            }
 
-                        @Override
-                        public void onError(String error) {
-                            safeRunOnUiThread(() -> {
-                                hideLoading();
-                                stopCurrentPlaybackAndRestartVoiceover(playerData);
-                            });
-                        }
-                    });
-                    return;
+                            @Override
+                            public void onError(String error) {
+                                safeRunOnUiThread(() -> {
+                                    if (switchGen != playbackRestartGeneration) {
+                                        return;
+                                    }
+                                    hideLoading();
+                                    stopCurrentPlaybackAndRestartVoiceover(playerData);
+                                });
+                            }
+                        });
+                        return;
+                    }
                 }
             }
         }
@@ -3717,10 +3771,28 @@ public class VideoPlayerActivity extends AppCompatActivity {
         stopCurrentPlaybackAndRestartVoiceover(playerData);
     }
 
+    private long consumeLocalStartPosition() {
+        long pos = savedPlayerPosition > 0 ? savedPlayerPosition : bookmarkTimecode;
+        savedPlayerPosition = 0;
+        bookmarkTimecode = 0;
+        return Math.max(0L, pos);
+    }
+
     private void stopCurrentPlaybackAndRestartVoiceover(EpisodeResponse.PlayerData playerData) {
         preservePlayerAspectRatio();
         applyPlayerSidePanelTransform(0f);
         stopCurrentPlayback();
+
+        if (playerData == null) {
+            return;
+        }
+
+        final int restartGen = ++playbackRestartGeneration;
+        final long startPosition = playerEpisodesController != null
+                ? playerEpisodesController.consumeStartPosition()
+                : consumeLocalStartPosition();
+        savedPlayerPosition = 0;
+        bookmarkTimecode = 0;
 
         playersManager.setCurrentPlayerData(playerData);
 
@@ -3729,7 +3801,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         enableBookmarkButton();
 
-        Log.d("VideoPlayer", "Player selected, ready to start playback");
+        Log.d("VideoPlayer", "Player selected, ready to start playback with startPosition=" + startPosition + "ms");
         
         if (!newQualities.isEmpty()) {
             executor.execute(() -> {
@@ -3737,6 +3809,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 String savedQuality = (prefs != null) ? prefs.getPreferredQuality() : null;
                 
                 safeRunOnUiThread(() -> {
+                    if (restartGen != playbackRestartGeneration) {
+                        Log.d("VideoPlayer", "Ignoring stale playback restart task (gen=" + restartGen + ")");
+                        return;
+                    }
                     String newPreferredQuality = null;
                     
                     com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
@@ -3777,7 +3853,6 @@ public class VideoPlayerActivity extends AppCompatActivity {
                         playerDialogsController.updateSettingsQualities(newQualities, preferredQuality);
                     }
                     
-                    long startPosition = playerEpisodesController != null ? playerEpisodesController.getStartPosition() : (savedPlayerPosition > 0 ? savedPlayerPosition : bookmarkTimecode);
                     Log.d("VideoPlayer", "Starting player with position: " + startPosition + "ms");
                     
                     if (playerData.getPlayer() != null && "animelib".equalsIgnoreCase(playerData.getPlayer())) {
@@ -3790,7 +3865,6 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 });
             });
         } else {
-            long startPosition = playerEpisodesController != null ? playerEpisodesController.getStartPosition() : (savedPlayerPosition > 0 ? savedPlayerPosition : bookmarkTimecode);
             Log.d("VideoPlayer", "Starting player with position: " + startPosition + "ms (no qualities available)");
             
             if (playerData.getPlayer() != null && "animelib".equalsIgnoreCase(playerData.getPlayer())) {
@@ -3804,6 +3878,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     private void onEpisodeSelected(EpisodesListResponse.EpisodeItem episode, boolean autoPlay) {
+        if (episode == null) return;
         Log.d("VideoPlayer", "Episode selected: " + episode.getNumber() + " (ID: " + episode.getId() + "), autoPlay: " + autoPlay);
 
         autoPlayOnPrepare = this.autoPlay;
@@ -3812,8 +3887,36 @@ public class VideoPlayerActivity extends AppCompatActivity {
         // Auto-save bookmark for previous episode if applicable before switching
         autoSaveBookmark();
 
-        // Stop current playback if playing
+        // Cancel any in-flight player loads from previous episode
+        if (playersManager != null) {
+            playersManager.cancelPendingPlayerLoads();
+        }
+
+        // Stop current playback if playing and clear previous URL
         stopCurrentPlayback();
+        currentVideoUrl = null;
+
+        // Reset progress & bookmark/position state so the newly selected episode ALWAYS starts at 00:00
+        if (playerProgressController != null) {
+            playerProgressController.resetProgressForNewEpisode();
+        }
+        if (playerEpisodesController != null) {
+            playerEpisodesController.markEpisodeSwitched();
+        } else {
+            isNewEpisodeSelection = true;
+            bookmarkTimecode = 0;
+            savedPlayerPosition = 0;
+            autoBookmarkSaved = false;
+            updateBookmarkButtonColor(false);
+        }
+
+        // Keep bookmark button highlight accurate if this episode holds the bookmark (without setting timecode)
+        if (episodesManager != null) {
+            com.example.animelib.models.AnimeBookmarkResponse.BookmarkData bm = episodesManager.getAnimeBookmark();
+            if (bm != null && bm.getItemId() == episode.getId()) {
+                updateBookmarkButtonColor(true);
+            }
+        }
 
         // Hide episodes in controller
         hideEpisodesInController();
@@ -3874,6 +3977,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     private void stopCurrentPlayback() {
+        playbackRestartGeneration++;
         if (backgroundPlayer != null) {
             try {
                 backgroundPlayer.stop();
@@ -4414,7 +4518,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
         }
 
         MediaItem mediaItem = createMediaItemWithSubtitles(videoUri.toString());
-        player.setMediaItem(mediaItem);
+        player.setMediaItem(mediaItem, 0L);
         if (ambientLightManager != null) {
             ambientLightManager.setPlayer(player, mediaItem, videoUri.toString());
         }

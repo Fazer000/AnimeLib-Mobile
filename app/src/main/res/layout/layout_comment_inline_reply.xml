@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/inlineReplyContainer"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp"
+    android:background="@drawable/bg_comment_input"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <!-- Header with "Ответ для @username" and cancel button -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="4dp"
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:id="@+id/tvInlineReplyToText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:fontFamily="@font/open_sans_semibold"
+            android:singleLine="true"
+            android:textColor="@color/secondary_color"
+            android:textSize="12.5sp" />
+
+        <ImageButton
+            android:id="@+id/btnInlineCancelReply"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Cancel reply"
+            android:padding="2dp"
+            android:src="@drawable/ic_close"
+            app:tint="@color/accent_text_color" />
+    </LinearLayout>
+
+    <!-- Formatting Bar Row (above input) -->
+    <LinearLayout
+        android:id="@+id/inlineFormattingBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="2dp"
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:id="@+id/btnInlineFormatBold"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="Bold"
+            android:focusable="true"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:minWidth="36dp"
+            android:minHeight="36dp"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="4dp"
+            android:text=" B "
+            android:textColor="@color/accent_text_color"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/btnInlineFormatItalic"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="Italic"
+            android:focusable="true"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:minWidth="36dp"
+            android:minHeight="36dp"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="4dp"
+            android:text=" I "
+            android:textColor="@color/accent_text_color"
+            android:textSize="15sp"
+            android:textStyle="italic" />
+
+        <TextView
+            android:id="@+id/btnInlineFormatUnderline"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="Underline"
+            android:focusable="true"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:minWidth="36dp"
+            android:minHeight="36dp"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="4dp"
+            android:text=" U "
+            android:textColor="@color/accent_text_color"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/btnInlineFormatStrike"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="Strikethrough"
+            android:focusable="true"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:minWidth="36dp"
+            android:minHeight="36dp"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="4dp"
+            android:text=" S "
+            android:textColor="@color/accent_text_color"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/btnInlineFormatSpoiler"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="Spoiler"
+            android:focusable="true"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:minWidth="36dp"
+            android:minHeight="36dp"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="4dp"
+            android:text=" [!] "
+            android:textColor="@color/accent_text_color"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/btnInlineFormatQuote"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="Quote"
+            android:focusable="true"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:minWidth="36dp"
+            android:minHeight="36dp"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="4dp"
+            android:text=" ” "
+            android:textColor="@color/accent_text_color"
+            android:textSize="16sp" />
+    </LinearLayout>
+
+    <!-- Field row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <EditText
+            android:id="@+id/inlineCommentInputField"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@null"
+            android:hint="Написать ответ..."
+            android:imeOptions="flagNoExtractUi|flagNoFullscreen"
+            android:inputType="textMultiLine"
+            android:maxLines="3"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="6dp"
+            android:textColor="@color/primary_text_color"
+            android:textColorHint="@color/accent_text_color"
+            android:textSize="14sp" />
+
+        <ImageButton
+            android:id="@+id/btnInlineSendComment"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Send reply"
+            android:padding="6dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_send"
+            app:tint="@color/secondary_color" />
+    </LinearLayout>
+
+</LinearLayout>

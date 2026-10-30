@@ -161,11 +161,7 @@ public class PlayerPlaybackController {
         MediaItem itemToPlay = mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl);
         MediaSource mediaSource = mediaSourceFactory.createMediaSource(itemToPlay);
 
-        if (startPosition > 0) {
-            player.setMediaSource(mediaSource, startPosition);
-        } else {
-            player.setMediaSource(mediaSource);
-        }
+        player.setMediaSource(mediaSource, Math.max(0L, startPosition));
 
         AmbientLightManager ambientLightManager = callback != null ? callback.getAmbientLightManager() : null;
         if (ambientLightManager != null) {
@@ -222,11 +218,7 @@ public class PlayerPlaybackController {
             ambientLightManager.setPlayer(player, itemToPlay, videoUrl);
         }
 
-        if (startPosition > 0) {
-            player.setMediaSource(mediaSource, startPosition);
-        } else {
-            player.setMediaSource(mediaSource);
-        }
+        player.setMediaSource(mediaSource, Math.max(0L, startPosition));
 
         if (playWhenReady) {
             startBufferingWatchdog();

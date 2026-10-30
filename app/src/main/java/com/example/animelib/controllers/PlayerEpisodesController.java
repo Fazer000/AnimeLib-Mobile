@@ -17,6 +17,14 @@ public class PlayerEpisodesController {
 
     private static final String TAG = "PlayerEpisodesCtrl";
 
+    private static void logDebug(String message) {
+        try {
+            Log.d(TAG, message);
+        } catch (RuntimeException ignored) {
+            // Safe no-op in pure JVM unit tests
+        }
+    }
+
     public interface EpisodesCallback {
         void onEpisodeHeaderUpdateQuick();
         void onResetBookmarkState();
@@ -30,6 +38,8 @@ public class PlayerEpisodesController {
     private EpisodesCallback callback;
 
     private boolean isNewEpisodeSelection = true;
+    private boolean initialBookmarkConsumed = false;
+    private boolean userSwitchedEpisode = false;
     private long bookmarkTimecode = 0;
     private long savedPlayerPosition = 0;
     private boolean autoBookmarkSaved = false;
@@ -51,12 +61,29 @@ public class PlayerEpisodesController {
         isNewEpisodeSelection = newEpisodeSelection;
     }
 
+    public boolean hasUserSwitchedEpisode() {
+        return userSwitchedEpisode;
+    }
+
+    public boolean isInitialBookmarkConsumed() {
+        return initialBookmarkConsumed;
+    }
+
+    public void markInitialBookmarkConsumed() {
+        this.initialBookmarkConsumed = true;
+        this.bookmarkTimecode = 0;
+    }
+
     public long getBookmarkTimecode() {
         return bookmarkTimecode;
     }
 
     public void setBookmarkTimecode(long timecode) {
-        this.bookmarkTimecode = timecode;
+        if (timecode > 0 && (userSwitchedEpisode || initialBookmarkConsumed)) {
+            logDebug("Ignoring bookmark timecode " + timecode + "ms (switched=" + userSwitchedEpisode + ", consumed=" + initialBookmarkConsumed + ")");
+            return;
+        }
+        this.bookmarkTimecode = Math.max(0L, timecode);
     }
 
     public long getSavedPlayerPosition() {
@@ -64,7 +91,7 @@ public class PlayerEpisodesController {
     }
 
     public void setSavedPlayerPosition(long position) {
-        this.savedPlayerPosition = position;
+        this.savedPlayerPosition = Math.max(0L, position);
     }
 
     public boolean isAutoBookmarkSaved() {
@@ -79,6 +106,35 @@ public class PlayerEpisodesController {
         return savedPlayerPosition > 0 ? savedPlayerPosition : bookmarkTimecode;
     }
 
+    /**
+     * Возвращает стартовую позицию для запуска источника и сразу сбрасывает одноразовые значения
+     * (таймкод закладки при входе в плеер или сохраненную позицию при смене озвучки),
+     * чтобы при последующем переключении эпизода воспроизведение всегда начиналось с 00:00.
+     */
+    public long consumeStartPosition() {
+        long startPos = savedPlayerPosition > 0 ? savedPlayerPosition : bookmarkTimecode;
+        this.savedPlayerPosition = 0;
+        if (this.bookmarkTimecode > 0) {
+            this.initialBookmarkConsumed = true;
+            this.bookmarkTimecode = 0;
+        }
+        return Math.max(0L, startPos);
+    }
+
+    public void resetForNewAnime() {
+        this.isNewEpisodeSelection = true;
+        this.initialBookmarkConsumed = false;
+        this.userSwitchedEpisode = false;
+        resetBookmarkAndPositionState();
+    }
+
+    public void markEpisodeSwitched() {
+        this.userSwitchedEpisode = true;
+        this.initialBookmarkConsumed = true;
+        this.isNewEpisodeSelection = true;
+        resetBookmarkAndPositionState();
+    }
+
     public void resetBookmarkAndPositionState() {
         this.bookmarkTimecode = 0;
         this.savedPlayerPosition = 0;
@@ -89,7 +145,8 @@ public class PlayerEpisodesController {
     }
 
     public void loadEpisodes(String animeId, Intent intent) {
-        Log.d(TAG, "Loading episodes for anime_id: " + animeId);
+        logDebug("Loading episodes for anime_id: " + animeId);
+        resetForNewAnime();
         String animeUrl = (intent != null) ? intent.getStringExtra("anime_url") : null;
         String mediaSlug = null;
         if (animeUrl != null && !animeUrl.isEmpty()) {
@@ -107,13 +164,14 @@ public class PlayerEpisodesController {
 
     public void loadFirstEpisode() {
         this.isNewEpisodeSelection = true;
+        this.initialBookmarkConsumed = true;
         resetBookmarkAndPositionState();
 
         if (episodesManager != null) {
             List<EpisodesListResponse.EpisodeItem> episodes = episodesManager.getEpisodes();
             if (episodes != null && !episodes.isEmpty()) {
                 EpisodesListResponse.EpisodeItem firstEpisode = episodes.get(0);
-                Log.d(TAG, "Loading first episode: " + firstEpisode.getNumber());
+                logDebug("Loading first episode: " + firstEpisode.getNumber());
 
                 episodesManager.setCurrentEpisode(firstEpisode);
 
@@ -126,7 +184,7 @@ public class PlayerEpisodesController {
                     playersManager.loadPlayersForEpisode(firstEpisode.getId());
                 }
             } else {
-                Log.d(TAG, "No episodes available, initializing menu without auto play");
+                logDebug("No episodes available, initializing menu without auto play");
                 if (callback != null) {
                     callback.onInitializeMenuWithoutAutoPlay();
                 }
@@ -135,6 +193,8 @@ public class PlayerEpisodesController {
     }
 
     public void fallbackToUrlDetection(Intent intent) {
+        this.isNewEpisodeSelection = true;
+        this.initialBookmarkConsumed = true;
         resetBookmarkAndPositionState();
 
         String animeUrl = (intent != null) ? intent.getStringExtra("anime_url") : null;
@@ -158,25 +218,11 @@ public class PlayerEpisodesController {
 
     public void onEpisodeSelected(EpisodesListResponse.EpisodeItem episode, boolean autoPlay) {
         if (episode == null) return;
-        Log.d(TAG, "Episode selected: " + episode.getNumber() + " (ID: " + episode.getId() + "), autoPlay: " + autoPlay);
+        logDebug("Episode selected: " + episode.getNumber() + " (ID: " + episode.getId() + "), autoPlay: " + autoPlay);
 
-        this.isNewEpisodeSelection = true;
-        resetBookmarkAndPositionState();
+        markEpisodeSwitched();
 
         if (episodesManager != null) {
-            com.example.animelib.models.AnimeBookmarkResponse.BookmarkData bookmark = episodesManager.getAnimeBookmark();
-            if (bookmark != null && (bookmark.getItemId() == episode.getId() || 
-                (episode.getNumber() != null && episode.getNumber().equals(String.valueOf(bookmark.getMeta() != null ? bookmark.getMeta().getItemNumber() : ""))))) {
-                String progress = bookmark.getProgress();
-                if (progress != null && !progress.isEmpty()) {
-                    long bmMs = episodesManager.getBookmarkManager().parseTimecodeToMilliseconds(progress);
-                    if (bmMs > 0) {
-                        setBookmarkTimecode(bmMs);
-                        Log.d(TAG, "Set bookmark timecode for selected episode " + episode.getNumber() + ": " + bmMs + "ms");
-                    }
-                }
-            }
-
             episodesManager.setCurrentEpisode(episode);
             episodesManager.updateEpisodeNavigationButtonsVisibility();
             episodesManager.updateEpisodesRecyclerView();

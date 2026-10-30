@@ -376,11 +376,26 @@ public class PlayersManager {
         }
     }
     
+    private int loadRequestGeneration = 0;
+
+    public synchronized void cancelPendingPlayerLoads() {
+        loadRequestGeneration++;
+    }
+
+    private synchronized int nextLoadRequestGeneration() {
+        return ++loadRequestGeneration;
+    }
+
+    private synchronized boolean isCurrentLoadGeneration(int generation) {
+        return generation == loadRequestGeneration;
+    }
+
     /**
      * Загрузка плееров для эпизода
      */
     public void loadPlayersForEpisode(int episodeId) {
-        Log.d(TAG, "Loading players for episode ID: " + episodeId);
+        final int requestGen = nextLoadRequestGeneration();
+        Log.d(TAG, "Loading players for episode ID: " + episodeId + " (gen=" + requestGen + ")");
         
         // Show loading
         showLoading();
@@ -388,6 +403,10 @@ public class PlayersManager {
         apiService.fetchEpisodeData(episodeId, new ApiService.EpisodeDataCallback() {
             @Override
             public void onEpisodeDataReceived(EpisodeResponse response) {
+                if (!isCurrentLoadGeneration(requestGen)) {
+                    Log.d(TAG, "Ignoring stale episode data response for episode ID: " + episodeId + " (gen=" + requestGen + ")");
+                    return;
+                }
                 // ВАЖНО: onEpisodeDataReceived вызывается в фоновом потоке (от OkHttp callback)
                 // Поэтому loadPlayerPreferences вызывается БЕЗ проблем здесь
                 if (response.getData() != null && response.getData().getPlayers() != null) {
@@ -440,6 +459,10 @@ public class PlayersManager {
                     
                     // Переключаемся в UI поток для обновления интерфейса
                     safeRunOnUiThread(() -> {
+                        if (!isCurrentLoadGeneration(requestGen)) {
+                            Log.d(TAG, "Ignoring stale UI player callback for episode ID: " + episodeId + " (gen=" + requestGen + ")");
+                            return;
+                        }
                         hideLoading();
                         
                         if (finalMatchingPlayer != null) {
@@ -487,6 +510,9 @@ public class PlayersManager {
                     });
                 } else {
                     safeRunOnUiThread(() -> {
+                        if (!isCurrentLoadGeneration(requestGen)) {
+                            return;
+                        }
                         hideLoading();
                         Log.e(TAG, "No players found in response");
                         if (dataCallback != null) {
@@ -499,6 +525,10 @@ public class PlayersManager {
             @Override
             public void onError(String error) {
                 safeRunOnUiThread(() -> {
+                    if (!isCurrentLoadGeneration(requestGen)) {
+                        Log.d(TAG, "Ignoring stale error callback for episode ID: " + episodeId + " (gen=" + requestGen + ")");
+                        return;
+                    }
                     hideLoading();
                     Log.e(TAG, "Error loading players: " + error);
                     

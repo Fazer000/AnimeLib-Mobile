@@ -3,11 +3,14 @@ package com.example.animelib.adapters;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Color;
+import android.graphics.Outline;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
+import android.view.ViewStub;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
@@ -38,8 +41,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
-    private static final int CHUNK_INSERT_SIZE = 5;
-    private static final long CHUNK_FRAME_DELAY_MS = 16L;
+    private static final int CHUNK_INSERT_SIZE = 15;
+    private static final long CHUNK_FRAME_DELAY_MS = 24L;
+    public static final int INITIAL_PORTRAIT_RENDER_COUNT = 6;
+    public static final int PORTRAIT_SCROLL_BATCH_SIZE = 12;
 
     private static final int COLOR_VOTE_UP = 0xFF4ADE80;
     private static final int COLOR_VOTE_DOWN = 0xFFF87171;
@@ -69,8 +74,14 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
     private int padBaseV;
     private int stickyMarginPx;
     private int avatarTargetPx;
+    private float avatarCornerRadiusPx;
+    private ViewOutlineProvider avatarOutlineProvider;
 
-    // Progressive batch insertion queue so UI frames stay well under 16ms
+    // Portrait NestedScrollView virtualization: avoids inflating/measuring all 60+ items offscreen at once
+    private boolean portraitViewportMode = false;
+    private final List<DisplayItem> deferredViewportQueue = new ArrayList<>();
+
+    // Progressive batch insertion queue for fixed-size RecyclerViews (Landscape)
     private Handler mainHandler;
     private boolean handlerUnavailable = false;
     private final List<DisplayItem> pendingQueue = new ArrayList<>();
@@ -86,9 +97,9 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             }
             int count = Math.min(CHUNK_INSERT_SIZE, pendingQueue.size());
             int insertPos = flat.size();
-            for (int i = 0; i < count; i++) {
-                flat.add(pendingQueue.remove(0));
-            }
+            List<DisplayItem> slice = pendingQueue.subList(0, count);
+            flat.addAll(slice);
+            slice.clear();
             safeNotifyItemRangeInserted(insertPos, count);
             if (!pendingQueue.isEmpty()) {
                 postToMainDelayed(this, CHUNK_FRAME_DELAY_MS);
@@ -214,6 +225,41 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         }
     }
 
+    public void setPortraitViewportMode(boolean enabled) {
+        this.portraitViewportMode = enabled;
+    }
+
+    public boolean isPortraitViewportMode() {
+        return portraitViewportMode;
+    }
+
+    public boolean hasDeferredViewportItems() {
+        return !deferredViewportQueue.isEmpty();
+    }
+
+    public int getDeferredViewportCount() {
+        return deferredViewportQueue.size();
+    }
+
+    /**
+     * Подгружает следующую порцию уже распарсенных комментариев в портретный список одним проходом разметки.
+     */
+    public int revealNextViewportBatch(int maxCount) {
+        if (deferredViewportQueue.isEmpty()) {
+            return 0;
+        }
+        int count = Math.min(Math.max(1, maxCount), deferredViewportQueue.size());
+        int insertPos = flat.size();
+        List<DisplayItem> slice = deferredViewportQueue.subList(0, count);
+        flat.addAll(slice);
+        slice.clear();
+        safeNotifyItemRangeInserted(insertPos, count);
+        if (deferredViewportQueue.isEmpty() && onBatchCompletedListener != null) {
+            onBatchCompletedListener.run();
+        }
+        return count;
+    }
+
     public boolean isPendingInsertion() {
         return !pendingQueue.isEmpty();
     }
@@ -223,12 +269,13 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
     }
 
     public int getTotalTargetCount() {
-        return flat.size() + pendingQueue.size();
+        return flat.size() + pendingQueue.size() + deferredViewportQueue.size();
     }
 
     public void cancelPendingInsertions() {
         removeFromMain(chunkInsertRunnable);
         pendingQueue.clear();
+        deferredViewportQueue.clear();
     }
 
     private void flushPendingQueueImmediate() {
@@ -497,10 +544,33 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         }
     }
 
-    private void enqueueProgressiveInsertion(List<DisplayItem> itemsToInsert, boolean immediateFirstChunk) {
+    private void enqueueProgressiveInsertion(List<DisplayItem> itemsToInsert, boolean isInitialBatch) {
         if (itemsToInsert == null || itemsToInsert.isEmpty()) {
             if (onBatchCompletedListener != null) {
                 onBatchCompletedListener.run();
+            }
+            return;
+        }
+
+        if (portraitViewportMode) {
+            if (isInitialBatch) {
+                int initialCount = Math.min(INITIAL_PORTRAIT_RENDER_COUNT, itemsToInsert.size());
+                if (initialCount > 0) {
+                    int insertPos = flat.size();
+                    flat.addAll(itemsToInsert.subList(0, initialCount));
+                    safeNotifyItemRangeInserted(insertPos, initialCount);
+                }
+                if (itemsToInsert.size() > initialCount) {
+                    deferredViewportQueue.addAll(itemsToInsert.subList(initialCount, itemsToInsert.size()));
+                } else if (onBatchCompletedListener != null) {
+                    onBatchCompletedListener.run();
+                }
+            } else {
+                boolean hadDeferred = !deferredViewportQueue.isEmpty();
+                deferredViewportQueue.addAll(itemsToInsert);
+                if (!hadDeferred) {
+                    revealNextViewportBatch(PORTRAIT_SCROLL_BATCH_SIZE);
+                }
             }
             return;
         }
@@ -510,7 +580,7 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
 
         if (!wasQueueRunning) {
             removeFromMain(chunkInsertRunnable);
-            if (immediateFirstChunk) {
+            if (isInitialBatch) {
                 chunkInsertRunnable.run();
             } else {
                 postToMain(chunkInsertRunnable);
@@ -519,13 +589,26 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
     }
 
     private void rebuildFlatImmediate() {
+        int previousVisibleCount = flat.size();
         cancelPendingInsertions();
-        flat.clear();
+        List<DisplayItem> allItems = new ArrayList<>();
         for (CommentsResponse.CommentItem sticky : stickyRoots) {
-            collectWithChildren(sticky, 0, flat);
+            collectWithChildren(sticky, 0, allItems);
         }
         for (CommentsResponse.CommentItem root : roots) {
-            collectWithChildren(root, 0, flat);
+            collectWithChildren(root, 0, allItems);
+        }
+        flat.clear();
+        if (portraitViewportMode) {
+            int keepCount = Math.min(allItems.size(), Math.max(INITIAL_PORTRAIT_RENDER_COUNT, previousVisibleCount));
+            if (keepCount > 0) {
+                flat.addAll(allItems.subList(0, keepCount));
+            }
+            if (allItems.size() > keepCount) {
+                deferredViewportQueue.addAll(allItems.subList(keepCount, allItems.size()));
+            }
+        } else {
+            flat.addAll(allItems);
         }
         safeNotifyDataSetChanged();
     }
@@ -614,6 +697,13 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         padBaseV = (int) (8 * cachedDensity);
         stickyMarginPx = (int) (4 * cachedDensity);
         avatarTargetPx = Math.max(72, (int) (36 * cachedDensity));
+        avatarCornerRadiusPx = 8f * cachedDensity;
+        avatarOutlineProvider = new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), avatarCornerRadiusPx);
+            }
+        };
         cachedNeutralVoteColor = ContextCompat.getColor(context, R.color.accent_text_color);
         cachedPrimaryTextColor = CommentHtmlProcessor.resolvePrimaryTextColor(context);
         cachedPurpleColor = ContextCompat.getColor(context, R.color.purple_primary);
@@ -645,7 +735,12 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             return new ShowMoreVH(v);
         }
         View v = inflater.inflate(R.layout.item_comment, parent, false);
-        return new CommentVH(v);
+        CommentVH vh = new CommentVH(v);
+        if (vh.avatarView != null && avatarOutlineProvider != null) {
+            vh.avatarView.setOutlineProvider(avatarOutlineProvider);
+            vh.avatarView.setClipToOutline(true);
+        }
+        return vh;
     }
 
     @SuppressLint("SetTextI18n")
@@ -773,8 +868,9 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         }
 
         boolean isReplyingToThis = (activeReplyCommentId != null && activeReplyCommentId.equals(item.getId()));
-        if (holder.inlineReplyContainer != null) {
-            if (isReplyingToThis) {
+        if (isReplyingToThis) {
+            holder.ensureInlineReplyInflated();
+            if (holder.inlineReplyContainer != null) {
                 holder.inlineReplyContainer.setVisibility(View.VISIBLE);
                 String replyToUsername = (item.getUser() != null && item.getUser().getUsername() != null)
                         ? item.getUser().getUsername() : "пользователю";
@@ -837,9 +933,9 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                         return false;
                     });
                 }
-            } else {
-                holder.inlineReplyContainer.setVisibility(View.GONE);
             }
+        } else if (holder.inlineReplyContainer != null && holder.inlineReplyContainer.getVisibility() != View.GONE) {
+            holder.inlineReplyContainer.setVisibility(View.GONE);
         }
 
         if (holder.replyActionView != null) {
@@ -1058,6 +1154,7 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         View voteUpIcon;
         View voteDownIcon;
 
+        ViewStub inlineReplyStub;
         View inlineReplyContainer;
         TextView tvInlineReplyToText;
         ImageButton btnInlineCancelReply;
@@ -1088,17 +1185,27 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             voteUpIcon = itemView.findViewById(R.id.voteUpIcon);
             voteDownIcon = itemView.findViewById(R.id.voteDownIcon);
 
+            inlineReplyStub = itemView.findViewById(R.id.inlineReplyStub);
             inlineReplyContainer = itemView.findViewById(R.id.inlineReplyContainer);
-            tvInlineReplyToText = itemView.findViewById(R.id.tvInlineReplyToText);
-            btnInlineCancelReply = itemView.findViewById(R.id.btnInlineCancelReply);
-            btnInlineFormatBold = itemView.findViewById(R.id.btnInlineFormatBold);
-            btnInlineFormatItalic = itemView.findViewById(R.id.btnInlineFormatItalic);
-            btnInlineFormatUnderline = itemView.findViewById(R.id.btnInlineFormatUnderline);
-            btnInlineFormatStrike = itemView.findViewById(R.id.btnInlineFormatStrike);
-            btnInlineFormatSpoiler = itemView.findViewById(R.id.btnInlineFormatSpoiler);
-            btnInlineFormatQuote = itemView.findViewById(R.id.btnInlineFormatQuote);
-            inlineCommentInputField = itemView.findViewById(R.id.inlineCommentInputField);
-            btnInlineSendComment = itemView.findViewById(R.id.btnInlineSendComment);
+        }
+
+        void ensureInlineReplyInflated() {
+            if (inlineReplyContainer == null && inlineReplyStub != null) {
+                inlineReplyContainer = inlineReplyStub.inflate();
+                inlineReplyStub = null;
+            }
+            if (inlineReplyContainer != null && inlineCommentInputField == null) {
+                tvInlineReplyToText = inlineReplyContainer.findViewById(R.id.tvInlineReplyToText);
+                btnInlineCancelReply = inlineReplyContainer.findViewById(R.id.btnInlineCancelReply);
+                btnInlineFormatBold = inlineReplyContainer.findViewById(R.id.btnInlineFormatBold);
+                btnInlineFormatItalic = inlineReplyContainer.findViewById(R.id.btnInlineFormatItalic);
+                btnInlineFormatUnderline = inlineReplyContainer.findViewById(R.id.btnInlineFormatUnderline);
+                btnInlineFormatStrike = inlineReplyContainer.findViewById(R.id.btnInlineFormatStrike);
+                btnInlineFormatSpoiler = inlineReplyContainer.findViewById(R.id.btnInlineFormatSpoiler);
+                btnInlineFormatQuote = inlineReplyContainer.findViewById(R.id.btnInlineFormatQuote);
+                inlineCommentInputField = inlineReplyContainer.findViewById(R.id.inlineCommentInputField);
+                btnInlineSendComment = inlineReplyContainer.findViewById(R.id.btnInlineSendComment);
+            }
         }
     }
 

@@ -534,20 +534,20 @@ public class DatabaseManager {
     }
 
     public boolean loadDisableCommentsInPlayerSetting() {
-        if (cachedDisableCommentsInPlayer != null) {
-            return cachedDisableCommentsInPlayer;
+        Boolean cached = cachedDisableCommentsInPlayer;
+        if (cached != null) {
+            return cached;
         }
         try {
             AppSettings settings = db.appSettingsDao().getSettingsSync();
-            if (settings != null) {
-                boolean val = settings.isDisableCommentsInPlayer();
-                cachedDisableCommentsInPlayer = val;
-                return val;
-            }
+            boolean val = settings != null && settings.isDisableCommentsInPlayer();
+            cachedDisableCommentsInPlayer = val;
+            return val;
         } catch (Exception e) {
             Log.e(TAG, "Failed to load disable comments in player setting", e);
+            cachedDisableCommentsInPlayer = false;
+            return false;
         }
-        return false;
     }
 
     public void saveCommentRepliesLimitSetting(int limit) {
@@ -568,20 +568,20 @@ public class DatabaseManager {
     }
 
     public int loadCommentRepliesLimitSetting() {
-        if (cachedCommentRepliesLimit != null) {
-            return cachedCommentRepliesLimit;
+        Integer cached = cachedCommentRepliesLimit;
+        if (cached != null) {
+            return cached;
         }
         try {
             AppSettings settings = db.appSettingsDao().getSettingsSync();
-            if (settings != null) {
-                int val = settings.getCommentRepliesLimit();
-                cachedCommentRepliesLimit = val;
-                return val;
-            }
+            int val = settings != null ? settings.getCommentRepliesLimit() : 3;
+            cachedCommentRepliesLimit = val;
+            return val;
         } catch (Exception e) {
             Log.e(TAG, "Failed to load comment replies limit setting", e);
+            cachedCommentRepliesLimit = 3;
+            return 3;
         }
-        return 3;
     }
     
     // ========== Token операции ==========
