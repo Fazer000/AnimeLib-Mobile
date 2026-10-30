@@ -1,12 +1,15 @@
 package com.example.animelib.adapters;
 
 import android.annotation.SuppressLint;
-import android.text.Html;
-import android.text.Spanned;
-import android.util.Log;
+import android.content.Context;
+import android.graphics.Color;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -14,27 +17,32 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.animelib.R;
 import com.example.animelib.models.CommentsResponse;
-import com.example.animelib.util.ImageLoader;
-import com.example.animelib.util.CommentHtmlProcessor;
 import com.example.animelib.settings.CommentSettingsBottomSheet;
+import com.example.animelib.util.CommentFormattingHelper;
+import com.example.animelib.util.CommentHtmlProcessor;
+import com.example.animelib.util.ImageLoader;
 
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+
+    private static final int CHUNK_INSERT_SIZE = 5;
+    private static final long CHUNK_FRAME_DELAY_MS = 16L;
+
+    private static final int COLOR_VOTE_UP = 0xFF4ADE80;
+    private static final int COLOR_VOTE_DOWN = 0xFFF87171;
 
     public interface CommentActionListener {
         void onReplyClicked(CommentsResponse.CommentItem comment);
@@ -50,37 +58,115 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
     private int repliesLimit = 3;
     private final Set<Long> expandedParentIds = new HashSet<>();
 
-    public void setRepliesLimit(int limit) {
-        this.repliesLimit = limit;
-        rebuildFlat(-1);
+    // Cached theme/metrics values for zero-allocation binding
+    private CommentHtmlProcessor htmlProcessor;
+    private Integer cachedNeutralVoteColor;
+    private int cachedPrimaryTextColor = Color.WHITE;
+    private int cachedPurpleColor = 0xFF8B5CF6;
+    private float cachedDensity = 0f;
+    private int padBaseH;
+    private int padReplyIndent;
+    private int padBaseV;
+    private int stickyMarginPx;
+    private int avatarTargetPx;
+
+    // Progressive batch insertion queue so UI frames stay well under 16ms
+    private Handler mainHandler;
+    private boolean handlerUnavailable = false;
+    private final List<DisplayItem> pendingQueue = new ArrayList<>();
+    private Runnable onBatchCompletedListener;
+    private final Runnable chunkInsertRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (pendingQueue.isEmpty()) {
+                if (onBatchCompletedListener != null) {
+                    onBatchCompletedListener.run();
+                }
+                return;
+            }
+            int count = Math.min(CHUNK_INSERT_SIZE, pendingQueue.size());
+            int insertPos = flat.size();
+            for (int i = 0; i < count; i++) {
+                flat.add(pendingQueue.remove(0));
+            }
+            safeNotifyItemRangeInserted(insertPos, count);
+            if (!pendingQueue.isEmpty()) {
+                postToMainDelayed(this, CHUNK_FRAME_DELAY_MS);
+            } else if (onBatchCompletedListener != null) {
+                onBatchCompletedListener.run();
+            }
+        }
+    };
+
+    private Handler getSafeMainHandler() {
+        if (handlerUnavailable) return null;
+        if (mainHandler == null) {
+            try {
+                Looper looper = Looper.getMainLooper();
+                if (looper != null) {
+                    mainHandler = new Handler(looper);
+                } else {
+                    handlerUnavailable = true;
+                }
+            } catch (Throwable t) {
+                handlerUnavailable = true;
+            }
+        }
+        return mainHandler;
     }
 
-    public int getRepliesLimit() {
-        return repliesLimit;
+    private void postToMain(Runnable r) {
+        Handler h = getSafeMainHandler();
+        if (h != null) {
+            try {
+                h.post(r);
+                return;
+            } catch (Throwable ignored) {}
+        }
+        r.run();
     }
 
-    public void markParentExpanded(long parentId) {
-        expandedParentIds.add(parentId);
+    private void postToMainDelayed(Runnable r, long delayMs) {
+        Handler h = getSafeMainHandler();
+        if (h != null) {
+            try {
+                h.postDelayed(r, delayMs);
+                return;
+            } catch (Throwable ignored) {}
+        }
+        r.run();
     }
 
-    public void setCommentActionListener(CommentActionListener listener) {
-        this.commentActionListener = listener;
+    private void removeFromMain(Runnable r) {
+        Handler h = getSafeMainHandler();
+        if (h != null) {
+            try {
+                h.removeCallbacks(r);
+            } catch (Throwable ignored) {}
+        }
     }
 
-    public void setActiveReplyCommentId(Long commentId) {
-        this.activeReplyCommentId = commentId;
+    private void safeNotifyDataSetChanged() {
         try {
             notifyDataSetChanged();
-        } catch (Exception ignored) {}
+        } catch (Throwable ignored) {}
     }
 
-    public Long getActiveReplyCommentId() {
-        return activeReplyCommentId;
+    private void safeNotifyItemRangeInserted(int start, int count) {
+        try {
+            notifyItemRangeInserted(start, count);
+        } catch (Throwable t) {
+            safeNotifyDataSetChanged();
+        }
     }
+
+    // Infinite scroll bottom loading indicator
+    private boolean isLoadingMore = false;
 
     public static class DisplayItem {
         public static final int TYPE_COMMENT = 0;
         public static final int TYPE_SHOW_MORE = 1;
+        public static final int TYPE_LOADING_FOOTER = 2;
 
         final int type;
         final CommentsResponse.CommentItem item;
@@ -108,32 +194,138 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         }
     }
 
-    private final SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault());
-
     // Source storage
     private final List<CommentsResponse.CommentItem> stickyRoots = new ArrayList<>();
     private final Map<Long, CommentsResponse.CommentItem> allById = new HashMap<>();
     private final List<CommentsResponse.CommentItem> roots = new ArrayList<>();
     private final Map<Long, List<CommentsResponse.CommentItem>> childrenByParentId = new HashMap<>();
 
-    // Flattened for RecyclerView
+    // Flattened visible items for RecyclerView (excluding loading footer)
     private final List<DisplayItem> flat = new ArrayList<>();
-    private final Map<Long, CharSequence> simpleSpannedCache = new HashMap<>();
-    private int currentPage = 1;
+    private final Map<Long, CommentHtmlProcessor.ParsedCommentContent> parsedContentCache = new ConcurrentHashMap<>();
+
+    public void setOnBatchCompletedListener(Runnable listener) {
+        this.onBatchCompletedListener = listener;
+    }
+
+    public void putParsedContentMap(Map<Long, CommentHtmlProcessor.ParsedCommentContent> map) {
+        if (map != null && !map.isEmpty()) {
+            parsedContentCache.putAll(map);
+        }
+    }
+
+    public boolean isPendingInsertion() {
+        return !pendingQueue.isEmpty();
+    }
+
+    public boolean hasAnySourceComments() {
+        return !stickyRoots.isEmpty() || !roots.isEmpty();
+    }
+
+    public int getTotalTargetCount() {
+        return flat.size() + pendingQueue.size();
+    }
+
+    public void cancelPendingInsertions() {
+        removeFromMain(chunkInsertRunnable);
+        pendingQueue.clear();
+    }
+
+    private void flushPendingQueueImmediate() {
+        removeFromMain(chunkInsertRunnable);
+        if (!pendingQueue.isEmpty()) {
+            int insertPos = flat.size();
+            int count = pendingQueue.size();
+            flat.addAll(pendingQueue);
+            pendingQueue.clear();
+            safeNotifyItemRangeInserted(insertPos, count);
+        }
+    }
+
+    public void setLoadingMore(boolean loadingMore) {
+        if (this.isLoadingMore == loadingMore) return;
+        this.isLoadingMore = loadingMore;
+        int footerPos = flat.size();
+        try {
+            if (loadingMore) {
+                notifyItemInserted(footerPos);
+            } else {
+                notifyItemRemoved(footerPos);
+            }
+        } catch (Throwable ignored) {
+            safeNotifyDataSetChanged();
+        }
+    }
+
+    public boolean isLoadingMore() {
+        return isLoadingMore;
+    }
+
+    public void setRepliesLimit(int limit) {
+        if (this.repliesLimit == limit) return;
+        this.repliesLimit = limit;
+        flushPendingQueueImmediate();
+        rebuildFlatImmediate();
+    }
+
+    public int getRepliesLimit() {
+        return repliesLimit;
+    }
+
+    public void markParentExpanded(long parentId) {
+        expandedParentIds.add(parentId);
+    }
+
+    public void setCommentActionListener(CommentActionListener listener) {
+        this.commentActionListener = listener;
+    }
+
+    public void setActiveReplyCommentId(Long commentId) {
+        if (Objects.equals(this.activeReplyCommentId, commentId)) return;
+        Long oldId = this.activeReplyCommentId;
+        this.activeReplyCommentId = commentId;
+        if (oldId != null) {
+            notifyCommentChanged(oldId);
+        }
+        if (commentId != null) {
+            notifyCommentChanged(commentId);
+        }
+    }
+
+    public Long getActiveReplyCommentId() {
+        return activeReplyCommentId;
+    }
+
+    public void notifyCommentChanged(long commentId) {
+        for (int i = 0, size = flat.size(); i < size; i++) {
+            DisplayItem di = flat.get(i);
+            if (di.type == DisplayItem.TYPE_COMMENT && di.item != null && di.item.getId() == commentId) {
+                try {
+                    notifyItemChanged(i);
+                } catch (Throwable ignored) {}
+                return;
+            }
+        }
+    }
 
     public void clearAll() {
-        currentPage = 1;
+        cancelPendingInsertions();
+        isLoadingMore = false;
         expandedParentIds.clear();
         stickyRoots.clear();
         allById.clear();
         roots.clear();
         childrenByParentId.clear();
         flat.clear();
-        simpleSpannedCache.clear();
-        notifyDataSetChanged();
+        parsedContentCache.clear();
+        safeNotifyDataSetChanged();
     }
 
+    /**
+     * Установить закреплённые комментарии (если они пришли отдельно).
+     */
     public void setStickyComments(List<CommentsResponse.CommentItem> stickyComments) {
+        flushPendingQueueImmediate();
         stickyRoots.clear();
         if (stickyComments != null) {
             for (CommentsResponse.CommentItem item : stickyComments) {
@@ -149,48 +341,126 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                 }
             }
         }
-        rebuildFlat(-1);
+        // Удаляем дубликаты закреплённых из обычных roots
+        if (!stickyRoots.isEmpty() && !roots.isEmpty()) {
+            Set<Long> stickyIds = new HashSet<>();
+            for (CommentsResponse.CommentItem s : stickyRoots) {
+                stickyIds.add(s.getId());
+            }
+            for (int i = roots.size() - 1; i >= 0; i--) {
+                if (stickyIds.contains(roots.get(i).getId())) {
+                    roots.remove(i);
+                }
+            }
+        }
+        rebuildFlatImmediate();
     }
 
-    public void setPageResponse(CommentsResponse response, int page) {
-        this.currentPage = page;
+    /**
+     * Задать первую порцию комментариев (закреплённые + 1-я страница) с плавной покадровой вставкой.
+     */
+    public void setInitialComments(List<CommentsResponse.CommentItem> stickyComments, CommentsResponse response) {
+        cancelPendingInsertions();
+        isLoadingMore = false;
         allById.clear();
         roots.clear();
         childrenByParentId.clear();
-        flat.clear();
-        simpleSpannedCache.clear();
+        stickyRoots.clear();
 
-        if (page <= 1) {
-            for (CommentsResponse.CommentItem s : stickyRoots) {
+        if (!flat.isEmpty()) {
+            flat.clear();
+            safeNotifyDataSetChanged();
+        }
+
+        if (stickyComments != null) {
+            for (CommentsResponse.CommentItem s : stickyComments) {
                 if (s != null) {
                     s.setSticky(true);
-                    allById.put(s.getId(), s);
+                    if (!allById.containsKey(s.getId())) {
+                        allById.put(s.getId(), s);
+                        stickyRoots.add(s);
+                    }
                 }
             }
         }
 
+        if (response != null && response.getData() != null) {
+            List<CommentsResponse.CommentItem> newRoots = response.getData().getRoot();
+            List<CommentsResponse.CommentItem> replies = response.getData().getReplies();
+
+            if (newRoots != null) {
+                for (CommentsResponse.CommentItem r : newRoots) {
+                    if (r == null) continue;
+                    if (allById.containsKey(r.getId())) {
+                        CommentsResponse.CommentItem existing = allById.get(r.getId());
+                        if (existing != null && existing.isSticky()) {
+                            continue;
+                        }
+                    } else {
+                        allById.put(r.getId(), r);
+                    }
+                    roots.add(r);
+                }
+            }
+            if (replies != null) {
+                for (CommentsResponse.CommentItem c : replies) {
+                    if (c == null || allById.containsKey(c.getId())) continue;
+                    allById.put(c.getId(), c);
+                    Long parentId = c.getParent_comment();
+                    if (parentId == null) parentId = c.getRoot_id();
+                    if (parentId == null) continue;
+                    List<CommentsResponse.CommentItem> list = childrenByParentId.get(parentId);
+                    if (list == null) {
+                        list = new ArrayList<>();
+                        childrenByParentId.put(parentId, list);
+                    }
+                    list.add(c);
+                }
+            }
+        }
+
+        List<DisplayItem> targetItems = new ArrayList<>();
+        for (CommentsResponse.CommentItem sticky : stickyRoots) {
+            collectWithChildren(sticky, 0, targetItems);
+        }
+        for (CommentsResponse.CommentItem root : roots) {
+            collectWithChildren(root, 0, targetItems);
+        }
+
+        enqueueProgressiveInsertion(targetItems, true);
+    }
+
+    /**
+     * Совместимый метод для полной замены данных одной страницы.
+     */
+    public void setPageResponse(CommentsResponse response, int page) {
+        setInitialComments(new ArrayList<>(stickyRoots), response);
+    }
+
+    /**
+     * Плавно догрузить следующую страницу комментариев в конец списка без перерисовки существующих элементов.
+     */
+    public void appendCommentsPage(CommentsResponse response) {
         if (response == null || response.getData() == null) {
-            rebuildFlat(-1);
             return;
         }
 
         List<CommentsResponse.CommentItem> newRoots = response.getData().getRoot();
         List<CommentsResponse.CommentItem> replies = response.getData().getReplies();
 
+        List<CommentsResponse.CommentItem> addedRoots = new ArrayList<>();
         if (newRoots != null) {
             for (CommentsResponse.CommentItem r : newRoots) {
                 if (r == null) continue;
                 if (allById.containsKey(r.getId())) {
-                    CommentsResponse.CommentItem existing = allById.get(r.getId());
-                    if (existing != null && existing.isSticky()) {
-                        continue;
-                    }
-                } else {
-                    allById.put(r.getId(), r);
+                    continue;
                 }
+                allById.put(r.getId(), r);
                 roots.add(r);
+                addedRoots.add(r);
             }
         }
+
         if (replies != null) {
             for (CommentsResponse.CommentItem c : replies) {
                 if (c == null || allById.containsKey(c.getId())) continue;
@@ -207,103 +477,84 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             }
         }
 
-        rebuildFlat(-1);
+        if (addedRoots.isEmpty()) {
+            return;
+        }
+
+        List<DisplayItem> newDisplayItems = new ArrayList<>();
+        for (CommentsResponse.CommentItem addedRoot : addedRoots) {
+            collectWithChildren(addedRoot, 0, newDisplayItems);
+        }
+
+        enqueueProgressiveInsertion(newDisplayItems, false);
     }
 
     public void appendResponse(CommentsResponse response, boolean append) {
         if (!append) {
-            setPageResponse(response, 1);
-            return;
+            setInitialComments(new ArrayList<>(stickyRoots), response);
+        } else {
+            appendCommentsPage(response);
         }
-
-        if (response == null || response.getData() == null) {
-            return;
-        }
-
-        int previousFlatSize = flat.size();
-
-        List<CommentsResponse.CommentItem> newRoots = response.getData().getRoot();
-        List<CommentsResponse.CommentItem> replies = response.getData().getReplies();
-
-        if (newRoots != null) {
-            for (CommentsResponse.CommentItem r : newRoots) {
-                if (r == null) continue;
-                if (allById.containsKey(r.getId())) {
-                    CommentsResponse.CommentItem existing = allById.get(r.getId());
-                    if (existing != null && existing.isSticky()) {
-                        continue;
-                    }
-                } else {
-                    allById.put(r.getId(), r);
-                }
-                roots.add(r);
-            }
-        }
-        if (replies != null) {
-            for (CommentsResponse.CommentItem c : replies) {
-                if (c == null || allById.containsKey(c.getId())) continue;
-                allById.put(c.getId(), c);
-                Long parentId = c.getParent_comment();
-                if (parentId == null) parentId = c.getRoot_id();
-                if (parentId == null) continue;
-                List<CommentsResponse.CommentItem> list = childrenByParentId.get(parentId);
-                if (list == null) {
-                    list = new ArrayList<>();
-                    childrenByParentId.put(parentId, list);
-                }
-                list.add(c);
-            }
-        }
-
-        rebuildFlat(previousFlatSize);
     }
 
-    private void rebuildFlat(int previousFlatSize) {
-        flat.clear();
-        if (currentPage <= 1) {
-            for (CommentsResponse.CommentItem sticky : stickyRoots) {
-                addWithChildren(sticky, 0);
+    private void enqueueProgressiveInsertion(List<DisplayItem> itemsToInsert, boolean immediateFirstChunk) {
+        if (itemsToInsert == null || itemsToInsert.isEmpty()) {
+            if (onBatchCompletedListener != null) {
+                onBatchCompletedListener.run();
             }
+            return;
+        }
+
+        boolean wasQueueRunning = !pendingQueue.isEmpty();
+        pendingQueue.addAll(itemsToInsert);
+
+        if (!wasQueueRunning) {
+            removeFromMain(chunkInsertRunnable);
+            if (immediateFirstChunk) {
+                chunkInsertRunnable.run();
+            } else {
+                postToMain(chunkInsertRunnable);
+            }
+        }
+    }
+
+    private void rebuildFlatImmediate() {
+        cancelPendingInsertions();
+        flat.clear();
+        for (CommentsResponse.CommentItem sticky : stickyRoots) {
+            collectWithChildren(sticky, 0, flat);
         }
         for (CommentsResponse.CommentItem root : roots) {
-            addWithChildren(root, 0);
+            collectWithChildren(root, 0, flat);
         }
-
-        if (previousFlatSize >= 0) {
-            int newItemsCount = flat.size() - previousFlatSize;
-            if (newItemsCount > 0) {
-                notifyItemRangeInserted(previousFlatSize, newItemsCount);
-            }
-        } else {
-            notifyDataSetChanged();
-        }
+        safeNotifyDataSetChanged();
     }
 
-    private void addWithChildren(CommentsResponse.CommentItem node, int level) {
-        flat.add(new DisplayItem(node, level));
+    private void collectWithChildren(CommentsResponse.CommentItem node, int level, List<DisplayItem> out) {
+        out.add(new DisplayItem(node, level));
         List<CommentsResponse.CommentItem> kids = childrenByParentId.get(node.getId());
         if (kids == null || kids.isEmpty()) return;
-        
+
         // Ограничиваем глубину дерева до 1 уровня (level 0 и 1)
         if (level >= 1) return;
-        
+
         boolean isUnlimited = (repliesLimit == -1 || repliesLimit >= 11 || repliesLimit <= 0);
         boolean isExpanded = expandedParentIds.contains(node.getId());
         boolean showAll = isUnlimited || isExpanded || (kids.size() <= repliesLimit);
 
         if (showAll) {
             for (CommentsResponse.CommentItem child : kids) {
-                addWithChildren(child, level + 1);
+                collectWithChildren(child, level + 1, out);
             }
         } else {
             int countToShow = Math.min(repliesLimit, kids.size());
             for (int i = 0; i < countToShow; i++) {
-                addWithChildren(kids.get(i), level + 1);
+                collectWithChildren(kids.get(i), level + 1, out);
             }
             int hiddenCount = kids.size() - countToShow;
             if (hiddenCount > 0) {
                 List<CommentsResponse.CommentItem> hidden = new ArrayList<>(kids.subList(countToShow, kids.size()));
-                flat.add(new DisplayItem(node.getId(), hiddenCount, hidden));
+                out.add(new DisplayItem(node.getId(), hiddenCount, hidden));
             }
         }
     }
@@ -313,7 +564,9 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         expandedParentIds.add(parentId);
 
         flat.remove(position);
-        notifyItemRemoved(position);
+        try {
+            notifyItemRemoved(position);
+        } catch (Throwable ignored) {}
 
         List<DisplayItem> newItems = new ArrayList<>();
         if (hiddenReplies != null) {
@@ -323,9 +576,48 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         }
 
         if (!newItems.isEmpty()) {
-            flat.addAll(position, newItems);
-            notifyItemRangeInserted(position, newItems.size());
+            // Раскрываем ответы порционно если их очень много, иначе сразу
+            if (newItems.size() <= 8) {
+                flat.addAll(position, newItems);
+                safeNotifyItemRangeInserted(position, newItems.size());
+            } else {
+                List<DisplayItem> firstBatch = new ArrayList<>(newItems.subList(0, 8));
+                flat.addAll(position, firstBatch);
+                safeNotifyItemRangeInserted(position, firstBatch.size());
+                expandRemainingRepliesChunked(parentId, position + firstBatch.size(), new ArrayList<>(newItems.subList(8, newItems.size())));
+            }
         }
+    }
+
+    private void expandRemainingRepliesChunked(long parentId, int nextPos, List<DisplayItem> remaining) {
+        if (remaining.isEmpty()) return;
+        postToMainDelayed(() -> {
+            if (!expandedParentIds.contains(parentId) || remaining.isEmpty()) return;
+            int safePos = Math.min(nextPos, flat.size());
+            int count = Math.min(CHUNK_INSERT_SIZE, remaining.size());
+            List<DisplayItem> sub = new ArrayList<>(remaining.subList(0, count));
+            flat.addAll(safePos, sub);
+            safeNotifyItemRangeInserted(safePos, count);
+            if (remaining.size() > count) {
+                expandRemainingRepliesChunked(parentId, safePos + count, new ArrayList<>(remaining.subList(count, remaining.size())));
+            }
+        }, CHUNK_FRAME_DELAY_MS);
+    }
+
+    private void ensureThemeMetricsInitialized(Context context) {
+        if (cachedDensity > 0f && htmlProcessor != null && cachedNeutralVoteColor != null) {
+            return;
+        }
+        cachedDensity = context.getResources().getDisplayMetrics().density;
+        padBaseH = (int) (12 * cachedDensity);
+        padReplyIndent = (int) (12 * cachedDensity);
+        padBaseV = (int) (8 * cachedDensity);
+        stickyMarginPx = (int) (4 * cachedDensity);
+        avatarTargetPx = Math.max(72, (int) (36 * cachedDensity));
+        cachedNeutralVoteColor = ContextCompat.getColor(context, R.color.accent_text_color);
+        cachedPrimaryTextColor = CommentHtmlProcessor.resolvePrimaryTextColor(context);
+        cachedPurpleColor = ContextCompat.getColor(context, R.color.purple_primary);
+        htmlProcessor = new CommentHtmlProcessor(context);
     }
 
     @Override
@@ -333,26 +625,44 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         if (position >= 0 && position < flat.size()) {
             return flat.get(position).type;
         }
+        if (isLoadingMore && position == flat.size()) {
+            return DisplayItem.TYPE_LOADING_FOOTER;
+        }
         return DisplayItem.TYPE_COMMENT;
     }
 
     @NonNull
     @Override
     public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        ensureThemeMetricsInitialized(parent.getContext());
+        LayoutInflater inflater = LayoutInflater.from(parent.getContext());
+        if (viewType == DisplayItem.TYPE_LOADING_FOOTER) {
+            View v = inflater.inflate(R.layout.item_comment_loading, parent, false);
+            return new LoadingFooterVH(v);
+        }
         if (viewType == DisplayItem.TYPE_SHOW_MORE) {
-            View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_comment_show_more, parent, false);
+            View v = inflater.inflate(R.layout.item_comment_show_more, parent, false);
             return new ShowMoreVH(v);
         }
-        View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_comment, parent, false);
+        View v = inflater.inflate(R.layout.item_comment, parent, false);
         return new CommentVH(v);
     }
 
     @SuppressLint("SetTextI18n")
     @Override
     public void onBindViewHolder(@NonNull RecyclerView.ViewHolder rawHolder, int position) {
+        if (rawHolder instanceof LoadingFooterVH) {
+            return;
+        }
+
+        if (position < 0 || position >= flat.size()) return;
+
         if (rawHolder instanceof ShowMoreVH) {
             ShowMoreVH holder = (ShowMoreVH) rawHolder;
             DisplayItem di = flat.get(position);
+            if (holder.ivShowMoreIcon != null) {
+                holder.ivShowMoreIcon.setRotation(0f);
+            }
             if (holder.threadGuideLine != null) {
                 holder.threadGuideLine.setVisibility(View.VISIBLE);
             }
@@ -366,9 +676,9 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                         DisplayItem item = flat.get(pos);
                         if (item.type == DisplayItem.TYPE_SHOW_MORE) {
                             if (holder.ivShowMoreIcon != null) {
-                                holder.ivShowMoreIcon.animate().rotation(180f).setDuration(160).withEndAction(() -> {
-                                    expandReplies(item.parentId, pos, item.hiddenReplies);
-                                }).start();
+                                holder.ivShowMoreIcon.animate().rotation(180f).setDuration(140).withEndAction(() ->
+                                        expandReplies(item.parentId, pos, item.hiddenReplies)
+                                ).start();
                             } else {
                                 expandReplies(item.parentId, pos, item.hiddenReplies);
                             }
@@ -379,116 +689,87 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             return;
         }
 
+        ensureThemeMetricsInitialized(rawHolder.itemView.getContext());
+
         CommentVH holder = (CommentVH) rawHolder;
         DisplayItem di = flat.get(position);
         CommentsResponse.CommentItem item = di.item;
         if (item == null) return;
 
-        // Показываем имя пользователя
         String username = item.getUser() != null ? item.getUser().getUsername() : "";
         holder.usernameView.setText(username);
-        
-        // Показываем кому отвечают (если это ответ)
+
         if (di.level > 0) {
-            // Это ответ - нужно найти родительский комментарий
             Long parentId = item.getParent_comment() != null ? item.getParent_comment() : item.getRoot_id();
-            if (parentId != null) {
-                CommentsResponse.CommentItem parentComment = allById.get(parentId);
-                if (parentComment != null && parentComment.getUser() != null) {
-                    String parentUsername = parentComment.getUser().getUsername();
-                    holder.replyToView.setText(parentUsername);
-                    holder.llReply.setVisibility(View.VISIBLE);
-                } else {
-                    holder.llReply.setVisibility(View.GONE);
-                }
+            CommentsResponse.CommentItem parentComment = parentId != null ? allById.get(parentId) : null;
+            if (parentComment != null && parentComment.getUser() != null) {
+                holder.replyToView.setText(parentComment.getUser().getUsername());
+                holder.llReply.setVisibility(View.VISIBLE);
             } else {
                 holder.llReply.setVisibility(View.GONE);
             }
         } else {
-            // Это корневой комментарий - скрываем llReply
             holder.llReply.setVisibility(View.GONE);
         }
+
         String commentText = item.getComment() != null ? item.getComment() : "";
+        String expectedSourceKey = CommentHtmlProcessor.computeSourceKey(commentText);
+        CommentHtmlProcessor.ParsedCommentContent parsed = parsedContentCache.get(item.getId());
+        if (parsed == null || !expectedSourceKey.equals(parsed.sourceHashKey)) {
+            parsed = CommentHtmlProcessor.parseHtmlOffThread(commentText, cachedPrimaryTextColor, cachedPurpleColor);
+            parsedContentCache.put(item.getId(), parsed);
+        }
 
-        boolean hasComplexHtml = commentText.contains("spoiler-node") ||
-            commentText.contains("<blockquote>") || 
-            commentText.contains("<strong>") || 
-            commentText.contains("<em>") || 
-            commentText.contains("<u>") || 
-            commentText.contains("<strike>");
-
-        if (hasComplexHtml) {
+        if (parsed.isSimple()) {
+            holder.commentHtmlView.setVisibility(View.VISIBLE);
+            if (holder.spoilerContainer.getVisibility() != View.GONE) {
+                holder.spoilerContainer.removeAllViews();
+                holder.spoilerContainer.setVisibility(View.GONE);
+            }
+            holder.spoilerContainer.setTag(null);
+            holder.commentHtmlView.setText(parsed.simpleText);
+        } else {
             holder.commentHtmlView.setVisibility(View.GONE);
             holder.spoilerContainer.setVisibility(View.VISIBLE);
-            
-            Long currentTag = (Long) holder.spoilerContainer.getTag();
-            if (currentTag == null || !currentTag.equals(item.getId())) {
-                holder.spoilerContainer.setTag(item.getId());
-                CommentHtmlProcessor processor = new CommentHtmlProcessor(holder.itemView.getContext());
-                String cleanedText = commentText.trim()
-                    .replaceAll("\\n\\s*\\n+", "\n")
-                    .replaceAll("\\s+$", "")
-                    .replaceAll("^\\s+", "");
-                processor.processCommentHtml(cleanedText, holder.spoilerContainer);
+            String renderTag = item.getId() + ":" + parsed.sourceHashKey;
+            Object currentTag = holder.spoilerContainer.getTag();
+            if (!renderTag.equals(currentTag)) {
+                holder.spoilerContainer.setTag(renderTag);
+                htmlProcessor.renderParsedBlocks(parsed, holder.spoilerContainer);
             }
-        } else {
-            holder.commentHtmlView.setVisibility(View.VISIBLE);
-            holder.spoilerContainer.setVisibility(View.GONE);
-            holder.spoilerContainer.setTag(null);
-
-            CharSequence sp = simpleSpannedCache.get(item.getId());
-            if (sp == null) {
-                String cleanedText = commentText.trim()
-                    .replaceAll("\\n\\s*\\n+", "\n")
-                    .replaceAll("\\s+$", "")
-                    .replaceAll("^\\s+", "")
-                    .replaceAll("\\s+\\n", "\n")
-                    .replaceAll("\\n\\s+", "\n")
-                    .replaceAll("\\s{2,}", " ")
-                    .trim();
-                CharSequence rawSp = Html.fromHtml(cleanedText, Html.FROM_HTML_MODE_LEGACY);
-                sp = trimTrailingNewlines(rawSp);
-                simpleSpannedCache.put(item.getId(), sp);
-            }
-            holder.commentHtmlView.setText(sp);
         }
-        
+
         String dateStr = formatRelativeTime(item.getCreated_at_ts(), item.getCreated_at());
         holder.dateView.setText(dateStr);
 
+        int neutralColor = cachedNeutralVoteColor != null ? cachedNeutralVoteColor : Color.GRAY;
         if (item.getVotes() != null) {
-            int up = item.getVotes().getUp();
-            int down = item.getVotes().getDown();
-            int score = up - down;
+            int score = item.getVotes().getUp() - item.getVotes().getDown();
             if (score > 0) {
                 holder.votesView.setText(String.valueOf(score));
-                holder.votesView.setTextColor(android.graphics.Color.parseColor("#4ADE80"));
+                holder.votesView.setTextColor(COLOR_VOTE_UP);
             } else if (score < 0) {
                 holder.votesView.setText(String.valueOf(Math.abs(score)));
-                holder.votesView.setTextColor(android.graphics.Color.parseColor("#F87171"));
+                holder.votesView.setTextColor(COLOR_VOTE_DOWN);
             } else {
                 holder.votesView.setText("0");
-                holder.votesView.setTextColor(holder.itemView.getContext().getResources().getColor(R.color.accent_text_color));
+                holder.votesView.setTextColor(neutralColor);
             }
         } else {
             holder.votesView.setText("0");
-            holder.votesView.setTextColor(holder.itemView.getContext().getResources().getColor(R.color.accent_text_color));
+            holder.votesView.setTextColor(neutralColor);
         }
 
         Integer userVote = getUserVoteValue(item.getVotes());
         if (holder.voteUpIcon instanceof ImageView) {
-            if (userVote != null && userVote == 1) {
-                ((ImageView) holder.voteUpIcon).setColorFilter(android.graphics.Color.parseColor("#4ADE80"));
-            } else {
-                ((ImageView) holder.voteUpIcon).setColorFilter(holder.itemView.getContext().getResources().getColor(R.color.accent_text_color));
-            }
+            ((ImageView) holder.voteUpIcon).setColorFilter(
+                    (userVote != null && userVote == 1) ? COLOR_VOTE_UP : neutralColor
+            );
         }
         if (holder.voteDownIcon instanceof ImageView) {
-            if (userVote != null && userVote == 0) {
-                ((ImageView) holder.voteDownIcon).setColorFilter(android.graphics.Color.parseColor("#F87171"));
-            } else {
-                ((ImageView) holder.voteDownIcon).setColorFilter(holder.itemView.getContext().getResources().getColor(R.color.accent_text_color));
-            }
+            ((ImageView) holder.voteDownIcon).setColorFilter(
+                    (userVote != null && userVote == 0) ? COLOR_VOTE_DOWN : neutralColor
+            );
         }
 
         boolean isReplyingToThis = (activeReplyCommentId != null && activeReplyCommentId.equals(item.getId()));
@@ -509,34 +790,34 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                     });
                 }
                 if (holder.inlineCommentInputField != null) {
-                    com.example.animelib.util.CommentFormattingHelper.attachFormattingTextWatcher(holder.inlineCommentInputField);
+                    CommentFormattingHelper.attachFormattingTextWatcher(holder.inlineCommentInputField);
                     holder.inlineCommentInputField.post(() -> {
                         holder.inlineCommentInputField.requestFocus();
                         try {
-                            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) holder.itemView.getContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
+                            InputMethodManager imm = (InputMethodManager) holder.itemView.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
                             if (imm != null) {
-                                imm.showSoftInput(holder.inlineCommentInputField, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+                                imm.showSoftInput(holder.inlineCommentInputField, InputMethodManager.SHOW_IMPLICIT);
                             }
                         } catch (Exception ignored) {}
                     });
                 }
                 if (holder.btnInlineFormatBold != null && holder.inlineCommentInputField != null) {
-                    holder.btnInlineFormatBold.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(holder.inlineCommentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.BOLD));
+                    holder.btnInlineFormatBold.setOnClickListener(v -> CommentFormattingHelper.applyFormat(holder.inlineCommentInputField, CommentFormattingHelper.FormatType.BOLD));
                 }
                 if (holder.btnInlineFormatItalic != null && holder.inlineCommentInputField != null) {
-                    holder.btnInlineFormatItalic.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(holder.inlineCommentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.ITALIC));
+                    holder.btnInlineFormatItalic.setOnClickListener(v -> CommentFormattingHelper.applyFormat(holder.inlineCommentInputField, CommentFormattingHelper.FormatType.ITALIC));
                 }
                 if (holder.btnInlineFormatUnderline != null && holder.inlineCommentInputField != null) {
-                    holder.btnInlineFormatUnderline.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(holder.inlineCommentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.UNDERLINE));
+                    holder.btnInlineFormatUnderline.setOnClickListener(v -> CommentFormattingHelper.applyFormat(holder.inlineCommentInputField, CommentFormattingHelper.FormatType.UNDERLINE));
                 }
                 if (holder.btnInlineFormatStrike != null && holder.inlineCommentInputField != null) {
-                    holder.btnInlineFormatStrike.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(holder.inlineCommentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.STRIKE));
+                    holder.btnInlineFormatStrike.setOnClickListener(v -> CommentFormattingHelper.applyFormat(holder.inlineCommentInputField, CommentFormattingHelper.FormatType.STRIKE));
                 }
                 if (holder.btnInlineFormatSpoiler != null && holder.inlineCommentInputField != null) {
-                    holder.btnInlineFormatSpoiler.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(holder.inlineCommentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.SPOILER));
+                    holder.btnInlineFormatSpoiler.setOnClickListener(v -> CommentFormattingHelper.applyFormat(holder.inlineCommentInputField, CommentFormattingHelper.FormatType.SPOILER));
                 }
                 if (holder.btnInlineFormatQuote != null && holder.inlineCommentInputField != null) {
-                    holder.btnInlineFormatQuote.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(holder.inlineCommentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.QUOTE));
+                    holder.btnInlineFormatQuote.setOnClickListener(v -> CommentFormattingHelper.applyFormat(holder.inlineCommentInputField, CommentFormattingHelper.FormatType.QUOTE));
                 }
                 if (holder.btnInlineSendComment != null && holder.inlineCommentInputField != null) {
                     holder.btnInlineSendComment.setOnClickListener(v -> {
@@ -546,7 +827,7 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                         }
                     });
                     holder.inlineCommentInputField.setOnEditorActionListener((v, actionId, event) -> {
-                        if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) {
+                        if (actionId == EditorInfo.IME_ACTION_SEND) {
                             if (commentActionListener != null) {
                                 CharSequence text = holder.inlineCommentInputField.getText();
                                 commentActionListener.onSendInlineReply(item, text, holder.inlineCommentInputField);
@@ -601,25 +882,24 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             });
         }
 
-        // Thread line & indent for nested replies
         if (holder.threadGuideLine != null) {
             holder.threadGuideLine.setVisibility(di.level > 0 ? View.VISIBLE : View.GONE);
         }
 
-        float density = holder.itemView.getResources().getDisplayMetrics().density;
-        int leftPad = (int) (12 * density + (di.level > 0 ? 12 * density : 0));
-        int rightPad = (int) (12 * density);
-        int topPad = (int) (8 * density);
-        int bottomPad = (int) (8 * density);
-        holder.itemView.setPadding(leftPad, topPad, rightPad, bottomPad);
+        int leftPad = padBaseH + (di.level > 0 ? padReplyIndent : 0);
+        if (holder.itemView.getPaddingLeft() != leftPad
+                || holder.itemView.getPaddingTop() != padBaseV
+                || holder.itemView.getPaddingRight() != padBaseH
+                || holder.itemView.getPaddingBottom() != padBaseV) {
+            holder.itemView.setPadding(leftPad, padBaseV, padBaseH, padBaseV);
+        }
 
         String avatarUrl = null;
         if (item.getUser() != null && item.getUser().getAvatar() != null) {
             avatarUrl = item.getUser().getAvatar().getUrl();
         }
-        ImageLoader.getInstance().loadInto(holder.avatarView, avatarUrl, R.drawable.ic_avatar_placeholder);
+        ImageLoader.getInstance().loadAvatarInto(holder.avatarView, avatarUrl, R.drawable.ic_avatar_placeholder, avatarTargetPx);
 
-        // Sticky comment badge & highlight
         boolean isSticky = item.isSticky();
         if (holder.stickyBadgeContainer != null) {
             holder.stickyBadgeContainer.setVisibility(isSticky ? View.VISIBLE : View.GONE);
@@ -627,14 +907,13 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) holder.itemView.getLayoutParams();
         if (isSticky) {
             holder.itemView.setBackgroundResource(R.drawable.bg_sticky_comment);
-            if (lp != null) {
-                int hMargin = (int) (4 * density);
-                int vMargin = (int) (4 * density);
-                lp.setMargins(hMargin, vMargin, hMargin, vMargin);
+            if (lp != null && (lp.leftMargin != stickyMarginPx || lp.topMargin != stickyMarginPx
+                    || lp.rightMargin != stickyMarginPx || lp.bottomMargin != stickyMarginPx)) {
+                lp.setMargins(stickyMarginPx, stickyMarginPx, stickyMarginPx, stickyMarginPx);
                 holder.itemView.setLayoutParams(lp);
             }
         } else {
-            holder.itemView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            holder.itemView.setBackgroundColor(Color.TRANSPARENT);
             if (lp != null && (lp.leftMargin != 0 || lp.topMargin != 0 || lp.rightMargin != 0 || lp.bottomMargin != 0)) {
                 lp.setMargins(0, 0, 0, 0);
                 holder.itemView.setLayoutParams(lp);
@@ -719,11 +998,23 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
 
     @Override
     public int getItemCount() {
+        return flat.size() + (isLoadingMore ? 1 : 0);
+    }
+
+    public int getCommentDisplayCount() {
         return flat.size();
     }
 
     public void removeComment(long commentId) {
+        flushPendingQueueImmediate();
         allById.remove(commentId);
+
+        for (int i = 0; i < stickyRoots.size(); i++) {
+            if (stickyRoots.get(i).getId() == commentId) {
+                stickyRoots.remove(i);
+                break;
+            }
+        }
 
         for (int i = 0; i < roots.size(); i++) {
             if (roots.get(i).getId() == commentId) {
@@ -745,18 +1036,9 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         }
 
         childrenByParentId.remove(commentId);
-        simpleSpannedCache.remove(commentId);
+        parsedContentCache.remove(commentId);
 
-        rebuildFlat(-1);
-    }
-
-    private static CharSequence trimTrailingNewlines(CharSequence text) {
-        if (text == null) return "";
-        int len = text.length();
-        while (len > 0 && (text.charAt(len - 1) == '\n' || text.charAt(len - 1) == '\r' || Character.isWhitespace(text.charAt(len - 1)))) {
-            len--;
-        }
-        return text.subSequence(0, len);
+        rebuildFlatImmediate();
     }
 
     public static class CommentVH extends RecyclerView.ViewHolder {
@@ -832,6 +1114,12 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             btnShowMore = itemView.findViewById(R.id.btnShowMore);
             ivShowMoreIcon = itemView.findViewById(R.id.ivShowMoreIcon);
             tvShowMoreText = itemView.findViewById(R.id.tvShowMoreText);
+        }
+    }
+
+    public static class LoadingFooterVH extends RecyclerView.ViewHolder {
+        public LoadingFooterVH(@NonNull View itemView) {
+            super(itemView);
         }
     }
 }

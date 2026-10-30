@@ -96,7 +96,7 @@ public class ImageLoader {
         imageView.setTag(url);
 
         executor.submit(() -> {
-            Bitmap bitmap = downloadBitmap(url);
+            Bitmap bitmap = downloadBitmap(url, 0);
             if (bitmap != null) memoryCache.put(url, bitmap);
             mainHandler.post(() -> {
                 Object tag = imageView.getTag();
@@ -114,13 +114,87 @@ public class ImageLoader {
         });
     }
 
+    /**
+     * Облегчённая загрузка маленьких аватарок (например, в комментариях) без тяжёлых ValueAnimator-шиммеров
+     * и с декодированием уменьшенного Bitmap (inSampleSize), чтобы не нагружать UI-поток плеера.
+     */
+    public void loadAvatarInto(ImageView imageView, String url, int placeholderResId, int targetSizePx) {
+        if (imageView == null) return;
+        int placeholder = placeholderResId != 0 ? placeholderResId : R.drawable.ic_avatar_placeholder;
+        stopShimmerIfPresent(imageView);
+        imageView.animate().cancel();
+        imageView.setAlpha(1f);
+
+        if (url == null || url.isEmpty()) {
+            imageView.setTag(null);
+            imageView.setImageResource(placeholder);
+            return;
+        }
+
+        final int reqSize = targetSizePx > 0 ? targetSizePx : 96;
+        final String cacheKey = url + "#av" + reqSize;
+        Bitmap cached = memoryCache.get(cacheKey);
+        if (cached != null) {
+            imageView.setTag(cacheKey);
+            imageView.setImageBitmap(cached);
+            return;
+        }
+
+        imageView.setTag(cacheKey);
+        imageView.setImageResource(placeholder);
+
+        executor.submit(() -> {
+            Bitmap bitmap = downloadBitmap(url, reqSize);
+            if (bitmap != null) {
+                memoryCache.put(cacheKey, bitmap);
+            }
+            mainHandler.post(() -> {
+                Object tag = imageView.getTag();
+                if (cacheKey.equals(tag)) {
+                    if (bitmap != null) {
+                        imageView.setImageBitmap(bitmap);
+                    } else {
+                        imageView.setImageResource(placeholder);
+                    }
+                }
+            });
+        });
+    }
+
     private void stopShimmerIfPresent(ImageView imageView) {
         if (imageView != null && imageView.getDrawable() instanceof SkeletonHelper.SkeletonShimmerDrawable) {
             ((SkeletonHelper.SkeletonShimmerDrawable) imageView.getDrawable()).stopAnimation();
         }
     }
 
-    private Bitmap downloadBitmap(String src) {
+    private static Bitmap decodeSampledFile(String filePath, int reqSizePx) {
+        if (reqSizePx <= 0) {
+            return BitmapFactory.decodeFile(filePath);
+        }
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(filePath, bounds);
+        int width = bounds.outWidth;
+        int height = bounds.outHeight;
+        int inSampleSize = 1;
+        if (height > reqSizePx || width > reqSizePx) {
+            int halfH = height / 2;
+            int halfW = width / 2;
+            while ((halfH / inSampleSize) >= reqSizePx && (halfW / inSampleSize) >= reqSizePx) {
+                inSampleSize *= 2;
+            }
+        }
+        BitmapFactory.Options decodeOpts = new BitmapFactory.Options();
+        decodeOpts.inSampleSize = inSampleSize;
+        decodeOpts.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        Bitmap decoded = BitmapFactory.decodeFile(filePath, decodeOpts);
+        if (decoded == null) {
+            return BitmapFactory.decodeFile(filePath);
+        }
+        return decoded;
+    }
+
+    private Bitmap downloadBitmap(String src, int reqSizePx) {
         if (src == null || src.trim().isEmpty()) return null;
 
         // 1. Direct local file check
@@ -128,7 +202,7 @@ public class ImageLoader {
             try {
                 File f = new File(src);
                 if (f.exists() && f.length() > 0) {
-                    Bitmap bm = BitmapFactory.decodeFile(src);
+                    Bitmap bm = decodeSampledFile(src, reqSizePx);
                     if (bm != null) return bm;
                 }
             } catch (Exception ignored) {}
@@ -138,7 +212,7 @@ public class ImageLoader {
                 String path = src.substring(7);
                 File f = new File(path);
                 if (f.exists() && f.length() > 0) {
-                    Bitmap bm = BitmapFactory.decodeFile(path);
+                    Bitmap bm = decodeSampledFile(path, reqSizePx);
                     if (bm != null) return bm;
                 }
             } catch (Exception ignored) {}
@@ -151,7 +225,7 @@ public class ImageLoader {
             File posterFile = findPosterFileInDirs(context, src);
             if (posterFile != null) {
                 try {
-                    Bitmap bm = BitmapFactory.decodeFile(posterFile.getAbsolutePath());
+                    Bitmap bm = decodeSampledFile(posterFile.getAbsolutePath(), reqSizePx);
                     if (bm != null) return bm;
                 } catch (Exception ignored) {}
             }
@@ -165,7 +239,7 @@ public class ImageLoader {
                 if (!diskCacheDir.exists()) diskCacheDir.mkdirs();
                 diskCacheFile = new File(diskCacheDir, hashKeyForDisk(src));
                 if (diskCacheFile.exists() && diskCacheFile.length() > 0) {
-                    Bitmap bm = BitmapFactory.decodeFile(diskCacheFile.getAbsolutePath());
+                    Bitmap bm = decodeSampledFile(diskCacheFile.getAbsolutePath(), reqSizePx);
                     if (bm != null) return bm;
                 }
             } catch (Exception ignored) {}
@@ -200,7 +274,7 @@ public class ImageLoader {
                     fos.write(buffer, 0, read);
                 }
                 fos.flush();
-                return BitmapFactory.decodeFile(diskCacheFile.getAbsolutePath());
+                return decodeSampledFile(diskCacheFile.getAbsolutePath(), reqSizePx);
             } else {
                 return BitmapFactory.decodeStream(input);
             }

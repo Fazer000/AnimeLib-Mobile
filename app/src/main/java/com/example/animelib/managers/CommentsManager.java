@@ -1,47 +1,70 @@
 package com.example.animelib.managers;
 
-import android.app.Dialog;
+import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.res.Configuration;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Process;
+import android.text.Html;
 import android.util.Log;
-import android.util.TypedValue;
-import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.Window;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
 import android.widget.ImageButton;
-import android.widget.LinearLayout;
+import android.widget.ImageView;
 import android.widget.PopupWindow;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.ContextCompat;
+import androidx.core.widget.NestedScrollView;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.animelib.R;
+import com.example.animelib.VideoPlayerActivity;
 import com.example.animelib.adapters.CommentsAdapter;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.data.DatabaseManager;
 import com.example.animelib.data.entity.TokenEntity;
 import com.example.animelib.models.CommentsResponse;
 import com.example.animelib.models.EpisodesListResponse;
+import com.example.animelib.settings.CommentSettingsBottomSheet;
+import com.example.animelib.ui.RulesBottomSheet;
+import com.example.animelib.util.CommentFormattingHelper;
+import com.example.animelib.util.CommentHtmlProcessor;
 import com.example.animelib.util.CustomToast;
-import com.google.android.material.button.MaterialButton;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
- * Менеджер для работы с комментариями к эпизодам
- * Обеспечивает загрузку, отображение и управление комментариями
+ * Менеджер для работы с комментариями к эпизодам.
+ * Поддерживает фоновый парсинг HTML, плавную покадровую отрисовку и бесконечную подгрузку при скролле
+ * без пролагов видеоплеера.
  */
 public class CommentsManager {
 
     private static final String TAG = "CommentsManager";
+    private static final int LANDSCAPE_PREFETCH_THRESHOLD = 6;
+    private static final int PORTRAIT_SCROLL_THRESHOLD_DP = 650;
+    private static final long INITIAL_PORTRAIT_LOAD_DELAY_MS = 350L;
 
-    // UI компоненты
+    // UI компоненты (Landscape / Side Panel)
     private View commentsPanel;
     private ImageButton closeCommentsButton;
     private RecyclerView commentsRecyclerView;
@@ -50,7 +73,7 @@ public class CommentsManager {
     private View commentsOptionsButton;
     private View menuOverlay;
     private TextView emptyCommentsText;
-    
+
     // Элементы отображения ошибок с кнопкой повтора (Side Panel / Landscape)
     private View commentsErrorLayout;
     private TextView tvCommentsErrorText;
@@ -60,7 +83,7 @@ public class CommentsManager {
     private View portraitCommentsErrorLayout;
     private TextView tvPortraitCommentsErrorText;
     private View btnPortraitRetryComments;
-    
+
     // Offline mode support
     private boolean isOfflineMode = false;
     private View portraitOfflineCommentsNotice;
@@ -73,26 +96,26 @@ public class CommentsManager {
     private View landscapeCommentsDisabledNotice;
     private View btnLandscapeEnableComments;
 
-    // Адаптер и состояние
+    // Адаптеры и списки
+    private final RecyclerView.RecycledViewPool sharedCommentViewPool = new RecyclerView.RecycledViewPool();
     private CommentsAdapter commentsAdapter;
     private RecyclerView portraitCommentsRecyclerView;
     private CommentsAdapter portraitCommentsAdapter;
     private View portraitCommentsLoadingOverlay;
     private TextView portraitEmptyCommentsText;
     private TextView portraitSortText;
+    private NestedScrollView portraitScrollView;
 
     // Компоненты ввода комментария и ответа (Landscape / Panel)
-    private android.widget.EditText commentInputField;
+    private EditText commentInputField;
     private ImageButton btnSendComment;
-    private View btnInsertSpoiler;
     private View replyBar;
     private TextView tvReplyToText;
     private ImageButton btnCancelReply;
 
     // Компоненты ввода комментария и ответа (Portrait)
-    private android.widget.EditText portraitCommentInputField;
+    private EditText portraitCommentInputField;
     private ImageButton btnPortraitSendComment;
-    private View btnPortraitInsertSpoiler;
     private View portraitReplyBar;
     private TextView tvPortraitReplyToText;
     private ImageButton btnPortraitCancelReply;
@@ -104,83 +127,89 @@ public class CommentsManager {
     private String replyUsername = null;
     private CommentsResponse.CommentItem editingComment = null;
 
+    // Состояние загрузки и бесконечного скролла
     private boolean isCommentsVisible = false;
-    private int commentsPanelWidth = 360; // dp
-    private int commentsCurrentPage = 1;
+    private final int commentsPanelWidth = 360; // dp
+    private int commentsCurrentPage = 0;
     private boolean commentsHasNextPage = false;
-    private Integer commentsTotalPages = null;
     private boolean isLoadingComments = false;
     private String commentsSortType = "desc";
-
-    // Элементы пагинации (Landscape / Side Panel Carousel)
-    private View commentsPaginationBar;
-    private android.widget.ImageView btnPaginationPrev;
-    private View flPaginationContainer;
-    private RecyclerView rvPaginationPages;
-    private View vPaginationGradientLeft;
-    private View vPaginationGradientRight;
-    private android.widget.ImageView btnPaginationNext;
-    private com.example.animelib.adapters.CommentPagesAdapter landscapePagesAdapter;
-
-    // Элементы пагинации (Portrait Carousel)
-    private View portraitCommentsPaginationBar;
-    private android.widget.ImageView btnPortraitPaginationPrev;
-    private View flPortraitPaginationContainer;
-    private RecyclerView rvPortraitPaginationPages;
-    private View vPortraitPaginationGradientLeft;
-    private View vPortraitPaginationGradientRight;
-    private android.widget.ImageView btnPortraitPaginationNext;
-    private com.example.animelib.adapters.CommentPagesAdapter portraitPagesAdapter;
-    private androidx.core.widget.NestedScrollView portraitScrollView;
-    
-    private CommentsResponse pendingLandscapeCommentsResponse;
-    private boolean pendingLandscapeAppend;
-    private List<CommentsResponse.CommentItem> pendingStickyComments;
+    private int requestGeneration = 0;
     private boolean isPortraitCommentsRequested = false;
-    
+
+    // Кэш загруженных страниц и предварительно распарсенного HTML для мгновенной синхронизации между ориентациями
+    private final List<CommentsResponse.CommentItem> loadedStickyComments = new ArrayList<>();
+    private final List<CommentsResponse> loadedPageResponses = new ArrayList<>();
+    private final Map<Long, CommentHtmlProcessor.ParsedCommentContent> sharedParsedCache = new ConcurrentHashMap<>();
+    private boolean landscapeAdapterNeedsSync = false;
+    private boolean portraitAdapterNeedsSync = false;
+    private boolean isPanelAnimatingOpen = false;
+
+    // Фоновый поток с пониженным приоритетом, чтобы парсинг Jsoup/HTML не конкурировал с декодером ExoPlayer
+    private final ExecutorService commentsProcessingExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(() -> {
+            try {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
+            } catch ( Throwable ignored) {}
+            r.run();
+        }, "CommentsHtmlPreParser");
+        t.setDaemon(true);
+        return t;
+    });
+
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Runnable deferredPortraitLoadRunnable = () -> {
+        if (!isOfflineMode && !isCommentsDisabledInPlayer() && isPortraitOrientation()) {
+            triggerInitialLoadIfNeeded();
+        }
+    };
+    private final Runnable panelOpenFallbackRunnable = () -> {
+        if (isCommentsVisible && isPanelAnimatingOpen) {
+            isPanelAnimatingOpen = false;
+            syncOrLoadLandscapeComments();
+        }
+    };
+
     // Контекст и сервисы
-    private Context context;
-    private ApiService apiService;
+    private final Context context;
+    private final ApiService apiService;
     private EpisodesListResponse.EpisodeItem currentEpisode;
-    
+
     // Callback интерфейсы
     public interface CommentsVisibilityCallback {
         void onCommentsVisibilityChanged(boolean isVisible);
     }
-    
+
     public interface CommentsDataCallback {
         void onCommentsLoaded(List<CommentsResponse.CommentItem> comments);
         void onCommentsError(String error);
     }
-    
+
+    public interface CommentsSettingsCallback {
+        void onCommentsInPlayerToggled(boolean disabled);
+        void onRepliesLimitChanged(int limit);
+    }
+
     private CommentsVisibilityCallback visibilityCallback;
     private CommentsDataCallback dataCallback;
-    
-    /**
-     * Конструктор CommentsManager
-     * @param context Контекст приложения
-     * @param apiService Сервис для API запросов
-     */
+    private CommentsSettingsCallback settingsCallback;
+
     public CommentsManager(Context context, ApiService apiService) {
         this.context = context;
         this.apiService = apiService;
+        this.sharedCommentViewPool.setMaxRecycledViews(CommentsAdapter.DisplayItem.TYPE_COMMENT, 20);
+        this.sharedCommentViewPool.setMaxRecycledViews(CommentsAdapter.DisplayItem.TYPE_SHOW_MORE, 8);
     }
-    
-    /**
-     * Инициализация UI компонентов комментариев
-     * @param commentsPanel Панель комментариев
-     * @param closeCommentsButton Кнопка закрытия
-     * @param commentsRecyclerView RecyclerView для списка комментариев
-     * @param commentsLoadingOverlay Индикатор загрузки
-     * @param commentsButton Кнопка открытия комментариев
-     * @param commentsOptionsButton Кнопка опций сортировки
-     * @param menuOverlay Overlay для закрытия по клику вне панели
-     * @param emptyCommentsText Текст для отображения когда комментариев нет
-     */
+
+    private boolean isPortraitOrientation() {
+        return context != null
+                && context.getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
+    }
+
     public void initializeViews(View commentsPanel, ImageButton closeCommentsButton,
-                               RecyclerView commentsRecyclerView, View commentsLoadingOverlay,
-                               ImageButton commentsButton, View commentsOptionsButton,
-                               View menuOverlay, TextView emptyCommentsText) {
+                                RecyclerView commentsRecyclerView, View commentsLoadingOverlay,
+                                ImageButton commentsButton, View commentsOptionsButton,
+                                View menuOverlay, TextView emptyCommentsText) {
         this.commentsPanel = commentsPanel;
         this.closeCommentsButton = closeCommentsButton;
         this.commentsRecyclerView = commentsRecyclerView;
@@ -189,33 +218,23 @@ public class CommentsManager {
         this.commentsOptionsButton = commentsOptionsButton;
         this.menuOverlay = menuOverlay;
         this.emptyCommentsText = emptyCommentsText;
-        
+
         setupCommentsViews();
         initializePanelPosition();
         if (isCommentsDisabledInPlayer()) {
             applyCommentsDisabledState(true);
         }
     }
-    
-    /**
-     * Настройка обработчиков событий для комментариев
-     */
+
     private void setupCommentsViews() {
         if (closeCommentsButton != null) {
             closeCommentsButton.setOnClickListener(v -> hideCommentsPanel());
         }
-        
+
         if (commentsButton != null) {
-            commentsButton.setOnClickListener(v -> {
-                Log.d("CommentsManager", "Comments button clicked!");
-                toggleCommentsPanel();
-            });
-            Log.d("CommentsManager", "Comments button initialized successfully");
-        } else {
-            Log.w("CommentsManager", "Comments button is null!");
+            commentsButton.setOnClickListener(v -> toggleCommentsPanel());
         }
-        
-        // Настройка текста для пустого состояния
+
         if (emptyCommentsText != null) {
             emptyCommentsText.setText("Комментариев пока нет");
             emptyCommentsText.setVisibility(View.GONE);
@@ -228,7 +247,7 @@ public class CommentsManager {
             if (btnRetryComments != null) {
                 btnRetryComments.setOnClickListener(v -> {
                     if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
-                    loadCommentsPage(commentsCurrentPage > 0 ? commentsCurrentPage : 1);
+                    loadCommentsPage(1);
                 });
             }
 
@@ -239,7 +258,7 @@ public class CommentsManager {
             btnCancelReply = commentsPanel.findViewById(R.id.btnCancelReply);
 
             if (commentInputField != null) {
-                com.example.animelib.util.CommentFormattingHelper.attachFormattingTextWatcher(commentInputField);
+                CommentFormattingHelper.attachFormattingTextWatcher(commentInputField);
             }
 
             View btnBold = commentsPanel.findViewById(R.id.btnFormatBold);
@@ -249,12 +268,12 @@ public class CommentsManager {
             View btnSpoiler = commentsPanel.findViewById(R.id.btnFormatSpoiler);
             View btnQuote = commentsPanel.findViewById(R.id.btnFormatQuote);
 
-            if (btnBold != null) btnBold.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(commentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.BOLD));
-            if (btnItalic != null) btnItalic.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(commentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.ITALIC));
-            if (btnUnderline != null) btnUnderline.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(commentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.UNDERLINE));
-            if (btnStrike != null) btnStrike.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(commentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.STRIKE));
-            if (btnSpoiler != null) btnSpoiler.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(commentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.SPOILER));
-            if (btnQuote != null) btnQuote.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(commentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.QUOTE));
+            if (btnBold != null) btnBold.setOnClickListener(v -> CommentFormattingHelper.applyFormat(commentInputField, CommentFormattingHelper.FormatType.BOLD));
+            if (btnItalic != null) btnItalic.setOnClickListener(v -> CommentFormattingHelper.applyFormat(commentInputField, CommentFormattingHelper.FormatType.ITALIC));
+            if (btnUnderline != null) btnUnderline.setOnClickListener(v -> CommentFormattingHelper.applyFormat(commentInputField, CommentFormattingHelper.FormatType.UNDERLINE));
+            if (btnStrike != null) btnStrike.setOnClickListener(v -> CommentFormattingHelper.applyFormat(commentInputField, CommentFormattingHelper.FormatType.STRIKE));
+            if (btnSpoiler != null) btnSpoiler.setOnClickListener(v -> CommentFormattingHelper.applyFormat(commentInputField, CommentFormattingHelper.FormatType.SPOILER));
+            if (btnQuote != null) btnQuote.setOnClickListener(v -> CommentFormattingHelper.applyFormat(commentInputField, CommentFormattingHelper.FormatType.QUOTE));
 
             if (btnSendComment != null) {
                 btnSendComment.setOnClickListener(v -> sendCommentFromInput(commentInputField));
@@ -277,37 +296,9 @@ public class CommentsManager {
                 btnLandscapeEnableComments.setOnClickListener(v -> enableCommentsInPlayer());
             }
 
-            // Pagination Controls (Landscape / Side Panel Carousel)
-            commentsPaginationBar = commentsPanel.findViewById(R.id.commentsPaginationBar);
-            btnPaginationPrev = commentsPanel.findViewById(R.id.btnPaginationPrev);
-            flPaginationContainer = commentsPanel.findViewById(R.id.flPaginationContainer);
-            rvPaginationPages = commentsPanel.findViewById(R.id.rvPaginationPages);
-            vPaginationGradientLeft = commentsPanel.findViewById(R.id.vPaginationGradientLeft);
-            vPaginationGradientRight = commentsPanel.findViewById(R.id.vPaginationGradientRight);
-            btnPaginationNext = commentsPanel.findViewById(R.id.btnPaginationNext);
-
-            if (rvPaginationPages != null) {
-                rvPaginationPages.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false));
-                landscapePagesAdapter = new com.example.animelib.adapters.CommentPagesAdapter(this::goToPage);
-                rvPaginationPages.setAdapter(landscapePagesAdapter);
-                rvPaginationPages.addOnScrollListener(new RecyclerView.OnScrollListener() {
-                    @Override
-                    public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
-                        updateGradients(recyclerView, vPaginationGradientLeft, vPaginationGradientRight);
-                    }
-                });
-            }
-
-            if (btnPaginationPrev != null) {
-                btnPaginationPrev.setOnClickListener(v -> goToPage(commentsCurrentPage - 1));
-            }
-            if (btnPaginationNext != null) {
-                btnPaginationNext.setOnClickListener(v -> goToPage(commentsCurrentPage + 1));
-            }
-
             if (commentInputField != null) {
                 commentInputField.setOnEditorActionListener((v, actionId, event) -> {
-                    if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) {
+                    if (actionId == EditorInfo.IME_ACTION_SEND) {
                         sendCommentFromInput(commentInputField);
                         return true;
                     }
@@ -315,26 +306,17 @@ public class CommentsManager {
                 });
             }
         }
-        
+
         setupCommentsOptionsButton();
         setupCommentsRecyclerView();
     }
-    
-    /**
-     * Инициализация начальной позиции панели комментариев
-     */
+
     private void initializePanelPosition() {
-        if (commentsPanel == null) return;
-        
-        // Устанавливаем начальную позицию панели (за экраном справа)
+        if (commentsPanel == null || context == null) return;
         int panelWidth = (int) (commentsPanelWidth * context.getResources().getDisplayMetrics().density);
         commentsPanel.setTranslationX(panelWidth);
-        Log.d("CommentsManager", "Initialized comments panel position: " + panelWidth);
     }
-    
-    /**
-     * Обновить текст на кнопке сортировки комментариев
-     */
+
     public void updateSortButtonText() {
         String label = "asc".equals(commentsSortType) ? "Старые" : ("votes_up".equals(commentsSortType) ? "Популярные" : "Новые");
         if (commentsOptionsButton != null) {
@@ -348,18 +330,12 @@ public class CommentsManager {
         }
     }
 
-    /**
-     * Настройка кнопки опций сортировки комментариев
-     */
     private void setupCommentsOptionsButton() {
         if (commentsOptionsButton == null) return;
         updateSortButtonText();
         commentsOptionsButton.setOnClickListener(v -> showSortOptionsDialog());
     }
-    
-    /**
-     * Показать выпадающий список выбора сортировки комментариев (PopupWindow)
-     */
+
     public void showSortOptionsDialog() {
         showSortOptionsDialog(commentsOptionsButton);
     }
@@ -368,11 +344,10 @@ public class CommentsManager {
         View target = anchorView != null ? anchorView : commentsOptionsButton;
         if (target == null || context == null) return;
         if (!target.isAttachedToWindow()) return;
-        if (context instanceof android.app.Activity) {
-            android.app.Activity activity = (android.app.Activity) context;
+        if (context instanceof Activity) {
+            Activity activity = (Activity) context;
             if (activity.isFinishing() || activity.isDestroyed()) return;
         }
-        Log.d("CommentsManager", "Showing sort options popup menu");
 
         try {
             View popupView = LayoutInflater.from(context).inflate(R.layout.popup_comments_sort, null);
@@ -387,7 +362,7 @@ public class CommentsManager {
             popupWindow.setOutsideTouchable(true);
             popupWindow.setFocusable(true);
             popupWindow.setElevation(dpToPx(12));
-            popupWindow.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+            popupWindow.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
 
             TextView itemNew = popupView.findViewById(R.id.item_sort_new);
             TextView itemOld = popupView.findViewById(R.id.item_sort_old);
@@ -407,45 +382,36 @@ public class CommentsManager {
 
             if (itemNew != null) {
                 itemNew.setOnClickListener(v -> {
-                    try {
-                        popupWindow.dismiss();
-                    } catch (Exception ignored) {}
+                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
                     changeCommentsSort("desc");
                 });
             }
 
             if (itemOld != null) {
                 itemOld.setOnClickListener(v -> {
-                    try {
-                        popupWindow.dismiss();
-                    } catch (Exception ignored) {}
+                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
                     changeCommentsSort("asc");
                 });
             }
 
             if (itemPopular != null) {
                 itemPopular.setOnClickListener(v -> {
-                    try {
-                        popupWindow.dismiss();
-                    } catch (Exception ignored) {}
+                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
                     changeCommentsSort("votes_up");
                 });
             }
 
-            popupWindow.showAsDropDown(anchorView != null ? anchorView : commentsOptionsButton, 0, dpToPx(6));
+            popupWindow.showAsDropDown(target, 0, dpToPx(6));
         } catch (Exception e) {
             Log.e(TAG, "Error showing sort options popup", e);
         }
     }
 
-    /**
-     * Показать выпадающее меню действий с комментарием (Удалить / Пожаловаться)
-     */
     public void showCommentActionsPopup(View anchorView, CommentsResponse.CommentItem comment) {
         if (anchorView == null || comment == null || context == null) return;
         if (!anchorView.isAttachedToWindow()) return;
-        if (context instanceof android.app.Activity) {
-            android.app.Activity activity = (android.app.Activity) context;
+        if (context instanceof Activity) {
+            Activity activity = (Activity) context;
             if (activity.isFinishing() || activity.isDestroyed()) return;
         }
 
@@ -462,7 +428,7 @@ public class CommentsManager {
             popupWindow.setOutsideTouchable(true);
             popupWindow.setFocusable(true);
             popupWindow.setElevation(dpToPx(12));
-            popupWindow.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+            popupWindow.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
 
             View itemEdit = popupView.findViewById(R.id.item_comment_edit);
             View itemDelete = popupView.findViewById(R.id.item_comment_delete);
@@ -475,14 +441,12 @@ public class CommentsManager {
 
             if (itemCopy != null) {
                 itemCopy.setOnClickListener(v -> {
+                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
                     try {
-                        popupWindow.dismiss();
-                    } catch (Exception ignored) {}
-                    try {
-                        android.content.ClipboardManager clipboard = (android.content.ClipboardManager) context.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                        ClipboardManager clipboard = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
                         String rawComment = comment.getComment() != null ? comment.getComment() : "";
-                        String plainText = android.text.Html.fromHtml(rawComment, android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim();
-                        android.content.ClipData clip = android.content.ClipData.newPlainText("Комментарий", plainText);
+                        String plainText = Html.fromHtml(rawComment, Html.FROM_HTML_MODE_LEGACY).toString().trim();
+                        ClipData clip = ClipData.newPlainText("Комментарий", plainText);
                         if (clipboard != null) {
                             clipboard.setPrimaryClip(clip);
                             CustomToast.showSuccess(context, "Комментарий скопирован в буфер обмена");
@@ -496,9 +460,7 @@ public class CommentsManager {
             if (itemEdit != null) {
                 itemEdit.setVisibility(isOwn ? View.VISIBLE : View.GONE);
                 itemEdit.setOnClickListener(v -> {
-                    try {
-                        popupWindow.dismiss();
-                    } catch (Exception ignored) {}
+                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
                     startEditMode(comment);
                 });
             }
@@ -506,18 +468,14 @@ public class CommentsManager {
             if (itemDelete != null) {
                 itemDelete.setVisibility(isOwn ? View.VISIBLE : View.GONE);
                 itemDelete.setOnClickListener(v -> {
-                    try {
-                        popupWindow.dismiss();
-                    } catch (Exception ignored) {}
+                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
                     confirmAndDeleteComment(comment);
                 });
             }
 
             if (itemReport != null) {
                 itemReport.setOnClickListener(v -> {
-                    try {
-                        popupWindow.dismiss();
-                    } catch (Exception ignored) {}
+                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
                     CustomToast.showSuccess(context, "Жалоба отправлена");
                 });
             }
@@ -526,9 +484,7 @@ public class CommentsManager {
                 boolean canIgnore = isAuth && !isOwn && comment.getUser() != null;
                 itemIgnore.setVisibility(canIgnore ? View.VISIBLE : View.GONE);
                 itemIgnore.setOnClickListener(v -> {
-                    try {
-                        popupWindow.dismiss();
-                    } catch (Exception ignored) {}
+                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
                     showIgnoreUserDialog(comment);
                 });
             }
@@ -539,18 +495,15 @@ public class CommentsManager {
         }
     }
 
-    /**
-     * Диалог добавления пользователя в игнор-лист
-     */
     public void showIgnoreUserDialog(CommentsResponse.CommentItem comment) {
         if (comment == null || comment.getUser() == null || context == null) return;
 
         try {
             View dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_ignore_user, null);
-            android.widget.ImageButton btnClose = dialogView.findViewById(R.id.btnCloseIgnoreDialog);
-            android.widget.EditText etComment = dialogView.findViewById(R.id.etIgnoreComment);
+            ImageButton btnClose = dialogView.findViewById(R.id.btnCloseIgnoreDialog);
+            EditText etComment = dialogView.findViewById(R.id.etIgnoreComment);
             View btnToggleInfo = dialogView.findViewById(R.id.btnToggleIgnoreInfo);
-            android.widget.ImageView ivChevron = dialogView.findViewById(R.id.ivIgnoreInfoChevron);
+            ImageView ivChevron = dialogView.findViewById(R.id.ivIgnoreInfoChevron);
             View infoContent = dialogView.findViewById(R.id.ignoreInfoContentContainer);
             View btnCancel = dialogView.findViewById(R.id.btnCancelIgnore);
             View btnConfirm = dialogView.findViewById(R.id.btnConfirmIgnore);
@@ -559,32 +512,24 @@ public class CommentsManager {
                 btnToggleInfo.setOnClickListener(v -> {
                     if (infoContent.getVisibility() == View.VISIBLE) {
                         infoContent.setVisibility(View.GONE);
-                        if (ivChevron != null) {
-                            ivChevron.setImageResource(R.drawable.ic_chevron_down);
-                        }
+                        if (ivChevron != null) ivChevron.setImageResource(R.drawable.ic_chevron_down);
                     } else {
                         infoContent.setVisibility(View.VISIBLE);
-                        if (ivChevron != null) {
-                            ivChevron.setImageResource(R.drawable.ic_chevron_up);
-                        }
+                        if (ivChevron != null) ivChevron.setImageResource(R.drawable.ic_chevron_up);
                     }
                 });
             }
 
-            androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(context);
+            AlertDialog.Builder builder = new AlertDialog.Builder(context);
             builder.setView(dialogView);
-            androidx.appcompat.app.AlertDialog dialog = builder.create();
+            AlertDialog dialog = builder.create();
 
             if (dialog.getWindow() != null) {
-                dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+                dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             }
 
-            if (btnClose != null) {
-                btnClose.setOnClickListener(v -> dialog.dismiss());
-            }
-            if (btnCancel != null) {
-                btnCancel.setOnClickListener(v -> dialog.dismiss());
-            }
+            if (btnClose != null) btnClose.setOnClickListener(v -> dialog.dismiss());
+            if (btnCancel != null) btnCancel.setOnClickListener(v -> dialog.dismiss());
 
             if (btnConfirm != null) {
                 btnConfirm.setOnClickListener(v -> {
@@ -649,9 +594,6 @@ public class CommentsManager {
         }
     }
 
-    /**
-     * Диалог подтверждения и удаление комментария
-     */
     public void confirmAndDeleteComment(CommentsResponse.CommentItem comment) {
         if (comment == null || context == null) return;
 
@@ -671,25 +613,21 @@ public class CommentsManager {
                     tvCommentAuthor.setVisibility(View.VISIBLE);
                 }
                 if (tvCommentSnippet != null) {
-                    CharSequence cleanText = android.text.Html.fromHtml(comment.getComment(), android.text.Html.FROM_HTML_MODE_LEGACY);
+                    CharSequence cleanText = Html.fromHtml(comment.getComment(), Html.FROM_HTML_MODE_LEGACY);
                     tvCommentSnippet.setText(cleanText.toString().trim());
                 }
             }
 
-            androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(context);
+            AlertDialog.Builder builder = new AlertDialog.Builder(context);
             builder.setView(dialogView);
-            androidx.appcompat.app.AlertDialog dialog = builder.create();
+            AlertDialog dialog = builder.create();
 
             if (dialog.getWindow() != null) {
-                dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+                dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             }
 
-            if (btnClose != null) {
-                btnClose.setOnClickListener(v -> dialog.dismiss());
-            }
-            if (btnCancel != null) {
-                btnCancel.setOnClickListener(v -> dialog.dismiss());
-            }
+            if (btnClose != null) btnClose.setOnClickListener(v -> dialog.dismiss());
+            if (btnCancel != null) btnCancel.setOnClickListener(v -> dialog.dismiss());
             if (btnDelete != null) {
                 btnDelete.setOnClickListener(v -> {
                     dialog.dismiss();
@@ -699,12 +637,7 @@ public class CommentsManager {
                             public void onSuccess() {
                                 safeRunOnUiThread(() -> {
                                     CustomToast.showSuccess(context, "Комментарий удален");
-                                    if (commentsAdapter != null) {
-                                        commentsAdapter.removeComment(comment.getId());
-                                    }
-                                    if (portraitCommentsAdapter != null) {
-                                        portraitCommentsAdapter.removeComment(comment.getId());
-                                    }
+                                    removeCommentFromMemoryAndAdapters(comment.getId());
                                 });
                             }
 
@@ -723,9 +656,22 @@ public class CommentsManager {
         }
     }
 
-    /**
-     * Проверка, принадлежит ли комментарий текущему пользователю
-     */
+    private void removeCommentFromMemoryAndAdapters(long commentId) {
+        sharedParsedCache.remove(commentId);
+        for (int i = loadedStickyComments.size() - 1; i >= 0; i--) {
+            if (loadedStickyComments.get(i).getId() == commentId) {
+                loadedStickyComments.remove(i);
+            }
+        }
+        if (commentsAdapter != null) {
+            commentsAdapter.removeComment(commentId);
+        }
+        if (portraitCommentsAdapter != null) {
+            portraitCommentsAdapter.removeComment(commentId);
+        }
+        updateEmptyCommentsState();
+    }
+
     public boolean isOwnComment(CommentsResponse.CommentItem comment) {
         if (comment == null || comment.getUser() == null) return false;
         long commentUserId = comment.getUser().getId();
@@ -742,7 +688,6 @@ public class CommentsManager {
             if (dbManager != null) {
                 TokenEntity token = dbManager.getToken();
                 if (token != null) {
-                    // 1. Проверка по userId из TokenEntity (сохраненного id из auth)
                     String savedUserId = token.getUserId();
                     if (savedUserId != null && !savedUserId.trim().isEmpty()) {
                         try {
@@ -755,7 +700,6 @@ public class CommentsManager {
                         }
                     }
 
-                    // 2. Извлечение userId из JWT access_token
                     if (token.getAccessToken() != null && !token.getAccessToken().trim().isEmpty()) {
                         String extractedId = ApiService.extractUserIdFromToken(token.getAccessToken());
                         if (extractedId != null && !extractedId.trim().isEmpty()) {
@@ -770,9 +714,9 @@ public class CommentsManager {
                         }
                     }
 
-                    // 3. Проверка по username из auth
                     String savedUsername = token.getUsername();
-                    if (savedUsername != null && !savedUsername.trim().isEmpty() && commentUsername != null && !commentUsername.trim().isEmpty()) {
+                    if (savedUsername != null && !savedUsername.trim().isEmpty()
+                            && commentUsername != null && !commentUsername.trim().isEmpty()) {
                         if (savedUsername.trim().equalsIgnoreCase(commentUsername.trim())) {
                             return true;
                         }
@@ -788,29 +732,24 @@ public class CommentsManager {
 
     private void resetPopupItemStyle(TextView textView) {
         if (textView == null) return;
-        textView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-        textView.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.accent_text_color));
+        textView.setBackgroundColor(Color.TRANSPARENT);
+        textView.setTextColor(ContextCompat.getColor(context, R.color.accent_text_color));
     }
 
     private void setPopupItemSelectedStyle(TextView textView) {
         if (textView == null) return;
         textView.setBackgroundResource(R.drawable.bg_sort_popup_item_selected);
-        textView.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.sort_popup_item_selected_text));
+        textView.setTextColor(ContextCompat.getColor(context, R.color.sort_popup_item_selected_text));
     }
-    
-    /**
-     * Вспомогательный метод для преобразования dp в px
-     */
+
     private int dpToPx(int dp) {
+        if (context == null) return dp;
         return (int) (dp * context.getResources().getDisplayMetrics().density);
     }
-    
-    /**
-     * Настройка RecyclerView для комментариев
-     */
+
     private void setupCommentsRecyclerView() {
         if (commentsRecyclerView == null) return;
-        
+
         commentsAdapter = new CommentsAdapter();
         commentsAdapter.setCommentActionListener(new CommentsAdapter.CommentActionListener() {
             @Override
@@ -831,7 +770,7 @@ public class CommentsManager {
             }
 
             @Override
-            public void onSendInlineReply(CommentsResponse.CommentItem comment, CharSequence rawText, android.widget.EditText inputField) {
+            public void onSendInlineReply(CommentsResponse.CommentItem comment, CharSequence rawText, EditText inputField) {
                 sendInlineReply(comment, rawText, inputField);
             }
 
@@ -845,59 +784,131 @@ public class CommentsManager {
                 showCommentActionsPopup(anchorView, comment);
             }
         });
-        commentsRecyclerView.setLayoutManager(new LinearLayoutManager(context));
+
+        LinearLayoutManager layoutManager = new LinearLayoutManager(context);
+        layoutManager.setInitialPrefetchItemCount(6);
+        commentsRecyclerView.setLayoutManager(layoutManager);
+        commentsRecyclerView.setRecycledViewPool(sharedCommentViewPool);
+        commentsRecyclerView.setHasFixedSize(true);
+        commentsRecyclerView.setItemViewCacheSize(12);
+        commentsRecyclerView.setItemAnimator(null);
+
         commentsAdapter.setRepliesLimit(loadSavedRepliesLimit());
-        commentsRecyclerView.setItemAnimator(new androidx.recyclerview.widget.DefaultItemAnimator());
+        commentsAdapter.setOnBatchCompletedListener(() -> {
+            if (isCommentsVisible && !isPortraitOrientation()) {
+                checkLandscapeInfiniteScroll(true);
+            }
+        });
         commentsRecyclerView.setAdapter(commentsAdapter);
+
+        commentsRecyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                if (dy > 0) {
+                    checkLandscapeInfiniteScroll(false);
+                }
+            }
+        });
     }
-    
+
+    private void checkLandscapeInfiniteScroll(boolean allowFillViewportCheck) {
+        if (isOfflineMode || isCommentsDisabledInPlayer() || isLoadingComments || !commentsHasNextPage || currentEpisode == null) {
+            return;
+        }
+        if (commentsRecyclerView == null || commentsAdapter == null || commentsAdapter.isPendingInsertion()) {
+            return;
+        }
+        if (commentsAdapter.getCommentDisplayCount() == 0) {
+            return;
+        }
+        RecyclerView.LayoutManager rawLm = commentsRecyclerView.getLayoutManager();
+        if (!(rawLm instanceof LinearLayoutManager)) {
+            return;
+        }
+        LinearLayoutManager lm = (LinearLayoutManager) rawLm;
+        int totalCount = lm.getItemCount();
+        int lastVisible = lm.findLastVisibleItemPosition();
+        if (lastVisible == RecyclerView.NO_POSITION) {
+            return;
+        }
+        if (lastVisible >= totalCount - LANDSCAPE_PREFETCH_THRESHOLD
+                || (allowFillViewportCheck && !commentsRecyclerView.canScrollVertically(1))) {
+            loadNextCommentsPageIfAvailable();
+        }
+    }
+
     /**
-     * Переключение видимости панели комментариев
+     * Вызывается при прокрутке портретного NestedScrollView для ленивой и постепенной догрузки комментариев.
      */
+    public void onPortraitScrollChanged(NestedScrollView scrollView, int scrollY, int oldScrollY) {
+        if (isOfflineMode || isCommentsDisabledInPlayer() || !isPortraitOrientation()) {
+            return;
+        }
+
+        if (scrollY >= dpToPx(80) && !isPortraitCommentsRequested) {
+            mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
+            loadCommentsForPortraitIfNeeded();
+            return;
+        }
+
+        if (scrollY <= oldScrollY) {
+            return;
+        }
+
+        if (isLoadingComments || !commentsHasNextPage || currentEpisode == null) {
+            return;
+        }
+        if (portraitCommentsAdapter == null || portraitCommentsAdapter.isPendingInsertion()) {
+            return;
+        }
+        if (portraitCommentsAdapter.getCommentDisplayCount() == 0) {
+            return;
+        }
+
+        if (scrollView != null && scrollView.getChildCount() > 0) {
+            View content = scrollView.getChildAt(0);
+            int remainingPx = content.getMeasuredHeight() - (scrollY + scrollView.getMeasuredHeight());
+            if (remainingPx <= dpToPx(PORTRAIT_SCROLL_THRESHOLD_DP)) {
+                loadNextCommentsPageIfAvailable();
+            }
+        }
+    }
+
     public void toggleCommentsPanel() {
         if (isOfflineMode) {
             CustomToast.showInfo(context, "Комментарии недоступны в офлайн режиме");
             return;
         }
-        Log.d("CommentsManager", "toggleCommentsPanel called, isCommentsVisible: " + isCommentsVisible);
         if (isCommentsVisible) {
             hideCommentsPanel();
         } else {
             showCommentsPanel();
         }
     }
-    
-    /**
-     * Показать панель комментариев
-     */
+
     public void showCommentsPanel() {
         if (isOfflineMode) {
             CustomToast.showInfo(context, "Комментарии недоступны в офлайн режиме");
             return;
         }
-        Log.d("CommentsManager", "showCommentsPanel called, commentsPanel: " + (commentsPanel != null) + ", isCommentsVisible: " + isCommentsVisible);
         if (isCommentsVisible) {
-            Log.w("CommentsManager", "Comments panel already visible");
             return;
         }
-        
+
         isCommentsVisible = true;
-        
-        // Use VideoPlayerActivity's method to open draggable panel
-        if (context instanceof com.example.animelib.VideoPlayerActivity) {
-            ((com.example.animelib.VideoPlayerActivity) context).openCommentsPanel();
+        isPanelAnimatingOpen = true;
+
+        // Запускаем анимацию открытия панели ДО вставки View в RecyclerView,
+        // чтобы трансформация playerContainer прошла плавно без просадки FPS.
+        if (context instanceof VideoPlayerActivity) {
+            ((VideoPlayerActivity) context).openCommentsPanel();
+            mainHandler.removeCallbacks(panelOpenFallbackRunnable);
+            mainHandler.postDelayed(panelOpenFallbackRunnable, 240L);
+        } else {
+            isPanelAnimatingOpen = false;
+            syncOrLoadLandscapeComments();
         }
 
-        applyPendingLandscapeComments();
-        
-        // Загрузить первую страницу если комментарии пустые
-        if (!isLoadingComments && (commentsAdapter == null || commentsAdapter.getItemCount() == 0)) {
-            commentsCurrentPage = 1;
-            commentsHasNextPage = true;
-            loadCommentsPage(1);
-        }
-        
-        // Уведомить о изменении видимости
         if (visibilityCallback != null) {
             visibilityCallback.onCommentsVisibilityChanged(true);
         }
@@ -905,323 +916,440 @@ public class CommentsManager {
 
     public void onPanelDragStart() {
         isCommentsVisible = true;
-        applyPendingLandscapeComments();
+        isPanelAnimatingOpen = true;
     }
 
     public void onPanelOpened() {
+        mainHandler.removeCallbacks(panelOpenFallbackRunnable);
         isCommentsVisible = true;
-        applyPendingLandscapeComments();
-        if (!isLoadingComments && (commentsAdapter == null || commentsAdapter.getItemCount() == 0)) {
-            commentsCurrentPage = 1;
-            commentsHasNextPage = true;
-            loadCommentsPage(1);
-        }
+        isPanelAnimatingOpen = false;
+        syncOrLoadLandscapeComments();
         if (visibilityCallback != null) {
             visibilityCallback.onCommentsVisibilityChanged(true);
         }
     }
 
-    private void applyPendingLandscapeComments() {
+    private void syncOrLoadLandscapeComments() {
+        if (isOfflineMode) {
+            applyOfflineViewsState();
+            return;
+        }
         if (isCommentsDisabledInPlayer()) {
             applyCommentsDisabledState(true);
             return;
         }
-        if (pendingStickyComments != null && commentsAdapter != null) {
-            commentsAdapter.setStickyComments(pendingStickyComments);
-            pendingStickyComments = null;
+        if (commentsAdapter == null) return;
+
+        if (landscapeAdapterNeedsSync && !loadedPageResponses.isEmpty()) {
+            landscapeAdapterNeedsSync = false;
+            syncCachedPagesIntoAdapter(commentsAdapter);
+            hideLoadingOverlay(commentsLoadingOverlay);
+            updateEmptyCommentsState();
+            return;
         }
-        if (pendingLandscapeCommentsResponse != null && commentsAdapter != null) {
-            commentsAdapter.setPageResponse(pendingLandscapeCommentsResponse, commentsCurrentPage);
-            pendingLandscapeCommentsResponse = null;
+
+        if (!isLoadingComments && !commentsAdapter.hasAnySourceComments() && loadedPageResponses.isEmpty()) {
+            loadCommentsPage(1);
         }
-        updatePaginationUI();
     }
-    
+
+    private void syncCachedPagesIntoAdapter(CommentsAdapter targetAdapter) {
+        if (targetAdapter == null) return;
+        targetAdapter.putParsedContentMap(sharedParsedCache);
+        if (loadedPageResponses.isEmpty()) {
+            if (!loadedStickyComments.isEmpty()) {
+                targetAdapter.setStickyComments(loadedStickyComments);
+            }
+            return;
+        }
+        targetAdapter.setInitialComments(loadedStickyComments, loadedPageResponses.get(0));
+        for (int i = 1; i < loadedPageResponses.size(); i++) {
+            targetAdapter.appendCommentsPage(loadedPageResponses.get(i));
+        }
+    }
+
     public void forceHideCommentsPanel() {
+        mainHandler.removeCallbacks(panelOpenFallbackRunnable);
+        isPanelAnimatingOpen = false;
         isCommentsVisible = false;
         if (visibilityCallback != null) {
             visibilityCallback.onCommentsVisibilityChanged(false);
         }
     }
 
-    /**
-     * Скрыть панель комментариев
-     */
     public void hideCommentsPanel() {
         if (!isCommentsVisible) return;
-        
+        mainHandler.removeCallbacks(panelOpenFallbackRunnable);
+        isPanelAnimatingOpen = false;
         isCommentsVisible = false;
-        
-        // Use VideoPlayerActivity's method to close draggable panel
-        if (context instanceof com.example.animelib.VideoPlayerActivity) {
-            ((com.example.animelib.VideoPlayerActivity) context).closeCommentsPanel();
+
+        if (context instanceof VideoPlayerActivity) {
+            ((VideoPlayerActivity) context).closeCommentsPanel();
         }
-        
-        // Уведомить о изменении видимости
+
         if (visibilityCallback != null) {
             visibilityCallback.onCommentsVisibilityChanged(false);
         }
     }
-    
+
+    private Map<Long, CommentHtmlProcessor.ParsedCommentContent> preParseCommentsBatch(
+            List<CommentsResponse.CommentItem> items,
+            int primaryColor,
+            int purpleColor) {
+        Map<Long, CommentHtmlProcessor.ParsedCommentContent> result = new HashMap<>();
+        if (items == null || items.isEmpty()) return result;
+
+        for (CommentsResponse.CommentItem item : items) {
+            if (item == null) continue;
+            String html = item.getComment() != null ? item.getComment() : "";
+            String key = CommentHtmlProcessor.computeSourceKey(html);
+            CommentHtmlProcessor.ParsedCommentContent existing = sharedParsedCache.get(item.getId());
+            if (existing != null && key.equals(existing.sourceHashKey)) {
+                result.put(item.getId(), existing);
+            } else {
+                CommentHtmlProcessor.ParsedCommentContent parsed =
+                        CommentHtmlProcessor.parseHtmlOffThread(html, primaryColor, purpleColor);
+                sharedParsedCache.put(item.getId(), parsed);
+                result.put(item.getId(), parsed);
+            }
+        }
+        return result;
+    }
+
     /**
-     * Загрузить страницу комментариев
-     * @param page Номер страницы
+     * Загрузить страницу комментариев (page == 1 — начальная загрузка; page > 1 — постепенная подгрузка при скролле).
      */
     public void loadCommentsPage(int page) {
-        if (isOfflineMode || isCommentsDisabledInPlayer() || currentEpisode == null) return;
-        
-        boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
+        if (isOfflineMode || isCommentsDisabledInPlayer() || currentEpisode == null || apiService == null) {
+            return;
+        }
+
+        final int targetPage = Math.max(1, page);
+        final boolean isInitialPage = (targetPage == 1);
+        final boolean isPortrait = isPortraitOrientation();
         if (isPortrait) {
             isPortraitCommentsRequested = true;
         }
 
         isLoadingComments = true;
-        if (commentsPaginationBar != null) commentsPaginationBar.setVisibility(View.GONE);
-        if (portraitCommentsPaginationBar != null) portraitCommentsPaginationBar.setVisibility(View.GONE);
-        showLoadingOverlay(commentsLoadingOverlay);
-        showLoadingOverlay(portraitCommentsLoadingOverlay);
-        if (commentsErrorLayout != null) {
-            commentsErrorLayout.setVisibility(View.GONE);
+        final int gen = isInitialPage ? (++requestGeneration) : requestGeneration;
+
+        if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
+        if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
+
+        if (isInitialPage) {
+            if (commentsAdapter != null) commentsAdapter.setLoadingMore(false);
+            if (portraitCommentsAdapter != null) portraitCommentsAdapter.setLoadingMore(false);
+
+            boolean landscapeEmpty = (commentsAdapter == null || commentsAdapter.getCommentDisplayCount() == 0);
+            boolean portraitEmpty = (portraitCommentsAdapter == null || portraitCommentsAdapter.getCommentDisplayCount() == 0);
+            if (landscapeEmpty) showLoadingOverlay(commentsLoadingOverlay);
+            if (portraitEmpty) showLoadingOverlay(portraitCommentsLoadingOverlay);
+        } else {
+            // При бесконечном скролле показываем компактный спиннер внизу списка вместо перекрытия экрана
+            if (isPortrait) {
+                if (portraitCommentsAdapter != null) portraitCommentsAdapter.setLoadingMore(true);
+            } else {
+                if (commentsAdapter != null) commentsAdapter.setLoadingMore(true);
+            }
         }
-        if (portraitCommentsErrorLayout != null) {
-            portraitCommentsErrorLayout.setVisibility(View.GONE);
-        }
-        
-        long episodeId = currentEpisode.getId();
-        if (page == 1) {
+
+        final int primaryTextColor = CommentHtmlProcessor.resolvePrimaryTextColor(context);
+        final int purpleColor = context != null ? ContextCompat.getColor(context, R.color.purple_primary) : 0xFF8B5CF6;
+        final long episodeId = currentEpisode.getId();
+
+        if (isInitialPage) {
+            loadedStickyComments.clear();
+            loadedPageResponses.clear();
+
             apiService.fetchStickyComments(episodeId, new ApiService.StickyCommentsCallback() {
                 @Override
                 public void onStickyCommentsReceived(List<CommentsResponse.CommentItem> stickyComments) {
-                    safeRunOnUiThread(() -> {
-                        boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
-                        if (isPortrait) {
-                            if (portraitCommentsAdapter != null) {
-                                portraitCommentsAdapter.setStickyComments(stickyComments);
+                    if (stickyComments == null || stickyComments.isEmpty()) {
+                        return;
+                    }
+                    commentsProcessingExecutor.execute(() -> {
+                        Map<Long, CommentHtmlProcessor.ParsedCommentContent> parsedSticky =
+                                preParseCommentsBatch(stickyComments, primaryTextColor, purpleColor);
+                        safeRunOnUiThread(() -> {
+                            if (gen != requestGeneration || isOfflineMode) return;
+                            loadedStickyComments.clear();
+                            for (CommentsResponse.CommentItem item : stickyComments) {
+                                if (item != null) {
+                                    item.setSticky(true);
+                                    loadedStickyComments.add(item);
+                                }
                             }
-                        } else {
-                            if (isCommentsVisible && commentsAdapter != null) {
-                                commentsAdapter.setStickyComments(stickyComments);
-                            } else {
-                                pendingStickyComments = stickyComments;
+                            if (commentsAdapter != null) commentsAdapter.putParsedContentMap(parsedSticky);
+                            if (portraitCommentsAdapter != null) portraitCommentsAdapter.putParsedContentMap(parsedSticky);
+
+                            // Если первая страница уже успела отрисоваться — добавим закреплённые сверху;
+                            // иначе они войдут единым пакетом вместе с первой страницей без двойной перерисовки!
+                            if (!loadedPageResponses.isEmpty()) {
+                                if (isPortraitOrientation()) {
+                                    if (portraitCommentsAdapter != null) {
+                                        portraitCommentsAdapter.setStickyComments(loadedStickyComments);
+                                    }
+                                    landscapeAdapterNeedsSync = true;
+                                } else {
+                                    if (isCommentsVisible && !isPanelAnimatingOpen && commentsAdapter != null) {
+                                        commentsAdapter.setStickyComments(loadedStickyComments);
+                                    } else {
+                                        landscapeAdapterNeedsSync = true;
+                                    }
+                                    portraitAdapterNeedsSync = true;
+                                }
+                                updateEmptyCommentsState();
                             }
-                        }
+                        });
                     });
                 }
- 
+
                 @Override
                 public void onError(String error) {
                     Log.d(TAG, "Sticky comments error or none: " + error);
                 }
             });
         }
-        apiService.fetchEpisodeComments(episodeId, commentsSortType, page, 
-            new ApiService.EpisodeCommentsCallback() {
-            @Override
-            public void onCommentsReceived(CommentsResponse response) {
-                // Выполняем обновление UI в главном потоке
-                safeRunOnUiThread(() -> {
-                        if (isOfflineMode) {
-                            applyOfflineViewsState();
-                            return;
-                        }
-                        hideLoadingOverlay(commentsLoadingOverlay);
-                        hideLoadingOverlay(portraitCommentsLoadingOverlay);
-                        if (commentsErrorLayout != null) {
-                            commentsErrorLayout.setVisibility(View.GONE);
-                        }
-                        if (portraitCommentsErrorLayout != null) {
-                            portraitCommentsErrorLayout.setVisibility(View.GONE);
-                        }
-                        isLoadingComments = false;
-                        
-                        if (response != null && response.getMeta() != null) {
-                            commentsHasNextPage = response.getMeta().isHas_next_page();
-                            commentsCurrentPage = response.getMeta().getPage();
-                            commentsTotalPages = response.getMeta().getTotal_pages();
-                        } else {
-                            commentsCurrentPage = page;
-                        }
 
-                        if (response != null) {
-                            boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
-                            if (isPortrait) {
-                                if (portraitCommentsAdapter != null) {
-                                    portraitCommentsAdapter.setPageResponse(response, commentsCurrentPage);
-                                }
-                            } else {
-                                if (isCommentsVisible && commentsAdapter != null) {
-                                    commentsAdapter.setPageResponse(response, commentsCurrentPage);
-                                } else {
-                                    pendingLandscapeCommentsResponse = response;
-                                    pendingLandscapeAppend = false;
-                                }
-                            }
-                            
-                            // Показываем/скрываем текст пустого состояния
-                            boolean hasComments = (portraitCommentsAdapter != null && portraitCommentsAdapter.getItemCount() > 0)
-                                    || (commentsAdapter != null && commentsAdapter.getItemCount() > 0);
-                            if (response.getData() != null) {
-                                if (response.getData().getRoot() != null && !response.getData().getRoot().isEmpty()) {
-                                    hasComments = true;
-                                }
-                                if (response.getData().getReplies() != null && !response.getData().getReplies().isEmpty()) {
-                                    hasComments = true;
-                                }
-                            }
-
-                            if (emptyCommentsText != null) {
-                                emptyCommentsText.setVisibility(hasComments ? View.GONE : View.VISIBLE);
-                            }
-                            if (portraitEmptyCommentsText != null) {
-                                portraitEmptyCommentsText.setVisibility(hasComments ? View.GONE : View.VISIBLE);
-                            }
-                            
-                            // Уведомить о загрузке данных
-                            if (dataCallback != null && response.getData() != null) {
-                                // Объединяем root и replies комментарии
-                                List<CommentsResponse.CommentItem> allComments = new ArrayList<>();
+        apiService.fetchEpisodeComments(episodeId, commentsSortType, targetPage,
+                new ApiService.EpisodeCommentsCallback() {
+                    @Override
+                    public void onCommentsReceived(CommentsResponse response) {
+                        commentsProcessingExecutor.execute(() -> {
+                            List<CommentsResponse.CommentItem> allItems = new ArrayList<>();
+                            if (response != null && response.getData() != null) {
                                 if (response.getData().getRoot() != null) {
-                                    allComments.addAll(response.getData().getRoot());
+                                    allItems.addAll(response.getData().getRoot());
                                 }
                                 if (response.getData().getReplies() != null) {
-                                    allComments.addAll(response.getData().getReplies());
+                                    allItems.addAll(response.getData().getReplies());
                                 }
-                                dataCallback.onCommentsLoaded(allComments);
                             }
-                        }
+                            Map<Long, CommentHtmlProcessor.ParsedCommentContent> parsedMap =
+                                    preParseCommentsBatch(allItems, primaryTextColor, purpleColor);
 
-                        updatePaginationUI();
-                    });
-            }
-                
-            @Override
-            public void onError(String error) {
-                safeRunOnUiThread(() -> {
-                    isLoadingComments = false;
-                    hideLoadingOverlay(commentsLoadingOverlay);
-                    hideLoadingOverlay(portraitCommentsLoadingOverlay);
-                    
-                    // Скрываем текст пустого состояния при ошибке
-                    if (emptyCommentsText != null) {
-                        emptyCommentsText.setVisibility(View.GONE);
+                            safeRunOnUiThread(() -> {
+                                if (gen != requestGeneration) {
+                                    return;
+                                }
+                                isLoadingComments = false;
+
+                                if (commentsAdapter != null) {
+                                    commentsAdapter.putParsedContentMap(parsedMap);
+                                    commentsAdapter.setLoadingMore(false);
+                                }
+                                if (portraitCommentsAdapter != null) {
+                                    portraitCommentsAdapter.putParsedContentMap(parsedMap);
+                                    portraitCommentsAdapter.setLoadingMore(false);
+                                }
+
+                                if (isOfflineMode) {
+                                    applyOfflineViewsState();
+                                    return;
+                                }
+
+                                hideLoadingOverlay(commentsLoadingOverlay);
+                                hideLoadingOverlay(portraitCommentsLoadingOverlay);
+                                if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
+                                if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
+
+                                if (response != null && response.getMeta() != null) {
+                                    commentsHasNextPage = response.getMeta().isHas_next_page();
+                                    commentsCurrentPage = response.getMeta().getPage() > 0 ? response.getMeta().getPage() : targetPage;
+                                } else {
+                                    commentsCurrentPage = targetPage;
+                                    commentsHasNextPage = false;
+                                }
+
+                                // Если сервер вернул пустую страницу при догрузке — останавливаем бесконечный скролл
+                                if (!isInitialPage && allItems.isEmpty()) {
+                                    commentsHasNextPage = false;
+                                }
+
+                                if (response != null) {
+                                    if (isInitialPage) {
+                                        loadedPageResponses.clear();
+                                    }
+                                    loadedPageResponses.add(response);
+
+                                    boolean portraitNow = isPortraitOrientation();
+                                    if (portraitNow) {
+                                        if (portraitCommentsAdapter != null) {
+                                            if (isInitialPage) {
+                                                portraitCommentsAdapter.setInitialComments(loadedStickyComments, response);
+                                            } else {
+                                                portraitCommentsAdapter.appendCommentsPage(response);
+                                            }
+                                        }
+                                        landscapeAdapterNeedsSync = true;
+                                    } else {
+                                        if (isCommentsVisible && !isPanelAnimatingOpen && commentsAdapter != null) {
+                                            if (isInitialPage) {
+                                                commentsAdapter.setInitialComments(loadedStickyComments, response);
+                                            } else {
+                                                commentsAdapter.appendCommentsPage(response);
+                                            }
+                                        } else {
+                                            landscapeAdapterNeedsSync = true;
+                                        }
+                                        portraitAdapterNeedsSync = true;
+                                    }
+
+                                    updateEmptyCommentsState();
+
+                                    if (dataCallback != null) {
+                                        dataCallback.onCommentsLoaded(allItems);
+                                    }
+                                } else {
+                                    updateEmptyCommentsState();
+                                }
+                            });
+                        });
                     }
-                    if (portraitEmptyCommentsText != null) {
-                        portraitEmptyCommentsText.setVisibility(View.GONE);
-                    }
 
-                    boolean hasComments = (portraitCommentsAdapter != null && portraitCommentsAdapter.getItemCount() > 0)
-                            || (commentsAdapter != null && commentsAdapter.getItemCount() > 0);
-
-                    if (!hasComments) {
-                        if (commentsErrorLayout != null) {
-                            if (tvCommentsErrorText != null) {
-                                tvCommentsErrorText.setText("Ошибка загрузки комментариев");
+                    @Override
+                    public void onError(String error) {
+                        safeRunOnUiThread(() -> {
+                            if (gen != requestGeneration) {
+                                return;
                             }
-                            commentsErrorLayout.setVisibility(View.VISIBLE);
-                        }
-                        if (portraitCommentsErrorLayout != null) {
-                            if (tvPortraitCommentsErrorText != null) {
-                                tvPortraitCommentsErrorText.setText("Ошибка загрузки комментариев");
+                            isLoadingComments = false;
+                            hideLoadingOverlay(commentsLoadingOverlay);
+                            hideLoadingOverlay(portraitCommentsLoadingOverlay);
+                            if (commentsAdapter != null) commentsAdapter.setLoadingMore(false);
+                            if (portraitCommentsAdapter != null) portraitCommentsAdapter.setLoadingMore(false);
+
+                            boolean hasLoadedData = !loadedPageResponses.isEmpty()
+                                    || (portraitCommentsAdapter != null && portraitCommentsAdapter.hasAnySourceComments())
+                                    || (commentsAdapter != null && commentsAdapter.hasAnySourceComments());
+
+                            if (!hasLoadedData) {
+                                if (emptyCommentsText != null) emptyCommentsText.setVisibility(View.GONE);
+                                if (portraitEmptyCommentsText != null) portraitEmptyCommentsText.setVisibility(View.GONE);
+
+                                if (commentsErrorLayout != null) {
+                                    if (tvCommentsErrorText != null) {
+                                        tvCommentsErrorText.setText("Ошибка загрузки комментариев");
+                                    }
+                                    commentsErrorLayout.setVisibility(View.VISIBLE);
+                                }
+                                if (portraitCommentsErrorLayout != null) {
+                                    if (tvPortraitCommentsErrorText != null) {
+                                        tvPortraitCommentsErrorText.setText("Ошибка загрузки комментариев");
+                                    }
+                                    portraitCommentsErrorLayout.setVisibility(View.VISIBLE);
+                                }
+                                CustomToast.showWarning(context, "Ошибка загрузки комментариев");
                             }
-                            portraitCommentsErrorLayout.setVisibility(View.VISIBLE);
-                        }
-                    }
-                    
-                    updatePaginationUI();
-                    CustomToast.showWarning(context, "Ошибка загрузки комментариев");
-                    
-                    // Уведомить об ошибке
-                    if (dataCallback != null) {
-                        dataCallback.onCommentsError(error);
+
+                            if (dataCallback != null) {
+                                dataCallback.onCommentsError(error);
+                            }
+                        });
                     }
                 });
-            }
-            });
     }
 
-    /**
-     * Сбросить состояние комментариев при смене эпизода
-     * @param reloadIfVisible Перезагрузить если панель видна
-     */
+    private void updateEmptyCommentsState() {
+        boolean hasComments = !loadedStickyComments.isEmpty();
+        if (!hasComments) {
+            for (CommentsResponse resp : loadedPageResponses) {
+                if (resp != null && resp.getData() != null) {
+                    if ((resp.getData().getRoot() != null && !resp.getData().getRoot().isEmpty())
+                            || (resp.getData().getReplies() != null && !resp.getData().getReplies().isEmpty())) {
+                        hasComments = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!hasComments) {
+            hasComments = (portraitCommentsAdapter != null && portraitCommentsAdapter.hasAnySourceComments())
+                    || (commentsAdapter != null && commentsAdapter.hasAnySourceComments());
+        }
+
+        if (!isOfflineMode && !isCommentsDisabledInPlayer() && !isLoadingComments) {
+            if (emptyCommentsText != null) {
+                emptyCommentsText.setVisibility(hasComments ? View.GONE : View.VISIBLE);
+            }
+            if (portraitEmptyCommentsText != null && isPortraitCommentsRequested) {
+                portraitEmptyCommentsText.setVisibility(hasComments ? View.GONE : View.VISIBLE);
+            }
+        }
+    }
+
     public void resetCommentsOnEpisodeChange(boolean reloadIfVisible) {
+        mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
         boolean wasPortraitRequested = isPortraitCommentsRequested;
         boolean wasLandscapeVisible = isCommentsVisible;
 
-        commentsCurrentPage = 1;
+        requestGeneration++;
+        commentsCurrentPage = 0;
         commentsHasNextPage = false;
-        commentsTotalPages = null;
         isLoadingComments = false;
         isPortraitCommentsRequested = false;
-        pendingLandscapeCommentsResponse = null;
-        pendingStickyComments = null;
-        updatePaginationUI();
-        
+        landscapeAdapterNeedsSync = false;
+        portraitAdapterNeedsSync = false;
+        loadedStickyComments.clear();
+        loadedPageResponses.clear();
+        sharedParsedCache.clear();
+
         if (commentsAdapter != null) {
             commentsAdapter.clearAll();
         }
         if (portraitCommentsAdapter != null) {
             portraitCommentsAdapter.clearAll();
         }
-        
-        // Скрываем текст пустого состояния и ошибки при сбросе
-        if (emptyCommentsText != null) {
-            emptyCommentsText.setVisibility(View.GONE);
-        }
-        if (portraitEmptyCommentsText != null) {
-            portraitEmptyCommentsText.setVisibility(View.GONE);
-        }
-        if (commentsErrorLayout != null) {
-            commentsErrorLayout.setVisibility(View.GONE);
-        }
-        if (portraitCommentsErrorLayout != null) {
-            portraitCommentsErrorLayout.setVisibility(View.GONE);
-        }
-        
-        if (reloadIfVisible) {
-            boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
-            if (isPortrait && wasPortraitRequested) {
+
+        hideLoadingOverlay(commentsLoadingOverlay);
+        hideLoadingOverlay(portraitCommentsLoadingOverlay);
+        if (emptyCommentsText != null) emptyCommentsText.setVisibility(View.GONE);
+        if (portraitEmptyCommentsText != null) portraitEmptyCommentsText.setVisibility(View.GONE);
+        if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
+        if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
+
+        if (reloadIfVisible && currentEpisode != null) {
+            if (isPortraitOrientation() && wasPortraitRequested) {
                 isPortraitCommentsRequested = true;
-                loadCommentsPage(1);
-            } else if (!isPortrait && wasLandscapeVisible) {
+                mainHandler.postDelayed(deferredPortraitLoadRunnable, INITIAL_PORTRAIT_LOAD_DELAY_MS);
+            } else if (!isPortraitOrientation() && wasLandscapeVisible && !isPanelAnimatingOpen) {
                 loadCommentsPage(1);
             }
         }
     }
 
     public boolean shouldLoadComments() {
-        if (isCommentsDisabledInPlayer()) {
+        if (isCommentsDisabledInPlayer() || isOfflineMode) {
             return false;
         }
-        boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
-        if (isPortrait) {
+        if (isPortraitOrientation()) {
             return isPortraitCommentsRequested;
         } else {
             return isCommentsVisible;
         }
     }
-    
-    /**
-     * Изменить сортировку комментариев
-     * @param sort Новый тип сортировки
-     */
+
     public void changeCommentsSort(String sort) {
         if (sort == null) return;
-        
+
         boolean changed = !sort.equals(commentsSortType);
         commentsSortType = sort;
         updateSortButtonText();
-        
+
         if (changed) {
-            boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
+            mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
+            boolean isPortrait = isPortraitOrientation();
             boolean wasLandscapeVisible = isCommentsVisible;
 
-            commentsCurrentPage = 1;
+            requestGeneration++;
+            commentsCurrentPage = 0;
             commentsHasNextPage = false;
-            commentsTotalPages = null;
             isLoadingComments = false;
-            pendingLandscapeCommentsResponse = null;
-            pendingStickyComments = null;
-            updatePaginationUI();
+            landscapeAdapterNeedsSync = false;
+            portraitAdapterNeedsSync = false;
+            loadedStickyComments.clear();
+            loadedPageResponses.clear();
 
             if (commentsAdapter != null) {
                 commentsAdapter.clearAll();
@@ -1229,18 +1357,10 @@ public class CommentsManager {
             if (portraitCommentsAdapter != null) {
                 portraitCommentsAdapter.clearAll();
             }
-            if (emptyCommentsText != null) {
-                emptyCommentsText.setVisibility(View.GONE);
-            }
-            if (portraitEmptyCommentsText != null) {
-                portraitEmptyCommentsText.setVisibility(View.GONE);
-            }
-            if (commentsErrorLayout != null) {
-                commentsErrorLayout.setVisibility(View.GONE);
-            }
-            if (portraitCommentsErrorLayout != null) {
-                portraitCommentsErrorLayout.setVisibility(View.GONE);
-            }
+            if (emptyCommentsText != null) emptyCommentsText.setVisibility(View.GONE);
+            if (portraitEmptyCommentsText != null) portraitEmptyCommentsText.setVisibility(View.GONE);
+            if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
+            if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
 
             if (isPortrait) {
                 isPortraitCommentsRequested = true;
@@ -1250,55 +1370,45 @@ public class CommentsManager {
             }
         }
     }
-    
-    /**
-     * Установить текущий эпизод
-     * @param episode Текущий эпизод
-     */
+
     public void setCurrentEpisode(EpisodesListResponse.EpisodeItem episode) {
+        boolean episodeChanged = (this.currentEpisode == null && episode != null)
+                || (this.currentEpisode != null && episode != null && this.currentEpisode.getId() != episode.getId());
         this.currentEpisode = episode;
-        if (shouldLoadComments() && (portraitCommentsAdapter == null || portraitCommentsAdapter.getItemCount() == 0)) {
-            loadCommentsPage(1);
+
+        if (episode == null) return;
+
+        if (shouldLoadComments() && loadedPageResponses.isEmpty() && !isLoadingComments) {
+            if (isPortraitOrientation()) {
+                mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
+                long delay = episodeChanged ? INITIAL_PORTRAIT_LOAD_DELAY_MS : 150L;
+                mainHandler.postDelayed(deferredPortraitLoadRunnable, delay);
+            } else if (!isPanelAnimatingOpen) {
+                loadCommentsPage(1);
+            }
         }
     }
-    
-    /**
-     * Получить текущий эпизод
-     * @return Текущий эпизод
-     */
+
     public EpisodesListResponse.EpisodeItem getCurrentEpisode() {
         return currentEpisode;
     }
-    
-    /**
-     * Проверить видимость панели комментариев
-     * @return true если панель видна
-     */
+
     public boolean isCommentsVisible() {
         return isCommentsVisible;
     }
-    
-    /**
-     * Вызывается когда панель закрывается через драг
-     */
+
     public void onPanelClosedByDrag() {
-        Log.d("CommentsManager", "Panel closed by drag, updating isCommentsVisible flag");
+        mainHandler.removeCallbacks(panelOpenFallbackRunnable);
+        isPanelAnimatingOpen = false;
         isCommentsVisible = false;
     }
-    
-    /**
-     * Получить текущий тип сортировки
-     * @return Тип сортировки
-     */
+
     public String getCommentsSortType() {
         return commentsSortType;
     }
-    
-    /**
-     * Установить callback для изменения видимости
-     * @param callback Callback для видимости
-     */
-    public void setPortraitViews(RecyclerView rv, View loadingOverlay, TextView emptyText, View sortBtn, TextView tvSortText, View rulesBtn) {
+
+    public void setPortraitViews(RecyclerView rv, View loadingOverlay, TextView emptyText,
+                                 View sortBtn, TextView tvSortText, View rulesBtn) {
         this.portraitCommentsRecyclerView = rv;
         this.portraitCommentsLoadingOverlay = loadingOverlay;
         this.portraitEmptyCommentsText = emptyText;
@@ -1313,12 +1423,18 @@ public class CommentsManager {
                 if (btnPortraitRetryComments != null) {
                     btnPortraitRetryComments.setOnClickListener(v -> {
                         if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
-                        loadCommentsPage(commentsCurrentPage > 0 ? commentsCurrentPage : 1);
+                        loadCommentsPage(1);
                     });
                 }
             }
 
-            this.portraitCommentsRecyclerView.setLayoutManager(new LinearLayoutManager(context));
+            LinearLayoutManager portraitLm = new LinearLayoutManager(context);
+            this.portraitCommentsRecyclerView.setLayoutManager(portraitLm);
+            this.portraitCommentsRecyclerView.setRecycledViewPool(sharedCommentViewPool);
+            this.portraitCommentsRecyclerView.setItemViewCacheSize(10);
+            this.portraitCommentsRecyclerView.setItemAnimator(null);
+            this.portraitCommentsRecyclerView.setNestedScrollingEnabled(false);
+
             this.portraitCommentsAdapter = new CommentsAdapter();
             this.portraitCommentsAdapter.setCommentActionListener(new CommentsAdapter.CommentActionListener() {
                 @Override
@@ -1339,7 +1455,7 @@ public class CommentsManager {
                 }
 
                 @Override
-                public void onSendInlineReply(CommentsResponse.CommentItem comment, CharSequence rawText, android.widget.EditText inputField) {
+                public void onSendInlineReply(CommentsResponse.CommentItem comment, CharSequence rawText, EditText inputField) {
                     sendInlineReply(comment, rawText, inputField);
                 }
 
@@ -1354,13 +1470,27 @@ public class CommentsManager {
                 }
             });
             this.portraitCommentsAdapter.setRepliesLimit(loadSavedRepliesLimit());
-            this.portraitCommentsRecyclerView.setItemAnimator(new androidx.recyclerview.widget.DefaultItemAnimator());
+            this.portraitCommentsAdapter.setOnBatchCompletedListener(() -> {
+                if (!isPortraitOrientation() || isOfflineMode || isCommentsDisabledInPlayer()) return;
+                if (isLoadingComments || !commentsHasNextPage || currentEpisode == null) return;
+                if (portraitScrollView != null && portraitScrollView.getScrollY() > 0 && portraitScrollView.getChildCount() > 0) {
+                    View content = portraitScrollView.getChildAt(0);
+                    int remainingPx = content.getMeasuredHeight() - (portraitScrollView.getScrollY() + portraitScrollView.getMeasuredHeight());
+                    if (remainingPx <= dpToPx(PORTRAIT_SCROLL_THRESHOLD_DP)) {
+                        loadNextCommentsPageIfAvailable();
+                    }
+                }
+            });
             this.portraitCommentsRecyclerView.setAdapter(this.portraitCommentsAdapter);
-            this.portraitCommentsRecyclerView.setNestedScrollingEnabled(false);
+
+            if (portraitAdapterNeedsSync && !loadedPageResponses.isEmpty()) {
+                portraitAdapterNeedsSync = false;
+                syncCachedPagesIntoAdapter(this.portraitCommentsAdapter);
+            }
         }
 
-        if (context instanceof android.app.Activity) {
-            android.app.Activity act = (android.app.Activity) context;
+        if (context instanceof Activity) {
+            Activity act = (Activity) context;
             portraitScrollView = act.findViewById(R.id.portraitScrollView);
             portraitOfflineCommentsNotice = act.findViewById(R.id.portraitOfflineCommentsNotice);
             portraitCommentsDisabledNotice = act.findViewById(R.id.portraitCommentsDisabledNotice);
@@ -1376,36 +1506,8 @@ public class CommentsManager {
             tvPortraitReplyToText = act.findViewById(R.id.tvPortraitReplyToText);
             btnPortraitCancelReply = act.findViewById(R.id.btnPortraitCancelReply);
 
-            // Portrait Pagination Controls (Portrait Carousel)
-            portraitCommentsPaginationBar = act.findViewById(R.id.portraitCommentsPaginationBar);
-            btnPortraitPaginationPrev = act.findViewById(R.id.btnPortraitPaginationPrev);
-            flPortraitPaginationContainer = act.findViewById(R.id.flPortraitPaginationContainer);
-            rvPortraitPaginationPages = act.findViewById(R.id.rvPortraitPaginationPages);
-            vPortraitPaginationGradientLeft = act.findViewById(R.id.vPortraitPaginationGradientLeft);
-            vPortraitPaginationGradientRight = act.findViewById(R.id.vPortraitPaginationGradientRight);
-            btnPortraitPaginationNext = act.findViewById(R.id.btnPortraitPaginationNext);
-
-            if (rvPortraitPaginationPages != null) {
-                rvPortraitPaginationPages.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false));
-                portraitPagesAdapter = new com.example.animelib.adapters.CommentPagesAdapter(this::goToPage);
-                rvPortraitPaginationPages.setAdapter(portraitPagesAdapter);
-                rvPortraitPaginationPages.addOnScrollListener(new RecyclerView.OnScrollListener() {
-                    @Override
-                    public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
-                        updateGradients(recyclerView, vPortraitPaginationGradientLeft, vPortraitPaginationGradientRight);
-                    }
-                });
-            }
-
-            if (btnPortraitPaginationPrev != null) {
-                btnPortraitPaginationPrev.setOnClickListener(v -> goToPage(commentsCurrentPage - 1));
-            }
-            if (btnPortraitPaginationNext != null) {
-                btnPortraitPaginationNext.setOnClickListener(v -> goToPage(commentsCurrentPage + 1));
-            }
-
             if (portraitCommentInputField != null) {
-                com.example.animelib.util.CommentFormattingHelper.attachFormattingTextWatcher(portraitCommentInputField);
+                CommentFormattingHelper.attachFormattingTextWatcher(portraitCommentInputField);
             }
 
             View btnPBold = act.findViewById(R.id.btnPortraitFormatBold);
@@ -1415,12 +1517,12 @@ public class CommentsManager {
             View btnPSpoiler = act.findViewById(R.id.btnPortraitFormatSpoiler);
             View btnPQuote = act.findViewById(R.id.btnPortraitFormatQuote);
 
-            if (btnPBold != null) btnPBold.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(portraitCommentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.BOLD));
-            if (btnPItalic != null) btnPItalic.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(portraitCommentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.ITALIC));
-            if (btnPUnderline != null) btnPUnderline.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(portraitCommentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.UNDERLINE));
-            if (btnPStrike != null) btnPStrike.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(portraitCommentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.STRIKE));
-            if (btnPSpoiler != null) btnPSpoiler.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(portraitCommentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.SPOILER));
-            if (btnPQuote != null) btnPQuote.setOnClickListener(v -> com.example.animelib.util.CommentFormattingHelper.applyFormat(portraitCommentInputField, com.example.animelib.util.CommentFormattingHelper.FormatType.QUOTE));
+            if (btnPBold != null) btnPBold.setOnClickListener(v -> CommentFormattingHelper.applyFormat(portraitCommentInputField, CommentFormattingHelper.FormatType.BOLD));
+            if (btnPItalic != null) btnPItalic.setOnClickListener(v -> CommentFormattingHelper.applyFormat(portraitCommentInputField, CommentFormattingHelper.FormatType.ITALIC));
+            if (btnPUnderline != null) btnPUnderline.setOnClickListener(v -> CommentFormattingHelper.applyFormat(portraitCommentInputField, CommentFormattingHelper.FormatType.UNDERLINE));
+            if (btnPStrike != null) btnPStrike.setOnClickListener(v -> CommentFormattingHelper.applyFormat(portraitCommentInputField, CommentFormattingHelper.FormatType.STRIKE));
+            if (btnPSpoiler != null) btnPSpoiler.setOnClickListener(v -> CommentFormattingHelper.applyFormat(portraitCommentInputField, CommentFormattingHelper.FormatType.SPOILER));
+            if (btnPQuote != null) btnPQuote.setOnClickListener(v -> CommentFormattingHelper.applyFormat(portraitCommentInputField, CommentFormattingHelper.FormatType.QUOTE));
 
             if (btnPortraitSendComment != null) {
                 btnPortraitSendComment.setOnClickListener(v -> sendCommentFromInput(portraitCommentInputField));
@@ -1430,7 +1532,7 @@ public class CommentsManager {
             }
             if (portraitCommentInputField != null) {
                 portraitCommentInputField.setOnEditorActionListener((v, actionId, event) -> {
-                    if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) {
+                    if (actionId == EditorInfo.IME_ACTION_SEND) {
                         sendCommentFromInput(portraitCommentInputField);
                         return true;
                     }
@@ -1458,17 +1560,11 @@ public class CommentsManager {
         }
 
         updateSortButtonText();
-        updatePaginationUI();
         if (isOfflineMode) {
             applyOfflineViewsState();
             return;
         }
-        if (isCommentsDisabledInPlayer()) {
-            applyCommentsDisabledState(true);
-            return;
-        } else {
-            applyCommentsDisabledState(false);
-        }
+        applyCommentsDisabledState(isCommentsDisabledInPlayer());
     }
 
     public void setOfflineMode(boolean offline) {
@@ -1478,6 +1574,7 @@ public class CommentsManager {
 
     public void applyOfflineViewsState() {
         if (isOfflineMode) {
+            mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
             if (commentsLoadingOverlay != null) commentsLoadingOverlay.setVisibility(View.GONE);
             if (portraitCommentsLoadingOverlay != null) portraitCommentsLoadingOverlay.setVisibility(View.GONE);
             if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
@@ -1488,8 +1585,6 @@ public class CommentsManager {
             if (portraitCommentsRecyclerView != null) portraitCommentsRecyclerView.setVisibility(View.GONE);
             if (portraitEmptyCommentsText != null) portraitEmptyCommentsText.setVisibility(View.GONE);
             if (commentsRecyclerView != null) commentsRecyclerView.setVisibility(View.GONE);
-            if (commentsPaginationBar != null) commentsPaginationBar.setVisibility(View.GONE);
-            if (portraitCommentsPaginationBar != null) portraitCommentsPaginationBar.setVisibility(View.GONE);
             if (commentsPanel != null) {
                 View panelInputContainer = commentsPanel.findViewById(R.id.commentInputContainer);
                 if (panelInputContainer != null) panelInputContainer.setVisibility(View.GONE);
@@ -1520,30 +1615,38 @@ public class CommentsManager {
             if (emptyCommentsText != null) {
                 emptyCommentsText.setText("Комментариев пока нет");
             }
-            updatePaginationUI();
+            updateEmptyCommentsState();
         }
     }
 
     public void enableCommentsInPlayer() {
         try {
-            com.example.animelib.data.DatabaseManager.getInstance(context).saveDisableCommentsInPlayerSetting(false);
+            DatabaseManager.getInstance(context).saveDisableCommentsInPlayerSetting(false);
         } catch (Exception ignored) {}
         applyCommentsDisabledState(false);
         updateCommentsButtonVisibility(true);
         if (settingsCallback != null) {
             settingsCallback.onCommentsInPlayerToggled(false);
         }
-        if (portraitCommentsAdapter == null || portraitCommentsAdapter.getItemCount() == 0) {
+        if (loadedPageResponses.isEmpty() && !isLoadingComments) {
             isPortraitCommentsRequested = true;
-            loadCommentsPage(commentsCurrentPage > 0 ? commentsCurrentPage : 1);
+            loadCommentsPage(1);
         } else {
-            updatePaginationUI();
+            if (isPortraitOrientation() && portraitCommentsAdapter != null && portraitAdapterNeedsSync) {
+                portraitAdapterNeedsSync = false;
+                syncCachedPagesIntoAdapter(portraitCommentsAdapter);
+            } else if (!isPortraitOrientation() && commentsAdapter != null && landscapeAdapterNeedsSync) {
+                landscapeAdapterNeedsSync = false;
+                syncCachedPagesIntoAdapter(commentsAdapter);
+            }
+            updateEmptyCommentsState();
         }
     }
 
     public void applyCommentsDisabledState(boolean disabled) {
         safeRunOnUiThread(() -> {
             if (disabled) {
+                mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
                 if (portraitCommentsDisabledNotice != null) portraitCommentsDisabledNotice.setVisibility(View.VISIBLE);
                 if (portraitCommentsHeader != null) portraitCommentsHeader.setVisibility(View.GONE);
                 if (portraitCommentInputContainer != null) portraitCommentInputContainer.setVisibility(View.GONE);
@@ -1551,14 +1654,12 @@ public class CommentsManager {
                 if (portraitEmptyCommentsText != null) portraitEmptyCommentsText.setVisibility(View.GONE);
                 if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
                 if (portraitCommentsLoadingOverlay != null) portraitCommentsLoadingOverlay.setVisibility(View.GONE);
-                if (portraitCommentsPaginationBar != null) portraitCommentsPaginationBar.setVisibility(View.GONE);
 
                 if (landscapeCommentsDisabledNotice != null) landscapeCommentsDisabledNotice.setVisibility(View.VISIBLE);
                 if (commentsRecyclerView != null) commentsRecyclerView.setVisibility(View.GONE);
                 if (emptyCommentsText != null) emptyCommentsText.setVisibility(View.GONE);
                 if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
                 if (commentsLoadingOverlay != null) commentsLoadingOverlay.setVisibility(View.GONE);
-                if (commentsPaginationBar != null) commentsPaginationBar.setVisibility(View.GONE);
                 if (commentsPanel != null) {
                     View panelInput = commentsPanel.findViewById(R.id.commentInputContainer);
                     if (panelInput != null) panelInput.setVisibility(View.GONE);
@@ -1584,270 +1685,24 @@ public class CommentsManager {
                         View rulesBtn = commentsPanel.findViewById(R.id.btnCommentRules);
                         if (rulesBtn != null) rulesBtn.setVisibility(View.VISIBLE);
                     }
-                    updatePaginationUI();
+                    updateEmptyCommentsState();
                 }
                 updateCommentsButtonVisibility(true);
             }
         });
     }
 
-    /**
-     * Переход на выбранную страницу комментариев
-     */
-    public void goToPage(int targetPage) {
-        if (isLoadingComments || isOfflineMode || currentEpisode == null) return;
-        if (targetPage < 1) targetPage = 1;
-        if (commentsTotalPages != null && commentsTotalPages > 0 && targetPage > commentsTotalPages) {
-            targetPage = commentsTotalPages;
+    private void triggerInitialLoadIfNeeded() {
+        if (isOfflineMode || isCommentsDisabledInPlayer() || currentEpisode == null) return;
+        if (portraitAdapterNeedsSync && portraitCommentsAdapter != null && !loadedPageResponses.isEmpty()) {
+            portraitAdapterNeedsSync = false;
+            syncCachedPagesIntoAdapter(portraitCommentsAdapter);
+            updateEmptyCommentsState();
+            return;
         }
-        if (targetPage == commentsCurrentPage) return;
-
-        loadCommentsPage(targetPage);
-
-        boolean isPortrait = (context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT);
-        if (isPortrait) {
-            if (portraitScrollView != null && portraitCommentsHeader != null) {
-                portraitScrollView.post(() -> {
-                    int topY = portraitCommentsHeader.getTop();
-                    portraitScrollView.smoothScrollTo(0, Math.max(0, topY - dpToPx(16)));
-                });
-            } else if (portraitCommentsRecyclerView != null) {
-                portraitCommentsRecyclerView.scrollToPosition(0);
-            }
-        } else {
-            if (commentsRecyclerView != null) {
-                commentsRecyclerView.scrollToPosition(0);
-            }
-        }
-    }
-
-    /**
-     * Показывает диалог ввода номера страницы
-     */
-    public void showPageJumpDialog() {
-        if (context == null || isOfflineMode) return;
-        try {
-            View dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_comments_page_jump, null);
-            ImageButton btnClose = dialogView.findViewById(R.id.btnClosePageDialog);
-            TextView tvHint = dialogView.findViewById(R.id.tvPageDialogHint);
-            android.widget.EditText etPage = dialogView.findViewById(R.id.etPageNumber);
-            View btnCancel = dialogView.findViewById(R.id.btnCancelPageJump);
-            View btnConfirm = dialogView.findViewById(R.id.btnConfirmPageJump);
-
-            if (tvHint != null) {
-                if (commentsTotalPages != null && commentsTotalPages > 0) {
-                    tvHint.setText("Введите номер страницы (1 - " + commentsTotalPages + "):");
-                } else {
-                    tvHint.setText("Введите номер страницы (текущая: " + commentsCurrentPage + "):");
-                }
-            }
-
-            if (etPage != null) {
-                etPage.setText(String.valueOf(commentsCurrentPage));
-                etPage.setSelection(etPage.getText().length());
-            }
-
-            androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(context);
-            builder.setView(dialogView);
-            androidx.appcompat.app.AlertDialog dialog = builder.create();
-
-            if (dialog.getWindow() != null) {
-                dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
-            }
-
-            if (btnClose != null) btnClose.setOnClickListener(v -> dialog.dismiss());
-            if (btnCancel != null) btnCancel.setOnClickListener(v -> dialog.dismiss());
-
-            if (btnConfirm != null) {
-                btnConfirm.setOnClickListener(v -> {
-                    String input = (etPage != null && etPage.getText() != null) ? etPage.getText().toString().trim() : "";
-                    if (input.isEmpty()) {
-                        CustomToast.showWarning(context, "Введите номер страницы");
-                        return;
-                    }
-                    try {
-                        int page = Integer.parseInt(input);
-                        if (page < 1) {
-                            CustomToast.showWarning(context, "Номер страницы должен быть не менее 1");
-                            return;
-                        }
-                        if (commentsTotalPages != null && commentsTotalPages > 0 && page > commentsTotalPages) {
-                            CustomToast.showWarning(context, "Максимальная страница: " + commentsTotalPages);
-                            return;
-                        }
-                        dialog.dismiss();
-                        goToPage(page);
-                    } catch (NumberFormatException e) {
-                        CustomToast.showWarning(context, "Некорректный номер страницы");
-                    }
-                });
-            }
-
-            if (etPage != null) {
-                etPage.setOnEditorActionListener((v, actionId, event) -> {
-                    if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE || actionId == android.view.inputmethod.EditorInfo.IME_ACTION_GO) {
-                        if (btnConfirm != null) btnConfirm.performClick();
-                        return true;
-                    }
-                    return false;
-                });
-            }
-
-            dialog.show();
-
-            if (etPage != null) {
-                etPage.postDelayed(() -> {
-                    try {
-                        etPage.requestFocus();
-                        android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
-                        if (imm != null) {
-                            imm.showSoftInput(etPage, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
-                        }
-                    } catch (Exception ignored) {}
-                }, 100);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error showing page jump dialog", e);
-        }
-    }
-
-    /**
-     * Обновить состояние и отображение контролов пагинации в стиле M3 (карусель с градиентами)
-     */
-    public void updatePaginationUI() {
-        safeRunOnUiThread(() -> {
-            if (isOfflineMode || isCommentsDisabledInPlayer() || isLoadingComments) {
-                if (commentsPaginationBar != null) commentsPaginationBar.setVisibility(View.GONE);
-                if (portraitCommentsPaginationBar != null) portraitCommentsPaginationBar.setVisibility(View.GONE);
-                return;
-            }
-
-            boolean hasComments = (portraitCommentsAdapter != null && portraitCommentsAdapter.getItemCount() > 0)
-                    || (commentsAdapter != null && commentsAdapter.getItemCount() > 0);
-
-            int totalPages = 1;
-            if (commentsTotalPages != null && commentsTotalPages > 0) {
-                totalPages = commentsTotalPages;
-            } else if (commentsHasNextPage) {
-                totalPages = Math.max(commentsCurrentPage + 1, totalPages);
-            } else {
-                totalPages = Math.max(commentsCurrentPage, 1);
-            }
-
-            boolean showPagination = hasComments && (totalPages > 1 || commentsCurrentPage > 1);
-
-            String label;
-            if (commentsTotalPages != null && commentsTotalPages > 0) {
-                label = "Стр. " + commentsCurrentPage + " из " + commentsTotalPages;
-            } else {
-                label = "Стр. " + commentsCurrentPage;
-            }
-
-            boolean canPrev = commentsCurrentPage > 1;
-            boolean canNext = commentsHasNextPage || (commentsTotalPages != null && commentsCurrentPage < commentsTotalPages);
-
-            // Landscape Panel Carousel Controls
-            if (commentsPaginationBar != null) {
-                commentsPaginationBar.setVisibility(showPagination ? View.VISIBLE : View.GONE);
-                if (btnPaginationPrev != null) {
-                    btnPaginationPrev.setEnabled(canPrev);
-                    btnPaginationPrev.setAlpha(canPrev ? 1.0f : 0.35f);
-                }
-                if (btnPaginationNext != null) {
-                    btnPaginationNext.setEnabled(canNext);
-                    btnPaginationNext.setAlpha(canNext ? 1.0f : 0.35f);
-                }
-                if (landscapePagesAdapter != null && showPagination) {
-                    landscapePagesAdapter.setPages(commentsCurrentPage, totalPages);
-                    adjustCarouselWidth(commentsPaginationBar, flPaginationContainer, totalPages);
-                    if (rvPaginationPages != null) {
-                        rvPaginationPages.post(() -> {
-                            if (commentsCurrentPage > 0) {
-                                rvPaginationPages.smoothScrollToPosition(commentsCurrentPage - 1);
-                            }
-                            updateGradients(rvPaginationPages, vPaginationGradientLeft, vPaginationGradientRight);
-                        });
-                    }
-                }
-            }
-
-            // Portrait Carousel Controls
-            if (portraitCommentsPaginationBar != null) {
-                portraitCommentsPaginationBar.setVisibility(showPagination ? View.VISIBLE : View.GONE);
-                if (btnPortraitPaginationPrev != null) {
-                    btnPortraitPaginationPrev.setEnabled(canPrev);
-                    btnPortraitPaginationPrev.setAlpha(canPrev ? 1.0f : 0.35f);
-                }
-                if (btnPortraitPaginationNext != null) {
-                    btnPortraitPaginationNext.setEnabled(canNext);
-                    btnPortraitPaginationNext.setAlpha(canNext ? 1.0f : 0.35f);
-                }
-                if (portraitPagesAdapter != null && showPagination) {
-                    portraitPagesAdapter.setPages(commentsCurrentPage, totalPages);
-                    adjustCarouselWidth(portraitCommentsPaginationBar, flPortraitPaginationContainer, totalPages);
-                    if (rvPortraitPaginationPages != null) {
-                        rvPortraitPaginationPages.post(() -> {
-                            if (commentsCurrentPage > 0) {
-                                rvPortraitPaginationPages.smoothScrollToPosition(commentsCurrentPage - 1);
-                            }
-                            updateGradients(rvPortraitPaginationPages, vPortraitPaginationGradientLeft, vPortraitPaginationGradientRight);
-                        });
-                    }
-                }
-            }
-
-
-        });
-    }
-
-    /**
-     * Динамически регулирует ширину контейнера карусели: если страниц мало,
-     * то контейнер сжимается до точной ширины страниц, и вся конструкция (стрелки + страницы)
-     * центрируется вместе. Если страниц много, карусель занимает всю доступную ширину между стрелками.
-     */
-    private void adjustCarouselWidth(View bar, View container, int totalPages) {
-        if (bar == null || container == null || context == null) return;
-        bar.post(() -> {
-            int barWidth = bar.getWidth();
-            if (barWidth <= 0) return;
-
-            int barPadding = bar.getPaddingStart() + bar.getPaddingEnd();
-            int arrowsWidth = dpToPx(38 + 6 + 38 + 6); // 2 кнопки по 38dp + отступы по 6dp
-            int maxAvailableWidth = barWidth - barPadding - arrowsWidth;
-            if (maxAvailableWidth <= 0) return;
-
-            // Каждая кнопка 38dp + отступ 6dp = 44dp, плюс внутренний padding RecyclerView (8dp)
-            int neededWidth = dpToPx(totalPages * 44 + 8);
-
-            ViewGroup.LayoutParams baseLp = container.getLayoutParams();
-            if (baseLp instanceof LinearLayout.LayoutParams) {
-                LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) baseLp;
-                if (neededWidth < maxAvailableWidth) {
-                    lp.width = neededWidth;
-                    lp.weight = 0;
-                } else {
-                    lp.width = 0;
-                    lp.weight = 1;
-                }
-                container.setLayoutParams(lp);
-            }
-        });
-    }
-
-    /**
-     * Показывает левый/правый градиент карусели только когда есть контент для скролла в соответствующую сторону,
-     * предотвращая перекрытие кнопок в начале или конце карусели.
-     */
-    private void updateGradients(RecyclerView rv, View leftGradient, View rightGradient) {
-        if (rv == null) return;
-        boolean canScrollLeft = rv.canScrollHorizontally(-1);
-        boolean canScrollRight = rv.canScrollHorizontally(1);
-
-        if (leftGradient != null) {
-            leftGradient.setVisibility(canScrollLeft ? View.VISIBLE : View.GONE);
-        }
-        if (rightGradient != null) {
-            rightGradient.setVisibility(canScrollRight ? View.VISIBLE : View.GONE);
+        if (!isLoadingComments && loadedPageResponses.isEmpty()
+                && (portraitCommentsAdapter == null || !portraitCommentsAdapter.hasAnySourceComments())) {
+            loadCommentsPage(1);
         }
     }
 
@@ -1861,17 +1716,32 @@ public class CommentsManager {
             return;
         }
         isPortraitCommentsRequested = true;
-        if (currentEpisode != null && !isLoadingComments && (portraitCommentsAdapter == null || portraitCommentsAdapter.getItemCount() == 0)) {
-            commentsCurrentPage = 1;
-            commentsHasNextPage = true;
-            loadCommentsPage(1);
+
+        if (portraitAdapterNeedsSync && portraitCommentsAdapter != null && !loadedPageResponses.isEmpty()) {
+            portraitAdapterNeedsSync = false;
+            syncCachedPagesIntoAdapter(portraitCommentsAdapter);
+            updateEmptyCommentsState();
+            return;
+        }
+
+        if (currentEpisode != null && !isLoadingComments && loadedPageResponses.isEmpty()
+                && (portraitCommentsAdapter == null || !portraitCommentsAdapter.hasAnySourceComments())) {
+            mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
+            boolean userAlreadyScrolled = portraitScrollView != null && portraitScrollView.getScrollY() >= dpToPx(80);
+            if (userAlreadyScrolled) {
+                triggerInitialLoadIfNeeded();
+            } else {
+                // Даём видеоплееру спокойно инициализировать декодер и первые кадры без конкуренции за UI-поток
+                mainHandler.postDelayed(deferredPortraitLoadRunnable, INITIAL_PORTRAIT_LOAD_DELAY_MS);
+            }
         }
     }
 
     public void loadNextCommentsPageIfAvailable() {
-        if (isOfflineMode) return;
+        if (isOfflineMode || isCommentsDisabledInPlayer()) return;
         if (!isLoadingComments && commentsHasNextPage && currentEpisode != null) {
-            loadCommentsPage(commentsCurrentPage + 1);
+            int nextPage = Math.max(2, commentsCurrentPage + 1);
+            loadCommentsPage(nextPage);
         }
     }
 
@@ -1903,7 +1773,7 @@ public class CommentsManager {
 
         String cleanText = "";
         if (comment.getComment() != null) {
-            cleanText = android.text.Html.fromHtml(comment.getComment(), android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim();
+            cleanText = Html.fromHtml(comment.getComment(), Html.FROM_HTML_MODE_LEGACY).toString().trim();
         }
 
         String titleText = "Редактирование комментария";
@@ -1919,25 +1789,21 @@ public class CommentsManager {
 
         if (commentInputField != null) {
             commentInputField.setText(cleanText);
-            try {
-                commentInputField.setSelection(cleanText.length());
-            } catch (Exception ignored) {}
+            try { commentInputField.setSelection(cleanText.length()); } catch (Exception ignored) {}
             commentInputField.requestFocus();
         }
         if (portraitCommentInputField != null) {
             portraitCommentInputField.setText(cleanText);
-            try {
-                portraitCommentInputField.setSelection(cleanText.length());
-            } catch (Exception ignored) {}
+            try { portraitCommentInputField.setSelection(cleanText.length()); } catch (Exception ignored) {}
             portraitCommentInputField.requestFocus();
         }
 
         try {
-            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+            InputMethodManager imm = (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
             if (imm != null) {
                 View target = (commentInputField != null && commentInputField.hasFocus()) ? commentInputField : portraitCommentInputField;
                 if (target != null) {
-                    imm.showSoftInput(target, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+                    imm.showSoftInput(target, InputMethodManager.SHOW_IMPLICIT);
                 }
             }
         } catch (Exception ignored) {}
@@ -1950,34 +1816,25 @@ public class CommentsManager {
         replyCommentLevel = 0;
         replyUsername = null;
 
-        if (replyBar != null) {
-            replyBar.setVisibility(View.GONE);
-        }
-        if (portraitReplyBar != null) {
-            portraitReplyBar.setVisibility(View.GONE);
-        }
+        if (replyBar != null) replyBar.setVisibility(View.GONE);
+        if (portraitReplyBar != null) portraitReplyBar.setVisibility(View.GONE);
     }
 
     public void cancelReplyMode() {
         cancelMainInputReplyMode();
-
-        if (commentsAdapter != null) {
-            commentsAdapter.setActiveReplyCommentId(null);
-        }
-        if (portraitCommentsAdapter != null) {
-            portraitCommentsAdapter.setActiveReplyCommentId(null);
-        }
+        if (commentsAdapter != null) commentsAdapter.setActiveReplyCommentId(null);
+        if (portraitCommentsAdapter != null) portraitCommentsAdapter.setActiveReplyCommentId(null);
     }
 
-    public void insertSpoilerTag(android.widget.EditText editText) {
+    public void insertSpoilerTag(EditText editText) {
         if (editText == null) return;
-        com.example.animelib.util.CommentFormattingHelper.applyFormat(editText, com.example.animelib.util.CommentFormattingHelper.FormatType.SPOILER);
+        CommentFormattingHelper.applyFormat(editText, CommentFormattingHelper.FormatType.SPOILER);
     }
 
-    public void sendCommentFromInput(android.widget.EditText inputField) {
+    public void sendCommentFromInput(EditText inputField) {
         if (inputField == null || currentEpisode == null) return;
         CharSequence rawEditable = inputField.getText();
-        String text = rawEditable != null ? com.example.animelib.util.CommentFormattingHelper.toBBCode(rawEditable).trim() : "";
+        String text = rawEditable != null ? CommentFormattingHelper.toBBCode(rawEditable).trim() : "";
         if (text.isEmpty()) {
             CustomToast.showWarning(context, "Введите текст комментария");
             return;
@@ -2003,14 +1860,9 @@ public class CommentsManager {
                         if (portraitCommentInputField != null) portraitCommentInputField.setText("");
 
                         cancelReplyMode();
+                        hideKeyboard(inputField);
 
-                        try {
-                            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
-                            if (imm != null) {
-                                imm.hideSoftInputFromWindow(inputField.getWindowToken(), 0);
-                            }
-                        } catch (Exception ignored) {}
-
+                        sharedParsedCache.remove(commentId);
                         resetCommentsOnEpisodeChange(false);
                         loadCommentsPage(1);
                     });
@@ -2018,14 +1870,12 @@ public class CommentsManager {
 
                 @Override
                 public void onError(String error) {
-                    safeRunOnUiThread(() -> {
-                        CustomToast.showWarning(context, "Ошибка сохранения комментария");
-                    });
+                    safeRunOnUiThread(() -> CustomToast.showWarning(context, "Ошибка сохранения комментария"));
                 }
             });
             return;
         }
-        
+
         boolean isReplyActive = (replyBar != null && replyBar.getVisibility() == View.VISIBLE)
                 || (portraitReplyBar != null && portraitReplyBar.getVisibility() == View.VISIBLE);
 
@@ -2045,13 +1895,7 @@ public class CommentsManager {
                     if (portraitCommentInputField != null) portraitCommentInputField.setText("");
 
                     cancelReplyMode();
-
-                    try {
-                        android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
-                        if (imm != null) {
-                            imm.hideSoftInputFromWindow(inputField.getWindowToken(), 0);
-                        }
-                    } catch (Exception ignored) {}
+                    hideKeyboard(inputField);
 
                     resetCommentsOnEpisodeChange(false);
                     loadCommentsPage(1);
@@ -2060,16 +1904,14 @@ public class CommentsManager {
 
             @Override
             public void onError(String error) {
-                safeRunOnUiThread(() -> {
-                    CustomToast.showWarning(context, "Ошибка публикации комментария");
-                });
+                safeRunOnUiThread(() -> CustomToast.showWarning(context, "Ошибка публикации комментария"));
             }
         });
     }
 
-    public void sendInlineReply(CommentsResponse.CommentItem comment, CharSequence rawText, android.widget.EditText inputField) {
+    public void sendInlineReply(CommentsResponse.CommentItem comment, CharSequence rawText, EditText inputField) {
         if (comment == null || currentEpisode == null) return;
-        String text = rawText != null ? com.example.animelib.util.CommentFormattingHelper.toBBCode(rawText).trim() : "";
+        String text = rawText != null ? CommentFormattingHelper.toBBCode(rawText).trim() : "";
         if (text.isEmpty()) {
             CustomToast.showWarning(context, "Введите текст ответа");
             return;
@@ -2090,13 +1932,7 @@ public class CommentsManager {
                     if (inputField != null) inputField.setText("");
 
                     cancelReplyMode();
-
-                    try {
-                        android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
-                        if (imm != null && inputField != null) {
-                            imm.hideSoftInputFromWindow(inputField.getWindowToken(), 0);
-                        }
-                    } catch (Exception ignored) {}
+                    hideKeyboard(inputField);
 
                     resetCommentsOnEpisodeChange(false);
                     loadCommentsPage(1);
@@ -2105,11 +1941,19 @@ public class CommentsManager {
 
             @Override
             public void onError(String error) {
-                safeRunOnUiThread(() -> {
-                    CustomToast.showWarning(context, "Ошибка отправки ответа");
-                });
+                safeRunOnUiThread(() -> CustomToast.showWarning(context, "Ошибка отправки ответа"));
             }
         });
+    }
+
+    private void hideKeyboard(View targetView) {
+        if (context == null || targetView == null) return;
+        try {
+            InputMethodManager imm = (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.hideSoftInputFromWindow(targetView.getWindowToken(), 0);
+            }
+        } catch (Exception ignored) {}
     }
 
     public void voteOnComment(CommentsResponse.CommentItem comment, int targetVote) {
@@ -2156,20 +2000,19 @@ public class CommentsManager {
                         comment.getVotes().setUser(newVoteValue);
                     }
 
+                    // Точечное обновление только оценённого комментария вместо notifyDataSetChanged() всего списка!
                     if (commentsAdapter != null) {
-                        commentsAdapter.notifyDataSetChanged();
+                        commentsAdapter.notifyCommentChanged(comment.getId());
                     }
                     if (portraitCommentsAdapter != null) {
-                        portraitCommentsAdapter.notifyDataSetChanged();
+                        portraitCommentsAdapter.notifyCommentChanged(comment.getId());
                     }
                 });
             }
 
             @Override
             public void onError(String error) {
-                safeRunOnUiThread(() -> {
-                    CustomToast.showWarning(context, "Не удалось оценить комментарий");
-                });
+                safeRunOnUiThread(() -> CustomToast.showWarning(context, "Не удалось оценить комментарий"));
             }
         });
     }
@@ -2177,19 +2020,13 @@ public class CommentsManager {
     public void showRulesDialog() {
         if (context == null) return;
         try {
-            com.example.animelib.ui.RulesBottomSheet rulesBottomSheet = new com.example.animelib.ui.RulesBottomSheet(context, apiService);
+            RulesBottomSheet rulesBottomSheet = new RulesBottomSheet(context, apiService);
             rulesBottomSheet.show();
         } catch (Exception e) {
             Log.e(TAG, "Error showing rules bottom sheet", e);
             CustomToast.showInfo(context, "Правила комментариев");
         }
     }
-
-    public interface CommentsSettingsCallback {
-        void onCommentsInPlayerToggled(boolean disabled);
-        void onRepliesLimitChanged(int limit);
-    }
-    private CommentsSettingsCallback settingsCallback;
 
     public void setSettingsCallback(CommentsSettingsCallback callback) {
         this.settingsCallback = callback;
@@ -2198,38 +2035,38 @@ public class CommentsManager {
     public void showSettingsDialog() {
         if (context == null) return;
         try {
-            com.example.animelib.settings.CommentSettingsBottomSheet bs =
-                new com.example.animelib.settings.CommentSettingsBottomSheet(context, new com.example.animelib.settings.CommentSettingsBottomSheet.OnCommentSettingsListener() {
-                    @Override
-                    public void onCommentsInPlayerToggled(boolean disabled) {
-                        applyCommentsDisabledState(disabled);
-                        if (disabled) {
-                            if (isCommentsVisible) {
-                                hideCommentsPanel();
-                            }
-                            updateCommentsButtonVisibility(false);
-                        } else {
-                            updateCommentsButtonVisibility(true);
-                            if (portraitCommentsAdapter == null || portraitCommentsAdapter.getItemCount() == 0) {
-                                isPortraitCommentsRequested = true;
-                                loadCommentsPage(commentsCurrentPage > 0 ? commentsCurrentPage : 1);
+            CommentSettingsBottomSheet bs =
+                    new CommentSettingsBottomSheet(context, new CommentSettingsBottomSheet.OnCommentSettingsListener() {
+                        @Override
+                        public void onCommentsInPlayerToggled(boolean disabled) {
+                            applyCommentsDisabledState(disabled);
+                            if (disabled) {
+                                if (isCommentsVisible) {
+                                    hideCommentsPanel();
+                                }
+                                updateCommentsButtonVisibility(false);
                             } else {
-                                updatePaginationUI();
+                                updateCommentsButtonVisibility(true);
+                                if (loadedPageResponses.isEmpty() && !isLoadingComments) {
+                                    isPortraitCommentsRequested = true;
+                                    loadCommentsPage(1);
+                                } else {
+                                    updateEmptyCommentsState();
+                                }
+                            }
+                            if (settingsCallback != null) {
+                                settingsCallback.onCommentsInPlayerToggled(disabled);
                             }
                         }
-                        if (settingsCallback != null) {
-                            settingsCallback.onCommentsInPlayerToggled(disabled);
-                        }
-                    }
 
-                    @Override
-                    public void onRepliesLimitChanged(int limit) {
-                        updateRepliesLimit(limit);
-                        if (settingsCallback != null) {
-                            settingsCallback.onRepliesLimitChanged(limit);
+                        @Override
+                        public void onRepliesLimitChanged(int limit) {
+                            updateRepliesLimit(limit);
+                            if (settingsCallback != null) {
+                                settingsCallback.onRepliesLimitChanged(limit);
+                            }
                         }
-                    }
-                });
+                    });
             bs.show();
         } catch (Exception e) {
             Log.e(TAG, "Error showing comments settings bottom sheet", e);
@@ -2247,7 +2084,7 @@ public class CommentsManager {
 
     public boolean isCommentsDisabledInPlayer() {
         try {
-            return com.example.animelib.data.DatabaseManager.getInstance(context).loadDisableCommentsInPlayerSetting();
+            return DatabaseManager.getInstance(context).loadDisableCommentsInPlayerSetting();
         } catch (Exception e) {
             return false;
         }
@@ -2255,7 +2092,7 @@ public class CommentsManager {
 
     private int loadSavedRepliesLimit() {
         try {
-            return com.example.animelib.data.DatabaseManager.getInstance(context).loadCommentRepliesLimitSetting();
+            return DatabaseManager.getInstance(context).loadCommentRepliesLimitSetting();
         } catch (Exception e) {
             return 3;
         }
@@ -2264,125 +2101,90 @@ public class CommentsManager {
     public void setVisibilityCallback(CommentsVisibilityCallback callback) {
         this.visibilityCallback = callback;
     }
-    
-    /**
-     * Установить callback для данных комментариев
-     * @param callback Callback для данных
-     */
+
     public void setDataCallback(CommentsDataCallback callback) {
         this.dataCallback = callback;
     }
-    
-    /**
-     * Обновить видимость кнопки комментариев
-     * @param isVisible Видима ли кнопка
-     */
+
     public void updateCommentsButtonVisibility(boolean isVisible) {
         if (isCommentsDisabledInPlayer()) {
             isVisible = false;
         }
         if (commentsButton != null) {
             commentsButton.setVisibility(isVisible ? View.VISIBLE : View.GONE);
-            Log.d("CommentsManager", "Comments button visibility set to: " + (isVisible ? "VISIBLE" : "GONE"));
-        } else {
-            Log.w("CommentsManager", "Cannot update comments button visibility - button is null!");
         }
     }
-    
-    /**
-     * Скрыть все UI элементы комментариев (для PiP режима)
-     */
+
     public void hideAllCommentsUI() {
         if (isCommentsVisible) {
             hideCommentsPanel();
         }
         updateCommentsButtonVisibility(false);
     }
-    
-    /**
-     * Показать все UI элементы комментариев (для выхода из PiP режима)
-     * @param wasVisibleBeforePiP Была ли панель видна до PiP
-     */
+
     public void showAllCommentsUI(boolean wasVisibleBeforePiP) {
         updateCommentsButtonVisibility(true);
-        
         if (wasVisibleBeforePiP && !isCommentsVisible) {
             showCommentsPanel();
         }
     }
 
-    /**
-     * Очистить ресурсы менеджера комментариев
-     */
-    /**
-     * Безопасно вызывает код в главном потоке
-     */
     private void safeRunOnUiThread(Runnable runnable) {
         if (runnable == null) return;
         try {
-            if (context instanceof android.app.Activity) {
-                android.app.Activity activity = (android.app.Activity) context;
+            if (context instanceof Activity) {
+                Activity activity = (Activity) context;
                 if (!activity.isFinishing() && !activity.isDestroyed()) {
                     activity.runOnUiThread(runnable);
                 } else {
-                    new android.os.Handler(android.os.Looper.getMainLooper()).post(runnable);
+                    mainHandler.post(runnable);
                 }
             } else {
-                new android.os.Handler(android.os.Looper.getMainLooper()).post(runnable);
+                mainHandler.post(runnable);
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error calling UI thread", e);
-            try {
-                new android.os.Handler(android.os.Looper.getMainLooper()).post(runnable);
-            } catch (Exception ex) {
-                Log.e(TAG, "Error in fallback callback", ex);
-            }
+            mainHandler.post(runnable);
         }
     }
 
     public void cleanup() {
+        requestGeneration++;
+        mainHandler.removeCallbacksAndMessages(null);
+        commentsProcessingExecutor.shutdownNow();
+
         if (commentsAdapter != null) {
             commentsAdapter.clearAll();
         }
-        
-        // Скрываем текст пустого состояния при очистке
+        if (portraitCommentsAdapter != null) {
+            portraitCommentsAdapter.clearAll();
+        }
+
+        loadedStickyComments.clear();
+        loadedPageResponses.clear();
+        sharedParsedCache.clear();
+
         if (emptyCommentsText != null) {
             emptyCommentsText.setVisibility(View.GONE);
         }
-        
-        commentsCurrentPage = 1;
-        commentsHasNextPage = true;
+
+        commentsCurrentPage = 0;
+        commentsHasNextPage = false;
         isLoadingComments = false;
         isCommentsVisible = false;
-        
+        isPanelAnimatingOpen = false;
+
         visibilityCallback = null;
         dataCallback = null;
     }
-    
-    /**
-     * Завершает drag жест с решением открыть или закрыть панель комментариев
-     */
+
     public void completeDrag(boolean shouldOpen) {
-        Log.d(TAG, "Complete comments drag: shouldOpen=" + shouldOpen);
-        
         if (shouldOpen) {
-            // При drag открытии НЕ вызываем openCommentsPanel() - панель уже открывается через DraggableSidePanel
-            // Только обновляем флаг и загружаем данные
-            if (isCommentsVisible) {
-                Log.w(TAG, "Comments panel already visible, skipping");
+            if (isCommentsVisible && !isPanelAnimatingOpen) {
                 return;
             }
-            
             isCommentsVisible = true;
-            
-            // Загрузить первую страницу если комментарии пустые
-            if (!isLoadingComments && (commentsAdapter == null || commentsAdapter.getItemCount() == 0)) {
-                commentsCurrentPage = 1;
-                commentsHasNextPage = true;
-                loadCommentsPage(1);
-            }
-            
-            // Уведомить о изменении видимости
+            isPanelAnimatingOpen = false;
+            syncOrLoadLandscapeComments();
             if (visibilityCallback != null) {
                 visibilityCallback.onCommentsVisibilityChanged(true);
             }
@@ -2390,23 +2192,13 @@ public class CommentsManager {
             hideCommentsPanel();
         }
     }
-    
-    /**
-     * Обновляет состояние после drag (вызывается после завершения анимации DraggableSidePanel)
-     */
+
     public void updateDragState(boolean isOpen) {
-        Log.d(TAG, "Update drag state: isOpen=" + isOpen);
-        
+        mainHandler.removeCallbacks(panelOpenFallbackRunnable);
+        isPanelAnimatingOpen = false;
         if (isOpen) {
             isCommentsVisible = true;
-            
-            // Загрузить первую страницу если комментарии пустые
-            if (!isLoadingComments && (commentsAdapter == null || commentsAdapter.getItemCount() == 0)) {
-                commentsCurrentPage = 1;
-                commentsHasNextPage = true;
-                loadCommentsPage(1);
-            }
-            
+            syncOrLoadLandscapeComments();
             if (visibilityCallback != null) {
                 visibilityCallback.onCommentsVisibilityChanged(true);
             }
@@ -2420,17 +2212,25 @@ public class CommentsManager {
 
     private void showLoadingOverlay(View overlay) {
         if (overlay == null) return;
+        overlay.animate().cancel();
+        if (overlay.getVisibility() == View.VISIBLE && overlay.getAlpha() >= 0.99f) {
+            return;
+        }
         overlay.setAlpha(0f);
         overlay.setVisibility(View.VISIBLE);
-        overlay.animate().alpha(1f).setDuration(250).start();
+        overlay.animate().alpha(1f).setDuration(180).start();
     }
 
     private void hideLoadingOverlay(View overlay) {
         if (overlay == null) return;
+        overlay.animate().cancel();
+        if (overlay.getVisibility() != View.VISIBLE) {
+            return;
+        }
         overlay.animate()
-            .alpha(0f)
-            .setDuration(250)
-            .withEndAction(() -> overlay.setVisibility(View.GONE))
-            .start();
+                .alpha(0f)
+                .setDuration(160)
+                .withEndAction(() -> overlay.setVisibility(View.GONE))
+                .start();
     }
 }

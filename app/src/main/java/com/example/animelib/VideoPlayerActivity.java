@@ -2112,10 +2112,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     }
                 }
 
-                if (scrollY >= 150) {
-                    if (playerCommentsController != null && !isOfflineMode && getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
-                        playerCommentsController.loadCommentsForPortraitIfNeeded();
-                    }
+                if (playerCommentsController != null && !isOfflineMode
+                        && getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
+                    playerCommentsController.onPortraitScrollChanged(v, scrollY, oldScrollY);
                 }
             });
         }
