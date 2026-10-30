@@ -449,21 +449,7 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                     roots.add(r);
                 }
             }
-            if (replies != null) {
-                for (CommentsResponse.CommentItem c : replies) {
-                    if (c == null || allById.containsKey(c.getId())) continue;
-                    allById.put(c.getId(), c);
-                    Long parentId = c.getParent_comment();
-                    if (parentId == null) parentId = c.getRoot_id();
-                    if (parentId == null) continue;
-                    List<CommentsResponse.CommentItem> list = childrenByParentId.get(parentId);
-                    if (list == null) {
-                        list = new ArrayList<>();
-                        childrenByParentId.put(parentId, list);
-                    }
-                    list.add(c);
-                }
-            }
+            registerRepliesBatch(replies);
         }
 
         List<DisplayItem> targetItems = new ArrayList<>();
@@ -475,6 +461,210 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         }
 
         enqueueProgressiveInsertion(targetItems, true);
+    }
+
+    private int registerRepliesBatch(List<CommentsResponse.CommentItem> replies) {
+        if (replies == null || replies.isEmpty()) return 0;
+        List<CommentsResponse.CommentItem> newlyAdded = new ArrayList<>();
+        for (CommentsResponse.CommentItem c : replies) {
+            if (c == null || c.getId() <= 0 || allById.containsKey(c.getId())) continue;
+            allById.put(c.getId(), c);
+            newlyAdded.add(c);
+        }
+        for (CommentsResponse.CommentItem c : newlyAdded) {
+            attachReplyToParentMap(c);
+        }
+        return newlyAdded.size();
+    }
+
+    private void attachReplyToParentMap(CommentsResponse.CommentItem c) {
+        if (c == null) return;
+        Long parentId = c.getParent_comment();
+        Long rootId = c.getRoot_id();
+        Long bucketKey;
+        if (parentId != null && parentId > 0 && allById.containsKey(parentId)) {
+            bucketKey = parentId;
+        } else if (rootId != null && rootId > 0) {
+            bucketKey = rootId;
+        } else if (parentId != null && parentId > 0) {
+            bucketKey = parentId;
+        } else {
+            return;
+        }
+        List<CommentsResponse.CommentItem> list = childrenByParentId.get(bucketKey);
+        if (list == null) {
+            list = new ArrayList<>();
+            childrenByParentId.put(bucketKey, list);
+        }
+        for (CommentsResponse.CommentItem existing : list) {
+            if (existing != null && existing.getId() == c.getId()) {
+                return;
+            }
+        }
+        list.add(c);
+    }
+
+    private Long resolveRootIdForComment(CommentsResponse.CommentItem comment) {
+        if (comment == null) return null;
+        if (comment.getRoot_id() != null && comment.getRoot_id() > 0) {
+            return comment.getRoot_id();
+        }
+        Long cur = comment.getParent_comment();
+        Set<Long> visited = new HashSet<>();
+        while (cur != null && cur > 0 && visited.add(cur)) {
+            CommentsResponse.CommentItem parent = allById.get(cur);
+            if (parent == null) {
+                return cur;
+            }
+            if (parent.getRoot_id() != null && parent.getRoot_id() > 0) {
+                return parent.getRoot_id();
+            }
+            if (parent.getParent_comment() == null || parent.getParent_comment() <= 0) {
+                return parent.getId();
+            }
+            cur = parent.getParent_comment();
+        }
+        return comment.getParent_comment();
+    }
+
+    public boolean containsComment(long commentId) {
+        return allById.containsKey(commentId);
+    }
+
+    public CommentsResponse.CommentItem getCommentById(long commentId) {
+        return allById.get(commentId);
+    }
+
+    public int findCommentAdapterPosition(long commentId) {
+        for (int i = 0, size = flat.size(); i < size; i++) {
+            DisplayItem di = flat.get(i);
+            if (di.type == DisplayItem.TYPE_COMMENT && di.item != null && di.item.getId() == commentId) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Мгновенно добавить новый комментарий/ответ или обновить отредактированный комментарий в списке.
+     */
+    public void upsertComment(CommentsResponse.CommentItem comment, boolean prependRoot) {
+        if (comment == null || comment.getId() <= 0) return;
+        flushPendingQueueImmediate();
+        parsedContentCache.remove(comment.getId());
+
+        if (allById.containsKey(comment.getId())) {
+            replaceExistingCommentInPlace(comment);
+            rebuildFlatInternal(flat.size(), comment.getId());
+            return;
+        }
+
+        insertCommentIntoSourceStructures(comment, prependRoot);
+        rebuildFlatInternal(flat.size() + 1, comment.getId());
+    }
+
+    private void replaceExistingCommentInPlace(CommentsResponse.CommentItem updated) {
+        CommentsResponse.CommentItem existing = allById.get(updated.getId());
+        if (existing != null && existing != updated) {
+            if (updated.getComment() != null) existing.setComment(updated.getComment());
+            if (updated.getUser() != null) existing.setUser(updated.getUser());
+            if (updated.getVotes() != null) existing.setVotes(updated.getVotes());
+            if (updated.getCreated_at() != null) existing.setCreated_at(updated.getCreated_at());
+            if (updated.getCreated_at_ts() > 0) existing.setCreated_at_ts(updated.getCreated_at_ts());
+        } else {
+            allById.put(updated.getId(), updated);
+        }
+    }
+
+    private void insertCommentIntoSourceStructures(CommentsResponse.CommentItem comment, boolean prependRoot) {
+        allById.put(comment.getId(), comment);
+        boolean isReply = (comment.getParent_comment() != null && comment.getParent_comment() > 0)
+                || (comment.getRoot_id() != null && comment.getRoot_id() > 0)
+                || comment.getComment_level() > 0;
+        if (isReply) {
+            Long rootId = resolveRootIdForComment(comment);
+            if (rootId != null && rootId > 0) {
+                expandedParentIds.add(rootId);
+            }
+            if (comment.getParent_comment() != null && comment.getParent_comment() > 0) {
+                expandedParentIds.add(comment.getParent_comment());
+            }
+            attachReplyToParentMap(comment);
+        } else {
+            if (prependRoot) {
+                roots.add(0, comment);
+            } else {
+                roots.add(comment);
+            }
+        }
+    }
+
+    /**
+     * Обновить страницы комментариев после перезагрузки с сервера без сброса раскрытых веток и позиции портретного вьюпорта.
+     */
+    public void replacePagesOnRefresh(List<CommentsResponse.CommentItem> stickyComments,
+                                      List<CommentsResponse> pages,
+                                      CommentsResponse.CommentItem ensurePresentComment,
+                                      boolean prependRootIfMissing) {
+        flushPendingQueueImmediate();
+        int previousVisibleCount = flat.size();
+        cancelPendingInsertions();
+        isLoadingMore = false;
+
+        allById.clear();
+        roots.clear();
+        childrenByParentId.clear();
+        stickyRoots.clear();
+
+        if (stickyComments != null) {
+            for (CommentsResponse.CommentItem s : stickyComments) {
+                if (s != null && s.getId() > 0 && !allById.containsKey(s.getId())) {
+                    s.setSticky(true);
+                    allById.put(s.getId(), s);
+                    stickyRoots.add(s);
+                }
+            }
+        }
+
+        if (pages != null) {
+            for (CommentsResponse response : pages) {
+                if (response == null || response.getData() == null) continue;
+                List<CommentsResponse.CommentItem> pageRoots = response.getData().getRoot();
+                if (pageRoots != null) {
+                    for (CommentsResponse.CommentItem r : pageRoots) {
+                        if (r == null || r.getId() <= 0) continue;
+                        if (allById.containsKey(r.getId())) {
+                            continue;
+                        }
+                        allById.put(r.getId(), r);
+                        roots.add(r);
+                    }
+                }
+                registerRepliesBatch(response.getData().getReplies());
+            }
+        }
+
+        Long ensureVisibleId = null;
+        if (ensurePresentComment != null && ensurePresentComment.getId() > 0) {
+            ensureVisibleId = ensurePresentComment.getId();
+            boolean isReply = (ensurePresentComment.getParent_comment() != null && ensurePresentComment.getParent_comment() > 0)
+                    || (ensurePresentComment.getRoot_id() != null && ensurePresentComment.getRoot_id() > 0)
+                    || ensurePresentComment.getComment_level() > 0;
+            if (isReply) {
+                Long rootId = resolveRootIdForComment(ensurePresentComment);
+                if (rootId != null && rootId > 0) {
+                    expandedParentIds.add(rootId);
+                }
+            }
+            if (!allById.containsKey(ensurePresentComment.getId())) {
+                if (!isReply || (ensurePresentComment.getRoot_id() != null && allById.containsKey(ensurePresentComment.getRoot_id()))
+                        || (ensurePresentComment.getParent_comment() != null && allById.containsKey(ensurePresentComment.getParent_comment()))) {
+                    insertCommentIntoSourceStructures(ensurePresentComment, prependRootIfMissing);
+                }
+            }
+        }
+
+        rebuildFlatInternal(previousVisibleCount, ensureVisibleId);
     }
 
     /**
@@ -508,23 +698,12 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             }
         }
 
-        if (replies != null) {
-            for (CommentsResponse.CommentItem c : replies) {
-                if (c == null || allById.containsKey(c.getId())) continue;
-                allById.put(c.getId(), c);
-                Long parentId = c.getParent_comment();
-                if (parentId == null) parentId = c.getRoot_id();
-                if (parentId == null) continue;
-                List<CommentsResponse.CommentItem> list = childrenByParentId.get(parentId);
-                if (list == null) {
-                    list = new ArrayList<>();
-                    childrenByParentId.put(parentId, list);
-                }
-                list.add(c);
-            }
-        }
+        int addedReplies = registerRepliesBatch(replies);
 
         if (addedRoots.isEmpty()) {
+            if (addedReplies > 0) {
+                rebuildFlatImmediate();
+            }
             return;
         }
 
@@ -589,7 +768,10 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
     }
 
     private void rebuildFlatImmediate() {
-        int previousVisibleCount = flat.size();
+        rebuildFlatInternal(flat.size(), null);
+    }
+
+    private void rebuildFlatInternal(int previousVisibleCount, Long ensureVisibleCommentId) {
         cancelPendingInsertions();
         List<DisplayItem> allItems = new ArrayList<>();
         for (CommentsResponse.CommentItem sticky : stickyRoots) {
@@ -600,7 +782,18 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         }
         flat.clear();
         if (portraitViewportMode) {
-            int keepCount = Math.min(allItems.size(), Math.max(INITIAL_PORTRAIT_RENDER_COUNT, previousVisibleCount));
+            int minRequired = Math.max(INITIAL_PORTRAIT_RENDER_COUNT, previousVisibleCount);
+            if (ensureVisibleCommentId != null) {
+                for (int i = 0; i < allItems.size(); i++) {
+                    DisplayItem di = allItems.get(i);
+                    if (di.type == DisplayItem.TYPE_COMMENT && di.item != null
+                            && di.item.getId() == ensureVisibleCommentId) {
+                        minRequired = Math.max(minRequired, i + 1);
+                        break;
+                    }
+                }
+            }
+            int keepCount = Math.min(allItems.size(), minRequired);
             if (keepCount > 0) {
                 flat.addAll(allItems.subList(0, keepCount));
             }
@@ -615,30 +808,43 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
 
     private void collectWithChildren(CommentsResponse.CommentItem node, int level, List<DisplayItem> out) {
         out.add(new DisplayItem(node, level));
-        List<CommentsResponse.CommentItem> kids = childrenByParentId.get(node.getId());
-        if (kids == null || kids.isEmpty()) return;
-
-        // Ограничиваем глубину дерева до 1 уровня (level 0 и 1)
         if (level >= 1) return;
+
+        List<CommentsResponse.CommentItem> allThreadReplies = new ArrayList<>();
+        Set<Long> visited = new HashSet<>();
+        visited.add(node.getId());
+        collectDescendantsFlat(node.getId(), allThreadReplies, visited);
+
+        if (allThreadReplies.isEmpty()) return;
 
         boolean isUnlimited = (repliesLimit == -1 || repliesLimit >= 11 || repliesLimit <= 0);
         boolean isExpanded = expandedParentIds.contains(node.getId());
-        boolean showAll = isUnlimited || isExpanded || (kids.size() <= repliesLimit);
+        boolean showAll = isUnlimited || isExpanded || (allThreadReplies.size() <= repliesLimit);
 
         if (showAll) {
-            for (CommentsResponse.CommentItem child : kids) {
-                collectWithChildren(child, level + 1, out);
+            for (CommentsResponse.CommentItem child : allThreadReplies) {
+                out.add(new DisplayItem(child, 1));
             }
         } else {
-            int countToShow = Math.min(repliesLimit, kids.size());
+            int countToShow = Math.min(repliesLimit, allThreadReplies.size());
             for (int i = 0; i < countToShow; i++) {
-                collectWithChildren(kids.get(i), level + 1, out);
+                out.add(new DisplayItem(allThreadReplies.get(i), 1));
             }
-            int hiddenCount = kids.size() - countToShow;
+            int hiddenCount = allThreadReplies.size() - countToShow;
             if (hiddenCount > 0) {
-                List<CommentsResponse.CommentItem> hidden = new ArrayList<>(kids.subList(countToShow, kids.size()));
+                List<CommentsResponse.CommentItem> hidden = new ArrayList<>(allThreadReplies.subList(countToShow, allThreadReplies.size()));
                 out.add(new DisplayItem(node.getId(), hiddenCount, hidden));
             }
+        }
+    }
+
+    private void collectDescendantsFlat(long parentId, List<CommentsResponse.CommentItem> out, Set<Long> visited) {
+        List<CommentsResponse.CommentItem> kids = childrenByParentId.get(parentId);
+        if (kids == null || kids.isEmpty()) return;
+        for (CommentsResponse.CommentItem child : kids) {
+            if (child == null || !visited.add(child.getId())) continue;
+            out.add(child);
+            collectDescendantsFlat(child.getId(), out, visited);
         }
     }
 

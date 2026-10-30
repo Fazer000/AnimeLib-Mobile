@@ -5,20 +5,23 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.View;
-import com.google.android.material.button.MaterialButton;
 
+import androidx.annotation.NonNull;
+import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DefaultDataSource;
-import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.HttpDataSource;
+import androidx.media3.datasource.okhttp.OkHttpDataSource;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.hls.HlsMediaSource;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.source.MediaSource;
-import androidx.media3.exoplayer.source.ProgressiveMediaSource;
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy;
 import androidx.media3.ui.PlayerView;
 
 import com.example.animelib.R;
@@ -26,11 +29,23 @@ import com.example.animelib.api.ApiService;
 import com.example.animelib.managers.AmbientLightManager;
 import com.example.animelib.managers.GesturesManager;
 import com.example.animelib.managers.TimecodeManager;
+import com.google.android.material.button.MaterialButton;
+
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+import okhttp3.ConnectionPool;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
 
 public class PlayerPlaybackController {
 
     private static final String TAG = "PlayerPlaybackController";
-    private static final long BUFFERING_TIMEOUT_MS = 15_000L;
+    private static final long BUFFERING_TIMEOUT_MS = 12_000L;
+    private static final String STREAM_USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36";
+
+    private static final ConnectionPool SHARED_STREAM_POOL = new ConnectionPool(8, 2, TimeUnit.MINUTES);
 
     public interface PlaybackCallback {
         Context getPlayerContext();
@@ -51,6 +66,7 @@ public class PlayerPlaybackController {
     private final HttpDataSource.Factory httpDataSourceFactory;
     private final Handler watchdogHandler = new Handler(Looper.getMainLooper());
     private Runnable bufferingWatchdogRunnable = null;
+    private OkHttpClient streamingOkHttpClient;
     private ExoPlayer player;
     private PlaybackCallback callback;
     private boolean isFirstFrameRendered = false;
@@ -69,41 +85,106 @@ public class PlayerPlaybackController {
         return player;
     }
 
-    private HttpDataSource.Factory getEffectiveHttpDataSourceFactory() {
-        HttpDataSource.Factory factory = null;
-        if (httpDataSourceFactory != null) {
-            factory = httpDataSourceFactory;
-        } else if (callback != null && callback.getHttpDataSourceFactory() != null) {
-            factory = callback.getHttpDataSourceFactory();
-        }
+    private synchronized OkHttpClient getOrCreateStreamingOkHttpClient() {
+        if (streamingOkHttpClient == null) {
+            streamingOkHttpClient = new OkHttpClient.Builder()
+                    .connectionPool(SHARED_STREAM_POOL)
+                    .connectTimeout(8, TimeUnit.SECONDS)
+                    .readTimeout(12, TimeUnit.SECONDS)
+                    .followRedirects(true)
+                    .followSslRedirects(true)
+                    .retryOnConnectionFailure(true)
+                    .addInterceptor(chain -> {
+                        Request original = chain.request();
+                        String urlStr = original.url().toString();
+                        Request.Builder builder = original.newBuilder();
 
-        java.util.Map<String, String> headers = null;
-        if (callback != null && callback.getApiService() != null) {
-            headers = callback.getApiService().getVideoRequestHeaders();
+                        if (ApiService.isKodikStreamUrl(urlStr)) {
+                            // Важно: не отправляем огромный JWT-токен AnimeLib и чужой Origin на CDN Kodik
+                            builder.removeHeader("Authorization");
+                            for (Map.Entry<String, String> entry : ApiService.buildKodikStreamHeaders().entrySet()) {
+                                builder.header(entry.getKey(), entry.getValue());
+                            }
+                        } else if (callback != null && callback.getApiService() != null) {
+                            Map<String, String> animeLibHeaders = callback.getApiService().getVideoRequestHeaders();
+                            if (animeLibHeaders != null) {
+                                for (Map.Entry<String, String> entry : animeLibHeaders.entrySet()) {
+                                    if (original.header(entry.getKey()) == null) {
+                                        builder.header(entry.getKey(), entry.getValue());
+                                    }
+                                }
+                            }
+                        }
+                        return chain.proceed(builder.build());
+                    })
+                    .build();
         }
+        return streamingOkHttpClient;
+    }
 
-        if (factory instanceof DefaultHttpDataSource.Factory) {
-            DefaultHttpDataSource.Factory defaultFactory = (DefaultHttpDataSource.Factory) factory;
-            defaultFactory
-                    .setConnectTimeoutMs(10000)
-                    .setReadTimeoutMs(15000)
-                    .setAllowCrossProtocolRedirects(true);
+    public HttpDataSource.Factory buildStreamHttpDataSourceFactory(String targetUrl) {
+        OkHttpDataSource.Factory okFactory = new OkHttpDataSource.Factory(getOrCreateStreamingOkHttpClient())
+                .setUserAgent(STREAM_USER_AGENT);
+        if (ApiService.isKodikStreamUrl(targetUrl)) {
+            okFactory.setDefaultRequestProperties(ApiService.buildKodikStreamHeaders());
+        } else if (callback != null && callback.getApiService() != null) {
+            Map<String, String> headers = callback.getApiService().getVideoRequestHeaders();
             if (headers != null) {
-                defaultFactory.setDefaultRequestProperties(headers);
+                okFactory.setDefaultRequestProperties(headers);
             }
-            return defaultFactory;
+        }
+        return okFactory;
+    }
+
+    private LoadErrorHandlingPolicy createStreamErrorHandlingPolicy() {
+        return new DefaultLoadErrorHandlingPolicy(4) {
+            @Override
+            public long getRetryDelayMsFor(@NonNull LoadErrorInfo loadErrorInfo) {
+                Throwable ex = loadErrorInfo.exception;
+                if (ex instanceof HttpDataSource.InvalidResponseCodeException) {
+                    int code = ((HttpDataSource.InvalidResponseCodeException) ex).responseCode;
+                    // При 403/404/410 ссылка или CDN-нода устарела — не ждём лишних ретраев, сразу отдаём управление авто-восстановлению
+                    if (code == 403 || code == 404 || code == 410) {
+                        return C.TIME_UNSET;
+                    }
+                }
+                if (loadErrorInfo.errorCount > 4) {
+                    return C.TIME_UNSET;
+                }
+                return Math.min(350L * loadErrorInfo.errorCount, 1500L);
+            }
+
+            @Override
+            public int getMinimumLoadableRetryCount(int dataType) {
+                return 4;
+            }
+        };
+    }
+
+    private MediaSource buildMediaSourceForUrl(Context playerContext, String videoUrl, MediaItem itemToPlay) {
+        HttpDataSource.Factory httpFactory = buildStreamHttpDataSourceFactory(videoUrl);
+        DataSource.Factory dsFactory = new DefaultDataSource.Factory(playerContext, httpFactory);
+        LoadErrorHandlingPolicy errorPolicy = createStreamErrorHandlingPolicy();
+
+        boolean isHls = videoUrl != null && (
+                videoUrl.contains(".m3u8")
+                        || videoUrl.contains(":hls:")
+                        || ApiService.isKodikStreamUrl(videoUrl) && !videoUrl.endsWith(".mp4")
+        );
+
+        boolean hasExternalSubtitles = itemToPlay.localConfiguration != null
+                && !itemToPlay.localConfiguration.subtitleConfigurations.isEmpty();
+
+        if (isHls && !hasExternalSubtitles) {
+            return new HlsMediaSource.Factory(dsFactory)
+                    .setAllowChunklessPreparation(true)
+                    .setLoadErrorHandlingPolicy(errorPolicy)
+                    .createMediaSource(itemToPlay);
         }
 
-        DefaultHttpDataSource.Factory newFactory = new DefaultHttpDataSource.Factory()
-                .setUserAgent("Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36")
-                .setConnectTimeoutMs(10000)
-                .setReadTimeoutMs(15000)
-                .setAllowCrossProtocolRedirects(true);
-
-        if (headers != null) {
-            newFactory.setDefaultRequestProperties(headers);
-        }
-        return newFactory;
+        return new DefaultMediaSourceFactory(dsFactory)
+                .setLoadErrorHandlingPolicy(errorPolicy)
+                .createMediaSource(itemToPlay);
     }
 
     public ExoPlayer initializePlayer(String videoUrl, MediaItem mediaItem, int resizeMode, boolean playWhenReady) {
@@ -129,8 +210,8 @@ public class PlayerPlaybackController {
                     .setBufferDurationsMs(
                             15_000, // minBufferMs
                             50_000, // maxBufferMs
-                            1_500,  // bufferForPlaybackMs
-                            2_500   // bufferForPlaybackAfterRebufferMs
+                            1_000,  // bufferForPlaybackMs — ускоренный старт воспроизведения
+                            2_000   // bufferForPlaybackAfterRebufferMs
                     )
                     .setBackBuffer(10_000, true)
                     .setPrioritizeTimeOverSizeThresholds(true)
@@ -152,20 +233,14 @@ public class PlayerPlaybackController {
             player.clearMediaItems();
         }
 
-        HttpDataSource.Factory httpFactory = getEffectiveHttpDataSourceFactory();
-        DataSource.Factory dsFactory = new DefaultDataSource.Factory(playerContext, httpFactory);
-
-        androidx.media3.exoplayer.source.DefaultMediaSourceFactory mediaSourceFactory =
-                new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dsFactory);
-
         MediaItem itemToPlay = mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl);
-        MediaSource mediaSource = mediaSourceFactory.createMediaSource(itemToPlay);
+        MediaSource mediaSource = buildMediaSourceForUrl(playerContext, videoUrl, itemToPlay);
 
         player.setMediaSource(mediaSource, Math.max(0L, startPosition));
 
         AmbientLightManager ambientLightManager = callback != null ? callback.getAmbientLightManager() : null;
         if (ambientLightManager != null) {
-            ambientLightManager.setPlayer(player, mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl), videoUrl);
+            ambientLightManager.setPlayer(player, itemToPlay, videoUrl);
         }
 
         if (audioController != null) {
@@ -204,14 +279,8 @@ public class PlayerPlaybackController {
 
         isFirstFrameRendered = false;
 
-        HttpDataSource.Factory httpFactory = getEffectiveHttpDataSourceFactory();
-        DataSource.Factory dsFactory = new DefaultDataSource.Factory(playerContext, httpFactory);
-
-        androidx.media3.exoplayer.source.DefaultMediaSourceFactory mediaSourceFactory =
-                new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dsFactory);
-
         MediaItem itemToPlay = mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl);
-        MediaSource mediaSource = mediaSourceFactory.createMediaSource(itemToPlay);
+        MediaSource mediaSource = buildMediaSourceForUrl(playerContext, videoUrl, itemToPlay);
 
         AmbientLightManager ambientLightManager = callback != null ? callback.getAmbientLightManager() : null;
         if (ambientLightManager != null) {
@@ -288,7 +357,7 @@ public class PlayerPlaybackController {
             }
 
             @Override
-            public void onPlayerError(PlaybackException error) {
+            public void onPlayerError(@NonNull PlaybackException error) {
                 Log.e(TAG, "ExoPlayer error", error);
                 cancelBufferingWatchdog();
                 if (callback != null) {

@@ -129,6 +129,7 @@ public class ApiService {
     private final OkHttpClient shikimoriHttpClient;
     private final Gson gson;
     private final ExecutorService executor;
+    private final ExecutorService kodikExecutor;
     private final Context context;
     private final KodikLinksExtractor kodikLinksExtractor;
 
@@ -174,7 +175,13 @@ public class ApiService {
 
     public ApiService(Context context) {
         this.context = context; // Сохраняем оригинальный context для runOnUiThread
-        this.httpClient = new OkHttpClient();
+        this.httpClient = new OkHttpClient.Builder()
+                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .retryOnConnectionFailure(true)
+                .build();
         this.shikimoriHttpClient = new OkHttpClient.Builder()
                 .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                 .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
@@ -185,6 +192,11 @@ public class ApiService {
         this.gson = new Gson();
         this.kodikLinksExtractor = new KodikLinksExtractor(this.httpClient, this.gson);
         this.executor = Executors.newSingleThreadExecutor();
+        this.kodikExecutor = Executors.newFixedThreadPool(3, r -> {
+            Thread t = new Thread(r, "kodik-extractor");
+            t.setDaemon(true);
+            return t;
+        });
         this.databaseManager = new com.example.animelib.data.DatabaseManager(context.getApplicationContext());
     }
 
@@ -283,6 +295,47 @@ public class ApiService {
         headers.put("sec-fetch-mode", "cors");
         headers.put("sec-fetch-site", "cross-site");
         return headers;
+    }
+
+    /**
+     * Определяет, относится ли URL потока к инфраструктуре Kodik / HLS CDN.
+     */
+    public static boolean isKodikStreamUrl(String url) {
+        if (url == null || url.isEmpty()) return false;
+        String lower = url.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("cdnlibs.org") || lower.contains("imglib.info") || lower.contains("animelib")) {
+            return false;
+        }
+        return lower.contains("kodik")
+                || lower.contains("aniqit")
+                || lower.contains(":hls:")
+                || lower.contains(".m3u8");
+    }
+
+    /**
+     * Заголовки для HLS/видеозапросов к CDN Kodik (без утечки Bearer-токена AnimeLib и с корректным Origin/Referer).
+     */
+    public static Map<String, String> buildKodikStreamHeaders() {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Referer", "https://kodik.info/");
+        headers.put("Origin", "https://kodik.info");
+        headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36");
+        headers.put("Accept", "*/*");
+        headers.put("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7");
+        headers.put("Sec-Fetch-Dest", "empty");
+        headers.put("Sec-Fetch-Mode", "cors");
+        headers.put("Sec-Fetch-Site", "cross-site");
+        return headers;
+    }
+
+    /**
+     * Возвращает подходящие HTTP-заголовки для конкретного видео-URL (Kodik HLS vs AnimeLib CDN).
+     */
+    public Map<String, String> getVideoRequestHeadersForUrl(String url) {
+        if (isKodikStreamUrl(url)) {
+            return buildKodikStreamHeaders();
+        }
+        return getVideoRequestHeaders();
     }
     
     /**
@@ -744,61 +797,89 @@ public class ApiService {
         }
     }
 
+    private static final long KODIK_CACHE_TTL_MS = 3 * 60 * 1000L;
+
+    /**
+     * Инвалидирует кэш ссылок Kodik для заданного источника (используется при восстановлении после ошибки потока).
+     */
+    public void invalidateKodikCache(String kodikSrc) {
+        if (kodikSrc == null || kodikSrc.trim().isEmpty()) return;
+        String cacheKey = KodikLinksExtractor.normalizeCacheKey(kodikSrc);
+        KODIK_LINKS_CACHE.remove(cacheKey);
+        KODIK_LINKS_CACHE.remove(kodikSrc.trim());
+    }
+
     /**
      * Получает ссылки Kodik напрямую, без внешнего сервиса.
      */
     public void fetchKodikVideoLinks(String kodikSrc, KodikVideoCallback callback) {
+        fetchKodikVideoLinks(kodikSrc, false, callback);
+    }
+
+    /**
+     * Получает ссылки Kodik напрямую с возможностью принудительного обновления (обхода кэша).
+     */
+    public void fetchKodikVideoLinks(String kodikSrc, boolean forceRefresh, KodikVideoCallback callback) {
         if (kodikSrc == null || kodikSrc.trim().isEmpty()) {
             if (callback != null) callback.onError("Пустая ссылка Kodik");
             return;
         }
 
-        final String cacheKey = kodikSrc.trim();
+        final String cacheKey = KodikLinksExtractor.normalizeCacheKey(kodikSrc);
 
-        CachedResponse<KodikResponse> cached = KODIK_LINKS_CACHE.get(cacheKey);
-        if (cached != null && cached.isValid(10 * 60 * 1000L)) {
-            Log.d("AnimeApiService", "fetchKodikVideoLinks: returning cached result for " + cacheKey);
-            if (callback != null) callback.onKodikVideoReceived(cached.data);
-            return;
+        if (forceRefresh) {
+            KODIK_LINKS_CACHE.remove(cacheKey);
+        } else {
+            CachedResponse<KodikResponse> cached = KODIK_LINKS_CACHE.get(cacheKey);
+            if (cached != null && cached.isValid(KODIK_CACHE_TTL_MS)) {
+                Log.d("AnimeApiService", "fetchKodikVideoLinks: returning cached result for " + cacheKey);
+                if (callback != null) callback.onKodikVideoReceived(cached.data);
+                return;
+            }
         }
 
+        final String pendingKey = forceRefresh ? (cacheKey + "#refresh") : cacheKey;
         synchronized (PENDING_KODIK_LINKS) {
-            List<KodikVideoCallback> pending = PENDING_KODIK_LINKS.get(cacheKey);
+            List<KodikVideoCallback> pending = PENDING_KODIK_LINKS.get(pendingKey);
             if (pending != null) {
                 if (callback != null) pending.add(callback);
-                Log.d("AnimeApiService", "fetchKodikVideoLinks: attached to in-flight request for " + cacheKey);
+                Log.d("AnimeApiService", "fetchKodikVideoLinks: attached to in-flight request for " + pendingKey);
                 return;
             }
             pending = new java.util.ArrayList<>();
             if (callback != null) pending.add(callback);
-            PENDING_KODIK_LINKS.put(cacheKey, pending);
+            PENDING_KODIK_LINKS.put(pendingKey, pending);
         }
 
-        final String requestKey = cacheKey;
-        safeExecute(() -> {
+        final String requestUrl = cacheKey;
+        Runnable task = () -> {
             try {
-                Log.d("AnimeApiService", "Fetching Kodik video links for src: " + requestKey);
-                KodikResponse kodikResponse = kodikLinksExtractor.getLinks(requestKey);
+                Log.d("AnimeApiService", "Fetching Kodik video links for src: " + requestUrl + " (forceRefresh=" + forceRefresh + ")");
+                KodikResponse kodikResponse = kodikLinksExtractor.getLinks(requestUrl, forceRefresh);
 
-                if (kodikResponse.isSuccess() && kodikResponse.getData() != null && !kodikResponse.getData().isEmpty()) {
-                    KODIK_LINKS_CACHE.put(requestKey, new CachedResponse<>(kodikResponse));
-                    dispatchKodikSuccess(requestKey, kodikResponse);
+                if (kodikResponse != null && kodikResponse.isSuccess()
+                        && kodikResponse.getData() != null && !kodikResponse.getData().isEmpty()) {
+                    KODIK_LINKS_CACHE.put(cacheKey, new CachedResponse<>(kodikResponse));
+                    dispatchKodikSuccess(pendingKey, kodikResponse);
                 } else {
-                    if (cached != null) {
-                        dispatchKodikSuccess(requestKey, cached.data);
-                    } else {
-                        dispatchKodikError(requestKey, "Kodik не вернул доступных качеств");
-                    }
+                    dispatchKodikError(pendingKey, "Kodik не вернул доступных качеств");
                 }
             } catch (Exception e) {
                 Log.e("AnimeApiService", "Error in Kodik links extraction", e);
-                if (cached != null) {
-                    dispatchKodikSuccess(requestKey, cached.data);
-                } else {
-                    dispatchKodikError(requestKey, "Ошибка получения ссылок Kodik: " + e.getMessage());
-                }
+                dispatchKodikError(pendingKey, "Ошибка получения ссылок Kodik: " + e.getMessage());
             }
-        });
+        };
+
+        try {
+            if (kodikExecutor != null && !kodikExecutor.isShutdown()) {
+                kodikExecutor.execute(task);
+            } else {
+                safeExecute(task);
+            }
+        } catch (Exception e) {
+            Log.e("AnimeApiService", "Failed to schedule Kodik extraction", e);
+            dispatchKodikError(pendingKey, "Ошибка планировщика Kodik: " + e.getMessage());
+        }
     }
 
     private void dispatchKodikSuccess(String key, KodikResponse response) {
@@ -833,38 +914,72 @@ public class ApiService {
         }
     }
 
+    public static void invalidateCommentsCacheMapForEpisode(java.util.Map<String, ?> commentsCache,
+                                                            java.util.Map<Long, ?> stickyCache,
+                                                            long episodeId) {
+        String prefix = episodeId + "_";
+        if (commentsCache != null) {
+            commentsCache.keySet().removeIf(key -> key != null && key.startsWith(prefix));
+        }
+        if (stickyCache != null) {
+            stickyCache.remove(episodeId);
+        }
+    }
+
+    public void invalidateEpisodeCommentsCache(long episodeId) {
+        invalidateCommentsCacheMapForEpisode(COMMENTS_CACHE, STICKY_COMMENTS_CACHE, episodeId);
+    }
+
+    public void invalidateAllCommentsCache() {
+        COMMENTS_CACHE.clear();
+        STICKY_COMMENTS_CACHE.clear();
+    }
+
     public void fetchEpisodeComments(long episodeId, String sortType, EpisodeCommentsCallback callback) {
-        fetchEpisodeComments(episodeId, sortType, 1, callback);
+        fetchEpisodeComments(episodeId, sortType, 1, false, callback);
     }
 
     public void fetchEpisodeComments(long episodeId, String sortType, int page, EpisodeCommentsCallback callback) {
+        fetchEpisodeComments(episodeId, sortType, page, false, callback);
+    }
+
+    public void fetchEpisodeComments(long episodeId, String sortType, int page, boolean forceRefresh, EpisodeCommentsCallback callback) {
         final String cacheKey = episodeId + "_" + (sortType != null ? sortType : "best") + "_" + page;
 
-        CachedResponse<CommentsResponse> cached = COMMENTS_CACHE.get(cacheKey);
-        if (cached != null && cached.isValid(2 * 60 * 1000L)) {
+        if (forceRefresh) {
+            invalidateEpisodeCommentsCache(episodeId);
+        }
+
+        CachedResponse<CommentsResponse> cached = forceRefresh ? null : COMMENTS_CACHE.get(cacheKey);
+        if (!forceRefresh && cached != null && cached.isValid(2 * 60 * 1000L)) {
             Log.d("ApiService", "fetchEpisodeComments: returning cached result for " + cacheKey);
             if (callback != null) safeRunOnUiThread(() -> callback.onCommentsReceived(cached.data));
             return;
         }
 
+        final String requestKey = forceRefresh ? (cacheKey + "_force_" + System.nanoTime()) : cacheKey;
         synchronized (PENDING_COMMENTS) {
-            List<EpisodeCommentsCallback> pending = PENDING_COMMENTS.get(cacheKey);
+            List<EpisodeCommentsCallback> pending = PENDING_COMMENTS.get(requestKey);
             if (pending != null) {
                 if (callback != null) pending.add(callback);
-                Log.d("ApiService", "fetchEpisodeComments: attached to in-flight request for " + cacheKey);
+                Log.d("ApiService", "fetchEpisodeComments: attached to in-flight request for " + requestKey);
                 return;
             }
             pending = new java.util.ArrayList<>();
             if (callback != null) pending.add(callback);
-            PENDING_COMMENTS.put(cacheKey, pending);
+            PENDING_COMMENTS.put(requestKey, pending);
         }
 
-        final String requestKey = cacheKey;
         safeExecute(() -> {
             try {
                 String apiUrl = getSort(episodeId, sortType, page);
 
-                Request request = buildApiRequest(apiUrl).build();
+                Request.Builder reqBuilder = buildApiRequest(apiUrl);
+                if (forceRefresh) {
+                    reqBuilder.header("Cache-Control", "no-cache, no-store, max-age=0");
+                    reqBuilder.header("Pragma", "no-cache");
+                }
+                Request request = reqBuilder.build();
 
                 httpClient.newCall(request).enqueue(new Callback() {
                     @Override
@@ -879,7 +994,7 @@ public class ApiService {
                                 String body = response.body().string();
                                 CommentsResponse comments = gson.fromJson(body, CommentsResponse.class);
                                 if (comments != null) {
-                                    COMMENTS_CACHE.put(requestKey, new CachedResponse<>(comments));
+                                    COMMENTS_CACHE.put(cacheKey, new CachedResponse<>(comments));
                                     dispatchCommentsSuccess(requestKey, comments);
                                 } else {
                                     dispatchCommentsError(requestKey, "Ошибка парсинга");
@@ -1108,6 +1223,7 @@ public class ApiService {
                             Log.d("ApiService", "Post comment response (" + response.code() + "): " + responseBody);
 
                             if (response.isSuccessful()) {
+                                invalidateEpisodeCommentsCache(episodeId);
                                 CommentsResponse.CommentItem commentItem = null;
                                 try {
                                     com.google.gson.JsonObject obj = gson.fromJson(responseBody, com.google.gson.JsonObject.class);
@@ -1119,6 +1235,7 @@ public class ApiService {
                                 } catch (Exception e) {
                                     Log.w("ApiService", "Failed to parse created comment item", e);
                                 }
+                                enrichCommentItemIfNeeded(commentItem, episodeId, parentCommentId, rootId, commentLevel, tokenEntity);
                                 CommentsResponse.CommentItem finalItem = commentItem;
                                 safeRunOnUiThread(() -> callback.onSuccess(finalItem));
                             } else if (response.code() == 401) {
@@ -1203,6 +1320,7 @@ public class ApiService {
                             Log.d("ApiService", "Edit comment response (" + response.code() + "): " + responseBody);
 
                             if (response.isSuccessful()) {
+                                invalidateEpisodeCommentsCache(episodeId);
                                 CommentsResponse.CommentItem commentItem = null;
                                 try {
                                     com.google.gson.JsonObject obj = gson.fromJson(responseBody, com.google.gson.JsonObject.class);
@@ -1214,6 +1332,7 @@ public class ApiService {
                                 } catch (Exception e) {
                                     Log.w("ApiService", "Failed to parse edited comment item", e);
                                 }
+                                enrichCommentItemIfNeeded(commentItem, episodeId, parentCommentId, rootId, commentLevel, tokenEntity);
                                 CommentsResponse.CommentItem finalItem = commentItem;
                                 safeRunOnUiThread(() -> callback.onSuccess(finalItem));
                             } else if (response.code() == 401) {
@@ -1274,6 +1393,7 @@ public class ApiService {
                             String responseBody = response.body() != null ? response.body().string() : "";
                             Log.d("ApiService", "Vote response (" + response.code() + "): " + responseBody);
                             if (response.isSuccessful()) {
+                                invalidateAllCommentsCache();
                                 CommentsResponse.Votes newVotes = null;
                                 try {
                                     com.google.gson.JsonObject obj = gson.fromJson(responseBody, com.google.gson.JsonObject.class);
@@ -1338,6 +1458,7 @@ public class ApiService {
                             String responseBody = response.body() != null ? response.body().string() : "";
                             Log.d("ApiService", "Delete comment response (" + response.code() + "): " + responseBody);
                             if (response.isSuccessful()) {
+                                invalidateAllCommentsCache();
                                 safeRunOnUiThread(() -> callback.onSuccess());
                             } else if (response.code() == 401) {
                                 safeRunOnUiThread(() -> callback.onError("Ошибка 401: Сессия истекла. Переавторизуйтесь."));
@@ -1413,6 +1534,7 @@ public class ApiService {
                             Log.d("ApiService", "Ignore user response (" + response.code() + "): " + responseBody);
 
                             if (response.isSuccessful()) {
+                                invalidateAllCommentsCache();
                                 safeRunOnUiThread(() -> callback.onSuccess("Пользователь добавлен в игнор-лист"));
                             } else if (response.code() == 401) {
                                 safeRunOnUiThread(() -> callback.onError("Ошибка 401: Сессия истекла. Авторизуйтесь заново."));
@@ -1431,6 +1553,65 @@ public class ApiService {
                 safeRunOnUiThread(() -> callback.onError("Ошибка: " + e.getMessage()));
             }
         });
+    }
+
+    private void enrichCommentItemIfNeeded(CommentsResponse.CommentItem item,
+                                           long episodeId,
+                                           Long parentCommentId,
+                                           Long rootId,
+                                           int commentLevel,
+                                           TokenEntity tokenEntity) {
+        if (item == null) return;
+        if (item.getRelation_id() <= 0) {
+            item.setRelation_id(episodeId);
+        }
+        if (parentCommentId != null && parentCommentId > 0) {
+            if (item.getParent_comment() == null || item.getParent_comment() <= 0) {
+                item.setParent_comment(parentCommentId);
+            }
+            Long effectiveRoot = (rootId != null && rootId > 0) ? rootId : parentCommentId;
+            if (item.getRoot_id() == null || item.getRoot_id() <= 0) {
+                item.setRoot_id(effectiveRoot);
+            }
+            if (item.getComment_level() <= 0) {
+                item.setComment_level(Math.max(1, commentLevel));
+            }
+        }
+        if (item.getCreated_at_ts() <= 0 && (item.getCreated_at() == null || item.getCreated_at().isEmpty())) {
+            item.setCreated_at_ts(System.currentTimeMillis() / 1000L);
+        }
+        if (item.getUser() == null && tokenEntity != null) {
+            CommentsResponse.User fallbackUser = null;
+            try {
+                String authJson = tokenEntity.getAuthJson();
+                if (authJson != null && !authJson.trim().isEmpty()) {
+                    com.google.gson.JsonObject authObj = gson.fromJson(authJson, com.google.gson.JsonObject.class);
+                    if (authObj != null) {
+                        com.google.gson.JsonObject userObj = authObj.has("auth") && authObj.get("auth").isJsonObject()
+                                ? authObj.getAsJsonObject("auth")
+                                : (authObj.has("user") && authObj.get("user").isJsonObject()
+                                        ? authObj.getAsJsonObject("user") : authObj);
+                        fallbackUser = gson.fromJson(userObj, CommentsResponse.User.class);
+                    }
+                }
+            } catch (Exception ignored) {}
+
+            if (fallbackUser == null) {
+                fallbackUser = new CommentsResponse.User();
+            }
+            if (fallbackUser.getId() <= 0 && tokenEntity.getUserId() != null) {
+                try {
+                    fallbackUser.setId(Long.parseLong(tokenEntity.getUserId().trim()));
+                } catch (Exception ignored) {}
+            }
+            if ((fallbackUser.getUsername() == null || fallbackUser.getUsername().trim().isEmpty())
+                    && tokenEntity.getUsername() != null && !tokenEntity.getUsername().trim().isEmpty()) {
+                fallbackUser.setUsername(tokenEntity.getUsername().trim());
+            }
+            if (fallbackUser.getUsername() != null || fallbackUser.getId() > 0) {
+                item.setUser(fallbackUser);
+            }
+        }
     }
 
     /**

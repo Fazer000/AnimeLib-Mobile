@@ -7,14 +7,18 @@ public class CommentsResponse {
     private Meta meta;
 
     public Data getData() { return data; }
+    public void setData(Data data) { this.data = data; }
     public Meta getMeta() { return meta; }
+    public void setMeta(Meta meta) { this.meta = meta; }
 
     public static class Data {
         private List<CommentItem> replies;
         private List<CommentItem> root;
 
         public List<CommentItem> getReplies() { return replies; }
+        public void setReplies(List<CommentItem> replies) { this.replies = replies; }
         public List<CommentItem> getRoot() { return root; }
+        public void setRoot(List<CommentItem> root) { this.root = root; }
     }
 
     public static class Meta {
@@ -59,16 +63,27 @@ public class CommentsResponse {
         private boolean isSticky;
 
         public long getId() { return id; }
+        public void setId(long id) { this.id = id; }
         public Long getRoot_id() { return root_id; }
+        public void setRoot_id(Long root_id) { this.root_id = root_id; }
         public Long getParent_comment() { return parent_comment; }
+        public void setParent_comment(Long parent_comment) { this.parent_comment = parent_comment; }
         public int getComment_level() { return comment_level; }
+        public void setComment_level(int comment_level) { this.comment_level = comment_level; }
         public String getPost_page() { return post_page; }
+        public void setPost_page(String post_page) { this.post_page = post_page; }
         public String getComment() { return comment; }
+        public void setComment(String comment) { this.comment = comment; }
         public String getCreated_at() { return created_at; }
+        public void setCreated_at(String created_at) { this.created_at = created_at; }
         public long getCreated_at_ts() { return created_at_ts; }
+        public void setCreated_at_ts(long created_at_ts) { this.created_at_ts = created_at_ts; }
         public String getRelation_type() { return relation_type; }
+        public void setRelation_type(String relation_type) { this.relation_type = relation_type; }
         public long getRelation_id() { return relation_id; }
+        public void setRelation_id(long relation_id) { this.relation_id = relation_id; }
         public User getUser() { return user; }
+        public void setUser(User user) { this.user = user; }
         public Votes getVotes() { return votes; }
         public void setVotes(Votes votes) { this.votes = votes; }
         public StickyInfo getSticky_info() { return sticky_info; }
@@ -94,9 +109,13 @@ public class CommentsResponse {
         private Premium premium;
 
         public String getUsername() { return username; }
+        public void setUsername(String username) { this.username = username; }
         public long getId() { return id; }
+        public void setId(long id) { this.id = id; }
         public Avatar getAvatar() { return avatar; }
+        public void setAvatar(Avatar avatar) { this.avatar = avatar; }
         public Premium getPremium() { return premium; }
+        public void setPremium(Premium premium) { this.premium = premium; }
     }
 
     public static class Avatar {
@@ -104,7 +123,9 @@ public class CommentsResponse {
         private String url;
 
         public String getFilename() { return filename; }
+        public void setFilename(String filename) { this.filename = filename; }
         public String getUrl() { return url; }
+        public void setUrl(String url) { this.url = url; }
     }
 
     public static class Premium {

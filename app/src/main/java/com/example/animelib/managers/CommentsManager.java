@@ -128,6 +128,7 @@ public class CommentsManager {
     private int replyCommentLevel = 0;
     private String replyUsername = null;
     private CommentsResponse.CommentItem editingComment = null;
+    private boolean isSubmittingComment = false;
 
     // Состояние загрузки и бесконечного скролла
     private boolean isCommentsVisible = false;
@@ -578,6 +579,9 @@ public class CommentsManager {
                             public void onSuccess(String message) {
                                 safeRunOnUiThread(() -> {
                                     CustomToast.showSuccess(context, "Пользователь добавлен в игнор-лист");
+                                    if (apiService != null) {
+                                        apiService.invalidateAllCommentsCache();
+                                    }
                                     resetCommentsOnEpisodeChange(false);
                                     loadCommentsPage(1);
                                 });
@@ -661,10 +665,28 @@ public class CommentsManager {
     }
 
     private void removeCommentFromMemoryAndAdapters(long commentId) {
+        if (apiService != null) {
+            if (currentEpisode != null) {
+                apiService.invalidateEpisodeCommentsCache(currentEpisode.getId());
+            } else {
+                apiService.invalidateAllCommentsCache();
+            }
+        }
         sharedParsedCache.remove(commentId);
         for (int i = loadedStickyComments.size() - 1; i >= 0; i--) {
             if (loadedStickyComments.get(i).getId() == commentId) {
                 loadedStickyComments.remove(i);
+            }
+        }
+        for (CommentsResponse resp : loadedPageResponses) {
+            if (resp == null || resp.getData() == null) continue;
+            if (resp.getData().getRoot() != null) {
+                resp.getData().getRoot().removeIf(item -> item != null && item.getId() == commentId);
+            }
+            if (resp.getData().getReplies() != null) {
+                resp.getData().getReplies().removeIf(item -> item != null && (item.getId() == commentId
+                        || (item.getParent_comment() != null && item.getParent_comment() == commentId)
+                        || (item.getRoot_id() != null && item.getRoot_id() == commentId)));
             }
         }
         if (commentsAdapter != null) {
@@ -995,10 +1017,7 @@ public class CommentsManager {
             }
             return;
         }
-        targetAdapter.setInitialComments(loadedStickyComments, loadedPageResponses.get(0));
-        for (int i = 1; i < loadedPageResponses.size(); i++) {
-            targetAdapter.appendCommentsPage(loadedPageResponses.get(i));
-        }
+        targetAdapter.replacePagesOnRefresh(loadedStickyComments, loadedPageResponses, null, !"asc".equals(commentsSortType));
     }
 
     public void forceHideCommentsPanel() {
@@ -1351,6 +1370,7 @@ public class CommentsManager {
         commentsCurrentPage = 0;
         commentsHasNextPage = false;
         isLoadingComments = false;
+        isSubmittingComment = false;
         isPortraitCommentsRequested = false;
         if (reloadIfVisible) {
             isPlayerReadyForComments = false;
@@ -1895,7 +1915,9 @@ public class CommentsManager {
     }
 
     public void sendCommentFromInput(EditText inputField) {
-        if (inputField == null || currentEpisode == null) return;
+        if (inputField == null || currentEpisode == null || apiService == null) return;
+        if (isSubmittingComment) return;
+
         CharSequence rawEditable = inputField.getText();
         String text = rawEditable != null ? CommentFormattingHelper.toBBCode(rawEditable).trim() : "";
         if (text.isEmpty()) {
@@ -1906,17 +1928,20 @@ public class CommentsManager {
         long episodeId = currentEpisode.getId();
 
         if (editingComment != null) {
-            long commentId = editingComment.getId();
-            Long parentId = editingComment.getParent_comment();
-            Long rootId = editingComment.getRoot_id();
-            int level = editingComment.getComment_level();
+            final CommentsResponse.CommentItem originalEditing = editingComment;
+            long commentId = originalEditing.getId();
+            Long parentId = originalEditing.getParent_comment();
+            Long rootId = originalEditing.getRoot_id();
+            int level = originalEditing.getComment_level();
 
+            isSubmittingComment = true;
             CustomToast.showInfo(context, "Сохранение комментария...");
 
             apiService.editComment(commentId, episodeId, text, parentId, rootId, level, new ApiService.EditCommentCallback() {
                 @Override
                 public void onSuccess(CommentsResponse.CommentItem editedComment) {
                     safeRunOnUiThread(() -> {
+                        isSubmittingComment = false;
                         CustomToast.showSuccess(context, "Комментарий обновлен!");
                         inputField.setText("");
                         if (commentInputField != null) commentInputField.setText("");
@@ -1925,15 +1950,24 @@ public class CommentsManager {
                         cancelReplyMode();
                         hideKeyboard(inputField);
 
-                        sharedParsedCache.remove(commentId);
-                        resetCommentsOnEpisodeChange(false);
-                        loadCommentsPage(1);
+                        CommentsResponse.CommentItem itemToApply = editedComment != null ? editedComment : originalEditing;
+                        if (itemToApply.getId() <= 0) {
+                            itemToApply.setId(commentId);
+                        }
+                        if (editedComment == null || itemToApply.getComment() == null || itemToApply.getComment().trim().isEmpty()) {
+                            itemToApply.setComment(buildFallbackHtmlFromBBCode(text));
+                        }
+                        handleCommentMutationSuccess(episodeId, itemToApply, text, parentId, rootId, level, true);
                     });
                 }
 
                 @Override
                 public void onError(String error) {
-                    safeRunOnUiThread(() -> CustomToast.showWarning(context, "Ошибка сохранения комментария"));
+                    safeRunOnUiThread(() -> {
+                        isSubmittingComment = false;
+                        String msg = (error != null && !error.trim().isEmpty()) ? error : "Ошибка сохранения комментария";
+                        CustomToast.showWarning(context, msg);
+                    });
                 }
             });
             return;
@@ -1946,12 +1980,14 @@ public class CommentsManager {
         Long rootId = isReplyActive ? replyRootId : null;
         int level = isReplyActive ? replyCommentLevel : 0;
 
+        isSubmittingComment = true;
         CustomToast.showInfo(context, "Отправка комментария...");
 
         apiService.postComment(episodeId, text, parentId, rootId, level, new ApiService.PostCommentCallback() {
             @Override
             public void onSuccess(CommentsResponse.CommentItem postedComment) {
                 safeRunOnUiThread(() -> {
+                    isSubmittingComment = false;
                     CustomToast.showSuccess(context, "Комментарий опубликован!");
                     inputField.setText("");
                     if (commentInputField != null) commentInputField.setText("");
@@ -1960,20 +1996,25 @@ public class CommentsManager {
                     cancelReplyMode();
                     hideKeyboard(inputField);
 
-                    resetCommentsOnEpisodeChange(false);
-                    loadCommentsPage(1);
+                    handleCommentMutationSuccess(episodeId, postedComment, text, parentId, rootId, level, false);
                 });
             }
 
             @Override
             public void onError(String error) {
-                safeRunOnUiThread(() -> CustomToast.showWarning(context, "Ошибка публикации комментария"));
+                safeRunOnUiThread(() -> {
+                    isSubmittingComment = false;
+                    String msg = (error != null && !error.trim().isEmpty()) ? error : "Ошибка публикации комментария";
+                    CustomToast.showWarning(context, msg);
+                });
             }
         });
     }
 
     public void sendInlineReply(CommentsResponse.CommentItem comment, CharSequence rawText, EditText inputField) {
-        if (comment == null || currentEpisode == null) return;
+        if (comment == null || currentEpisode == null || apiService == null) return;
+        if (isSubmittingComment) return;
+
         String text = rawText != null ? CommentFormattingHelper.toBBCode(rawText).trim() : "";
         if (text.isEmpty()) {
             CustomToast.showWarning(context, "Введите текст ответа");
@@ -1985,28 +2026,448 @@ public class CommentsManager {
         Long rootId = comment.getRoot_id() != null ? comment.getRoot_id() : comment.getId();
         int level = comment.getComment_level() + 1;
 
+        isSubmittingComment = true;
         CustomToast.showInfo(context, "Отправка ответа...");
 
         apiService.postComment(episodeId, text, parentId, rootId, level, new ApiService.PostCommentCallback() {
             @Override
             public void onSuccess(CommentsResponse.CommentItem postedComment) {
                 safeRunOnUiThread(() -> {
+                    isSubmittingComment = false;
                     CustomToast.showSuccess(context, "Ответ опубликован!");
                     if (inputField != null) inputField.setText("");
 
                     cancelReplyMode();
                     hideKeyboard(inputField);
 
-                    resetCommentsOnEpisodeChange(false);
-                    loadCommentsPage(1);
+                    handleCommentMutationSuccess(episodeId, postedComment, text, parentId, rootId, level, false);
                 });
             }
 
             @Override
             public void onError(String error) {
-                safeRunOnUiThread(() -> CustomToast.showWarning(context, "Ошибка отправки ответа"));
+                safeRunOnUiThread(() -> {
+                    isSubmittingComment = false;
+                    String msg = (error != null && !error.trim().isEmpty()) ? error : "Ошибка отправки ответа";
+                    CustomToast.showWarning(context, msg);
+                });
             }
         });
+    }
+
+    private void handleCommentMutationSuccess(long episodeId,
+                                              CommentsResponse.CommentItem mutatedComment,
+                                              String submittedText,
+                                              Long parentId,
+                                              Long rootId,
+                                              int level,
+                                              boolean isEdit) {
+        if (apiService != null) {
+            apiService.invalidateEpisodeCommentsCache(episodeId);
+        }
+        if (currentEpisode == null || currentEpisode.getId() != episodeId) {
+            return;
+        }
+
+        mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
+        isPortraitCommentsRequested = true;
+
+        boolean prependRoot = !"asc".equals(commentsSortType);
+        if (mutatedComment != null && mutatedComment.getId() > 0) {
+            normalizeMutatedComment(mutatedComment, episodeId, submittedText, parentId, rootId, level);
+
+            sharedParsedCache.remove(mutatedComment.getId());
+            int primaryTextColor = CommentHtmlProcessor.resolvePrimaryTextColor(context);
+            int purpleColor = context != null ? ContextCompat.getColor(context, R.color.purple_primary) : 0xFF8B5CF6;
+            CommentHtmlProcessor.ParsedCommentContent parsed = CommentHtmlProcessor.parseHtmlOffThread(
+                    mutatedComment.getComment(), primaryTextColor, purpleColor);
+            sharedParsedCache.put(mutatedComment.getId(), parsed);
+
+            Map<Long, CommentHtmlProcessor.ParsedCommentContent> singleMap = new HashMap<>();
+            singleMap.put(mutatedComment.getId(), parsed);
+
+            upsertIntoLoadedPageResponses(mutatedComment, prependRoot);
+
+            if (commentsAdapter != null) {
+                commentsAdapter.putParsedContentMap(singleMap);
+                commentsAdapter.upsertComment(mutatedComment, prependRoot);
+            }
+            if (portraitCommentsAdapter != null) {
+                portraitCommentsAdapter.putParsedContentMap(singleMap);
+                portraitCommentsAdapter.upsertComment(mutatedComment, prependRoot);
+            }
+
+            if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
+            if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
+            updateEmptyCommentsState();
+
+            boolean isNewRoot = !isEdit && (parentId == null || parentId <= 0);
+            if (isNewRoot && prependRoot && !isPortraitOrientation() && isCommentsVisible
+                    && commentsRecyclerView != null && commentsAdapter != null) {
+                int targetPos = commentsAdapter.findCommentAdapterPosition(mutatedComment.getId());
+                if (targetPos >= 0) {
+                    commentsRecyclerView.scrollToPosition(targetPos);
+                }
+            }
+        }
+
+        int targetPage = findPageForMutationRefresh(mutatedComment, parentId, rootId, isEdit);
+        refreshCommentsPageFromServer(episodeId, targetPage, mutatedComment, isEdit, true);
+    }
+
+    private void normalizeMutatedComment(CommentsResponse.CommentItem item,
+                                         long episodeId,
+                                         String submittedText,
+                                         Long parentId,
+                                         Long rootId,
+                                         int level) {
+        if (item == null) return;
+        if (item.getRelation_id() <= 0) {
+            item.setRelation_id(episodeId);
+        }
+        if (item.getComment() == null || item.getComment().trim().isEmpty()) {
+            item.setComment(buildFallbackHtmlFromBBCode(submittedText));
+        }
+        if (parentId != null && parentId > 0) {
+            if (item.getParent_comment() == null || item.getParent_comment() <= 0) {
+                item.setParent_comment(parentId);
+            }
+            Long effectiveRoot = (rootId != null && rootId > 0) ? rootId : parentId;
+            if (item.getRoot_id() == null || item.getRoot_id() <= 0) {
+                item.setRoot_id(effectiveRoot);
+            }
+            if (item.getComment_level() <= 0) {
+                item.setComment_level(Math.max(1, level));
+            }
+        }
+        if (item.getCreated_at_ts() <= 0 && (item.getCreated_at() == null || item.getCreated_at().isEmpty())) {
+            item.setCreated_at_ts(System.currentTimeMillis() / 1000L);
+        }
+        if (item.getUser() == null) {
+            populateFallbackUserIfMissing(item);
+        }
+    }
+
+    private void populateFallbackUserIfMissing(CommentsResponse.CommentItem item) {
+        try {
+            DatabaseManager db = (apiService != null && apiService.getDatabaseManager() != null)
+                    ? apiService.getDatabaseManager()
+                    : (context != null ? new DatabaseManager(context) : null);
+            if (db == null) return;
+            TokenEntity token = db.getToken();
+            if (token == null) return;
+
+            CommentsResponse.User user = new CommentsResponse.User();
+            if (token.getUserId() != null && !token.getUserId().trim().isEmpty()) {
+                try {
+                    user.setId(Long.parseLong(token.getUserId().trim()));
+                } catch (Exception ignored) {}
+            }
+            if (token.getUsername() != null && !token.getUsername().trim().isEmpty()) {
+                user.setUsername(token.getUsername().trim());
+            }
+            if (user.getUsername() != null || user.getId() > 0) {
+                item.setUser(user);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private static String buildFallbackHtmlFromBBCode(String rawText) {
+        if (rawText == null || rawText.trim().isEmpty()) {
+            return "<p></p>";
+        }
+        String escaped = rawText
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
+        escaped = escaped
+                .replaceAll("(?is)\\[b\\]([\\s\\S]*?)\\[/b\\]", "<strong>$1</strong>")
+                .replaceAll("(?is)\\[i\\]([\\s\\S]*?)\\[/i\\]", "<em>$1</em>")
+                .replaceAll("(?is)\\[u\\]([\\s\\S]*?)\\[/u\\]", "<u>$1</u>")
+                .replaceAll("(?is)\\[s\\]([\\s\\S]*?)\\[/s\\]", "<s>$1</s>")
+                .replaceAll("(?is)\\[quote\\]([\\s\\S]*?)\\[/quote\\]", "<blockquote>$1</blockquote>")
+                .replaceAll("(?is)\\[spoiler(?:=([^\\]]+))?\\]([\\s\\S]*?)\\[/spoiler\\]",
+                        "<div class=\"spoiler-node\" data-spoiler-text=\"$1\"><div class=\"spoiler-node__text\">$2</div></div>");
+        String[] paragraphs = escaped.split("\\r?\\n");
+        StringBuilder sb = new StringBuilder();
+        for (String p : paragraphs) {
+            if (!p.trim().isEmpty()) {
+                sb.append("<p>").append(p).append("</p>");
+            }
+        }
+        return sb.length() > 0 ? sb.toString() : "<p>" + escaped + "</p>";
+    }
+
+    private int findPageForMutationRefresh(CommentsResponse.CommentItem mutatedComment,
+                                           Long parentId,
+                                           Long rootId,
+                                           boolean isEdit) {
+        if (!isEdit && (parentId == null || parentId <= 0)) {
+            return 1;
+        }
+        Long lookupRootId = (rootId != null && rootId > 0)
+                ? rootId
+                : ((parentId != null && parentId > 0) ? parentId
+                : (mutatedComment != null ? mutatedComment.getId() : null));
+        if (lookupRootId == null || lookupRootId <= 0 || loadedPageResponses.isEmpty()) {
+            return 1;
+        }
+        for (int i = 0; i < loadedPageResponses.size(); i++) {
+            CommentsResponse resp = loadedPageResponses.get(i);
+            if (responseContainsComment(resp, lookupRootId)) {
+                return i + 1;
+            }
+        }
+        return 1;
+    }
+
+    private static boolean responseContainsComment(CommentsResponse resp, long commentId) {
+        if (resp == null || resp.getData() == null || commentId <= 0) return false;
+        if (resp.getData().getRoot() != null) {
+            for (CommentsResponse.CommentItem r : resp.getData().getRoot()) {
+                if (r != null && r.getId() == commentId) return true;
+            }
+        }
+        if (resp.getData().getReplies() != null) {
+            for (CommentsResponse.CommentItem c : resp.getData().getReplies()) {
+                if (c != null && c.getId() == commentId) return true;
+            }
+        }
+        return false;
+    }
+
+    private void upsertIntoLoadedPageResponses(CommentsResponse.CommentItem item, boolean prependRoot) {
+        if (item == null || item.getId() <= 0) return;
+
+        for (CommentsResponse resp : loadedPageResponses) {
+            if (resp == null || resp.getData() == null) continue;
+            if (resp.getData().getRoot() != null) {
+                for (int i = 0; i < resp.getData().getRoot().size(); i++) {
+                    CommentsResponse.CommentItem existing = resp.getData().getRoot().get(i);
+                    if (existing != null && existing.getId() == item.getId()) {
+                        resp.getData().getRoot().set(i, item);
+                        return;
+                    }
+                }
+            }
+            if (resp.getData().getReplies() != null) {
+                for (int i = 0; i < resp.getData().getReplies().size(); i++) {
+                    CommentsResponse.CommentItem existing = resp.getData().getReplies().get(i);
+                    if (existing != null && existing.getId() == item.getId()) {
+                        resp.getData().getReplies().set(i, item);
+                        return;
+                    }
+                }
+            }
+        }
+
+        if (loadedPageResponses.isEmpty()) {
+            CommentsResponse syntheticPage = new CommentsResponse();
+            CommentsResponse.Data data = new CommentsResponse.Data();
+            data.setRoot(new ArrayList<>());
+            data.setReplies(new ArrayList<>());
+            syntheticPage.setData(data);
+            loadedPageResponses.add(syntheticPage);
+        }
+
+        boolean isReply = (item.getParent_comment() != null && item.getParent_comment() > 0)
+                || (item.getRoot_id() != null && item.getRoot_id() > 0)
+                || item.getComment_level() > 0;
+
+        if (isReply) {
+            Long targetRoot = item.getRoot_id() != null && item.getRoot_id() > 0 ? item.getRoot_id() : item.getParent_comment();
+            CommentsResponse targetResp = loadedPageResponses.get(0);
+            if (targetRoot != null) {
+                for (CommentsResponse resp : loadedPageResponses) {
+                    if (responseContainsComment(resp, targetRoot)) {
+                        targetResp = resp;
+                        break;
+                    }
+                }
+            }
+            if (targetResp.getData() == null) {
+                CommentsResponse.Data d = new CommentsResponse.Data();
+                d.setRoot(new ArrayList<>());
+                d.setReplies(new ArrayList<>());
+                targetResp.setData(d);
+            }
+            if (targetResp.getData().getReplies() == null) {
+                targetResp.getData().setReplies(new ArrayList<>());
+            }
+            targetResp.getData().getReplies().add(item);
+        } else {
+            CommentsResponse targetResp = prependRoot
+                    ? loadedPageResponses.get(0)
+                    : loadedPageResponses.get(loadedPageResponses.size() - 1);
+            if (targetResp.getData() == null) {
+                CommentsResponse.Data d = new CommentsResponse.Data();
+                d.setRoot(new ArrayList<>());
+                d.setReplies(new ArrayList<>());
+                targetResp.setData(d);
+            }
+            if (targetResp.getData().getRoot() == null) {
+                targetResp.getData().setRoot(new ArrayList<>());
+            }
+            if (prependRoot) {
+                targetResp.getData().getRoot().add(0, item);
+            } else {
+                targetResp.getData().getRoot().add(item);
+            }
+        }
+    }
+
+    private void refreshCommentsPageFromServer(long episodeId,
+                                               int pageToRefresh,
+                                               CommentsResponse.CommentItem mutatedComment,
+                                               boolean isEdit,
+                                               boolean allowReplicaLagRetry) {
+        if (isOfflineMode || isCommentsDisabledInPlayer() || apiService == null) {
+            return;
+        }
+        if (currentEpisode == null || currentEpisode.getId() != episodeId) {
+            return;
+        }
+
+        final int targetPage = Math.max(1, pageToRefresh);
+        final int gen = ++requestGeneration;
+        isLoadingComments = true;
+
+        boolean hasAnyDisplayed = (commentsAdapter != null && commentsAdapter.getCommentDisplayCount() > 0)
+                || (portraitCommentsAdapter != null && portraitCommentsAdapter.getCommentDisplayCount() > 0);
+        if (!hasAnyDisplayed) {
+            if (!isPortraitOrientation() && isCommentsVisible) {
+                showLoadingOverlay(commentsLoadingOverlay);
+            } else if (isPortraitOrientation()) {
+                showLoadingOverlay(portraitCommentsLoadingOverlay);
+            }
+        }
+
+        final int primaryTextColor = CommentHtmlProcessor.resolvePrimaryTextColor(context);
+        final int purpleColor = context != null ? ContextCompat.getColor(context, R.color.purple_primary) : 0xFF8B5CF6;
+
+        apiService.fetchEpisodeComments(episodeId, commentsSortType, targetPage, true,
+                new ApiService.EpisodeCommentsCallback() {
+                    @Override
+                    public void onCommentsReceived(CommentsResponse response) {
+                        commentsProcessingExecutor.execute(() -> {
+                            List<CommentsResponse.CommentItem> allItems = new ArrayList<>();
+                            if (response != null && response.getData() != null) {
+                                if (response.getData().getRoot() != null) {
+                                    allItems.addAll(response.getData().getRoot());
+                                }
+                                if (response.getData().getReplies() != null) {
+                                    allItems.addAll(response.getData().getReplies());
+                                }
+                            }
+                            for (CommentsResponse.CommentItem serverItem : allItems) {
+                                if (serverItem != null) {
+                                    sharedParsedCache.remove(serverItem.getId());
+                                }
+                            }
+                            Map<Long, CommentHtmlProcessor.ParsedCommentContent> parsedMap =
+                                    preParseCommentsBatch(allItems, primaryTextColor, purpleColor);
+
+                            safeRunOnUiThread(() -> {
+                                if (gen != requestGeneration) {
+                                    return;
+                                }
+                                isLoadingComments = false;
+                                hideLoadingOverlay(commentsLoadingOverlay);
+                                hideLoadingOverlay(portraitCommentsLoadingOverlay);
+                                if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
+                                if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
+
+                                if (commentsAdapter != null) {
+                                    commentsAdapter.putParsedContentMap(parsedMap);
+                                    commentsAdapter.setLoadingMore(false);
+                                }
+                                if (portraitCommentsAdapter != null) {
+                                    portraitCommentsAdapter.putParsedContentMap(parsedMap);
+                                    portraitCommentsAdapter.setLoadingMore(false);
+                                }
+
+                                if (response != null) {
+                                    if (targetPage == 1 && loadedPageResponses.size() <= 1) {
+                                        loadedPageResponses.clear();
+                                        loadedPageResponses.add(response);
+                                        if (response.getMeta() != null) {
+                                            commentsHasNextPage = response.getMeta().isHas_next_page();
+                                            commentsCurrentPage = response.getMeta().getPage() > 0 ? response.getMeta().getPage() : 1;
+                                        } else {
+                                            commentsCurrentPage = 1;
+                                            commentsHasNextPage = false;
+                                        }
+                                    } else if (targetPage >= 1 && targetPage <= loadedPageResponses.size()) {
+                                        loadedPageResponses.set(targetPage - 1, response);
+                                        if (targetPage == loadedPageResponses.size() && response.getMeta() != null) {
+                                            commentsHasNextPage = response.getMeta().isHas_next_page();
+                                            commentsCurrentPage = Math.max(commentsCurrentPage, targetPage);
+                                        }
+                                    } else {
+                                        loadedPageResponses.clear();
+                                        loadedPageResponses.add(response);
+                                        commentsCurrentPage = targetPage;
+                                        commentsHasNextPage = response.getMeta() != null && response.getMeta().isHas_next_page();
+                                    }
+
+                                    boolean prependRoot = !"asc".equals(commentsSortType);
+                                    boolean foundInServer = mutatedComment != null && responseContainsComment(response, mutatedComment.getId());
+                                    if (!isEdit && mutatedComment != null && mutatedComment.getId() > 0 && !foundInServer) {
+                                        upsertIntoLoadedPageResponses(mutatedComment, prependRoot);
+                                    }
+
+                                    CommentsResponse.CommentItem ensureItem = (!isEdit && mutatedComment != null) ? mutatedComment : null;
+                                    boolean portraitNow = isPortraitOrientation();
+                                    if (portraitNow) {
+                                        if (portraitCommentsAdapter != null) {
+                                            portraitCommentsAdapter.replacePagesOnRefresh(loadedStickyComments, loadedPageResponses, ensureItem, prependRoot);
+                                        }
+                                        landscapeAdapterNeedsSync = true;
+                                    } else {
+                                        if (isCommentsVisible && !isPanelAnimatingOpen && commentsAdapter != null) {
+                                            commentsAdapter.replacePagesOnRefresh(loadedStickyComments, loadedPageResponses, ensureItem, prependRoot);
+                                        } else {
+                                            landscapeAdapterNeedsSync = true;
+                                        }
+                                        portraitAdapterNeedsSync = true;
+                                    }
+
+                                    updateEmptyCommentsState();
+
+                                    if (dataCallback != null) {
+                                        dataCallback.onCommentsLoaded(allItems);
+                                    }
+
+                                    if (!isEdit && mutatedComment != null && mutatedComment.getId() > 0
+                                            && !foundInServer && allowReplicaLagRetry && "desc".equals(commentsSortType)) {
+                                        mainHandler.postDelayed(() -> {
+                                            if (currentEpisode != null && currentEpisode.getId() == episodeId && !isLoadingComments) {
+                                                refreshCommentsPageFromServer(episodeId, targetPage, mutatedComment, false, false);
+                                            }
+                                        }, 1500L);
+                                    }
+                                } else {
+                                    updateEmptyCommentsState();
+                                }
+                            });
+                        });
+                    }
+
+                    @Override
+                    public void onError(String error) {
+                        safeRunOnUiThread(() -> {
+                            if (gen != requestGeneration) {
+                                return;
+                            }
+                            isLoadingComments = false;
+                            hideLoadingOverlay(commentsLoadingOverlay);
+                            hideLoadingOverlay(portraitCommentsLoadingOverlay);
+                            if (commentsAdapter != null) commentsAdapter.setLoadingMore(false);
+                            if (portraitCommentsAdapter != null) portraitCommentsAdapter.setLoadingMore(false);
+                            updateEmptyCommentsState();
+                        });
+                    }
+                });
     }
 
     private void hideKeyboard(View targetView) {
@@ -2233,6 +2694,7 @@ public class CommentsManager {
         commentsCurrentPage = 0;
         commentsHasNextPage = false;
         isLoadingComments = false;
+        isSubmittingComment = false;
         isCommentsVisible = false;
         isPanelAnimatingOpen = false;
 

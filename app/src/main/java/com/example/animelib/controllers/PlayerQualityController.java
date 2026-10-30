@@ -107,30 +107,10 @@ public class PlayerQualityController {
             qualityToUse = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(null, available, targetQuality, 0);
         }
 
-        int targetRes = com.example.animelib.util.AutoQualityHelper.extractResolution(qualityToUse);
-
-        for (String key : response.getData().keySet()) {
-            int keyRes = com.example.animelib.util.AutoQualityHelper.extractResolution(key);
-            if (keyRes == targetRes || key.equalsIgnoreCase(qualityToUse) || (key + "p").equalsIgnoreCase(qualityToUse)) {
-                if (response.getData().get(key) != null && response.getData().get(key).length > 0) {
-                    String url = response.getData().get(key)[0].getSrc();
-                    if (url != null && !url.startsWith("http")) {
-                        url = "https:" + url;
-                    }
-                    return new KodikHlsResult(url, targetQuality);
-                }
-            }
-        }
-
-        // Fallbacks
-        for (String key : response.getData().keySet()) {
-            if (response.getData().get(key) != null && response.getData().get(key).length > 0) {
-                String url = response.getData().get(key)[0].getSrc();
-                if (url != null && !url.startsWith("http")) {
-                    url = "https:" + url;
-                }
-                return new KodikHlsResult(url, targetQuality);
-            }
+        List<String> candidates = com.example.animelib.api.KodikLinksExtractor.collectCandidateUrls(
+                response, qualityToUse, true);
+        if (!candidates.isEmpty()) {
+            return new KodikHlsResult(candidates.get(0), targetQuality);
         }
         return null;
     }

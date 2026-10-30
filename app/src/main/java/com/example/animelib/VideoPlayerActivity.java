@@ -996,6 +996,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 hasRenderedFirstFrame = true;
                 isVideoLoading = false;
                 isSeeking = false;
+                if (playerVideoResolverController != null) {
+                    playerVideoResolverController.onPlaybackStartedSuccessfully();
+                }
                 hideLoading();
                 updatePlayPauseAndLoadingState(false);
             }
@@ -3715,7 +3718,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                         if (!shouldBeSeamless) {
                             showLoading("Загрузка озвучки...");
                         }
-                        apiService.fetchKodikVideoLinks(finalKodikSrc, new ApiService.KodikVideoCallback() {
+                        apiService.fetchKodikVideoLinks(finalKodikSrc, false, new ApiService.KodikVideoCallback() {
                             @Override
                             public void onKodikVideoReceived(KodikResponse response) {
                                 safeRunOnUiThread(() -> {
@@ -3732,6 +3735,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
                                     if (playersManager != null) {
                                         playersManager.setCurrentKodikResponse(response);
                                     }
+                                    if (playerVideoResolverController != null) {
+                                        playerVideoResolverController.resetKodikRecoveryState();
+                                        playerVideoResolverController.setActiveKodikContext(finalKodikSrc, response, preferredQuality);
+                                    }
                                     String newVideoUrl = resolveKodikHlsUrl(response, preferredQuality);
                                     if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
                                         Log.d("VideoPlayer", "Seamlessly switching voiceover (Kodik) to: " + (playerData.getTeam() != null ? playerData.getTeam().getName() : ""));
@@ -3746,6 +3753,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                                             switchMediaSource(newVideoUrl, posToRestore, playState);
                                         }
                                     } else {
+                                        savedPlayerPosition = Math.max(0L, posToRestore);
                                         stopCurrentPlaybackAndRestartVoiceover(playerData);
                                     }
                                 });
@@ -3758,6 +3766,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                                         return;
                                     }
                                     hideLoading();
+                                    savedPlayerPosition = Math.max(0L, posToRestore);
                                     stopCurrentPlaybackAndRestartVoiceover(playerData);
                                 });
                             }
@@ -3978,6 +3987,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     private void stopCurrentPlayback() {
         playbackRestartGeneration++;
+        if (playerVideoResolverController != null) {
+            playerVideoResolverController.cancelPendingResolutions();
+        }
         if (backgroundPlayer != null) {
             try {
                 backgroundPlayer.stop();
@@ -4894,16 +4906,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     } catch (Exception ignored) {}
                     resolvedQuality = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, available, targetQuality, estimate);
                 }
-                String qualityKey = resolvedQuality != null ? resolvedQuality.replace("p", "") : null;
-                if (qualityKey != null && currentKodikResponse.getData().containsKey(qualityKey) &&
-                        Objects.requireNonNull(currentKodikResponse.getData().get(qualityKey)).length > 0) {
-                    String newHlsUrl = Objects.requireNonNull(currentKodikResponse.getData().get(qualityKey))[0].getSrc();
-                    if (newHlsUrl != null && !newHlsUrl.isEmpty()) {
-                        if (!newHlsUrl.startsWith("http")) {
-                            newHlsUrl = "https:" + newHlsUrl;
-                        }
-                        return newHlsUrl;
-                    }
+                List<String> candidates = com.example.animelib.api.KodikLinksExtractor.collectCandidateUrls(
+                        currentKodikResponse, resolvedQuality, enable4K);
+                if (!candidates.isEmpty()) {
+                    return candidates.get(0);
                 }
             }
         } else if ("animelib".equalsIgnoreCase(playerData.getPlayer())) {
@@ -4998,14 +5004,19 @@ public class VideoPlayerActivity extends AppCompatActivity {
         backgroundPlayer = builder.build();
         backgroundPlayer.setVolume(0f); // Mute background player while buffering
 
-        androidx.media3.datasource.DefaultHttpDataSource.Factory httpFactory = new androidx.media3.datasource.DefaultHttpDataSource.Factory()
-                .setUserAgent("Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36")
-                .setConnectTimeoutMs(10000)
-                .setReadTimeoutMs(15000)
-                .setAllowCrossProtocolRedirects(true);
-
-        if (apiService != null) {
-            httpFactory.setDefaultRequestProperties(apiService.getVideoRequestHeaders());
+        androidx.media3.datasource.HttpDataSource.Factory httpFactory;
+        if (playerPlaybackController != null) {
+            httpFactory = playerPlaybackController.buildStreamHttpDataSourceFactory(newVideoUrl);
+        } else {
+            androidx.media3.datasource.DefaultHttpDataSource.Factory fallbackFactory = new androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                    .setUserAgent("Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36")
+                    .setConnectTimeoutMs(8000)
+                    .setReadTimeoutMs(12000)
+                    .setAllowCrossProtocolRedirects(true);
+            if (apiService != null) {
+                fallbackFactory.setDefaultRequestProperties(apiService.getVideoRequestHeadersForUrl(newVideoUrl));
+            }
+            httpFactory = fallbackFactory;
         }
 
         androidx.media3.datasource.DataSource.Factory dsFactory = new androidx.media3.datasource.DefaultDataSource.Factory(playerContext, httpFactory);
@@ -5219,30 +5230,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
         } catch (Exception ignored) {}
 
         String effectiveQuality = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, availableQualities, preferredQuality, estimate);
-        int targetRes = com.example.animelib.util.AutoQualityHelper.extractResolution(effectiveQuality);
-
-        String hlsUrl = null;
-        for (String key : kodikResponse.getData().keySet()) {
-            int keyRes = com.example.animelib.util.AutoQualityHelper.extractResolution(key);
-            if (keyRes == targetRes || key.equalsIgnoreCase(effectiveQuality) || (key + "p").equalsIgnoreCase(effectiveQuality)) {
-                if (kodikResponse.getData().get(key) != null && kodikResponse.getData().get(key).length > 0) {
-                    hlsUrl = kodikResponse.getData().get(key)[0].getSrc();
-                    break;
-                }
-            }
-        }
-        if (hlsUrl == null) {
-            for (String key : kodikResponse.getData().keySet()) {
-                if (kodikResponse.getData().get(key) != null && kodikResponse.getData().get(key).length > 0) {
-                    hlsUrl = kodikResponse.getData().get(key)[0].getSrc();
-                    break;
-                }
-            }
-        }
-        if (hlsUrl != null && !hlsUrl.startsWith("http")) {
-            hlsUrl = "https:" + hlsUrl;
-        }
-        return hlsUrl;
+        List<String> candidates = com.example.animelib.api.KodikLinksExtractor.collectCandidateUrls(
+                kodikResponse, effectiveQuality, enable4K);
+        return candidates.isEmpty() ? null : candidates.get(0);
     }
 
     private void restartPlayerWithNewQuality() {
@@ -5399,6 +5389,19 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private void handlePlaybackError(PlaybackException error) {
         Log.e("VideoPlayer", "Playback error: " + (error != null ? error.getMessage() : "unknown"), error);
 
+        long resumePos = player != null ? Math.max(0L, player.getCurrentPosition()) : 0L;
+
+        // Автоматическое бесшовное восстановление потоков Kodik (резервные зеркала -> обновление подписанных ссылок без кэша)
+        boolean isKodikActive = (playersManager != null
+                && playersManager.getCurrentPlayerData() != null
+                && "kodik".equalsIgnoreCase(playersManager.getCurrentPlayerData().getPlayer()))
+                || ApiService.isKodikStreamUrl(currentVideoUrl);
+        if (isKodikActive && playerVideoResolverController != null) {
+            if (playerVideoResolverController.tryRecoverKodikPlayback(currentVideoUrl, resumePos)) {
+                return;
+            }
+        }
+
         if (currentVideoUrl != null && (currentVideoUrl.contains("cdnlibs.org") || currentVideoUrl.contains("imglib.info"))) {
             String nextDomain = null;
             if (VideoUrlHelper.DOMAIN_MAIN.equals(currentVideoDomain)) {
@@ -5410,6 +5413,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             if (nextDomain != null) {
                 Log.w("VideoPlayer", "CDN server " + currentVideoDomain + " failed. Trying fallback CDN server: " + nextDomain);
                 currentVideoDomain = nextDomain;
+                savedPlayerPosition = resumePos;
                 if (playersManager != null && playersManager.getCurrentPlayerData() != null) {
                     onPlayerSelected(playersManager.getCurrentPlayerData());
                     return;
@@ -5420,8 +5424,16 @@ public class VideoPlayerActivity extends AppCompatActivity {
         String errorMsg = "Ошибка воспроизведения: " + (error != null ? error.getMessage() : "неизвестная ошибка");
         String logDetails = buildErrorLog(error);
         showVideoErrorDialog("Ошибка воспроизведения", errorMsg, logDetails, () -> {
+            if (playerVideoResolverController != null) {
+                playerVideoResolverController.resetKodikRecoveryState();
+            }
             if (playersManager != null && playersManager.getCurrentPlayerData() != null) {
-                onPlayerSelected(playersManager.getCurrentPlayerData());
+                EpisodeResponse.PlayerData pd = playersManager.getCurrentPlayerData();
+                if ("kodik".equalsIgnoreCase(pd.getPlayer()) && apiService != null && pd.getSrc() != null) {
+                    apiService.invalidateKodikCache(pd.getSrc());
+                }
+                savedPlayerPosition = resumePos;
+                onPlayerSelected(pd);
             } else if (currentVideoUrl != null) {
                 retryWithUrl(currentVideoUrl);
             }
