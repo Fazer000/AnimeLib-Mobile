@@ -136,7 +136,8 @@ public class BookmarkManager {
                 public void onError(String error) {
                     Log.e(TAG, "Failed to add bookmark directly: " + error);
                     if (showSuccessToast) {
-                        showToast("Не удалось сохранить закладку");
+                        String msg = (error != null && !error.isEmpty()) ? error : "Не удалось сохранить закладку";
+                        showToast(msg);
                     }
                     if (callback != null) {
                         callback.onBookmarkError(error);

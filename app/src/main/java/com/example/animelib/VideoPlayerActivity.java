@@ -6182,12 +6182,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             return;
         }
 
-        String animeUrl = getIntent().getStringExtra("anime_url");
-        String mediaSlug = null;
-        if (animeUrl != null && !animeUrl.isEmpty()) {
-            mediaSlug = ApiService.extractMediaSlugFromUrl(animeUrl);
-        }
-        
+        String mediaSlug = getMediaSlug();
         if (mediaSlug == null) {
             Log.e("VideoPlayer", "Media slug is null, cannot add bookmark");
             CustomToast.showWarning(this, "Не удалось определить аниме");
@@ -6239,14 +6234,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     public void fetchAndApplyWatchStatus() {
         if (isOfflineMode) return;
-        String animeUrl = getIntent().getStringExtra("anime_url");
-        if (animeUrl == null || animeUrl.isEmpty()) {
-            animeUrl = this.animeUrl;
-        }
-        String mediaSlug = com.example.animelib.api.ApiService.extractMediaSlugFromUrl(animeUrl);
-        if (mediaSlug == null && animeUrl != null) {
-            mediaSlug = apiService.extractAnimeSlug(animeUrl);
-        }
+        String mediaSlug = getMediaSlug();
         if (mediaSlug != null && !mediaSlug.isEmpty()) {
             apiService.fetchAnimeBookmark(mediaSlug, new com.example.animelib.api.ApiService.AnimeBookmarkCallback() {
                 @Override
@@ -6278,15 +6266,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             return;
         }
 
-        String animeUrl = getIntent().getStringExtra("anime_url");
-        if (animeUrl == null || animeUrl.isEmpty()) {
-            animeUrl = this.animeUrl;
-        }
-        String mediaSlug = com.example.animelib.api.ApiService.extractMediaSlugFromUrl(animeUrl);
-        if (mediaSlug == null && animeUrl != null) {
-            mediaSlug = apiService.extractAnimeSlug(animeUrl);
-        }
-
+        String mediaSlug = getMediaSlug();
         if (mediaSlug == null || mediaSlug.isEmpty()) {
             CustomToast.showWarning(this, "Не удалось определить аниме для обновления статуса");
             return;
@@ -6932,6 +6912,45 @@ public class VideoPlayerActivity extends AppCompatActivity {
             playerDialogsController.dismissErrorDialog();
             playerDialogsController.dismissSettingsBottomSheet();
         }
+    }
+
+    public String getMediaSlug() {
+        String rawUrl = animeUrl;
+        if (rawUrl == null || rawUrl.isEmpty()) {
+            if (getIntent() != null) {
+                rawUrl = getIntent().getStringExtra(EXTRA_ANIME_URL);
+                if (rawUrl == null || rawUrl.isEmpty()) {
+                    rawUrl = getIntent().getStringExtra("anime_url");
+                }
+            }
+        }
+
+        String slug = null;
+        if (rawUrl != null && !rawUrl.isEmpty()) {
+            slug = ApiService.extractMediaSlugFromUrl(rawUrl);
+            if (slug == null && apiService != null) {
+                slug = apiService.extractAnimeSlug(rawUrl);
+            }
+        }
+
+        if (slug == null && currentAnimeInfo != null && currentAnimeInfo.getData() != null) {
+            String slugUrl = currentAnimeInfo.getData().getSlug_url();
+            if (slugUrl != null && !slugUrl.isEmpty()) {
+                slug = ApiService.extractMediaSlugFromUrl(slugUrl);
+                if (slug == null && apiService != null) {
+                    slug = apiService.extractAnimeSlug(slugUrl);
+                }
+                if (slug == null) {
+                    slug = slugUrl;
+                }
+            }
+        }
+
+        if (slug == null && currentAnimeId != null && !currentAnimeId.isEmpty()) {
+            slug = currentAnimeId;
+        }
+
+        return slug;
     }
 
     private String getAnimePageUrl() {

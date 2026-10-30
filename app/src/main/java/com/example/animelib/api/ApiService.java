@@ -1955,8 +1955,9 @@ public class ApiService {
                             } else {
                                 String errorBody = response.body() != null ? response.body().string() : "";
                                 Log.e("ApiService", "Failed to add bookmark. Code: " + response.code() + ", Body: " + errorBody);
+                                String serverMsg = extractServerErrorMessage(errorBody, response.code());
                                 if (callback != null) {
-                                    safeRunOnUiThread(() -> callback.onError("Ошибка при добавлении закладки: " + response.code()));
+                                    safeRunOnUiThread(() -> callback.onError(serverMsg));
                                 }
                             }
                         } catch (Exception e) {
@@ -2001,18 +2002,17 @@ public class ApiService {
                 requestBody.addProperty("media_slug", mediaSlug);
 
                 com.google.gson.JsonObject bookmark = new com.google.gson.JsonObject();
+                int statusVal = 21;
                 if (statusId instanceof Number) {
-                    bookmark.addProperty("status", ((Number) statusId).intValue());
+                    int parsed = ((Number) statusId).intValue();
+                    if (parsed > 0) statusVal = parsed;
                 } else if (statusId instanceof String) {
                     try {
-                        int parsedInt = Integer.parseInt((String) statusId);
-                        bookmark.addProperty("status", parsedInt);
-                    } catch (NumberFormatException e) {
-                        bookmark.addProperty("status", (String) statusId);
-                    }
-                } else if (statusId != null) {
-                    bookmark.addProperty("status", statusId.toString());
+                        int parsed = Integer.parseInt((String) statusId);
+                        if (parsed > 0) statusVal = parsed;
+                    } catch (NumberFormatException ignored) {}
                 }
+                bookmark.addProperty("status", statusVal);
                 requestBody.add("bookmark", bookmark);
                 requestBody.add("meta", new com.google.gson.JsonObject());
 
@@ -2048,8 +2048,9 @@ public class ApiService {
                                     safeRunOnUiThread(() -> callback.onSuccess("Статус обновлен"));
                                 }
                             } else {
+                                String serverMsg = extractServerErrorMessage(responseBody, response.code());
                                 if (callback != null) {
-                                    safeRunOnUiThread(() -> callback.onError("Ошибка при обновлении статуса: " + response.code()));
+                                    safeRunOnUiThread(() -> callback.onError(serverMsg));
                                 }
                             }
                         } catch (Exception e) {
@@ -2083,30 +2084,29 @@ public class ApiService {
         com.google.gson.JsonObject bookmark = new com.google.gson.JsonObject();
         bookmark.addProperty("item_id", episodeId);
         
+        int statusVal = 21;
         if (statusId instanceof Number) {
-            bookmark.addProperty("status", ((Number) statusId).intValue());
+            int parsed = ((Number) statusId).intValue();
+            if (parsed > 0) statusVal = parsed;
         } else if (statusId instanceof String) {
             try {
-                int parsedInt = Integer.parseInt((String) statusId);
-                bookmark.addProperty("status", parsedInt);
-            } catch (NumberFormatException e) {
-                bookmark.addProperty("status", (String) statusId);
-            }
-        } else if (statusId != null) {
-            bookmark.addProperty("status", statusId.toString());
-        } else {
-            bookmark.addProperty("status", 21);
+                int parsed = Integer.parseInt((String) statusId);
+                if (parsed > 0) statusVal = parsed;
+            } catch (NumberFormatException ignored) {}
         }
+        bookmark.addProperty("status", statusVal);
         
-        bookmark.addProperty("progress", currentTimecode);
+        bookmark.addProperty("progress", currentTimecode != null ? currentTimecode : "00:00");
         requestBody.add("bookmark", bookmark);
         
         // Создаем объект meta
         com.google.gson.JsonObject meta = new com.google.gson.JsonObject();
-        meta.addProperty("team", teamId);
+        if (teamId > 0) {
+            meta.addProperty("team", teamId);
+        }
         meta.addProperty("translation_type", 2);
         meta.addProperty("player", "Animelib");
-        meta.addProperty("item_number", episodeNumber);
+        meta.addProperty("item_number", episodeNumber > 0 ? episodeNumber : 1);
         requestBody.add("meta", meta);
         
         return requestBody;
@@ -2124,7 +2124,7 @@ public class ApiService {
         
         try {
             // Ищем паттерн /anime/{slug} в URL
-            String pattern = "/anime/([^/\\?]+)";
+            String pattern = "/anime/([^/\\?#]+)";
             java.util.regex.Pattern regex = java.util.regex.Pattern.compile(pattern);
             java.util.regex.Matcher matcher = regex.matcher(animeUrl);
             
@@ -2132,6 +2132,24 @@ public class ApiService {
                 String slug = matcher.group(1);
                 Log.d("ApiService", "Extracted media slug: " + slug);
                 return slug;
+            }
+
+            // Если передана чистая строка слага вида "24653--sakamoto-days-part-2-anime"
+            if (!animeUrl.contains("/")) {
+                String cleanSlug = animeUrl;
+                if (cleanSlug.contains("?")) cleanSlug = cleanSlug.substring(0, cleanSlug.indexOf("?"));
+                if (cleanSlug.contains("#")) cleanSlug = cleanSlug.substring(0, cleanSlug.indexOf("#"));
+                return cleanSlug.trim();
+            }
+
+            // Если URL со слэшами, но без /anime/ (например "https://animelib.org/24653--sakamoto-days")
+            String[] parts = animeUrl.split("/");
+            for (String part : parts) {
+                if (part.contains("--")) {
+                    if (part.contains("?")) part = part.substring(0, part.indexOf("?"));
+                    if (part.contains("#")) part = part.substring(0, part.indexOf("#"));
+                    return part.trim();
+                }
             }
             
             Log.w("ApiService", "Could not extract media slug from URL: " + animeUrl);
