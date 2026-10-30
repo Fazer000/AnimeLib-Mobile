@@ -1886,32 +1886,9 @@ public class ApiService {
         });
     }
 
-    /**
-     * Добавляет серию в закладки (Синхронно)
-     */
-    public boolean addBookmarkSync(String mediaSlug, int episodeId, int teamId, int episodeNumber, String currentTimecode) {
-        return addBookmarkSync(mediaSlug, episodeId, teamId, episodeNumber, currentTimecode, null);
-    }
-
-    public boolean addBookmarkSync(String mediaSlug, int episodeId, int teamId, int episodeNumber, String currentTimecode, Object statusId) {
-        if (mediaSlug == null || mediaSlug.isEmpty()) return false;
-        try {
-            com.google.gson.JsonObject requestBody = createBookmarkRequestBody(
-                    mediaSlug, episodeId, teamId, episodeNumber, currentTimecode, statusId
-            );
-            String jsonString = gson.toJson(requestBody);
-            okhttp3.RequestBody body = okhttp3.RequestBody.create(jsonString, okhttp3.MediaType.get("application/json; charset=utf-8"));
-            Request request = buildApiRequest("https://api.cdnlibs.org/api/bookmarks")
-                    .post(body)
-                    .build();
-            try (Response response = httpClient.newCall(request).execute()) {
-                boolean success = response.isSuccessful();
-                Log.d("ApiService", "addBookmarkSync response code: " + response.code() + ", success: " + success);
-                return success;
-            }
-        } catch (Exception e) {
-            Log.e("ApiService", "Error in addBookmarkSync", e);
-            return false;
+    public void invalidateAnimeBookmarkCache(String mediaSlug) {
+        if (mediaSlug != null && !mediaSlug.trim().isEmpty()) {
+            ANIME_BOOKMARK_CACHE.remove(mediaSlug.trim().toLowerCase());
         }
     }
 
@@ -1955,13 +1932,14 @@ public class ApiService {
                     .post(body)
                     .build();
                 
-                // Выполняем запрос
+                // Выполняем запрос напрямую
                 httpClient.newCall(request).enqueue(new Callback() {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
                         Log.e("ApiService", "Bookmark request failed", e);
-                        // Вызываем колбэк в главном потоке
-                        safeRunOnUiThread(() -> callback.onError("Ошибка сети: " + e.getMessage()));
+                        if (callback != null) {
+                            safeRunOnUiThread(() -> callback.onError("Ошибка сети: " + e.getMessage()));
+                        }
                     }
                     
                     @Override
@@ -1970,32 +1948,37 @@ public class ApiService {
                             if (response.isSuccessful()) {
                                 String responseBody = response.body() != null ? response.body().string() : "";
                                 Log.d("ApiService", "Bookmark added successfully: " + responseBody);
-                                // Вызываем колбэк в главном потоке
-                                safeRunOnUiThread(() -> callback.onSuccess("Закладка добавлена успешно"));
+                                invalidateAnimeBookmarkCache(mediaSlug);
+                                if (callback != null) {
+                                    safeRunOnUiThread(() -> callback.onSuccess("Закладка добавлена успешно"));
+                                }
                             } else {
                                 String errorBody = response.body() != null ? response.body().string() : "";
                                 Log.e("ApiService", "Failed to add bookmark. Code: " + response.code() + ", Body: " + errorBody);
-                                // Вызываем колбэк в главном потоке
-                                safeRunOnUiThread(() -> callback.onError("Ошибка при добавлении закладки: " + response.code()));
+                                if (callback != null) {
+                                    safeRunOnUiThread(() -> callback.onError("Ошибка при добавлении закладки: " + response.code()));
+                                }
                             }
                         } catch (Exception e) {
                             Log.e("ApiService", "Error processing bookmark response", e);
-                            // Вызываем колбэк в главном потоке
-                            safeRunOnUiThread(() -> callback.onError("Ошибка обработки ответа: " + e.getMessage()));
+                            if (callback != null) {
+                                safeRunOnUiThread(() -> callback.onError("Ошибка обработки ответа: " + e.getMessage()));
+                            }
                         }
                     }
                 });
                 
             } catch (Exception e) {
                 Log.e("ApiService", "Unexpected error while adding bookmark", e);
-                // Вызываем колбэк в главном потоке
-                safeRunOnUiThread(() -> callback.onError("Неожиданная ошибка: " + e.getMessage()));
+                if (callback != null) {
+                    safeRunOnUiThread(() -> callback.onError("Неожиданная ошибка: " + e.getMessage()));
+                }
             }
         });
     }
     
     /**
-     * Обновляет статус просмотра аниме (POST https://hapi.hentaicdn.org/api/bookmarks)
+     * Обновляет статус просмотра аниме (POST https://api.cdnlibs.org/api/bookmarks)
      * @param mediaSlug Слаг медиа (например: "26610--nijusseiki-denki-mokuroku-eureka-evrika-anime")
      * @param statusId ID статуса (например: 21, 22, 23, 24, 25, 26, 27 или "other")
      * @param callback Колбэк для результата операции
@@ -2060,6 +2043,7 @@ public class ApiService {
                             String responseBody = response.body() != null ? response.body().string() : "";
                             Log.d("ApiService", "updateWatchStatus response (" + response.code() + "): " + responseBody);
                             if (response.isSuccessful()) {
+                                invalidateAnimeBookmarkCache(mediaSlug);
                                 if (callback != null) {
                                     safeRunOnUiThread(() -> callback.onSuccess("Статус обновлен"));
                                 }

@@ -32,24 +32,6 @@ public class PendingSyncTaskEntity {
         return task;
     }
 
-    public static PendingSyncTaskEntity createBookmarkTask(String mediaSlug, int episodeId, int teamId, int episodeNumber, String timecode) {
-        return createBookmarkTask(mediaSlug, episodeId, teamId, episodeNumber, timecode, null);
-    }
-
-    public static PendingSyncTaskEntity createBookmarkTask(String mediaSlug, int episodeId, int teamId, int episodeNumber, String timecode, String statusId) {
-        PendingSyncTaskEntity task = new PendingSyncTaskEntity();
-        task.setTaskType("BOOKMARK");
-        task.setMediaSlug(mediaSlug);
-        task.setEpisodeId(episodeId);
-        task.setTeamId(teamId);
-        task.setEpisodeNumber(episodeNumber);
-        task.setTimecode(timecode);
-        task.setStatusId(statusId);
-        task.setCreatedAt(System.currentTimeMillis());
-        task.setRetryCount(0);
-        return task;
-    }
-
     public long getId() {
         return id;
     }

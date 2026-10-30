@@ -6201,7 +6201,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
         Log.d("VideoPlayer", "  - teamId: " + (currentPlayer.getTeam() != null ? currentPlayer.getTeam().getId() : "null"));
         Log.d("VideoPlayer", "  - currentPosition: " + currentPosition + "ms");
 
-        // Используем BookmarkManager для добавления закладки
+        // Используем BookmarkManager для прямой отправки закладки
         episodesManager.getBookmarkManager().addBookmark(
             mediaSlug,
             currentPlayer,
@@ -6213,8 +6213,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 public void onBookmarkAdded(int episodeId) {
                     // Меняем цвет кнопки на красный
                     updateBookmarkButtonColor(true);
-                    
-                    // Обновляем список эпизодов
+
+                    // Сразу обновляем индикатор закладки в списке серий и подтягиваем свежие данные с сервера
+                    com.example.animelib.models.AnimeBookmarkResponse.BookmarkData updatedBookmark =
+                            new com.example.animelib.models.AnimeBookmarkResponse.BookmarkData();
+                    updatedBookmark.setItemId(episodeId);
+                    updatedBookmark.setProgress(timecode);
+                    episodesManager.updateBookmarkInAdapter(updatedBookmark);
                     updateEpisodesListAfterBookmark();
                 }
                 
@@ -6295,6 +6300,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     apiService.updateWatchStatus(finalMediaSlug, item.getId(), new com.example.animelib.api.ApiService.BookmarkCallback() {
                         @Override
                         public void onSuccess(String message) {
+                            if (episodesManager != null && episodesManager.getBookmarkManager() != null) {
+                                episodesManager.getBookmarkManager().invalidateCache(finalMediaSlug);
+                            }
                             CustomToast.showSuccess(VideoPlayerActivity.this, "Статус изменен: " + item.getLabel());
                         }
 

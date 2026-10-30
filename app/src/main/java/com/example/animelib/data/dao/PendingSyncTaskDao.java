@@ -21,9 +21,6 @@ public interface PendingSyncTaskDao {
     @Query("SELECT * FROM pending_sync_tasks WHERE taskType = 'VIEW' AND animeId = :animeId AND playerId = :playerId LIMIT 1")
     PendingSyncTaskEntity findViewTaskSync(String animeId, int playerId);
 
-    @Query("SELECT * FROM pending_sync_tasks WHERE taskType = 'BOOKMARK' AND mediaSlug = :mediaSlug AND episodeId = :episodeId LIMIT 1")
-    PendingSyncTaskEntity findBookmarkTaskSync(String mediaSlug, int episodeId);
-
     @Update
     void updateTask(PendingSyncTaskEntity task);
 

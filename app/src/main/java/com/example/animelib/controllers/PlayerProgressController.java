@@ -35,6 +35,8 @@ public class PlayerProgressController {
 
     private boolean isCurrentEpisodeMarkedViewed = false;
     private boolean autoBookmarkSaved = false;
+    private int lastAutoSavedEpisodeId = -1;
+    private String lastAutoSavedTimecode = null;
 
     private final Handler viewProgressHandler = new Handler(Looper.getMainLooper());
     private Runnable viewProgressRunnable;
@@ -83,6 +85,8 @@ public class PlayerProgressController {
     public void resetProgressForNewEpisode() {
         isCurrentEpisodeMarkedViewed = false;
         autoBookmarkSaved = false;
+        lastAutoSavedEpisodeId = -1;
+        lastAutoSavedTimecode = null;
     }
 
     public void startViewProgressTracking() {
@@ -149,11 +153,12 @@ public class PlayerProgressController {
         long currentPosition = p != null ? p.getCurrentPosition() : 0;
         if (currentPosition < 1000) return;
 
+        String timecode = ApiService.formatTimecode(currentPosition);
+
         boolean isOffline = callback.isOfflineMode();
         if (isOffline) {
             String animeId = callback.getAnimeId();
             if (animeId != null && apiService != null && apiService.getDatabaseManager() != null) {
-                String timecode = ApiService.formatTimecode(currentPosition);
                 apiService.getDatabaseManager().saveOfflineBookmark(animeId, currentEpisode.getId(), currentEpisode.getNumber(), timecode, currentPosition);
                 autoBookmarkSaved = true;
             }
@@ -169,6 +174,12 @@ public class PlayerProgressController {
         String animeUrl = callback.getAnimeUrl();
         String mediaSlug = (animeUrl != null && !animeUrl.isEmpty()) ? ApiService.extractMediaSlugFromUrl(animeUrl) : null;
         if (mediaSlug == null) return;
+
+        if (lastAutoSavedEpisodeId == currentEpisode.getId() && timecode.equals(lastAutoSavedTimecode)) {
+            return;
+        }
+        lastAutoSavedEpisodeId = currentEpisode.getId();
+        lastAutoSavedTimecode = timecode;
 
         Object statusId = callback.getCurrentWatchStatusId();
 
@@ -187,6 +198,8 @@ public class PlayerProgressController {
                     @Override
                     public void onBookmarkError(String error) {
                         Log.e(TAG, "Failed to auto-save bookmark: " + error);
+                        lastAutoSavedEpisodeId = -1;
+                        lastAutoSavedTimecode = null;
                     }
                 },
                 false

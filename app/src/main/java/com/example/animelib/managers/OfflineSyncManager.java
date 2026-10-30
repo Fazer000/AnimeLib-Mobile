@@ -95,36 +95,6 @@ public class OfflineSyncManager {
         });
     }
 
-    public void enqueueBookmarkTask(String mediaSlug, int episodeId, int teamId, int episodeNumber, String timecode) {
-        enqueueBookmarkTask(mediaSlug, episodeId, teamId, episodeNumber, timecode, null);
-    }
-
-    public void enqueueBookmarkTask(String mediaSlug, int episodeId, int teamId, int episodeNumber, String timecode, Object statusId) {
-        if (mediaSlug == null || mediaSlug.isEmpty()) {
-            Log.e(TAG, "Cannot enqueue BOOKMARK task with null/empty mediaSlug");
-            return;
-        }
-
-        executor.execute(() -> {
-            boolean success = false;
-            if (isNetworkAvailable(context)) {
-                Log.d(TAG, "Network available, trying to send BOOKMARK request immediately");
-                success = apiService.addBookmarkSync(mediaSlug, episodeId, teamId, episodeNumber, timecode, statusId);
-            }
-
-            if (!success) {
-                Log.w(TAG, "BOOKMARK request offline or failed. Queueing pending task in database");
-                PendingSyncTaskEntity task = PendingSyncTaskEntity.createBookmarkTask(
-                        mediaSlug, episodeId, teamId, episodeNumber, timecode, statusId != null ? String.valueOf(statusId) : null
-                );
-                databaseManager.savePendingSyncTask(task);
-                scheduleWorkManagerSync();
-            } else {
-                Log.d(TAG, "BOOKMARK request sent successfully on first try");
-            }
-        });
-    }
-
     public void syncPendingTasksNow() {
         executor.execute(() -> {
             if (!isNetworkAvailable(context)) {
@@ -140,20 +110,15 @@ public class OfflineSyncManager {
 
             Log.d(TAG, "Processing " + tasks.size() + " pending tasks in syncPendingTasksNow");
             for (PendingSyncTaskEntity task : tasks) {
+                if (!"VIEW".equalsIgnoreCase(task.getTaskType())) {
+                    // Устаревшие задачи других типов удаляем, чтобы они не перезаписывали актуальные данные
+                    databaseManager.deletePendingSyncTaskById(task.getId());
+                    continue;
+                }
+
                 boolean success = false;
                 try {
-                    if ("VIEW".equalsIgnoreCase(task.getTaskType())) {
-                        success = apiService.markEpisodeViewedSync(task.getAnimeId(), task.getPlayerId());
-                    } else if ("BOOKMARK".equalsIgnoreCase(task.getTaskType())) {
-                        success = apiService.addBookmarkSync(
-                                task.getMediaSlug(),
-                                task.getEpisodeId(),
-                                task.getTeamId(),
-                                task.getEpisodeNumber(),
-                                task.getTimecode(),
-                                task.getStatusId()
-                        );
-                    }
+                    success = apiService.markEpisodeViewedSync(task.getAnimeId(), task.getPlayerId());
                 } catch (Exception e) {
                     Log.e(TAG, "Error syncing task ID " + task.getId(), e);
                     success = false;

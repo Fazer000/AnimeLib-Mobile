@@ -38,22 +38,16 @@ public class OfflineSyncWorker extends Worker {
         boolean hasFailures = false;
 
         for (PendingSyncTaskEntity task : tasks) {
+            if (!"VIEW".equalsIgnoreCase(task.getTaskType())) {
+                Log.d(TAG, "Dropping obsolete non-VIEW sync task ID " + task.getId());
+                dbManager.deletePendingSyncTaskById(task.getId());
+                continue;
+            }
+
             boolean success = false;
             try {
-                if ("VIEW".equalsIgnoreCase(task.getTaskType())) {
-                    Log.d(TAG, "Processing VIEW task for animeId: " + task.getAnimeId() + ", playerId: " + task.getPlayerId());
-                    success = apiService.markEpisodeViewedSync(task.getAnimeId(), task.getPlayerId());
-                } else if ("BOOKMARK".equalsIgnoreCase(task.getTaskType())) {
-                    Log.d(TAG, "Processing BOOKMARK task for mediaSlug: " + task.getMediaSlug() + ", episodeId: " + task.getEpisodeId());
-                    success = apiService.addBookmarkSync(
-                            task.getMediaSlug(),
-                            task.getEpisodeId(),
-                            task.getTeamId(),
-                            task.getEpisodeNumber(),
-                            task.getTimecode(),
-                            task.getStatusId()
-                    );
-                }
+                Log.d(TAG, "Processing VIEW task for animeId: " + task.getAnimeId() + ", playerId: " + task.getPlayerId());
+                success = apiService.markEpisodeViewedSync(task.getAnimeId(), task.getPlayerId());
             } catch (Exception e) {
                 Log.e(TAG, "Exception processing task ID: " + task.getId(), e);
                 success = false;
