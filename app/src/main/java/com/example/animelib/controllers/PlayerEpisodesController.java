@@ -164,6 +164,19 @@ public class PlayerEpisodesController {
         resetBookmarkAndPositionState();
 
         if (episodesManager != null) {
+            com.example.animelib.models.AnimeBookmarkResponse.BookmarkData bookmark = episodesManager.getAnimeBookmark();
+            if (bookmark != null && (bookmark.getItemId() == episode.getId() || 
+                (episode.getNumber() != null && episode.getNumber().equals(String.valueOf(bookmark.getMeta() != null ? bookmark.getMeta().getItemNumber() : ""))))) {
+                String progress = bookmark.getProgress();
+                if (progress != null && !progress.isEmpty()) {
+                    long bmMs = episodesManager.getBookmarkManager().parseTimecodeToMilliseconds(progress);
+                    if (bmMs > 0) {
+                        setBookmarkTimecode(bmMs);
+                        Log.d(TAG, "Set bookmark timecode for selected episode " + episode.getNumber() + ": " + bmMs + "ms");
+                    }
+                }
+            }
+
             episodesManager.setCurrentEpisode(episode);
             episodesManager.updateEpisodeNavigationButtonsVisibility();
             episodesManager.updateEpisodesRecyclerView();

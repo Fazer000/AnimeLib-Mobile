@@ -38,6 +38,7 @@ public class PlayerVideoResolverController {
         void hideLoading();
         void showVideoErrorDialog(String title, String message, Runnable retryAction);
         void initializePlayer();
+        void initializePlayer(long startPosition);
         ExoPlayer getPlayer();
         View getMenuLoadingOverlay();
         void setVideoLoading(boolean loading);
@@ -45,6 +46,7 @@ public class PlayerVideoResolverController {
         void updatePlayPauseAndLoadingState(boolean animate);
         void setCurrentKodikResponse(KodikResponse response);
         void initializeHlsPlayer(String hlsUrl);
+        void initializeHlsPlayer(String hlsUrl, long startPosition);
         void safeRunOnUiThread(Runnable runnable);
         void onPlayerSelected(EpisodeResponse.PlayerData playerData);
     }
@@ -75,7 +77,7 @@ public class PlayerVideoResolverController {
             if (file.exists() && file.length() > 0) {
                 provider.setCurrentVideoUrl(Uri.fromFile(file).toString());
                 if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
-                provider.initializePlayer();
+                provider.initializePlayer(seekToPosition);
                 ExoPlayer player = provider.getPlayer();
                 if (seekToPosition > 0 && player != null) {
                     player.seekTo(seekToPosition);
@@ -154,7 +156,7 @@ public class PlayerVideoResolverController {
             
             if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
             
-            provider.initializePlayer();
+            provider.initializePlayer(seekToPosition);
             ExoPlayer player = provider.getPlayer();
             if (seekToPosition > 0 && player != null) {
                 player.seekTo(seekToPosition);
@@ -177,7 +179,7 @@ public class PlayerVideoResolverController {
             if (file.exists() && file.length() > 0) {
                 provider.setCurrentVideoUrl(Uri.fromFile(file).toString());
                 if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
-                provider.initializePlayer();
+                provider.initializePlayer(seekToPosition);
                 ExoPlayer player = provider.getPlayer();
                 if (seekToPosition > 0 && player != null) {
                     player.seekTo(seekToPosition);
@@ -329,7 +331,7 @@ public class PlayerVideoResolverController {
 
             Log.d(TAG, "Starting HLS playback with URL: " + hlsUrl + " (" + effectiveQuality + ")");
             provider.setCurrentVideoUrl(hlsUrl);
-            provider.initializeHlsPlayer(hlsUrl);
+            provider.initializeHlsPlayer(hlsUrl, seekToPosition);
             ExoPlayer player = provider.getPlayer();
             if (seekToPosition > 0 && player != null) {
                 player.seekTo(seekToPosition);

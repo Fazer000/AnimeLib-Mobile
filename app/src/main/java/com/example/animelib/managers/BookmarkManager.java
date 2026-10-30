@@ -317,23 +317,32 @@ public class BookmarkManager {
      * @return Миллисекунды или 0 если не удалось распарсить
      */
     public long parseTimecodeToMilliseconds(String timecode) {
-        if (timecode == null || timecode.isEmpty()) {
+        if (timecode == null || timecode.trim().isEmpty()) {
             return 0;
         }
         
         try {
-            String[] parts = timecode.split(":");
+            String timeStr = timecode.trim();
+            String[] parts = timeStr.split(":");
             if (parts.length == 2) {
                 // Формат MM:SS
-                int minutes = Integer.parseInt(parts[0]);
-                int seconds = Integer.parseInt(parts[1]);
+                int minutes = Integer.parseInt(parts[0].trim());
+                int seconds = Integer.parseInt(parts[1].trim());
                 return (minutes * 60L + seconds) * 1000L;
             } else if (parts.length == 3) {
                 // Формат HH:MM:SS
-                int hours = Integer.parseInt(parts[0]);
-                int minutes = Integer.parseInt(parts[1]);
-                int seconds = Integer.parseInt(parts[2]);
+                int hours = Integer.parseInt(parts[0].trim());
+                int minutes = Integer.parseInt(parts[1].trim());
+                int seconds = Integer.parseInt(parts[2].trim());
                 return (hours * 3600L + minutes * 60L + seconds) * 1000L;
+            } else if (parts.length == 1) {
+                // Числовое значение (секунды или миллисекунды)
+                double val = Double.parseDouble(parts[0].trim());
+                if (val > 100000) {
+                    return (long) val; // Уже в миллисекундах
+                } else {
+                    return (long) (val * 1000.0); // Секунды в миллисекунды
+                }
             }
         } catch (NumberFormatException e) {
             Log.e(TAG, "Failed to parse timecode: " + timecode, e);

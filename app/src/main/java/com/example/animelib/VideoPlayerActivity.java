@@ -643,6 +643,31 @@ public class VideoPlayerActivity extends AppCompatActivity {
             if (bookmarkData != null) {
                 currentWatchStatusId = bookmarkData.getStatus();
                 updatePortraitWatchStatusUI(currentWatchStatusId);
+
+                EpisodesListResponse.EpisodeItem curEp = episodesManager.getCurrentEpisode();
+                if (curEp != null && (curEp.getId() == bookmarkData.getItemId() || 
+                    (curEp.getNumber() != null && curEp.getNumber().equals(String.valueOf(bookmarkData.getMeta() != null ? bookmarkData.getMeta().getItemNumber() : ""))))) {
+                    
+                    updateBookmarkButtonColor(true);
+                    
+                    String progress = bookmarkData.getProgress();
+                    if (progress != null && !progress.trim().isEmpty()) {
+                        long bmMs = episodesManager.getBookmarkManager().parseTimecodeToMilliseconds(progress);
+                        if (bmMs > 0) {
+                            if (playerEpisodesController != null) {
+                                playerEpisodesController.setBookmarkTimecode(bmMs);
+                            } else {
+                                bookmarkTimecode = bmMs;
+                            }
+                            Log.d("VideoPlayer", "OnBookmarkLoaded updated bookmark timecode: " + bmMs + "ms");
+                            
+                            if (player != null && player.getCurrentPosition() < 5000) {
+                                Log.d("VideoPlayer", "Seeking player to newly loaded bookmark timecode: " + bmMs + "ms");
+                                player.seekTo(bmMs);
+                            }
+                        }
+                    }
+                }
             }
         });
 
@@ -1186,6 +1211,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     }
 
                     @Override
+                    public void initializePlayer(long startPosition) {
+                        VideoPlayerActivity.this.initializePlayer(startPosition);
+                    }
+
+                    @Override
                     public androidx.media3.exoplayer.ExoPlayer getPlayer() {
                         return player;
                     }
@@ -1224,6 +1254,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     @Override
                     public void initializeHlsPlayer(String hlsUrl) {
                         VideoPlayerActivity.this.initializeHlsPlayer(hlsUrl);
+                    }
+
+                    @Override
+                    public void initializeHlsPlayer(String hlsUrl, long startPosition) {
+                        VideoPlayerActivity.this.initializeHlsPlayer(hlsUrl, startPosition);
                     }
 
                     @Override
@@ -3262,6 +3297,12 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     
                     // Получаем media_slug для закладки
                     String animeUrl = getIntent().getStringExtra("anime_url");
+                    if (animeUrl == null || animeUrl.isEmpty()) {
+                        animeUrl = getIntent().getStringExtra(EXTRA_ANIME_URL);
+                    }
+                    if (animeUrl == null || animeUrl.isEmpty()) {
+                        animeUrl = VideoPlayerActivity.this.animeUrl;
+                    }
                     String mediaSlug = null;
                     if (animeUrl != null && !animeUrl.isEmpty()) {
                         mediaSlug = ApiService.extractMediaSlugFromUrl(animeUrl);
@@ -3557,7 +3598,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
             autoPlayOnPrepare = this.autoPlay;
             if (playerEpisodesController != null) {
                 playerEpisodesController.setNewEpisodeSelection(false);
+                playerEpisodesController.setSavedPlayerPosition(0);
             }
+            savedPlayerPosition = 0;
         } else if (player != null) {
             autoPlayOnPrepare = player.getPlayWhenReady();
         } else {
@@ -3574,23 +3617,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
                   ", teamId=" + playerData.getTeam().getId());
         }
 
-        if (player != null) {
-            long currentPos = player.getCurrentPosition();
-            if (currentPos > 0) {
-                if (playerEpisodesController != null) {
-                    playerEpisodesController.setSavedPlayerPosition(currentPos);
-                } else {
-                    savedPlayerPosition = currentPos;
-                }
-            }
-            Log.d("VideoPlayer", "Saved player position before switching to: " + playerData.getPlayer() + " (pos: " + currentPos + "ms)");
-        }
-
         boolean isCurrentlyPlaying = player != null && (player.isPlaying() || player.getPlaybackState() == Player.STATE_READY) && !isSeamlessSwitching;
 
         long currentPos = 0;
         boolean wasPlaying = true;
-        if (player != null) {
+        if (!isNew && player != null) {
             currentPos = player.getCurrentPosition();
             wasPlaying = player.getPlayWhenReady();
             if (currentPos > 0) {
@@ -3600,6 +3631,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     savedPlayerPosition = currentPos;
                 }
             }
+            Log.d("VideoPlayer", "Saved player position before switching voiceover: " + currentPos + "ms");
         }
 
         if (playerData != null) {
@@ -5292,14 +5324,15 @@ public class VideoPlayerActivity extends AppCompatActivity {
         }, false);
     }
 
-    private void initializePlayer() {
+    private void initializePlayer(long startPosition) {
         if (playerPlaybackController != null) {
             MediaItem mediaItem = createMediaItemWithSubtitles(currentVideoUrl);
             player = playerPlaybackController.initializePlayer(
                     currentVideoUrl,
                     mediaItem,
                     currentResizeMode,
-                    autoPlayOnPrepare
+                    autoPlayOnPrepare,
+                    startPosition
             );
             autoPlayOnPrepare = true;
             if (player != null) {
@@ -5308,6 +5341,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 setupPlayerControlButtons();
             }
         }
+    }
+
+    private void initializePlayer() {
+        initializePlayer(0);
     }
 
     private void retryWithUrl(String newUrl) {
@@ -5783,14 +5820,15 @@ public class VideoPlayerActivity extends AppCompatActivity {
         }
     }
 
-    private void initializeHlsPlayer(String hlsUrl) {
+    private void initializeHlsPlayer(String hlsUrl, long startPosition) {
         if (playerPlaybackController != null) {
             MediaItem mediaItem = createMediaItemWithSubtitles(hlsUrl);
             player = playerPlaybackController.initializeHlsPlayer(
                     hlsUrl,
                     mediaItem,
                     currentResizeMode,
-                    autoPlayOnPrepare
+                    autoPlayOnPrepare,
+                    startPosition
             );
             autoPlayOnPrepare = true;
             if (player != null) {
@@ -5799,6 +5837,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 setupPlayerControlButtons();
             }
         }
+    }
+
+    private void initializeHlsPlayer(String hlsUrl) {
+        initializeHlsPlayer(hlsUrl, 0);
     }
 
     // ================= Subtitle Helpers =================
