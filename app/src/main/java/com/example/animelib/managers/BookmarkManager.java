@@ -1,160 +1,212 @@
 package com.example.animelib.managers;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
-import android.widget.Toast;
+
+import androidx.annotation.Nullable;
 
 import com.example.animelib.api.ApiService;
 import com.example.animelib.models.AnimeBookmarkResponse;
-import com.example.animelib.models.EpisodesListResponse;
 import com.example.animelib.models.EpisodeResponse;
+import com.example.animelib.models.EpisodesListResponse;
+import com.example.animelib.util.CustomToast;
 
 /**
  * Менеджер для управления закладками аниме
  */
 public class BookmarkManager {
     private static final String TAG = "BookmarkManager";
-    
+
     private Context context;
+    private final Context appContext;
     private ApiService apiService;
-    
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
     public BookmarkManager(Context context, ApiService apiService) {
         this.context = context;
+        this.appContext = context != null && context.getApplicationContext() != null
+                ? context.getApplicationContext()
+                : context;
         this.apiService = apiService;
     }
-    
+
     /**
      * Добавляет закладку для текущего эпизода
      * @param mediaSlug Слаг медиа
-     * @param currentPlayer Данные текущего плеера
+     * @param currentPlayer Данные текущего плеера (может быть null — тогда используются базовые метаданные)
      * @param currentEpisode Текущий эпизод
      * @param currentPosition Текущая позиция воспроизведения в миллисекундах
      * @param callback Колбэк для обновления UI
-     * @param showSuccessToast Показывать ли Toast при успехе
+     * @param showSuccessToast Показывать ли Toast при успехе (при ошибке Toast выводится всегда)
      */
-    public void addBookmark(String mediaSlug, EpisodeResponse.PlayerData currentPlayer, 
+    public void addBookmark(String mediaSlug, EpisodeResponse.PlayerData currentPlayer,
                            EpisodesListResponse.EpisodeItem currentEpisode, long currentPosition,
                            BookmarkAddCallback callback, boolean showSuccessToast) {
         addBookmark(mediaSlug, currentPlayer, currentEpisode, currentPosition, null, callback, showSuccessToast);
     }
 
-    public void addBookmark(String mediaSlug, EpisodeResponse.PlayerData currentPlayer, 
+    public void addBookmark(String mediaSlug, @Nullable EpisodeResponse.PlayerData currentPlayer,
                            EpisodesListResponse.EpisodeItem currentEpisode, long currentPosition,
                            Object statusId,
                            BookmarkAddCallback callback, boolean showSuccessToast) {
-        
-        if (currentEpisode == null) {
+
+        if (currentEpisode == null || currentEpisode.getId() <= 0) {
+            showErrorToast("Не удалось добавить закладку: эпизод не выбран");
             if (callback != null) {
                 callback.onBookmarkError("Current episode is null");
             }
             return;
         }
 
-        Log.d(TAG, "Adding bookmark for episode: " + currentEpisode.getNumber() + " with statusId: " + statusId);
-
-        if (apiService == null) {
-            Log.w(TAG, "ApiService is null, cannot add bookmark");
+        final Context effectiveCtx = this.appContext != null ? this.appContext : this.context;
+        if (effectiveCtx == null) {
             if (callback != null) {
-                callback.onBookmarkError("ApiService is not available");
+                callback.onBookmarkError("Context is not available");
             }
             return;
         }
 
-        if (!apiService.isAuthorized()) {
+        BookmarkSyncDispatcher dispatcher = BookmarkSyncDispatcher.getInstance(effectiveCtx);
+
+        boolean authorized = (apiService != null && apiService.isAuthorized()) || dispatcher.isAuthorized();
+        if (!authorized) {
             Log.w(TAG, "User is not authorized, cannot add bookmark");
             if (showSuccessToast) {
-                showToast("Без авторизации поставить закладку нельзя");
+                showErrorToast("Без авторизации поставить закладку нельзя");
             }
             if (callback != null) {
                 callback.onBookmarkError("Not authorized");
             }
             return;
         }
-        
-        if (currentPlayer == null) {
-            if (showSuccessToast) {
-                showToast("Нет данных о текущем плеере");
-            }
-            if (callback != null) {
-                callback.onBookmarkError("Current player is null");
-            }
-            return;
-        }
 
-        if (mediaSlug == null || mediaSlug.isEmpty()) {
-            if (showSuccessToast) {
-                showToast("Не удалось извлечь slug аниме");
-            }
+        if (mediaSlug == null || mediaSlug.trim().isEmpty()) {
+            showErrorToast("Не удалось добавить закладку: не определено аниме");
             if (callback != null) {
                 callback.onBookmarkError("Media slug is empty");
             }
             return;
         }
-        
-        // Получаем текущее время воспроизведения
-        final String timecode = ApiService.formatTimecode(currentPosition);
+
+        final String cleanSlug = mediaSlug.trim();
+        final String timecode = ApiService.formatTimecode(Math.max(0L, currentPosition));
         final int episodeId = currentEpisode.getId();
-        
-        // Получаем team ID
-        int teamId = (currentPlayer.getTeam() != null) ? currentPlayer.getTeam().getId() : 0;
-        
-        // Получаем номер эпизода как int
-        int episodeNumber = 0;
-        try {
-            episodeNumber = Integer.parseInt(currentEpisode.getNumber());
-        } catch (NumberFormatException e) {
-            Log.e(TAG, "Failed to parse episode number: " + currentEpisode.getNumber(), e);
-        }
-        
-        Log.d(TAG, "Sending bookmark directly - mediaSlug: " + mediaSlug +
-                   ", episodeId: " + episodeId +
-                   ", teamId: " + teamId +
-                   ", episodeNumber: " + episodeNumber +
-                   ", timecode: " + timecode +
-                   ", statusId: " + statusId);
 
-        apiService.addBookmark(
-            mediaSlug,
-            episodeId,
-            teamId,
-            episodeNumber,
-            timecode,
-            statusId,
-            new ApiService.BookmarkCallback() {
-                @Override
-                public void onSuccess(String message) {
-                    invalidateCache(mediaSlug);
-                    if (showSuccessToast) {
-                        showToast("Закладка сохранена (" + timecode + ")");
-                    }
-                    if (callback != null) {
-                        callback.onBookmarkAdded(episodeId);
-                    }
-                }
+        int teamId = 0;
+        int translationType = 2;
+        String playerName = "Animelib";
 
-                @Override
-                public void onError(String error) {
-                    Log.e(TAG, "Failed to add bookmark directly: " + error);
-                    if (showSuccessToast) {
-                        String msg = (error != null && !error.isEmpty()) ? error : "Не удалось сохранить закладку";
-                        showToast(msg);
-                    }
-                    if (callback != null) {
-                        callback.onBookmarkError(error);
-                    }
+        if (currentPlayer != null) {
+            if (currentPlayer.getTeam() != null && currentPlayer.getTeam().getId() > 0) {
+                teamId = currentPlayer.getTeam().getId();
+            }
+            if (currentPlayer.getTranslationType() != null && currentPlayer.getTranslationType().getId() > 0) {
+                translationType = currentPlayer.getTranslationType().getId();
+            }
+            if (currentPlayer.getPlayer() != null && !currentPlayer.getPlayer().trim().isEmpty()) {
+                playerName = currentPlayer.getPlayer().trim();
+            }
+        } else {
+            // Если currentPlayer не успел инициализироваться, пробуем взять метаданные из кэша существующей закладки
+            AnimeBookmarkResponse cached = bookmarkCache.get(cleanSlug);
+            if (cached != null && cached.getData() != null && cached.getData().getMeta() != null) {
+                AnimeBookmarkResponse.MetaData cachedMeta = cached.getData().getMeta();
+                if (cachedMeta.getTeam() > 0) teamId = cachedMeta.getTeam();
+                if (cachedMeta.getTranslationType() > 0) translationType = cachedMeta.getTranslationType();
+                if (cachedMeta.getPlayer() != null && !cachedMeta.getPlayer().isEmpty()) {
+                    playerName = cachedMeta.getPlayer();
                 }
             }
+        }
+
+        Object effectiveStatusId = statusId;
+        if (effectiveStatusId == null) {
+            Integer cachedStatus = getCachedWatchStatus(cleanSlug);
+            if (cachedStatus != null && cachedStatus > 0) {
+                effectiveStatusId = cachedStatus;
+            }
+        }
+
+        int episodeNumber = 1;
+        if (currentEpisode.getNumber() != null) {
+            try {
+                episodeNumber = Integer.parseInt(currentEpisode.getNumber().trim());
+            } catch (NumberFormatException e) {
+                Log.w(TAG, "Non-integer episode number: " + currentEpisode.getNumber() + ", extracting digits");
+                String digits = currentEpisode.getNumber().replaceAll("[^0-9]", "");
+                if (!digits.isEmpty()) {
+                    try {
+                        episodeNumber = Integer.parseInt(digits);
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+        }
+
+        Log.d(TAG, "Dispatching bookmark - mediaSlug: " + cleanSlug +
+                   ", episodeId: " + episodeId +
+                   ", teamId: " + teamId +
+                   ", translationType: " + translationType +
+                   ", player: " + playerName +
+                   ", episodeNumber: " + episodeNumber +
+                   ", timecode: " + timecode +
+                   ", statusId: " + effectiveStatusId);
+
+        BookmarkSyncDispatcher.BookmarkRequest request = new BookmarkSyncDispatcher.BookmarkRequest(
+                cleanSlug,
+                episodeId,
+                teamId,
+                translationType,
+                playerName,
+                episodeNumber,
+                timecode,
+                effectiveStatusId,
+                showSuccessToast,
+                new BookmarkAddCallback() {
+                    @Override
+                    public void onBookmarkAdded(int savedEpisodeId) {
+                        invalidateCache(cleanSlug);
+                        if (callback != null) {
+                            callback.onBookmarkAdded(savedEpisodeId);
+                        }
+                    }
+
+                    @Override
+                    public void onBookmarkError(String error) {
+                        if (callback != null) {
+                            callback.onBookmarkError(error);
+                        }
+                    }
+                }
         );
+
+        dispatcher.enqueueBookmark(request);
     }
-    
-    private final java.util.Map<String, AnimeBookmarkResponse> bookmarkCache = new java.util.HashMap<>();
+
+    private final java.util.Map<String, AnimeBookmarkResponse> bookmarkCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @Nullable
+    public Integer getCachedWatchStatus(@Nullable String mediaSlug) {
+        if (mediaSlug == null || mediaSlug.trim().isEmpty()) return null;
+        AnimeBookmarkResponse cached = bookmarkCache.get(mediaSlug.trim());
+        if (cached != null && cached.getData() != null && cached.getData().getStatus() > 0) {
+            return cached.getData().getStatus();
+        }
+        return null;
+    }
 
     public void invalidateCache(String mediaSlug) {
         if (mediaSlug != null) {
             bookmarkCache.remove(mediaSlug);
+            bookmarkCache.remove(mediaSlug.trim());
         }
         if (apiService != null) {
             apiService.invalidateAnimeBookmarkCache(mediaSlug);
+        }
+        Context effectiveCtx = this.appContext != null ? this.appContext : this.context;
+        if (effectiveCtx != null) {
+            BookmarkSyncDispatcher.getInstance(effectiveCtx).invalidateSavedSignature(mediaSlug);
         }
     }
 
@@ -165,7 +217,7 @@ public class BookmarkManager {
      */
     public void fetchAnimeBookmark(String mediaSlug, AnimeBookmarkCallback callback) {
         Log.d(TAG, "Fetching anime bookmark for mediaSlug: " + mediaSlug);
-        
+
         if (mediaSlug != null && bookmarkCache.containsKey(mediaSlug)) {
             AnimeBookmarkResponse cached = bookmarkCache.get(mediaSlug);
             if (cached != null) {
@@ -177,7 +229,6 @@ public class BookmarkManager {
             }
         }
 
-        // Проверяем что ApiService еще активен
         if (apiService == null) {
             Log.w(TAG, "ApiService is null, skipping bookmark fetch");
             if (callback != null) {
@@ -185,7 +236,7 @@ public class BookmarkManager {
             }
             return;
         }
-        
+
         apiService.fetchAnimeBookmark(mediaSlug, new ApiService.AnimeBookmarkCallback() {
             @Override
             public void onBookmarkReceived(AnimeBookmarkResponse response) {
@@ -196,7 +247,7 @@ public class BookmarkManager {
                     callback.onBookmarkReceived(response);
                 }
             }
-            
+
             @Override
             public void onError(String error) {
                 Log.e(TAG, "Error fetching anime bookmark: " + error);
@@ -206,31 +257,23 @@ public class BookmarkManager {
             }
         });
     }
-    
+
     /**
      * Извлекает media_slug из URL аниме
-     * @param animeUrl URL аниме
-     * @return media_slug или null если не удалось извлечь
      */
     public String extractMediaSlugFromUrl(String animeUrl) {
         return ApiService.extractMediaSlugFromUrl(animeUrl);
     }
-    
+
     /**
      * Проверяет, есть ли закладка для указанного эпизода
-     * @param bookmarkData Данные закладки
-     * @param episodeId ID эпизода
-     * @return true если есть закладка для этого эпизода
      */
     public boolean hasBookmarkForEpisode(AnimeBookmarkResponse.BookmarkData bookmarkData, int episodeId) {
         return bookmarkData != null && bookmarkData.getItemId() == episodeId;
     }
-    
+
     /**
      * Получает прогресс закладки для указанного эпизода
-     * @param bookmarkData Данные закладки
-     * @param episodeId ID эпизода
-     * @return Прогресс в формате "MM:SS" или null если закладки нет
      */
     public String getBookmarkProgress(AnimeBookmarkResponse.BookmarkData bookmarkData, int episodeId) {
         if (hasBookmarkForEpisode(bookmarkData, episodeId)) {
@@ -238,41 +281,27 @@ public class BookmarkManager {
         }
         return null;
     }
-    
-    /**
-     * Показывает Toast сообщение
-     * @param message Сообщение для показа
-     */
-    private void showToast(String message) {
-        final Context ctx = this.context;
+
+    private void showErrorToast(String message) {
+        final Context ctx = this.context != null ? this.context : this.appContext;
         if (ctx == null) return;
-        safeRunOnUiThread(() -> {
-            if (ctx instanceof android.app.Activity) {
-                android.app.Activity act = (android.app.Activity) ctx;
-                if (act.isFinishing() || act.isDestroyed()) return;
-            }
-            com.example.animelib.util.CustomToast.show(ctx, message);
-        });
+        mainHandler.post(() -> CustomToast.showWarning(ctx, message));
     }
-    
+
     /**
      * Получает последний эпизод из закладки для указанного аниме
-     * @param mediaSlug Слаг медиа
-     * @param episodesList Список всех эпизодов аниме
-     * @param callback Колбэк для результата
      */
-    public void getLastEpisodeFromBookmark(String mediaSlug, java.util.List<EpisodesListResponse.EpisodeItem> episodesList, 
+    public void getLastEpisodeFromBookmark(String mediaSlug, java.util.List<EpisodesListResponse.EpisodeItem> episodesList,
                                          LastEpisodeCallback callback) {
         Log.d(TAG, "Getting last episode from bookmark for mediaSlug: " + mediaSlug);
-        
+
         fetchAnimeBookmark(mediaSlug, new AnimeBookmarkCallback() {
             @Override
             public void onBookmarkReceived(AnimeBookmarkResponse response) {
                 if (response != null && response.getData() != null) {
                     AnimeBookmarkResponse.BookmarkData bookmark = response.getData();
                     int bookmarkedEpisodeId = bookmark.getItemId();
-                    
-                    // Ищем эпизод с таким ID в списке
+
                     EpisodesListResponse.EpisodeItem foundEpisode = null;
                     for (EpisodesListResponse.EpisodeItem episode : episodesList) {
                         if (episode.getId() == bookmarkedEpisodeId) {
@@ -280,9 +309,9 @@ public class BookmarkManager {
                             break;
                         }
                     }
-                    
+
                     if (foundEpisode != null) {
-                        Log.d(TAG, "Found bookmarked episode: " + foundEpisode.getNumber() + 
+                        Log.d(TAG, "Found bookmarked episode: " + foundEpisode.getNumber() +
                                    ", progress: " + bookmark.getProgress());
                         callback.onLastEpisodeFound(foundEpisode, bookmark.getProgress());
                     } else {
@@ -294,7 +323,7 @@ public class BookmarkManager {
                     callback.onNoBookmarkFound();
                 }
             }
-            
+
             @Override
             public void onError(String error) {
                 Log.e(TAG, "Error getting bookmark: " + error);
@@ -302,7 +331,7 @@ public class BookmarkManager {
             }
         });
     }
-    
+
     /**
      * Интерфейс для получения закладки аниме
      */
@@ -310,76 +339,50 @@ public class BookmarkManager {
         void onBookmarkReceived(AnimeBookmarkResponse response);
         void onError(String error);
     }
-    
+
     /**
      * Парсит таймкод в формате "MM:SS" или "HH:MM:SS" в миллисекунды
-     * @param timecode Таймкод в формате "12:01" или "1:12:01"
-     * @return Миллисекунды или 0 если не удалось распарсить
      */
     public long parseTimecodeToMilliseconds(String timecode) {
         if (timecode == null || timecode.trim().isEmpty()) {
             return 0;
         }
-        
+
         try {
             String timeStr = timecode.trim();
             String[] parts = timeStr.split(":");
             if (parts.length == 2) {
-                // Формат MM:SS
                 int minutes = Integer.parseInt(parts[0].trim());
                 int seconds = Integer.parseInt(parts[1].trim());
                 return (minutes * 60L + seconds) * 1000L;
             } else if (parts.length == 3) {
-                // Формат HH:MM:SS
                 int hours = Integer.parseInt(parts[0].trim());
                 int minutes = Integer.parseInt(parts[1].trim());
                 int seconds = Integer.parseInt(parts[2].trim());
                 return (hours * 3600L + minutes * 60L + seconds) * 1000L;
             } else if (parts.length == 1) {
-                // Числовое значение (секунды или миллисекунды)
                 double val = Double.parseDouble(parts[0].trim());
                 if (val > 100000) {
-                    return (long) val; // Уже в миллисекундах
+                    return (long) val;
                 } else {
-                    return (long) (val * 1000.0); // Секунды в миллисекунды
+                    return (long) (val * 1000.0);
                 }
             }
         } catch (NumberFormatException e) {
             Log.e(TAG, "Failed to parse timecode: " + timecode, e);
         }
-        
+
         return 0;
     }
-    
+
     /**
-     * Очистка ресурсов
+     * Очистка ссылок на Activity (appContext сохраняется для фоновой доставки тостов/колбэков)
      */
     public void cleanup() {
         apiService = null;
         context = null;
     }
-    
-    /**
-     * Безопасно вызывает код в главном потоке
-     */
-    private void safeRunOnUiThread(Runnable runnable) {
-        try {
-            if (context instanceof android.app.Activity) {
-                ((android.app.Activity) context).runOnUiThread(runnable);
-            } else {
-                runnable.run();
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error calling UI thread", e);
-            // Fallback - вызываем в текущем потоке
-            try {
-                runnable.run();
-            } catch (Exception ex) {
-                Log.e(TAG, "Error in fallback callback", ex);
-            }
-        }
-    }
-    
+
     /**
      * Интерфейс для получения последнего эпизода из закладки
      */
@@ -387,7 +390,7 @@ public class BookmarkManager {
         void onLastEpisodeFound(EpisodesListResponse.EpisodeItem episode, String progress);
         void onNoBookmarkFound();
     }
-    
+
     /**
      * Интерфейс для обновления UI после добавления закладки
      */

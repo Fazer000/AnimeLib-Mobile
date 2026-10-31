@@ -2082,6 +2082,74 @@ public class ApiService {
      * @param currentTimecode Текущее время в формате "12:01"
      * @param callback Колбэк для результата операции
      */
+    public static class BookmarkSaveResult {
+        public final boolean success;
+        public final boolean retryable;
+        public final int httpCode;
+        public final String message;
+
+        public BookmarkSaveResult(boolean success, boolean retryable, int httpCode, String message) {
+            this.success = success;
+            this.retryable = retryable;
+            this.httpCode = httpCode;
+            this.message = message;
+        }
+    }
+
+    /**
+     * Синхронно отправляет запрос сохранения закладки (для использования из фонового диспетчера / воркера).
+     */
+    public BookmarkSaveResult addBookmarkSync(String mediaSlug, int episodeId, int teamId,
+                                              int translationType, String playerName,
+                                              int episodeNumber, String currentTimecode, Object statusId) {
+        if (mediaSlug == null || mediaSlug.trim().isEmpty()) {
+            return new BookmarkSaveResult(false, false, 0, "Не удалось определить аниме");
+        }
+        if (episodeId <= 0) {
+            return new BookmarkSaveResult(false, false, 0, "Некорректный эпизод для закладки");
+        }
+        if (!isAuthorized()) {
+            return new BookmarkSaveResult(false, false, 401, "Без авторизации поставить закладку нельзя");
+        }
+
+        try {
+            com.google.gson.JsonObject requestBody = createBookmarkRequestBody(
+                    mediaSlug, episodeId, teamId, translationType, playerName, episodeNumber, currentTimecode, statusId
+            );
+            String jsonString = gson.toJson(requestBody);
+            Log.d("ApiService", "addBookmarkSync request body: " + jsonString);
+
+            okhttp3.RequestBody body = okhttp3.RequestBody.create(
+                    jsonString,
+                    okhttp3.MediaType.get("application/json; charset=utf-8")
+            );
+            Request request = buildApiRequest("https://api.cdnlibs.org/api/bookmarks")
+                    .post(body)
+                    .build();
+
+            try (Response response = httpClient.newCall(request).execute()) {
+                int code = response.code();
+                String responseBody = response.body() != null ? response.body().string() : "";
+                if (response.isSuccessful()) {
+                    Log.d("ApiService", "addBookmarkSync succeeded (" + code + "): " + responseBody);
+                    invalidateAnimeBookmarkCache(mediaSlug);
+                    return new BookmarkSaveResult(true, false, code, "Закладка сохранена");
+                } else {
+                    Log.e("ApiService", "addBookmarkSync failed. Code: " + code + ", Body: " + responseBody);
+                    String serverMsg = extractServerErrorMessage(responseBody, code);
+                    boolean retryable = (code == 408 || code == 429 || code >= 500);
+                    return new BookmarkSaveResult(false, retryable, code, serverMsg);
+                }
+            }
+        } catch (IOException e) {
+            Log.e("ApiService", "addBookmarkSync network failure", e);
+            return new BookmarkSaveResult(false, true, 0, "Ошибка сети: " + e.getMessage());
+        } catch (Exception e) {
+            Log.e("ApiService", "addBookmarkSync unexpected failure", e);
+            return new BookmarkSaveResult(false, false, 0, "Неожиданная ошибка: " + e.getMessage());
+        }
+    }
+
     public void addBookmark(String mediaSlug, int episodeId, int teamId, int episodeNumber, 
                            String currentTimecode, BookmarkCallback callback) {
         addBookmark(mediaSlug, episodeId, teamId, episodeNumber, currentTimecode, null, callback);
@@ -2256,6 +2324,12 @@ public class ApiService {
      */
     private com.google.gson.JsonObject createBookmarkRequestBody(String mediaSlug, int episodeId, int teamId, 
                                                int episodeNumber, String currentTimecode, Object statusId) {
+        return createBookmarkRequestBody(mediaSlug, episodeId, teamId, 2, "Animelib", episodeNumber, currentTimecode, statusId);
+    }
+
+    private com.google.gson.JsonObject createBookmarkRequestBody(String mediaSlug, int episodeId, int teamId,
+                                               int translationType, String playerName,
+                                               int episodeNumber, String currentTimecode, Object statusId) {
         
         com.google.gson.JsonObject requestBody = new com.google.gson.JsonObject();
         requestBody.addProperty("media_type", "anime");
@@ -2270,10 +2344,15 @@ public class ApiService {
             int parsed = ((Number) statusId).intValue();
             if (parsed > 0) statusVal = parsed;
         } else if (statusId instanceof String) {
-            try {
-                int parsed = Integer.parseInt((String) statusId);
-                if (parsed > 0) statusVal = parsed;
-            } catch (NumberFormatException ignored) {}
+            String strStatus = ((String) statusId).trim();
+            if ("other".equalsIgnoreCase(strStatus)) {
+                statusVal = 28;
+            } else {
+                try {
+                    int parsed = Integer.parseInt(strStatus);
+                    if (parsed > 0) statusVal = parsed;
+                } catch (NumberFormatException ignored) {}
+            }
         }
         bookmark.addProperty("status", statusVal);
         
@@ -2285,8 +2364,14 @@ public class ApiService {
         if (teamId > 0) {
             meta.addProperty("team", teamId);
         }
-        meta.addProperty("translation_type", 2);
-        meta.addProperty("player", "Animelib");
+        meta.addProperty("translation_type", translationType > 0 ? translationType : 2);
+        String resolvedPlayer = (playerName != null && !playerName.trim().isEmpty()) ? playerName.trim() : "Animelib";
+        if ("animelib".equalsIgnoreCase(resolvedPlayer)) {
+            resolvedPlayer = "Animelib";
+        } else if ("kodik".equalsIgnoreCase(resolvedPlayer)) {
+            resolvedPlayer = "Kodik";
+        }
+        meta.addProperty("player", resolvedPlayer);
         meta.addProperty("item_number", episodeNumber > 0 ? episodeNumber : 1);
         requestBody.add("meta", meta);
         

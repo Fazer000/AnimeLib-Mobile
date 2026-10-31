@@ -95,6 +95,57 @@ public class OfflineSyncManager {
         });
     }
 
+    private static final long MAX_BOOKMARK_TASK_AGE_MS = 24L * 60L * 60L * 1000L; // 24 часа
+
+    public void saveOrReplacePendingBookmarkTask(String mediaSlug, int episodeId, int teamId,
+                                                 int episodeNumber, String timecode, Object statusId) {
+        if (mediaSlug == null || mediaSlug.trim().isEmpty() || episodeId <= 0) {
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                java.util.List<PendingSyncTaskEntity> tasks = databaseManager.getAllPendingSyncTasksSync();
+                if (tasks != null) {
+                    for (PendingSyncTaskEntity existing : tasks) {
+                        if ("BOOKMARK".equalsIgnoreCase(existing.getTaskType())
+                                && mediaSlug.equalsIgnoreCase(existing.getMediaSlug())) {
+                            databaseManager.deletePendingSyncTaskById(existing.getId());
+                        }
+                    }
+                }
+                PendingSyncTaskEntity task = PendingSyncTaskEntity.createBookmarkTask(
+                        mediaSlug, episodeId, teamId, episodeNumber, timecode, statusId
+                );
+                databaseManager.savePendingSyncTask(task);
+                scheduleWorkManagerSync();
+                Log.d(TAG, "Queued fallback BOOKMARK sync task for " + mediaSlug + " ep=" + episodeId + " (" + timecode + ")");
+            } catch (Exception e) {
+                Log.e(TAG, "Error saving pending BOOKMARK task", e);
+            }
+        });
+    }
+
+    public void clearPendingBookmarkTasksForSlug(String mediaSlug) {
+        if (mediaSlug == null || mediaSlug.trim().isEmpty()) {
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                java.util.List<PendingSyncTaskEntity> tasks = databaseManager.getAllPendingSyncTasksSync();
+                if (tasks != null) {
+                    for (PendingSyncTaskEntity existing : tasks) {
+                        if ("BOOKMARK".equalsIgnoreCase(existing.getTaskType())
+                                && mediaSlug.equalsIgnoreCase(existing.getMediaSlug())) {
+                            databaseManager.deletePendingSyncTaskById(existing.getId());
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error clearing pending BOOKMARK tasks for " + mediaSlug, e);
+            }
+        });
+    }
+
     public void syncPendingTasksNow() {
         executor.execute(() -> {
             if (!isNetworkAvailable(context)) {
@@ -108,27 +159,54 @@ public class OfflineSyncManager {
                 return;
             }
 
+            long now = System.currentTimeMillis();
             Log.d(TAG, "Processing " + tasks.size() + " pending tasks in syncPendingTasksNow");
             for (PendingSyncTaskEntity task : tasks) {
-                if (!"VIEW".equalsIgnoreCase(task.getTaskType())) {
-                    // Устаревшие задачи других типов удаляем, чтобы они не перезаписывали актуальные данные
-                    databaseManager.deletePendingSyncTaskById(task.getId());
-                    continue;
-                }
+                if ("VIEW".equalsIgnoreCase(task.getTaskType())) {
+                    boolean success = false;
+                    try {
+                        success = apiService.markEpisodeViewedSync(task.getAnimeId(), task.getPlayerId());
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error syncing VIEW task ID " + task.getId(), e);
+                    }
 
-                boolean success = false;
-                try {
-                    success = apiService.markEpisodeViewedSync(task.getAnimeId(), task.getPlayerId());
-                } catch (Exception e) {
-                    Log.e(TAG, "Error syncing task ID " + task.getId(), e);
-                    success = false;
-                }
-
-                if (success) {
-                    databaseManager.deletePendingSyncTaskById(task.getId());
+                    if (success) {
+                        databaseManager.deletePendingSyncTaskById(task.getId());
+                    } else {
+                        task.setRetryCount(task.getRetryCount() + 1);
+                        databaseManager.updatePendingSyncTask(task);
+                    }
+                } else if ("BOOKMARK".equalsIgnoreCase(task.getTaskType())) {
+                    if (task.getMediaSlug() == null || task.getEpisodeId() <= 0
+                            || (task.getCreatedAt() > 0 && now - task.getCreatedAt() > MAX_BOOKMARK_TASK_AGE_MS)
+                            || task.getRetryCount() >= 5) {
+                        databaseManager.deletePendingSyncTaskById(task.getId());
+                        continue;
+                    }
+                    try {
+                        ApiService.BookmarkSaveResult res = apiService.addBookmarkSync(
+                                task.getMediaSlug(),
+                                task.getEpisodeId(),
+                                task.getTeamId(),
+                                2,
+                                "Animelib",
+                                task.getEpisodeNumber(),
+                                task.getTimecode(),
+                                task.getStatusId()
+                        );
+                        if (res.success || !res.retryable) {
+                            databaseManager.deletePendingSyncTaskById(task.getId());
+                        } else {
+                            task.setRetryCount(task.getRetryCount() + 1);
+                            databaseManager.updatePendingSyncTask(task);
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error syncing BOOKMARK task ID " + task.getId(), e);
+                        task.setRetryCount(task.getRetryCount() + 1);
+                        databaseManager.updatePendingSyncTask(task);
+                    }
                 } else {
-                    task.setRetryCount(task.getRetryCount() + 1);
-                    databaseManager.updatePendingSyncTask(task);
+                    databaseManager.deletePendingSyncTaskById(task.getId());
                 }
             }
         });

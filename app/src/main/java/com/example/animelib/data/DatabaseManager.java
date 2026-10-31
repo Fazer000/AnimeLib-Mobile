@@ -875,19 +875,44 @@ public class DatabaseManager {
 
     // ========== Offline Bookmarks операции ==========
 
+    public boolean saveOfflineBookmarkSync(String animeId, int episodeId, String episodeNumber, String timecode, long positionMs) {
+        if (animeId == null || animeId.trim().isEmpty()) {
+            Log.e(TAG, "Cannot save offline bookmark: animeId is empty");
+            return false;
+        }
+        try {
+            com.example.animelib.data.entity.OfflineBookmarkEntity entity =
+                    new com.example.animelib.data.entity.OfflineBookmarkEntity(
+                            animeId, episodeId, episodeNumber, timecode, positionMs, System.currentTimeMillis()
+                    );
+            db.offlineBookmarkDao().saveBookmark(entity);
+            Log.d(TAG, "Saved offline bookmark for anime " + animeId + ", episode " + episodeNumber + " (" + timecode + ")");
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to save offline bookmark", e);
+            return false;
+        }
+    }
+
     public void saveOfflineBookmark(String animeId, int episodeId, String episodeNumber, String timecode, long positionMs) {
-        executor.execute(() -> {
-            try {
-                com.example.animelib.data.entity.OfflineBookmarkEntity entity =
-                        new com.example.animelib.data.entity.OfflineBookmarkEntity(
-                                animeId, episodeId, episodeNumber, timecode, positionMs, System.currentTimeMillis()
-                        );
-                db.offlineBookmarkDao().saveBookmark(entity);
-                Log.d(TAG, "Saved offline bookmark for anime " + animeId + ", episode " + episodeNumber + " (" + timecode + ")");
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save offline bookmark", e);
+        saveOfflineBookmark(animeId, episodeId, episodeNumber, timecode, positionMs, null, null);
+    }
+
+    public void saveOfflineBookmark(String animeId, int episodeId, String episodeNumber, String timecode, long positionMs,
+                                    Runnable onSuccess, Runnable onError) {
+        Runnable task = () -> {
+            boolean ok = saveOfflineBookmarkSync(animeId, episodeId, episodeNumber, timecode, positionMs);
+            if (ok) {
+                if (onSuccess != null) onSuccess.run();
+            } else {
+                if (onError != null) onError.run();
             }
-        });
+        };
+        if (executor != null && !executor.isShutdown()) {
+            executor.execute(task);
+        } else {
+            new Thread(task, "offline-bookmark-save").start();
+        }
     }
 
     public com.example.animelib.data.entity.OfflineBookmarkEntity getOfflineBookmarkSync(String animeId) {

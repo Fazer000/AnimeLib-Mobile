@@ -13,15 +13,17 @@ import androidx.media3.common.Player;
 
 import com.example.animelib.R;
 import com.example.animelib.api.ApiService;
-import com.example.animelib.data.entity.DownloadedEpisodeEntity;
+import com.example.animelib.data.DatabaseManager;
 import com.example.animelib.data.entity.OfflineBookmarkEntity;
 import com.example.animelib.managers.BookmarkManager;
+import com.example.animelib.managers.BookmarkSyncDispatcher;
 import com.example.animelib.managers.EpisodesManager;
 import com.example.animelib.managers.OfflineSyncManager;
 import com.example.animelib.managers.PlayersManager;
 import com.example.animelib.models.AnimeBookmarkResponse;
 import com.example.animelib.models.EpisodeResponse;
 import com.example.animelib.models.EpisodesListResponse;
+import com.example.animelib.util.CustomToast;
 
 /**
  * Контроллер для отслеживания прогресса просмотра и автосохранения закладок.
@@ -31,6 +33,7 @@ public class PlayerProgressController {
     private static final String TAG = "PlayerProgressCtrl";
 
     private final Context context;
+    private final Context appContext;
     private final ApiService apiService;
 
     private boolean isCurrentEpisodeMarkedViewed = false;
@@ -38,13 +41,27 @@ public class PlayerProgressController {
     private int lastAutoSavedEpisodeId = -1;
     private String lastAutoSavedTimecode = null;
 
+    // Снимок последнего валидного состояния воспроизведения, чтобы при выходе из плеера
+    // позиция, эпизод, озвучка и слаг никогда не терялись даже после остановки/очистки ExoPlayer
+    private EpisodesListResponse.EpisodeItem lastValidEpisode = null;
+    private EpisodeResponse.PlayerData lastValidPlayer = null;
+    private long lastValidPositionMs = 0L;
+    private long lastValidDurationMs = 0L;
+    private String lastValidMediaSlug = null;
+    private String lastValidOfflineAnimeId = null;
+    private boolean hasPlaybackStartedForCurrentEpisode = false;
+
     private final Handler viewProgressHandler = new Handler(Looper.getMainLooper());
     private Runnable viewProgressRunnable;
 
     public interface ProgressCallback {
         String getAnimeId();
         String getAnimeUrl();
+        String getMediaSlug();
+        String resolveOfflineAnimeId();
         boolean isOfflineMode();
+        boolean hasUserSwitchedEpisode();
+        boolean hasRenderedFirstFrame();
         Player getPlayer();
         EpisodesManager getEpisodesManager();
         PlayersManager getPlayersManager();
@@ -59,6 +76,9 @@ public class PlayerProgressController {
 
     public PlayerProgressController(Context context, ApiService apiService) {
         this.context = context;
+        this.appContext = (context != null && context.getApplicationContext() != null)
+                ? context.getApplicationContext()
+                : context;
         this.apiService = apiService;
     }
 
@@ -82,11 +102,97 @@ public class PlayerProgressController {
         this.autoBookmarkSaved = saved;
     }
 
+    public void onPlaybackReady() {
+        hasPlaybackStartedForCurrentEpisode = true;
+        capturePlaybackSnapshot();
+    }
+
+    public long getLastValidPositionMsForEpisode(int episodeId) {
+        if (lastValidEpisode != null && lastValidEpisode.getId() == episodeId && lastValidPositionMs > 0) {
+            return lastValidPositionMs;
+        }
+        return 0L;
+    }
+
+    public long getLastValidDurationMsForEpisode(int episodeId) {
+        if (lastValidEpisode != null && lastValidEpisode.getId() == episodeId && lastValidDurationMs > 0) {
+            return lastValidDurationMs;
+        }
+        return 0L;
+    }
+
+    @Nullable
+    public EpisodesListResponse.EpisodeItem getLastValidEpisode() {
+        return lastValidEpisode;
+    }
+
+    @Nullable
+    public EpisodeResponse.PlayerData getLastValidPlayer() {
+        return lastValidPlayer;
+    }
+
     public void resetProgressForNewEpisode() {
         isCurrentEpisodeMarkedViewed = false;
         autoBookmarkSaved = false;
         lastAutoSavedEpisodeId = -1;
         lastAutoSavedTimecode = null;
+        lastValidEpisode = null;
+        lastValidPositionMs = 0L;
+        lastValidDurationMs = 0L;
+        hasPlaybackStartedForCurrentEpisode = false;
+    }
+
+    public void resetForNewAnime() {
+        resetProgressForNewEpisode();
+        lastValidPlayer = null;
+        lastValidMediaSlug = null;
+        lastValidOfflineAnimeId = null;
+    }
+
+    public void capturePlaybackSnapshot() {
+        if (callback == null) return;
+
+        EpisodesManager em = callback.getEpisodesManager();
+        if (em != null && em.getCurrentEpisode() != null) {
+            EpisodesListResponse.EpisodeItem curEp = em.getCurrentEpisode();
+            if (lastValidEpisode != null && lastValidEpisode.getId() != curEp.getId()) {
+                lastValidPositionMs = 0L;
+                lastValidDurationMs = 0L;
+            }
+            lastValidEpisode = curEp;
+        }
+
+        PlayersManager pm = callback.getPlayersManager();
+        if (pm != null && pm.getCurrentPlayerData() != null) {
+            lastValidPlayer = pm.getCurrentPlayerData();
+        }
+
+        String slug = callback.getMediaSlug();
+        if (slug != null && !slug.trim().isEmpty()) {
+            lastValidMediaSlug = slug.trim();
+        }
+
+        String offlineId = callback.resolveOfflineAnimeId();
+        if (offlineId != null && !offlineId.trim().isEmpty()) {
+            lastValidOfflineAnimeId = offlineId.trim();
+        }
+
+        if (callback.hasRenderedFirstFrame()) {
+            hasPlaybackStartedForCurrentEpisode = true;
+        }
+
+        Player p = callback.getPlayer();
+        if (p != null) {
+            long pos = p.getCurrentPosition();
+            long dur = p.getDuration();
+            if (pos > 0) {
+                lastValidPositionMs = pos;
+                hasPlaybackStartedForCurrentEpisode = true;
+            }
+            if (dur > 0) {
+                lastValidDurationMs = dur;
+            }
+        }
     }
 
     public void startViewProgressTracking() {
@@ -94,10 +200,11 @@ public class PlayerProgressController {
         viewProgressRunnable = new Runnable() {
             @Override
             public void run() {
+                capturePlaybackSnapshot();
                 checkPlaybackViewProgress();
                 if (callback != null) {
                     Player p = callback.getPlayer();
-                    if (p != null && p.isPlaying() && !isCurrentEpisodeMarkedViewed) {
+                    if (p != null && p.isPlaying()) {
                         viewProgressHandler.postDelayed(this, 1000);
                     }
                 }
@@ -131,11 +238,13 @@ public class PlayerProgressController {
             PlayersManager pm = callback.getPlayersManager();
             if (pm != null && pm.getCurrentPlayerData() != null) {
                 playerId = pm.getCurrentPlayerData().getId();
+            } else if (lastValidPlayer != null) {
+                playerId = lastValidPlayer.getId();
             }
 
             if (animeId != null && !animeId.isEmpty() && playerId > 0) {
                 Log.d(TAG, "Enqueuing VIEW task for animeId: " + animeId + ", playerId: " + playerId);
-                OfflineSyncManager.getInstance(context).enqueueViewTask(animeId, playerId);
+                OfflineSyncManager.getInstance(appContext).enqueueViewTask(animeId, playerId);
             }
         }
     }
@@ -143,37 +252,96 @@ public class PlayerProgressController {
     public void autoSaveBookmark() {
         if (callback == null) return;
 
+        capturePlaybackSnapshot();
         saveLatestViewOnExit();
 
         EpisodesManager em = callback.getEpisodesManager();
-        EpisodesListResponse.EpisodeItem currentEpisode = em != null ? em.getCurrentEpisode() : null;
-        if (currentEpisode == null) return;
+        EpisodesListResponse.EpisodeItem currentEpisode = (em != null && em.getCurrentEpisode() != null)
+                ? em.getCurrentEpisode()
+                : lastValidEpisode;
+        if (currentEpisode == null || currentEpisode.getId() <= 0) return;
 
         Player p = callback.getPlayer();
-        long currentPosition = p != null ? p.getCurrentPosition() : 0;
-        if (currentPosition < 1000) return;
+        long livePos = p != null ? p.getCurrentPosition() : 0L;
+        long currentPosition = livePos > 0
+                ? livePos
+                : getLastValidPositionMsForEpisode(currentEpisode.getId());
 
-        String timecode = ApiService.formatTimecode(currentPosition);
+        boolean playbackReady = hasPlaybackStartedForCurrentEpisode || callback.hasRenderedFirstFrame();
+        AnimeBookmarkResponse.BookmarkData existingBookmark = em != null ? em.getAnimeBookmark() : null;
+        boolean switchedToNewEpisode = callback.hasUserSwitchedEpisode()
+                && (existingBookmark == null || existingBookmark.getItemId() != currentEpisode.getId());
+
+        // Защита от перезаписи существующей закладки нулём на старте загрузки,
+        // но сохранение новой серии даже на 00:00, если пользователь переключил серию и она загрузилась
+        if (currentPosition < 1000 && !(switchedToNewEpisode && playbackReady)) {
+            return;
+        }
+
+        final long safePosition = Math.max(0L, currentPosition);
+        final String timecode = ApiService.formatTimecode(safePosition);
 
         boolean isOffline = callback.isOfflineMode();
         if (isOffline) {
-            String animeId = callback.getAnimeId();
-            if (animeId != null && apiService != null && apiService.getDatabaseManager() != null) {
-                apiService.getDatabaseManager().saveOfflineBookmark(animeId, currentEpisode.getId(), currentEpisode.getNumber(), timecode, currentPosition);
-                autoBookmarkSaved = true;
+            String animeId = callback.resolveOfflineAnimeId();
+            if (animeId == null || animeId.trim().isEmpty()) {
+                animeId = lastValidOfflineAnimeId != null ? lastValidOfflineAnimeId : callback.getAnimeId();
+            }
+            if (animeId == null || animeId.trim().isEmpty()) {
+                showAutoSaveErrorToast("Не удалось сохранить закладку");
+                return;
+            }
+            DatabaseManager dbMgr = appContext != null
+                    ? BookmarkSyncDispatcher.getInstance(appContext).getAppDatabaseManager()
+                    : (apiService != null ? apiService.getDatabaseManager() : null);
+            if (dbMgr != null) {
+                if (lastAutoSavedEpisodeId == currentEpisode.getId() && timecode.equals(lastAutoSavedTimecode)) {
+                    return;
+                }
+                lastAutoSavedEpisodeId = currentEpisode.getId();
+                lastAutoSavedTimecode = timecode;
+                dbMgr.saveOfflineBookmark(
+                        animeId,
+                        currentEpisode.getId(),
+                        currentEpisode.getNumber(),
+                        timecode,
+                        safePosition,
+                        () -> autoBookmarkSaved = true,
+                        () -> {
+                            lastAutoSavedEpisodeId = -1;
+                            lastAutoSavedTimecode = null;
+                            showAutoSaveErrorToast("Не удалось сохранить закладку");
+                        }
+                );
+            } else {
+                showAutoSaveErrorToast("Не удалось сохранить закладку");
             }
             return;
         }
 
-        if (apiService == null || !apiService.isAuthorized()) return;
+        boolean authorized = (apiService != null && apiService.isAuthorized())
+                || (appContext != null && BookmarkSyncDispatcher.getInstance(appContext).isAuthorized());
+        if (!authorized) {
+            return;
+        }
+
+        String mediaSlug = callback.getMediaSlug();
+        if (mediaSlug == null || mediaSlug.trim().isEmpty()) {
+            mediaSlug = lastValidMediaSlug;
+        }
+        if (mediaSlug == null || mediaSlug.trim().isEmpty()) {
+            String animeUrl = callback.getAnimeUrl();
+            mediaSlug = (animeUrl != null && !animeUrl.isEmpty()) ? ApiService.extractMediaSlugFromUrl(animeUrl) : null;
+        }
+        if (mediaSlug == null || mediaSlug.trim().isEmpty()) {
+            showAutoSaveErrorToast("Не удалось сохранить закладку: не определено аниме");
+            return;
+        }
 
         PlayersManager pm = callback.getPlayersManager();
-        EpisodeResponse.PlayerData currentPlayer = pm != null ? pm.getCurrentPlayerData() : null;
-        if (currentPlayer == null || em == null) return;
-
-        String animeUrl = callback.getAnimeUrl();
-        String mediaSlug = (animeUrl != null && !animeUrl.isEmpty()) ? ApiService.extractMediaSlugFromUrl(animeUrl) : null;
-        if (mediaSlug == null) return;
+        EpisodeResponse.PlayerData currentPlayer = (pm != null && pm.getCurrentPlayerData() != null)
+                ? pm.getCurrentPlayerData()
+                : lastValidPlayer;
 
         if (lastAutoSavedEpisodeId == currentEpisode.getId() && timecode.equals(lastAutoSavedTimecode)) {
             return;
@@ -182,12 +350,24 @@ public class PlayerProgressController {
         lastAutoSavedTimecode = timecode;
 
         Object statusId = callback.getCurrentWatchStatusId();
+        if (statusId == null && existingBookmark != null && existingBookmark.getStatus() > 0) {
+            statusId = existingBookmark.getStatus();
+        }
 
-        em.getBookmarkManager().addBookmark(
+        BookmarkManager bmManager = (em != null && em.getBookmarkManager() != null)
+                ? em.getBookmarkManager()
+                : (appContext != null ? new BookmarkManager(appContext, apiService) : null);
+        if (bmManager == null) {
+            lastAutoSavedEpisodeId = -1;
+            lastAutoSavedTimecode = null;
+            return;
+        }
+
+        bmManager.addBookmark(
                 mediaSlug,
                 currentPlayer,
                 currentEpisode,
-                currentPosition,
+                safePosition,
                 statusId,
                 new BookmarkManager.BookmarkAddCallback() {
                     @Override
@@ -204,6 +384,12 @@ public class PlayerProgressController {
                 },
                 false
         );
+    }
+
+    private void showAutoSaveErrorToast(String message) {
+        final Context ctx = this.appContext != null ? this.appContext : this.context;
+        if (ctx == null) return;
+        viewProgressHandler.post(() -> CustomToast.showWarning(ctx, message));
     }
 
     public void saveLatestViewOnExit() {
@@ -246,7 +432,7 @@ public class PlayerProgressController {
             if (em == null) return;
 
             if (callback.isOfflineMode()) {
-                String animeId = callback.getAnimeId();
+                String animeId = callback.resolveOfflineAnimeId();
                 if (animeId != null && apiService != null && apiService.getDatabaseManager() != null) {
                     OfflineBookmarkEntity bm = apiService.getDatabaseManager().getOfflineBookmarkSync(animeId);
                     if (bm != null) {
@@ -259,10 +445,8 @@ public class PlayerProgressController {
                 return;
             }
 
-            String animeUrl = callback.getAnimeUrl();
-            String mediaSlug = (animeUrl != null && !animeUrl.isEmpty()) ? ApiService.extractMediaSlugFromUrl(animeUrl) : null;
-
-            if (mediaSlug != null) {
+            String mediaSlug = callback.getMediaSlug();
+            if (mediaSlug != null && !mediaSlug.isEmpty()) {
                 em.getBookmarkManager().fetchAnimeBookmark(mediaSlug, new BookmarkManager.AnimeBookmarkCallback() {
                     @Override
                     public void onBookmarkReceived(AnimeBookmarkResponse response) {
@@ -330,7 +514,15 @@ public class PlayerProgressController {
             long currentPosition,
             long duration
     ) {
-        if (context == null || currentEpisode == null || currentPosition < 1000) return;
+        EpisodesListResponse.EpisodeItem ep = currentEpisode != null ? currentEpisode : lastValidEpisode;
+        if (context == null || ep == null) return;
+
+        long effectivePos = currentPosition > 0 ? currentPosition : getLastValidPositionMsForEpisode(ep.getId());
+        long effectiveDur = duration > 0 ? duration : getLastValidDurationMsForEpisode(ep.getId());
+        if (effectivePos < 1000) return;
+
+        EpisodeResponse.PlayerData effPlayer = currentPlayer != null ? currentPlayer : lastValidPlayer;
+
         try {
             com.google.gson.JsonObject viewObj = new com.google.gson.JsonObject();
 
@@ -382,7 +574,9 @@ public class PlayerProgressController {
                 }
 
                 String titleStr = (intentAnimeTitle != null) ? intentAnimeTitle : "Anime";
-                String slugUrlStr = activeAnimeUrl != null ? ApiService.extractMediaSlugFromUrl(activeAnimeUrl) : "anime";
+                String slugUrlStr = lastValidMediaSlug != null
+                        ? lastValidMediaSlug
+                        : (activeAnimeUrl != null ? ApiService.extractMediaSlugFromUrl(activeAnimeUrl) : "anime");
 
                 mediaObj.addProperty("id", animeIdInt);
                 mediaObj.addProperty("name", titleStr);
@@ -398,29 +592,30 @@ public class PlayerProgressController {
             viewObj.add("media", mediaObj);
 
             com.google.gson.JsonObject itemObj = new com.google.gson.JsonObject();
-            itemObj.addProperty("id", currentEpisode.getId());
-            itemObj.addProperty("number", currentEpisode.getNumber() != null ? currentEpisode.getNumber() : "1");
+            itemObj.addProperty("id", ep.getId());
+            itemObj.addProperty("number", ep.getNumber() != null ? ep.getNumber() : "1");
             viewObj.add("item", itemObj);
 
             com.google.gson.JsonObject progressObj = new com.google.gson.JsonObject();
-            progressObj.addProperty("current", ApiService.formatTimecode(currentPosition));
-            progressObj.addProperty("total", ApiService.formatTimecode(duration));
-            double percent = duration > 0 ? (double) Math.round((currentPosition * 100.0 / duration) * 100.0) / 100.0 : 0.0;
+            progressObj.addProperty("current", ApiService.formatTimecode(effectivePos));
+            progressObj.addProperty("total", ApiService.formatTimecode(effectiveDur));
+            double percent = effectiveDur > 0 ? (double) Math.round((effectivePos * 100.0 / effectiveDur) * 100.0) / 100.0 : 0.0;
             progressObj.addProperty("percent", percent);
             viewObj.add("progress", progressObj);
 
             com.google.gson.JsonObject metaObj = new com.google.gson.JsonObject();
-            int teamId = (currentPlayer != null && currentPlayer.getTeam() != null) ? currentPlayer.getTeam().getId() : 0;
-            int transType = (currentPlayer != null && currentPlayer.getTranslationType() != null) ? currentPlayer.getTranslationType().getId() : 1;
-            String playerStr = (currentPlayer != null && currentPlayer.getPlayer() != null) ? currentPlayer.getPlayer() : "Animelib";
+            int teamId = (effPlayer != null && effPlayer.getTeam() != null) ? effPlayer.getTeam().getId() : 0;
+            int transType = (effPlayer != null && effPlayer.getTranslationType() != null) ? effPlayer.getTranslationType().getId() : 1;
+            String playerStr = (effPlayer != null && effPlayer.getPlayer() != null) ? effPlayer.getPlayer() : "Animelib";
 
             metaObj.addProperty("team", teamId);
             metaObj.addProperty("translation_type", transType);
             metaObj.addProperty("player", playerStr);
-            metaObj.addProperty("episode", currentEpisode.getId());
+            metaObj.addProperty("episode", ep.getId());
             viewObj.add("meta", metaObj);
 
-            com.example.animelib.util.LatestViewsManager.saveLatestView(context.getApplicationContext(), viewObj);
+            Context targetCtx = appContext != null ? appContext : context;
+            com.example.animelib.util.LatestViewsManager.saveLatestView(targetCtx, viewObj);
             Log.d(TAG, "Saved latest-view on exit for media: " + mediaObj.get("name").getAsString());
 
         } catch (Exception e) {

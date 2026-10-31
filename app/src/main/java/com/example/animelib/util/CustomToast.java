@@ -247,8 +247,12 @@ public class CustomToast {
 
         Activity activity = getActivity(context);
         if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
-            // Фолбэк на стандартный тост, если не удалось получить Activity
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show();
+            activity = com.example.animelib.AnimeLibApplication.getCurrentActivity();
+        }
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+            // Фолбэк на стандартный тост через ApplicationContext, если нет активной Activity
+            Context appCtx = context.getApplicationContext() != null ? context.getApplicationContext() : context;
+            Toast.makeText(appCtx, formatUserFriendlyMessage(message), Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -274,7 +278,8 @@ public class CustomToast {
 
         ViewGroup rootView = getTopMostRootView(activity);
         if (rootView == null) {
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show();
+            Context appCtx = context.getApplicationContext() != null ? context.getApplicationContext() : context;
+            Toast.makeText(appCtx, formatUserFriendlyMessage(message), Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -388,7 +393,8 @@ public class CustomToast {
             lastToastViewRef = new java.lang.ref.WeakReference<>(toastView);
         } catch (Exception e) {
             android.util.Log.e("CustomToast", "Failed to add toast to rootView", e);
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show();
+            Context appCtx = context.getApplicationContext() != null ? context.getApplicationContext() : context;
+            Toast.makeText(appCtx, displayMessage, Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -632,6 +638,10 @@ public class CustomToast {
 
     private static int autoDetectType(String message) {
         String lower = message.toLowerCase();
+        if (lower.contains("ошибк") || lower.contains("не удалось") || lower.contains("нельзя")
+                || lower.contains("невозможн") || lower.contains("сбой")) {
+            return TYPE_WARNING;
+        }
         if (lower.contains("успеш") || lower.contains("сохранен") || lower.contains("удален") 
                 || lower.contains("завершен") || lower.contains("опубликован") || lower.contains("добавлен")) {
             return TYPE_SUCCESS;
