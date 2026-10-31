@@ -1374,17 +1374,41 @@
                         android:inputType="textMultiLine"
                         android:imeOptions="flagNoExtractUi|flagNoFullscreen" />
 
-                    <ImageButton
-                        android:id="@+id/btnPortraitSendComment"
+                    <FrameLayout
                         android:layout_width="36dp"
                         android:layout_height="36dp"
-                        android:layout_marginStart="4dp"
-                        android:background="?attr/selectableItemBackgroundBorderless"
-                        android:contentDescription="Send comment"
-                        android:padding="6dp"
-                        android:scaleType="fitCenter"
-                        android:src="@drawable/ic_send"
-                        app:tint="@color/secondary_color" />
+                        android:layout_marginStart="4dp">
+
+                        <ImageButton
+                            android:id="@+id/btnPortraitSendComment"
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="Send comment"
+                            android:padding="6dp"
+                            android:scaleType="fitCenter"
+                            android:src="@drawable/ic_send_rounded"
+                            app:tint="@color/secondary_color" />
+
+                        <FrameLayout
+                            android:id="@+id/portraitSendCommentLoadingContainer"
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
+                            android:visibility="gone">
+
+                            <com.google.android.material.progressindicator.CircularProgressIndicator
+                                android:id="@+id/portraitSendCommentLoadingIndicator"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_gravity="center"
+                                android:indeterminate="true"
+                                app:indicatorColor="@color/secondary_color"
+                                app:indicatorInset="0dp"
+                                app:indicatorSize="20dp"
+                                app:trackCornerRadius="4dp"
+                                app:trackThickness="2.5dp" />
+                        </FrameLayout>
+                    </FrameLayout>
                 </LinearLayout>
 
             </LinearLayout>

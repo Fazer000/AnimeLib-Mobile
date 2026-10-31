@@ -59,6 +59,17 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
 
     private CommentActionListener commentActionListener;
     private Long activeReplyCommentId = null;
+    private Long submittingReplyCommentId = null;
+
+    public static void applySendButtonLoadingState(View sendButton, View loadingContainer, boolean isLoading) {
+        if (sendButton != null) {
+            sendButton.setEnabled(!isLoading);
+            sendButton.setVisibility(isLoading ? View.INVISIBLE : View.VISIBLE);
+        }
+        if (loadingContainer != null) {
+            loadingContainer.setVisibility(isLoading ? View.VISIBLE : View.GONE);
+        }
+    }
 
     private int repliesLimit = 3;
     private final Set<Long> expandedParentIds = new HashSet<>();
@@ -328,6 +339,9 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
     }
 
     public void setActiveReplyCommentId(Long commentId) {
+        if (commentId == null) {
+            this.submittingReplyCommentId = null;
+        }
         if (Objects.equals(this.activeReplyCommentId, commentId)) return;
         Long oldId = this.activeReplyCommentId;
         this.activeReplyCommentId = commentId;
@@ -341,6 +355,14 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
 
     public Long getActiveReplyCommentId() {
         return activeReplyCommentId;
+    }
+
+    public void setSubmittingReplyCommentId(Long commentId) {
+        this.submittingReplyCommentId = commentId;
+    }
+
+    public Long getSubmittingReplyCommentId() {
+        return submittingReplyCommentId;
     }
 
     public void notifyCommentChanged(long commentId) {
@@ -358,6 +380,8 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
     public void clearAll() {
         cancelPendingInsertions();
         isLoadingMore = false;
+        activeReplyCommentId = null;
+        submittingReplyCommentId = null;
         expandedParentIds.clear();
         stickyRoots.clear();
         allById.clear();
@@ -1078,6 +1102,9 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             holder.ensureInlineReplyInflated();
             if (holder.inlineReplyContainer != null) {
                 holder.inlineReplyContainer.setVisibility(View.VISIBLE);
+                boolean isSubmittingThisReply = (submittingReplyCommentId != null && submittingReplyCommentId.equals(item.getId()));
+                applySendButtonLoadingState(holder.btnInlineSendComment, holder.inlineSendCommentLoadingContainer, isSubmittingThisReply);
+
                 String replyToUsername = (item.getUser() != null && item.getUser().getUsername() != null)
                         ? item.getUser().getUsername() : "пользователю";
                 if (holder.tvInlineReplyToText != null) {
@@ -1085,6 +1112,9 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                 }
                 if (holder.btnInlineCancelReply != null) {
                     holder.btnInlineCancelReply.setOnClickListener(v -> {
+                        if (submittingReplyCommentId != null && submittingReplyCommentId.equals(item.getId())) {
+                            return;
+                        }
                         setActiveReplyCommentId(null);
                         if (commentActionListener != null) {
                             commentActionListener.onReplyCancelled(item);
@@ -1093,15 +1123,17 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                 }
                 if (holder.inlineCommentInputField != null) {
                     CommentFormattingHelper.attachFormattingTextWatcher(holder.inlineCommentInputField);
-                    holder.inlineCommentInputField.post(() -> {
-                        holder.inlineCommentInputField.requestFocus();
-                        try {
-                            InputMethodManager imm = (InputMethodManager) holder.itemView.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
-                            if (imm != null) {
-                                imm.showSoftInput(holder.inlineCommentInputField, InputMethodManager.SHOW_IMPLICIT);
-                            }
-                        } catch (Exception ignored) {}
-                    });
+                    if (!isSubmittingThisReply) {
+                        holder.inlineCommentInputField.post(() -> {
+                            holder.inlineCommentInputField.requestFocus();
+                            try {
+                                InputMethodManager imm = (InputMethodManager) holder.itemView.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+                                if (imm != null) {
+                                    imm.showSoftInput(holder.inlineCommentInputField, InputMethodManager.SHOW_IMPLICIT);
+                                }
+                            } catch (Exception ignored) {}
+                        });
+                    }
                 }
                 if (holder.btnInlineFormatBold != null && holder.inlineCommentInputField != null) {
                     holder.btnInlineFormatBold.setOnClickListener(v -> CommentFormattingHelper.applyFormat(holder.inlineCommentInputField, CommentFormattingHelper.FormatType.BOLD));
@@ -1141,11 +1173,15 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                 }
             }
         } else if (holder.inlineReplyContainer != null && holder.inlineReplyContainer.getVisibility() != View.GONE) {
+            applySendButtonLoadingState(holder.btnInlineSendComment, holder.inlineSendCommentLoadingContainer, false);
             holder.inlineReplyContainer.setVisibility(View.GONE);
         }
 
         if (holder.replyActionView != null) {
             holder.replyActionView.setOnClickListener(v -> {
+                if (submittingReplyCommentId != null) {
+                    return;
+                }
                 if (isReplyingToThis) {
                     setActiveReplyCommentId(null);
                     if (commentActionListener != null) {
@@ -1372,6 +1408,7 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         TextView btnInlineFormatQuote;
         EditText inlineCommentInputField;
         ImageButton btnInlineSendComment;
+        View inlineSendCommentLoadingContainer;
 
         public CommentVH(@NonNull View itemView) {
             super(itemView);
@@ -1411,6 +1448,7 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                 btnInlineFormatQuote = inlineReplyContainer.findViewById(R.id.btnInlineFormatQuote);
                 inlineCommentInputField = inlineReplyContainer.findViewById(R.id.inlineCommentInputField);
                 btnInlineSendComment = inlineReplyContainer.findViewById(R.id.btnInlineSendComment);
+                inlineSendCommentLoadingContainer = inlineReplyContainer.findViewById(R.id.inlineSendCommentLoadingContainer);
             }
         }
     }

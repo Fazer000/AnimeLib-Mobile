@@ -248,4 +248,26 @@ public class CommentsPaginationUnitTest {
         assertEquals(6, adapter.getCommentDisplayCount());
         assertTrue(adapter.findCommentAdapterPosition(104) > 0);
     }
+
+    @Test
+    public void testInlineReplySubmittingStateResetOnCancelAndClear() {
+        CommentsAdapter adapter = new CommentsAdapter();
+        assertNull(adapter.getActiveReplyCommentId());
+        assertNull(adapter.getSubmittingReplyCommentId());
+
+        adapter.setActiveReplyCommentId(42L);
+        adapter.setSubmittingReplyCommentId(42L);
+        assertEquals(Long.valueOf(42L), adapter.getActiveReplyCommentId());
+        assertEquals(Long.valueOf(42L), adapter.getSubmittingReplyCommentId());
+
+        adapter.setActiveReplyCommentId(null);
+        assertNull(adapter.getActiveReplyCommentId());
+        assertNull(adapter.getSubmittingReplyCommentId());
+
+        adapter.setActiveReplyCommentId(99L);
+        adapter.setSubmittingReplyCommentId(99L);
+        adapter.clearAll();
+        assertNull(adapter.getActiveReplyCommentId());
+        assertNull(adapter.getSubmittingReplyCommentId());
+    }
 }

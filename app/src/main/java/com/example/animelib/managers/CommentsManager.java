@@ -111,6 +111,7 @@ public class CommentsManager {
     // Компоненты ввода комментария и ответа (Landscape / Panel)
     private EditText commentInputField;
     private ImageButton btnSendComment;
+    private View sendCommentLoadingContainer;
     private View replyBar;
     private TextView tvReplyToText;
     private ImageButton btnCancelReply;
@@ -118,6 +119,7 @@ public class CommentsManager {
     // Компоненты ввода комментария и ответа (Portrait)
     private EditText portraitCommentInputField;
     private ImageButton btnPortraitSendComment;
+    private View portraitSendCommentLoadingContainer;
     private View portraitReplyBar;
     private TextView tvPortraitReplyToText;
     private ImageButton btnPortraitCancelReply;
@@ -129,6 +131,9 @@ public class CommentsManager {
     private String replyUsername = null;
     private CommentsResponse.CommentItem editingComment = null;
     private boolean isSubmittingComment = false;
+    private boolean isSubmittingMainComment = false;
+    private View activeInlineSendButton = null;
+    private View activeInlineLoadingContainer = null;
 
     // Состояние загрузки и бесконечного скролла
     private boolean isCommentsVisible = false;
@@ -258,9 +263,11 @@ public class CommentsManager {
 
             commentInputField = commentsPanel.findViewById(R.id.commentInputField);
             btnSendComment = commentsPanel.findViewById(R.id.btnSendComment);
+            sendCommentLoadingContainer = commentsPanel.findViewById(R.id.sendCommentLoadingContainer);
             replyBar = commentsPanel.findViewById(R.id.replyBar);
             tvReplyToText = commentsPanel.findViewById(R.id.tvReplyToText);
             btnCancelReply = commentsPanel.findViewById(R.id.btnCancelReply);
+            CommentsAdapter.applySendButtonLoadingState(btnSendComment, sendCommentLoadingContainer, isSubmittingMainComment);
 
             if (commentInputField != null) {
                 CommentFormattingHelper.attachFormattingTextWatcher(commentInputField);
@@ -284,7 +291,11 @@ public class CommentsManager {
                 btnSendComment.setOnClickListener(v -> sendCommentFromInput(commentInputField));
             }
             if (btnCancelReply != null) {
-                btnCancelReply.setOnClickListener(v -> cancelReplyMode());
+                btnCancelReply.setOnClickListener(v -> {
+                    if (!isSubmittingComment) {
+                        cancelReplyMode();
+                    }
+                });
             }
             View btnCommentRules = commentsPanel.findViewById(R.id.btnCommentRules);
             if (btnCommentRules != null) {
@@ -1370,7 +1381,7 @@ public class CommentsManager {
         commentsCurrentPage = 0;
         commentsHasNextPage = false;
         isLoadingComments = false;
-        isSubmittingComment = false;
+        resetAllSubmittingUiStates();
         isPortraitCommentsRequested = false;
         if (reloadIfVisible) {
             isPlayerReadyForComments = false;
@@ -1592,9 +1603,11 @@ public class CommentsManager {
             portraitCommentInputContainer = act.findViewById(R.id.portraitCommentInputContainer);
             portraitCommentInputField = act.findViewById(R.id.portraitCommentInputField);
             btnPortraitSendComment = act.findViewById(R.id.btnPortraitSendComment);
+            portraitSendCommentLoadingContainer = act.findViewById(R.id.portraitSendCommentLoadingContainer);
             portraitReplyBar = act.findViewById(R.id.portraitReplyBar);
             tvPortraitReplyToText = act.findViewById(R.id.tvPortraitReplyToText);
             btnPortraitCancelReply = act.findViewById(R.id.btnPortraitCancelReply);
+            CommentsAdapter.applySendButtonLoadingState(btnPortraitSendComment, portraitSendCommentLoadingContainer, isSubmittingMainComment);
 
             if (portraitCommentInputField != null) {
                 CommentFormattingHelper.attachFormattingTextWatcher(portraitCommentInputField);
@@ -1618,7 +1631,11 @@ public class CommentsManager {
                 btnPortraitSendComment.setOnClickListener(v -> sendCommentFromInput(portraitCommentInputField));
             }
             if (btnPortraitCancelReply != null) {
-                btnPortraitCancelReply.setOnClickListener(v -> cancelReplyMode());
+                btnPortraitCancelReply.setOnClickListener(v -> {
+                    if (!isSubmittingComment) {
+                        cancelReplyMode();
+                    }
+                });
             }
             if (portraitCommentInputField != null) {
                 portraitCommentInputField.setOnEditorActionListener((v, actionId, event) -> {
@@ -1914,6 +1931,77 @@ public class CommentsManager {
         CommentFormattingHelper.applyFormat(editText, CommentFormattingHelper.FormatType.SPOILER);
     }
 
+    private void setMainInputSubmittingState(boolean submitting) {
+        isSubmittingComment = submitting;
+        isSubmittingMainComment = submitting;
+        CommentsAdapter.applySendButtonLoadingState(btnSendComment, sendCommentLoadingContainer, submitting);
+        CommentsAdapter.applySendButtonLoadingState(btnPortraitSendComment, portraitSendCommentLoadingContainer, submitting);
+    }
+
+    private void setInlineReplySubmittingState(Long commentId, EditText inputField, boolean submitting) {
+        isSubmittingComment = submitting;
+        Long targetId = submitting ? commentId : null;
+        if (commentsAdapter != null) {
+            commentsAdapter.setSubmittingReplyCommentId(targetId);
+        }
+        if (portraitCommentsAdapter != null) {
+            portraitCommentsAdapter.setSubmittingReplyCommentId(targetId);
+        }
+
+        if (submitting) {
+            View container = findAncestorById(inputField, R.id.inlineReplyContainer);
+            if (container != null) {
+                activeInlineSendButton = container.findViewById(R.id.btnInlineSendComment);
+                activeInlineLoadingContainer = container.findViewById(R.id.inlineSendCommentLoadingContainer);
+            } else {
+                activeInlineSendButton = null;
+                activeInlineLoadingContainer = null;
+            }
+            CommentsAdapter.applySendButtonLoadingState(activeInlineSendButton, activeInlineLoadingContainer, true);
+        } else {
+            CommentsAdapter.applySendButtonLoadingState(activeInlineSendButton, activeInlineLoadingContainer, false);
+            if (inputField != null) {
+                View container = findAncestorById(inputField, R.id.inlineReplyContainer);
+                if (container != null) {
+                    View sendBtn = container.findViewById(R.id.btnInlineSendComment);
+                    View loadBox = container.findViewById(R.id.inlineSendCommentLoadingContainer);
+                    CommentsAdapter.applySendButtonLoadingState(sendBtn, loadBox, false);
+                }
+            }
+            activeInlineSendButton = null;
+            activeInlineLoadingContainer = null;
+        }
+    }
+
+    private void resetAllSubmittingUiStates() {
+        isSubmittingComment = false;
+        isSubmittingMainComment = false;
+        CommentsAdapter.applySendButtonLoadingState(btnSendComment, sendCommentLoadingContainer, false);
+        CommentsAdapter.applySendButtonLoadingState(btnPortraitSendComment, portraitSendCommentLoadingContainer, false);
+        if (commentsAdapter != null) {
+            commentsAdapter.setSubmittingReplyCommentId(null);
+        }
+        if (portraitCommentsAdapter != null) {
+            portraitCommentsAdapter.setSubmittingReplyCommentId(null);
+        }
+        CommentsAdapter.applySendButtonLoadingState(activeInlineSendButton, activeInlineLoadingContainer, false);
+        activeInlineSendButton = null;
+        activeInlineLoadingContainer = null;
+    }
+
+    private static View findAncestorById(View startView, int targetId) {
+        if (startView == null) return null;
+        android.view.ViewParent parent = startView.getParent();
+        while (parent instanceof View) {
+            View v = (View) parent;
+            if (v.getId() == targetId) {
+                return v;
+            }
+            parent = v.getParent();
+        }
+        return null;
+    }
+
     public void sendCommentFromInput(EditText inputField) {
         if (inputField == null || currentEpisode == null || apiService == null) return;
         if (isSubmittingComment) return;
@@ -1934,15 +2022,13 @@ public class CommentsManager {
             Long rootId = originalEditing.getRoot_id();
             int level = originalEditing.getComment_level();
 
-            isSubmittingComment = true;
-            CustomToast.showInfo(context, "Сохранение комментария...");
+            setMainInputSubmittingState(true);
 
             apiService.editComment(commentId, episodeId, text, parentId, rootId, level, new ApiService.EditCommentCallback() {
                 @Override
                 public void onSuccess(CommentsResponse.CommentItem editedComment) {
                     safeRunOnUiThread(() -> {
-                        isSubmittingComment = false;
-                        CustomToast.showSuccess(context, "Комментарий обновлен!");
+                        setMainInputSubmittingState(false);
                         inputField.setText("");
                         if (commentInputField != null) commentInputField.setText("");
                         if (portraitCommentInputField != null) portraitCommentInputField.setText("");
@@ -1964,7 +2050,7 @@ public class CommentsManager {
                 @Override
                 public void onError(String error) {
                     safeRunOnUiThread(() -> {
-                        isSubmittingComment = false;
+                        setMainInputSubmittingState(false);
                         String msg = (error != null && !error.trim().isEmpty()) ? error : "Ошибка сохранения комментария";
                         CustomToast.showWarning(context, msg);
                     });
@@ -1980,15 +2066,13 @@ public class CommentsManager {
         Long rootId = isReplyActive ? replyRootId : null;
         int level = isReplyActive ? replyCommentLevel : 0;
 
-        isSubmittingComment = true;
-        CustomToast.showInfo(context, "Отправка комментария...");
+        setMainInputSubmittingState(true);
 
         apiService.postComment(episodeId, text, parentId, rootId, level, new ApiService.PostCommentCallback() {
             @Override
             public void onSuccess(CommentsResponse.CommentItem postedComment) {
                 safeRunOnUiThread(() -> {
-                    isSubmittingComment = false;
-                    CustomToast.showSuccess(context, "Комментарий опубликован!");
+                    setMainInputSubmittingState(false);
                     inputField.setText("");
                     if (commentInputField != null) commentInputField.setText("");
                     if (portraitCommentInputField != null) portraitCommentInputField.setText("");
@@ -2003,7 +2087,7 @@ public class CommentsManager {
             @Override
             public void onError(String error) {
                 safeRunOnUiThread(() -> {
-                    isSubmittingComment = false;
+                    setMainInputSubmittingState(false);
                     String msg = (error != null && !error.trim().isEmpty()) ? error : "Ошибка публикации комментария";
                     CustomToast.showWarning(context, msg);
                 });
@@ -2026,15 +2110,13 @@ public class CommentsManager {
         Long rootId = comment.getRoot_id() != null ? comment.getRoot_id() : comment.getId();
         int level = comment.getComment_level() + 1;
 
-        isSubmittingComment = true;
-        CustomToast.showInfo(context, "Отправка ответа...");
+        setInlineReplySubmittingState(comment.getId(), inputField, true);
 
         apiService.postComment(episodeId, text, parentId, rootId, level, new ApiService.PostCommentCallback() {
             @Override
             public void onSuccess(CommentsResponse.CommentItem postedComment) {
                 safeRunOnUiThread(() -> {
-                    isSubmittingComment = false;
-                    CustomToast.showSuccess(context, "Ответ опубликован!");
+                    setInlineReplySubmittingState(comment.getId(), inputField, false);
                     if (inputField != null) inputField.setText("");
 
                     cancelReplyMode();
@@ -2047,7 +2129,7 @@ public class CommentsManager {
             @Override
             public void onError(String error) {
                 safeRunOnUiThread(() -> {
-                    isSubmittingComment = false;
+                    setInlineReplySubmittingState(comment.getId(), inputField, false);
                     String msg = (error != null && !error.trim().isEmpty()) ? error : "Ошибка отправки ответа";
                     CustomToast.showWarning(context, msg);
                 });
@@ -2694,7 +2776,7 @@ public class CommentsManager {
         commentsCurrentPage = 0;
         commentsHasNextPage = false;
         isLoadingComments = false;
-        isSubmittingComment = false;
+        resetAllSubmittingUiStates();
         isCommentsVisible = false;
         isPanelAnimatingOpen = false;
 
