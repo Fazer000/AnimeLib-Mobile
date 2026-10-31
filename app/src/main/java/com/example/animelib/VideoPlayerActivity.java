@@ -328,7 +328,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private boolean isAutoQualityDowngrading = false;
 
     private void checkAutoQualityDowngradeOnStalling() {
-        if (isAutoQualityDowngrading || !com.example.animelib.util.AutoQualityHelper.isAutoQuality(preferredQuality) || playersManager == null) {
+        if (isAutoQualityDowngrading || isPlayingDownloadedVideo()
+                || !com.example.animelib.util.AutoQualityHelper.isAutoQuality(preferredQuality) || playersManager == null) {
             return;
         }
 
@@ -338,26 +339,22 @@ public class VideoPlayerActivity extends AppCompatActivity {
         EpisodeResponse.PlayerData currentPlayerData = playersManager.getCurrentPlayerData();
         if (currentPlayerData == null) return;
 
-        int currentRes = 1080;
-        if (currentVideoUrl != null) {
-            if (currentVideoUrl.contains("360")) currentRes = 360;
-            else if (currentVideoUrl.contains("480")) currentRes = 480;
-            else if (currentVideoUrl.contains("720")) currentRes = 720;
-            else if (currentVideoUrl.contains("1080")) currentRes = 1080;
-            else if (currentVideoUrl.contains("2160")) currentRes = 2160;
+        int currentRes = com.example.animelib.util.AutoQualityHelper.extractResolution(getEffectiveActiveQuality());
+        if (currentRes <= 0) {
+            currentRes = 1080;
         }
 
-        int targetRes = 360;
-        if (currentRes > 1080) targetRes = 720;
-        else if (currentRes > 720) targetRes = 480;
-        else if (currentRes > 480) targetRes = 360;
+        int targetRes;
+        if (currentRes > 1080) targetRes = 1080;
+        else if (currentRes > 720) targetRes = 720;
+        else if (currentRes > 480) targetRes = 480;
         else targetRes = 360;
 
         String lowerQuality = null;
         for (String q : available) {
             if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(q) || com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(q)) continue;
             int res = com.example.animelib.util.AutoQualityHelper.extractResolution(q);
-            if (res > 0 && res <= targetRes) {
+            if (res > 0 && res <= targetRes && res < currentRes) {
                 if (lowerQuality == null || res > com.example.animelib.util.AutoQualityHelper.extractResolution(lowerQuality)) {
                     lowerQuality = q;
                 }
@@ -369,8 +366,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
             if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
                 isAutoQualityDowngrading = true;
                 bufferingStartTimeMs = 0;
-                Log.w("VideoPlayer", "Auto Quality: Network stalling detected! Downgrading to " + lowerQuality);
-                changeQuality(lowerQuality, preferredQuality);
+                activePlayingQuality = com.example.animelib.util.AutoQualityHelper.normalizeResolutionLabel(lowerQuality);
+                refreshQualityUiState();
+                Log.w("VideoPlayer", "Auto Quality: Network stalling detected! Downgrading stream to " + lowerQuality + " while keeping Auto mode");
+                applyStreamUrlSwitch(lowerQuality, newVideoUrl);
             }
         }
     }
@@ -478,6 +477,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     // User preferences are now managed by PlayersManager
     private String preferredQuality = "Авто";
+    private boolean isUsingDownloadedSource = false;
+    private String activePlayingQuality = null;
+    private volatile boolean isPreferredQualityLoadedFromDb = false;
+    private volatile boolean isPreferredQualityChangedByUser = false;
     private ImageButton downloadButton;
     private ImageButton downloadButtonTop;
     private ImageButton btnDownloadFromMenu;
@@ -542,6 +545,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
         hasRenderedFirstFrame = false;
         isFirstOfflineLaunch = true;
         isNewEpisodeSelection = true;
+        isOfflineMode = false;
+        isUsingDownloadedSource = false;
+        activePlayingQuality = null;
         if (playersManager != null) {
             playersManager.cancelPendingPlayerLoads();
         }
@@ -881,6 +887,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 }
                 updatePortraitHeaderTitlesUI();
             }
+
+            @Override
+            public boolean tryStartDownloadedEpisodeImmediately(EpisodesListResponse.EpisodeItem episode, long initialBookmarkMs) {
+                return VideoPlayerActivity.this.tryStartDownloadedEpisodeImmediately(episode, initialBookmarkMs);
+            }
         });
 
         playerAnimeInfoController = new com.example.animelib.controllers.PlayerAnimeInfoController();
@@ -1025,6 +1036,15 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
 
             @Override
+            public void onVideoSizeChanged(@NonNull androidx.media3.common.VideoSize videoSize) {
+                String detected = com.example.animelib.util.AutoQualityHelper.formatVideoDimensionsToQuality(videoSize.width, videoSize.height);
+                if (detected != null) {
+                    activePlayingQuality = detected;
+                    refreshQualityUiState();
+                }
+            }
+
+            @Override
             public void safeRunOnUiThread(Runnable runnable) {
                 VideoPlayerActivity.this.safeRunOnUiThread(runnable);
             }
@@ -1114,7 +1134,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
         playerQualityController.setCallback(new com.example.animelib.controllers.PlayerQualityController.QualityCallback() {
             @Override
             public void onQualityChanged(String newQuality, String newVideoUrl, boolean isHls) {
-                preferredQuality = newQuality;
+                if (!com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(newQuality)) {
+                    preferredQuality = com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(newQuality);
+                }
                 currentVideoUrl = newVideoUrl;
                 if (isHls) {
                     initializeHlsPlayer(newVideoUrl);
@@ -1138,7 +1160,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
             @Override
             public String getPreferredQuality() {
-                return preferredQuality;
+                return getCurrentDisplayQualityForSettings();
             }
 
             @Override
@@ -1212,6 +1234,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     }
 
                     @Override
+                    public boolean shouldPlayDownloadedFile() {
+                        return VideoPlayerActivity.this.isPlayingDownloadedVideo();
+                    }
+
+                    @Override
                     public com.example.animelib.data.entity.DownloadedEpisodeEntity getDownloadedEpisodeForActive() {
                         return VideoPlayerActivity.this.getDownloadedEpisodeForActive();
                     }
@@ -1228,12 +1255,19 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
                     @Override
                     public void setPreferredQuality(String quality) {
-                        preferredQuality = quality;
-                        updateSettingsQualityTag();
-                        if (playerDialogsController != null && playersManager != null) {
-                            List<String> newQualities = getQualitiesWithDownloadedOption(playersManager.getAvailableQualities());
-                            playerDialogsController.updateSettingsQualities(newQualities, preferredQuality);
+                        if (!com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(quality)) {
+                            preferredQuality = com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(quality);
                         }
+                        safeRunOnUiThread(VideoPlayerActivity.this::refreshQualityUiState);
+                    }
+
+                    @Override
+                    public void onActiveQualityResolved(String resolvedQuality) {
+                        String norm = com.example.animelib.util.AutoQualityHelper.normalizeResolutionLabel(resolvedQuality);
+                        if (norm != null && !norm.isEmpty()) {
+                            activePlayingQuality = norm;
+                        }
+                        safeRunOnUiThread(VideoPlayerActivity.this::refreshQualityUiState);
                     }
 
                     @Override
@@ -1342,6 +1376,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
         }
 
         executor.execute(() -> {
+            com.example.animelib.data.entity.PlayerPreferences savedPrefs = apiService.loadPlayerPreferences();
+            if (savedPrefs != null && savedPrefs.getPreferredQuality() != null && !savedPrefs.getPreferredQuality().trim().isEmpty()) {
+                applyLoadedPreferredQualityIfUnset(savedPrefs.getPreferredQuality());
+            }
             enable4K = apiService.load4KSetting();
             enableAmbientLight = apiService.loadAmbientLightSetting();
             if (playerAudioController != null) {
@@ -1358,7 +1396,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             if (playerFiltersController != null) {
                 playerFiltersController.loadSettingsFromApi(apiService);
             }
-            Log.d("VideoPlayer", "Loaded settings - 4K: " + enable4K + ", AmbientLight: " + enableAmbientLight + ", AutoPlay: " + autoPlay + ", SkipDuration: " + longSkipDuration + ", Theme: " + currentTheme);
+            Log.d("VideoPlayer", "Loaded settings - 4K: " + enable4K + ", Quality: " + preferredQuality + ", AmbientLight: " + enableAmbientLight + ", AutoPlay: " + autoPlay + ", SkipDuration: " + longSkipDuration + ", Theme: " + currentTheme);
 
             runOnUiThread(() -> {
                 if (playersManager != null) {
@@ -1373,6 +1411,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 if (playerAudioController != null) {
                     playerAudioController.applyToManager();
                 }
+                refreshQualityUiState();
             });
         });
 
@@ -2245,9 +2284,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
         safeRunOnUiThread(() -> {
             if (tvPortraitVoiceover == null || tvPortraitPlayer == null) return;
             com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
-            boolean isPlayingDownloaded = isOfflineMode || isPlayingDownloadedVideo() ||
-                    (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists() &&
-                     (currentVideoUrl == null || currentVideoUrl.startsWith("file:") || currentVideoUrl.startsWith("/") || isDownloadedQuality(preferredQuality)));
+            boolean isPlayingDownloaded = isPlayingDownloadedVideo();
 
             if (isPlayingDownloaded && downloadedEp != null) {
                 syncCurrentPlayerDataForDownloadedIfNeeded();
@@ -2628,55 +2665,140 @@ public class VideoPlayerActivity extends AppCompatActivity {
         }
     }
 
+    private boolean hasValidDownloadedFile(com.example.animelib.data.entity.DownloadedEpisodeEntity ep) {
+        if (ep == null || ep.getLocalFilePath() == null || ep.getLocalFilePath().trim().isEmpty()) {
+            return false;
+        }
+        java.io.File file = new java.io.File(ep.getLocalFilePath());
+        return file.exists() && file.length() > 0;
+    }
+
+    private String getEffectiveActiveQuality() {
+        if (isPlayingDownloadedVideo()) {
+            com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+            if (downloadedEp != null) {
+                String norm = com.example.animelib.util.AutoQualityHelper.normalizeResolutionLabel(downloadedEp.getQuality());
+                if (norm != null && !norm.isEmpty()) {
+                    return norm;
+                }
+            }
+            if (activePlayingQuality != null && !activePlayingQuality.isEmpty()) {
+                return activePlayingQuality;
+            }
+            if (player != null && player.getVideoFormat() != null) {
+                String fromFmt = com.example.animelib.util.AutoQualityHelper.formatVideoDimensionsToQuality(
+                        player.getVideoFormat().width, player.getVideoFormat().height);
+                if (fromFmt != null) {
+                    return fromFmt;
+                }
+            }
+            return "1080p";
+        }
+
+        if (activePlayingQuality != null && !activePlayingQuality.isEmpty()) {
+            return activePlayingQuality;
+        }
+
+        if (player != null && player.getVideoFormat() != null) {
+            String fromFmt = com.example.animelib.util.AutoQualityHelper.formatVideoDimensionsToQuality(
+                    player.getVideoFormat().width, player.getVideoFormat().height);
+            if (fromFmt != null) {
+                return fromFmt;
+            }
+        }
+
+        if (currentVideoUrl != null && !currentVideoUrl.isEmpty()) {
+            String lowerUrl = currentVideoUrl.toLowerCase();
+            if (lowerUrl.contains("2160") || lowerUrl.contains("4k")) return "2160p";
+            if (lowerUrl.contains("1440") || lowerUrl.contains("2k")) return "1440p";
+            if (lowerUrl.contains("1080") || lowerUrl.contains("fhd")) return "1080p";
+            if (lowerUrl.contains("720") || lowerUrl.contains("hd")) return "720p";
+            if (lowerUrl.contains("480")) return "480p";
+            if (lowerUrl.contains("360") || lowerUrl.contains("240")) return "360p";
+        }
+
+        if (playersManager != null) {
+            List<String> available = playersManager.getAvailableQualities();
+            if (available != null && !available.isEmpty()) {
+                long estimate = 0;
+                try {
+                    estimate = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.getSingletonInstance(this).getBitrateEstimate();
+                } catch (Exception ignored) {}
+                String resolved = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, available, preferredQuality, estimate);
+                String normResolved = com.example.animelib.util.AutoQualityHelper.normalizeResolutionLabel(resolved);
+                if (normResolved != null && !normResolved.isEmpty()) {
+                    return normResolved;
+                }
+            }
+        }
+
+        String normPref = com.example.animelib.util.AutoQualityHelper.normalizeResolutionLabel(preferredQuality);
+        return normPref != null ? normPref : "";
+    }
+
+    private String getCurrentDisplayQualityForSettings() {
+        if (isPlayingDownloadedVideo()) {
+            return com.example.animelib.controllers.PlayerDownloadController.formatDownloadedOptionLabel(getDownloadedEpisodeForActive());
+        }
+        return preferredQuality;
+    }
+
+    private void refreshQualityUiState() {
+        updateSettingsQualityTag();
+        if (playerDialogsController != null) {
+            List<String> qualities;
+            if (isOfflineMode) {
+                qualities = getQualitiesWithDownloadedOption(new ArrayList<>());
+            } else {
+                List<String> onlineQualities = playersManager != null ? playersManager.getAvailableQualities() : new ArrayList<>();
+                qualities = getQualitiesWithDownloadedOption(onlineQualities);
+            }
+            playerDialogsController.updateSettingsQualities(
+                    qualities,
+                    getCurrentDisplayQualityForSettings(),
+                    getEffectiveActiveQuality(),
+                    isPlayingDownloadedVideo()
+            );
+        }
+    }
+
+    public void applyLoadedPreferredQualityIfUnset(String dbQuality) {
+        if (!isPreferredQualityChangedByUser && !isPreferredQualityLoadedFromDb
+                && dbQuality != null && !dbQuality.trim().isEmpty()) {
+            preferredQuality = com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(dbQuality);
+            isPreferredQualityLoadedFromDb = true;
+            safeRunOnUiThread(this::refreshQualityUiState);
+        }
+    }
+
+    public void onUserManualVoiceoverSelected(EpisodeResponse.PlayerData playerData) {
+        isUsingDownloadedSource = false;
+    }
+
+    public void onBackgroundOnlinePlayersLoadedForDownloaded(List<EpisodeResponse.PlayerData> players) {
+        safeRunOnUiThread(() -> {
+            isEpisodeAndVoiceoversLoaded = true;
+            checkAndDismissSplashScreen();
+            if (menuLoadingOverlay != null) {
+                menuLoadingOverlay.setVisibility(View.GONE);
+            }
+            if (isPlayingDownloadedVideo()) {
+                syncCurrentPlayerDataForDownloadedIfNeeded();
+                updateEpisodeHeaderQuick();
+                updatePortraitVoiceoverPlayerUI();
+                refreshQualityUiState();
+            }
+        });
+    }
+
     private void updateSettingsQualityTag() {
         if (settingsQualityTag != null) {
             if (settingsButton != null && settingsButton.getVisibility() != View.VISIBLE) {
                 settingsQualityTag.setVisibility(View.GONE);
                 return;
             }
-            String qualityToUse = null;
-            com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
-            if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new java.io.File(downloadedEp.getLocalFilePath()).exists()) {
-                String dq = downloadedEp.getQuality();
-                if (dq == null || dq.isEmpty()) dq = "1080p";
-                qualityToUse = dq;
-            } else if (player != null && player.getVideoFormat() != null && player.getVideoFormat().height > 0) {
-                int height = player.getVideoFormat().height;
-                if (height >= 2160) qualityToUse = "2160p";
-                else if (height >= 1440) qualityToUse = "1440p";
-                else if (height >= 1080) qualityToUse = "1080p";
-                else if (height >= 720) qualityToUse = "720p";
-                else qualityToUse = "480p";
-            } else if (currentVideoUrl != null && !currentVideoUrl.isEmpty()) {
-                if (currentVideoUrl.contains("2160") || currentVideoUrl.contains("4k")) qualityToUse = "2160p";
-                else if (currentVideoUrl.contains("1080") || currentVideoUrl.contains("fhd")) qualityToUse = "1080p";
-                else if (currentVideoUrl.contains("720") || currentVideoUrl.contains("hd")) qualityToUse = "720p";
-                else if (currentVideoUrl.contains("480") || currentVideoUrl.contains("360") || currentVideoUrl.contains("240")) qualityToUse = "480p";
-            }
-
-            if (qualityToUse == null || qualityToUse.isEmpty()) {
-                if (!com.example.animelib.util.AutoQualityHelper.isAutoQuality(preferredQuality)) {
-                    qualityToUse = preferredQuality;
-                } else if (playersManager != null) {
-                    List<String> available = playersManager.getAvailableQualities();
-                    if (available != null && !available.isEmpty()) {
-                        long estimate = 0;
-                        try {
-                            estimate = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.getSingletonInstance(this).getBitrateEstimate();
-                        } catch (Exception ignored) {}
-                        String resolved = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, available, preferredQuality, estimate);
-                        if (resolved != null && !resolved.isEmpty()) {
-                            qualityToUse = resolved;
-                        }
-                    }
-                }
-            }
-
-            if (qualityToUse == null || qualityToUse.isEmpty()) {
-                qualityToUse = preferredQuality;
-            }
-
-            String tag = com.example.animelib.util.FloatingBottomSheetUtils.getQualityTag(qualityToUse);
+            String activeQuality = getEffectiveActiveQuality();
+            String tag = com.example.animelib.util.FloatingBottomSheetUtils.getStrictResolutionBadge(activeQuality);
             if (tag != null && !tag.isEmpty()) {
                 settingsQualityTag.setText(tag);
                 settingsQualityTag.setVisibility(View.VISIBLE);
@@ -2853,6 +2975,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
             public void onVideoSizeChanged(@NonNull androidx.media3.common.VideoSize videoSize) {
                 if (videoSize.width > 0 && videoSize.height > 0) {
                     lastValidAspectRatio = (float) (videoSize.width * videoSize.pixelWidthHeightRatio) / (float) videoSize.height;
+                    String detected = com.example.animelib.util.AutoQualityHelper.formatVideoDimensionsToQuality(videoSize.width, videoSize.height);
+                    if (detected != null) {
+                        activePlayingQuality = detected;
+                        refreshQualityUiState();
+                    }
                 }
                 preservePlayerAspectRatio();
             }
@@ -3406,6 +3533,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
                                         // Устанавливаем красный цвет кнопки для эпизода с закладкой
                                         updateBookmarkButtonColor(true);
                                         autoPlayOnPrepare = VideoPlayerActivity.this.autoPlay;
+                                        if (tryStartDownloadedEpisodeImmediately(episode, parsedBm)) {
+                                            return;
+                                        }
                                         episodesManager.setCurrentEpisode(episode);
                                         if (playerCommentsController != null) {
                                             playerCommentsController.setCurrentEpisode(episode);
@@ -3491,13 +3621,15 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     playerSplashScreenController.dismissWithAnimation(null);
                 }
                 com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
-                if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists()) {
+                if (hasValidDownloadedFile(downloadedEp)) {
                     Log.d("VideoPlayer", "Online players fetch failed, but episode is downloaded locally: " + downloadedEp.getLocalFilePath());
+                    isUsingDownloadedSource = true;
+                    activePlayingQuality = com.example.animelib.util.AutoQualityHelper.normalizeResolutionLabel(downloadedEp.getQuality());
                     if (menuLoadingOverlay != null) menuLoadingOverlay.setVisibility(View.GONE);
                     hideLoading();
                     EpisodeResponse.PlayerData syntheticData = createSyntheticPlayerDataForDownloaded(downloadedEp);
                     playersManager.setCurrentPlayerData(syntheticData);
-                    onPlayerSelected(syntheticData);
+                    stopCurrentPlaybackAndRestartVoiceover(syntheticData);
                     return;
                 }
                 showVideoErrorDialog("Ошибка загрузки плееров", "Не удалось загрузить список плееров.", error, () -> {
@@ -3694,7 +3826,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         updateEpisodeHeaderQuick();
 
-        if (playerData != null && playerData.getPlayer() != null && playerData.getTeam() != null) {
+        if (playerData != null && playerData.getPlayer() != null && playerData.getTeam() != null && !isPlayingDownloadedVideo()) {
             apiService.savePlayerPreferences(playerData.getPlayer(), playerData.getTeam().getId());
             Log.d("VideoPlayer", "Immediately saved player preferences: player=" + playerData.getPlayer() + 
                   ", teamId=" + playerData.getTeam().getId());
@@ -3726,11 +3858,12 @@ public class VideoPlayerActivity extends AppCompatActivity {
             // Бесшовная смена озвучки с сохранением позиции используется ТОЛЬКО внутри текущего эпизода (!isNew).
             // При запуске нового эпизода (или при первичном входе с закладкой) всегда идем через полный старт,
             // который атомарно применит и сбросит одноразовую стартовую позицию (закладку при входе или 00:00 при смене серии).
-            if (!isNew) {
+            if (!isNew && !isPlayingDownloadedVideo()) {
                 if ("animelib".equalsIgnoreCase(playerData.getPlayer())) {
                     String newVideoUrl = resolveAnimelibUrl(playerData, preferredQuality);
                     if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
                         Log.d("VideoPlayer", "Seamlessly switching voiceover (Animelib) to: " + (playerData.getTeam() != null ? playerData.getTeam().getName() : ""));
+                        refreshQualityUiState();
                         if (isCurrentlyPlaying) {
                             switchQualitySeamlessly(preferredQuality, preferredQuality, newVideoUrl);
                         } else {
@@ -3778,6 +3911,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                                         playerVideoResolverController.setActiveKodikContext(finalKodikSrc, response, preferredQuality);
                                     }
                                     String newVideoUrl = resolveKodikHlsUrl(response, preferredQuality);
+                                    refreshQualityUiState();
                                     if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
                                         Log.d("VideoPlayer", "Seamlessly switching voiceover (Kodik) to: " + (playerData.getTeam() != null ? playerData.getTeam().getName() : ""));
                                         if (shouldBeSeamless && player != null && (player.isPlaying() || player.getPlaybackState() == Player.STATE_READY)) {
@@ -3842,86 +3976,103 @@ public class VideoPlayerActivity extends AppCompatActivity {
         bookmarkTimecode = 0;
 
         playersManager.setCurrentPlayerData(playerData);
-
-        List<String> onlineQualities = playersManager.getAvailableQualities();
-        List<String> newQualities = getQualitiesWithDownloadedOption(onlineQualities);
-
         enableBookmarkButton();
 
         Log.d("VideoPlayer", "Player selected, ready to start playback with startPosition=" + startPosition + "ms");
-        
-        if (!newQualities.isEmpty()) {
-            executor.execute(() -> {
+
+        executor.execute(() -> {
+            if (!isPreferredQualityLoadedFromDb && !isPreferredQualityChangedByUser) {
                 com.example.animelib.data.entity.PlayerPreferences prefs = apiService.loadPlayerPreferences();
-                String savedQuality = (prefs != null) ? prefs.getPreferredQuality() : null;
-                
-                safeRunOnUiThread(() -> {
-                    if (restartGen != playbackRestartGeneration) {
-                        Log.d("VideoPlayer", "Ignoring stale playback restart task (gen=" + restartGen + ")");
-                        return;
-                    }
-                    String newPreferredQuality = null;
-                    
-                    com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
-                    if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new java.io.File(downloadedEp.getLocalFilePath()).exists()) {
-                        String dq = downloadedEp.getQuality();
-                        if (dq == null || dq.isEmpty()) dq = "1080p";
-                        else if (!dq.endsWith("p") && !dq.equalsIgnoreCase("4k")) dq += "p";
-                        newPreferredQuality = "Скачанный файл (" + dq + ")";
-                        Log.d("VideoPlayer", "Downloaded episode found, preferring downloaded quality: " + newPreferredQuality);
-                    } else {
-                        if (savedQuality != null && !savedQuality.trim().isEmpty() && !com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(savedQuality)) {
-                            newPreferredQuality = savedQuality;
-                        }
-                        if (newPreferredQuality == null) {
-                            if (newQualities.contains("Авто")) {
-                                newPreferredQuality = "Авто";
-                                Log.d("VideoPlayer", "Defaulting to Auto quality option");
-                            } else if (!newQualities.isEmpty()) {
-                                newPreferredQuality = newQualities.get(0);
-                                Log.d("VideoPlayer", "Saved quality not found, using top quality: " + newPreferredQuality);
-                            }
-                        }
-                    }
-                    
-                    preferredQuality = newPreferredQuality;
-                    updateSettingsQualityTag();
-                    Log.d("VideoPlayer", "Updated preferred quality to: " + newPreferredQuality + " for player: " + playerData.getPlayer());
-                    
-                    if (playerData.getPlayer() != null && playerData.getTeam() != null) {
-                        if (!com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(preferredQuality)) {
-                            apiService.savePlayerPreferences(playerData.getPlayer(), playerData.getTeam().getId(), preferredQuality);
-                            Log.d("VideoPlayer", "Updated player preferences with quality: player=" + playerData.getPlayer() + 
-                                  ", teamId=" + playerData.getTeam().getId() + ", quality=" + preferredQuality);
-                        }
-                    }
-                    
-                    if (playerDialogsController != null) {
-                        playerDialogsController.updateSettingsQualities(newQualities, preferredQuality);
-                    }
-                    
-                    Log.d("VideoPlayer", "Starting player with position: " + startPosition + "ms");
-                    
-                    if (playerData.getPlayer() != null && "animelib".equalsIgnoreCase(playerData.getPlayer())) {
-                        handleAnimelibPlayer(playerData, startPosition);
-                    } else if (playerData.getPlayer() != null && "kodik".equalsIgnoreCase(playerData.getPlayer())) {
-                        handleKodikPlayer(playerData, startPosition);
-                    }
-                    
-                    updateAnimeInfoHeaderFull();
-                });
-            });
-        } else {
-            Log.d("VideoPlayer", "Starting player with position: " + startPosition + "ms (no qualities available)");
-            
-            if (playerData.getPlayer() != null && "animelib".equalsIgnoreCase(playerData.getPlayer())) {
-                handleAnimelibPlayer(playerData, startPosition);
-            } else if (playerData.getPlayer() != null && "kodik".equalsIgnoreCase(playerData.getPlayer())) {
-                handleKodikPlayer(playerData, startPosition);
+                if (prefs != null && prefs.getPreferredQuality() != null && !prefs.getPreferredQuality().trim().isEmpty()) {
+                    preferredQuality = com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(prefs.getPreferredQuality());
+                } else {
+                    preferredQuality = com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(preferredQuality);
+                }
+                isPreferredQualityLoadedFromDb = true;
+            } else {
+                preferredQuality = com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(preferredQuality);
             }
-            
-            updateAnimeInfoHeaderFull();
+
+            safeRunOnUiThread(() -> {
+                if (restartGen != playbackRestartGeneration) {
+                    Log.d("VideoPlayer", "Ignoring stale playback restart task (gen=" + restartGen + ")");
+                    return;
+                }
+
+                if (!isPlayingDownloadedVideo() && playerData.getPlayer() != null && playerData.getTeam() != null && playerData.getTeam().getId() > 0) {
+                    apiService.savePlayerPreferences(playerData.getPlayer(), playerData.getTeam().getId());
+                }
+
+                refreshQualityUiState();
+
+                Log.d("VideoPlayer", "Starting player with position: " + startPosition + "ms, preferredQuality=" + preferredQuality + ", downloaded=" + isPlayingDownloadedVideo());
+
+                if (playerData.getPlayer() != null && "animelib".equalsIgnoreCase(playerData.getPlayer())) {
+                    handleAnimelibPlayer(playerData, startPosition);
+                } else if (playerData.getPlayer() != null && "kodik".equalsIgnoreCase(playerData.getPlayer())) {
+                    handleKodikPlayer(playerData, startPosition);
+                } else if (isPlayingDownloadedVideo()) {
+                    handleAnimelibPlayer(playerData, startPosition);
+                }
+
+                updateAnimeInfoHeaderFull();
+            });
+        });
+    }
+
+    private boolean tryStartDownloadedEpisodeImmediately(EpisodesListResponse.EpisodeItem episode, long initialBookmarkMs) {
+        if (isOfflineMode || episode == null || episodesManager == null || playersManager == null) {
+            return false;
         }
+        episodesManager.setCurrentEpisode(episode);
+        com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+        if (!hasValidDownloadedFile(downloadedEp)) {
+            return false;
+        }
+
+        Log.d("VideoPlayer", "Starting downloaded episode immediately with online switch capability: ep=" + episode.getNumber());
+        isUsingDownloadedSource = true;
+        activePlayingQuality = com.example.animelib.util.AutoQualityHelper.normalizeResolutionLabel(downloadedEp.getQuality());
+        isEpisodeAndVoiceoversLoaded = true;
+        checkAndDismissSplashScreen();
+
+        if (playerEpisodesController != null) {
+            playerEpisodesController.setNewEpisodeSelection(false);
+            playerEpisodesController.setSavedPlayerPosition(0);
+            if (initialBookmarkMs > 0) {
+                playerEpisodesController.setBookmarkTimecode(initialBookmarkMs);
+            }
+        }
+        isNewEpisodeSelection = false;
+        savedPlayerPosition = 0;
+        bookmarkTimecode = Math.max(0L, initialBookmarkMs);
+
+        if (playerCommentsController != null) {
+            playerCommentsController.setCurrentEpisode(episode);
+            if (getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
+                playerCommentsController.loadCommentsForPortraitIfNeeded();
+            }
+        }
+
+        episodesManager.updateEpisodeNavigationButtonsVisibility();
+        episodesManager.updateEpisodesRecyclerView();
+        hideAnimeInfoPlaceholder();
+        playersManager.hideMenu();
+        if (menuLoadingOverlay != null) {
+            menuLoadingOverlay.setVisibility(View.GONE);
+        }
+        hideLoading();
+
+        EpisodeResponse.PlayerData syntheticData = createSyntheticPlayerDataForDownloaded(downloadedEp);
+        playersManager.setCurrentPlayerData(syntheticData);
+        enableBookmarkButton();
+        updateEpisodeHeaderQuick();
+        updatePortraitVoiceoverPlayerUI();
+        updatePortraitHeaderTitlesUI();
+
+        stopCurrentPlaybackAndRestartVoiceover(syntheticData);
+        playersManager.loadPlayersForEpisode(episode.getId(), false);
+        return true;
     }
 
     private void onEpisodeSelected(EpisodesListResponse.EpisodeItem episode, boolean autoPlay) {
@@ -3943,6 +4094,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
         stopCurrentPlayback();
         currentVideoUrl = null;
         hasRenderedFirstFrame = false;
+        isUsingDownloadedSource = false;
+        activePlayingQuality = null;
 
         // Reset progress & bookmark/position state so the newly selected episode ALWAYS starts at 00:00
         if (playerProgressController != null) {
@@ -3994,22 +4147,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             return;
         }
 
-        episodesManager.setCurrentEpisode(episode);
-        com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
-        if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists()) {
-            Log.d("VideoPlayer", "Downloaded episode playback directly on episode change.");
-            if (playerCommentsController != null) {
-                playerCommentsController.setCurrentEpisode(episode);
-            }
-            episodesManager.updateEpisodeNavigationButtonsVisibility();
-            episodesManager.updateEpisodesRecyclerView();
-            updateEpisodeHeaderQuick();
-
-            if (menuLoadingOverlay != null) menuLoadingOverlay.setVisibility(View.GONE);
-            hideLoading();
-            EpisodeResponse.PlayerData syntheticData = createSyntheticPlayerDataForDownloaded(downloadedEp);
-            playersManager.setCurrentPlayerData(syntheticData);
-            onPlayerSelected(syntheticData);
+        if (tryStartDownloadedEpisodeImmediately(episode, 0L)) {
             return;
         }
 
@@ -4065,54 +4203,69 @@ public class VideoPlayerActivity extends AppCompatActivity {
         return pd;
     }
 
+    private boolean isSyntheticPlayerData(EpisodeResponse.PlayerData pd) {
+        if (pd == null) return true;
+        if ("animelib".equalsIgnoreCase(pd.getPlayer())) {
+            return pd.getVideo() == null || pd.getVideo().getQuality() == null || pd.getVideo().getQuality().isEmpty();
+        }
+        if ("kodik".equalsIgnoreCase(pd.getPlayer())) {
+            return pd.getSrc() == null || pd.getSrc().trim().isEmpty();
+        }
+        return true;
+    }
+
+    private EpisodeResponse.PlayerData findMatchingOnlinePlayerForDownloaded(
+            List<EpisodeResponse.PlayerData> allPlayers,
+            com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp) {
+        if (allPlayers == null || allPlayers.isEmpty()) return null;
+        String targetName = downloadedEp != null && downloadedEp.getTeamName() != null
+                ? downloadedEp.getTeamName().trim() : "";
+        if (!targetName.isEmpty()) {
+            for (EpisodeResponse.PlayerData p : allPlayers) {
+                String teamName = p.getTeam() != null && p.getTeam().getName() != null ? p.getTeam().getName().trim() : null;
+                if (teamName != null && targetName.equalsIgnoreCase(teamName)) {
+                    if (downloadedEp.getPlayerType() == null || p.getPlayer() == null ||
+                            downloadedEp.getPlayerType().equalsIgnoreCase(p.getPlayer())) {
+                        return p;
+                    }
+                }
+            }
+            for (EpisodeResponse.PlayerData p : allPlayers) {
+                String teamName = p.getTeam() != null && p.getTeam().getName() != null ? p.getTeam().getName().trim() : null;
+                if (teamName != null && targetName.equalsIgnoreCase(teamName)) {
+                    return p;
+                }
+            }
+        }
+        for (EpisodeResponse.PlayerData p : allPlayers) {
+            if ("animelib".equalsIgnoreCase(p.getPlayer()) && !isSyntheticPlayerData(p)) {
+                return p;
+            }
+        }
+        return allPlayers.get(0);
+    }
+
     public void syncCurrentPlayerDataForDownloadedIfNeeded() {
         if (isSyncingPlayerData) return;
         isSyncingPlayerData = true;
         try {
             com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
-            if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists() && isPlayingDownloadedVideo()) {
+            if (hasValidDownloadedFile(downloadedEp) && isPlayingDownloadedVideo()) {
                 if (playersManager == null) return;
 
-                String targetName = downloadedEp.getTeamName() != null ? downloadedEp.getTeamName().trim() : "";
                 EpisodeResponse.PlayerData currentPD = playersManager.getCurrentPlayerData();
-                if (currentPD != null && currentPD.getTeam() != null && currentPD.getTeam().getName() != null) {
-                    String currentTeamName = currentPD.getTeam().getName().trim();
-                    if (!targetName.isEmpty() && currentTeamName.equalsIgnoreCase(targetName)) {
-                        return;
-                    }
+                if (currentPD != null && !isSyntheticPlayerData(currentPD)) {
+                    return;
                 }
 
                 List<EpisodeResponse.PlayerData> allPlayers = new ArrayList<>();
                 if (playersManager.getAnimelibPlayers() != null) allPlayers.addAll(playersManager.getAnimelibPlayers());
                 if (playersManager.getKodikPlayers() != null) allPlayers.addAll(playersManager.getKodikPlayers());
 
-                EpisodeResponse.PlayerData matchedPlayer = null;
-
-                if (!targetName.isEmpty()) {
-                    for (EpisodeResponse.PlayerData p : allPlayers) {
-                        String teamName = p.getTeam() != null && p.getTeam().getName() != null ? p.getTeam().getName().trim() : null;
-                        if (teamName != null && targetName.equalsIgnoreCase(teamName)) {
-                            if (downloadedEp.getPlayerType() == null || p.getPlayer() == null ||
-                                    downloadedEp.getPlayerType().equalsIgnoreCase(p.getPlayer())) {
-                                matchedPlayer = p;
-                                break;
-                            }
-                        }
-                    }
-                    if (matchedPlayer == null) {
-                        for (EpisodeResponse.PlayerData p : allPlayers) {
-                            String teamName = p.getTeam() != null && p.getTeam().getName() != null ? p.getTeam().getName().trim() : null;
-                            if (teamName != null && targetName.equalsIgnoreCase(teamName)) {
-                                matchedPlayer = p;
-                                break;
-                            }
-                        }
-                    }
-                }
-
+                EpisodeResponse.PlayerData matchedPlayer = findMatchingOnlinePlayerForDownloaded(allPlayers, downloadedEp);
                 if (matchedPlayer != null) {
                     playersManager.setCurrentPlayerData(matchedPlayer);
-                } else {
+                } else if (currentPD == null) {
                     playersManager.setCurrentPlayerData(createSyntheticPlayerDataForDownloaded(downloadedEp));
                 }
             }
@@ -4140,17 +4293,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
         if (isOfflineMode) {
             return true;
         }
-        if (isDownloadedQuality(preferredQuality)) {
-            return true;
-        }
         if (currentVideoUrl != null && (currentVideoUrl.startsWith("file:") || currentVideoUrl.startsWith("/"))) {
             return true;
         }
-        com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
-        if (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new java.io.File(downloadedEp.getLocalFilePath()).exists()) {
-            return true;
-        }
-        return false;
+        return isUsingDownloadedSource && hasValidDownloadedFile(getDownloadedEpisodeForActive());
     }
 
     private void showSettingsDialog() {
@@ -4183,39 +4329,60 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
             @Override
             public String getPreferredQuality() {
-                if (isPlayingDownloadedVideo()) {
-                    com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
-                    if (downloadedEp != null) {
-                        String dq = downloadedEp.getQuality();
-                        if (dq == null || dq.isEmpty()) dq = "1080p";
-                        else if (!dq.endsWith("p") && !dq.equalsIgnoreCase("4k")) dq += "p";
-                        return "Скачанный файл (" + dq + ")";
-                    }
-                }
-                return preferredQuality;
+                return getCurrentDisplayQualityForSettings();
+            }
+
+            @Override
+            public String getActivePlayingQuality() {
+                return getEffectiveActiveQuality();
             }
 
             @Override
             public void onQualitySelected(String quality) {
-                String oldQuality = preferredQuality;
-                preferredQuality = quality;
-                updateSettingsQualityTag();
-                Log.d("VideoPlayer", "Selected quality: " + quality);
+                Log.d("VideoPlayer", "Selected quality in settings: " + quality);
 
-                EpisodeResponse.PlayerData currentPlayer = playersManager.getCurrentPlayerData();
-                if (currentPlayer != null && currentPlayer.getPlayer() != null && currentPlayer.getTeam() != null) {
-                    if (!isPlayingDownloadedVideo() && !com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(quality)) {
-                        apiService.savePlayerPreferences(currentPlayer.getPlayer(), 
-                                                        currentPlayer.getTeam().getId(), 
-                                                        quality);
-                        Log.d("VideoPlayer", "Saved quality preference: " + quality);
+                if (isDownloadedQuality(quality)) {
+                    com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+                    if (!hasValidDownloadedFile(downloadedEp)) {
+                        CustomToast.showWarning(VideoPlayerActivity.this, "Скачанный файл не найден");
+                        return;
                     }
+                    boolean alreadyDownloaded = isPlayingDownloadedVideo();
+                    isUsingDownloadedSource = true;
+                    activePlayingQuality = com.example.animelib.util.AutoQualityHelper.normalizeResolutionLabel(downloadedEp.getQuality());
+                    refreshQualityUiState();
+                    updateEpisodeHeaderQuick();
+                    updatePortraitVoiceoverPlayerUI();
+
+                    if (!alreadyDownloaded) {
+                        String localUrl = Uri.fromFile(new java.io.File(downloadedEp.getLocalFilePath())).toString();
+                        applyStreamUrlSwitch(quality, localUrl);
+                    }
+                    return;
                 }
 
-                if (!quality.equals(oldQuality) && player != null) {
-                    Log.d("VideoPlayer", "Changing quality to " + quality);
-                    changeQuality(quality, oldQuality);
+                boolean wasDownloaded = isPlayingDownloadedVideo();
+                String oldOnlineQuality = preferredQuality;
+                String newOnlineQuality = com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(quality);
+
+                isUsingDownloadedSource = false;
+                isPreferredQualityChangedByUser = true;
+                isPreferredQualityLoadedFromDb = true;
+                preferredQuality = newOnlineQuality;
+                apiService.savePreferredQuality(preferredQuality);
+
+                if (wasDownloaded) {
+                    activePlayingQuality = null;
                 }
+                refreshQualityUiState();
+                updateEpisodeHeaderQuick();
+                updatePortraitVoiceoverPlayerUI();
+
+                if (!wasDownloaded && com.example.animelib.util.AutoQualityHelper.matchQuality(newOnlineQuality, oldOnlineQuality)) {
+                    return;
+                }
+
+                switchToOnlineQualityStream(newOnlineQuality, oldOnlineQuality);
             }
 
             @Override
@@ -4242,21 +4409,12 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 apiService.save4KSetting(enabled);
                 playersManager.setEnable4K(enabled);
                 Log.d("VideoPlayer", "4K setting changed to: " + enabled);
-                List<String> newQualities = playersManager.getAvailableQualities();
-                Log.d("VideoPlayer", "New qualities after 4K toggle: " + newQualities);
-                if (!newQualities.isEmpty()) {
-                    if (!newQualities.contains(preferredQuality)) {
-                        String oldQuality = preferredQuality;
-                        preferredQuality = newQualities.get(0);
-                        Log.d("VideoPlayer", "Preferred quality changed from " + oldQuality + " to " + preferredQuality);
-                    }
-                    if (playerDialogsController != null) {
-                        Log.d("VideoPlayer", "Updating SettingsBottomSheet with new qualities");
-                        playerDialogsController.updateSettingsQualities(newQualities, preferredQuality);
-                    }
-                } else {
-                    Log.w("VideoPlayer", "New qualities list is empty!");
+                if (!enabled && !isPlayingDownloadedVideo()
+                        && com.example.animelib.util.AutoQualityHelper.extractResolution(getEffectiveActiveQuality()) >= 2160) {
+                    activePlayingQuality = null;
+                    switchToOnlineQualityStream(preferredQuality, "2160p");
                 }
+                refreshQualityUiState();
             }
 
             @Override
@@ -4927,82 +5085,165 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     private String resolveUrlForQuality(EpisodeResponse.PlayerData playerData, String targetQuality) {
-        if (playerData == null) return null;
-
-        com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
-        if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
-            java.io.File file = new java.io.File(downloadedEp.getLocalFilePath());
-            if (file.exists() && file.length() > 0) {
-                return Uri.fromFile(file).toString();
+        if (isDownloadedQuality(targetQuality)) {
+            com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+            if (hasValidDownloadedFile(downloadedEp)) {
+                return Uri.fromFile(new java.io.File(downloadedEp.getLocalFilePath())).toString();
             }
+            return null;
         }
+
+        if (playerData == null) return null;
 
         if ("kodik".equalsIgnoreCase(playerData.getPlayer())) {
             if (currentKodikResponse != null && currentKodikResponse.getData() != null) {
-                String resolvedQuality = targetQuality;
-                if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(targetQuality)) {
-                    List<String> available = playersManager != null ? playersManager.getAvailableQualities() : new ArrayList<>();
-                    long estimate = 0;
-                    try {
-                        estimate = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.getSingletonInstance(this).getBitrateEstimate();
-                    } catch (Exception ignored) {}
-                    resolvedQuality = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, available, targetQuality, estimate);
-                }
-                List<String> candidates = com.example.animelib.api.KodikLinksExtractor.collectCandidateUrls(
-                        currentKodikResponse, resolvedQuality, enable4K);
-                if (!candidates.isEmpty()) {
-                    return candidates.get(0);
-                }
+                return resolveKodikHlsUrl(currentKodikResponse, targetQuality);
             }
         } else if ("animelib".equalsIgnoreCase(playerData.getPlayer())) {
-            if (playerData.getVideo() != null && playerData.getVideo().getQuality() != null && !playerData.getVideo().getQuality().isEmpty()) {
-                String resolvedQuality = targetQuality;
-                if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(targetQuality)) {
-                    List<String> available = playersManager != null ? playersManager.getAvailableQualities() : new ArrayList<>();
-                    long estimate = 0;
-                    try {
-                        estimate = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.getSingletonInstance(this).getBitrateEstimate();
-                    } catch (Exception ignored) {}
-                    resolvedQuality = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, available, targetQuality, estimate);
-                }
-                int targetRes = com.example.animelib.util.AutoQualityHelper.extractResolution(resolvedQuality);
-                EpisodeResponse.QualityData selectedQuality = null;
-                for (EpisodeResponse.QualityData qData : playerData.getVideo().getQuality()) {
-                    if (qData.getQuality() == targetRes) {
-                        selectedQuality = qData;
-                        break;
-                    }
-                }
-                if (selectedQuality == null && !playerData.getVideo().getQuality().isEmpty()) {
-                    selectedQuality = playerData.getVideo().getQuality().get(0);
-                }
-                if (selectedQuality != null && selectedQuality.getHref() != null) {
-                    String domain = currentVideoDomain;
-                    return com.example.animelib.ui.VideoUrlHelper.toAbsoluteVideoUrl(selectedQuality.getHref(), domain);
-                }
-            }
+            return resolveAnimelibUrl(playerData, targetQuality);
         }
         return null;
     }
 
-    private void changeQuality(String newQuality, String oldQuality) {
-        preferredQuality = newQuality;
-        EpisodeResponse.PlayerData currentPlayerData = playersManager != null ? playersManager.getCurrentPlayerData() : null;
-        String newVideoUrl = resolveUrlForQuality(currentPlayerData, newQuality);
+    private void switchToOnlineQualityStream(String newOnlineQuality, String oldQuality) {
+        if (playersManager == null) return;
 
+        EpisodeResponse.PlayerData currentPlayer = playersManager.getCurrentPlayerData();
+        if (isSyntheticPlayerData(currentPlayer)) {
+            List<EpisodeResponse.PlayerData> all = playersManager.getAllPlayers();
+            if (all != null && !all.isEmpty()) {
+                EpisodeResponse.PlayerData matched = findMatchingOnlinePlayerForDownloaded(all, getDownloadedEpisodeForActive());
+                currentPlayer = matched != null ? matched : all.get(0);
+                playersManager.setCurrentPlayerData(currentPlayer);
+                updateEpisodeHeaderQuick();
+                updatePortraitVoiceoverPlayerUI();
+            } else {
+                EpisodesListResponse.EpisodeItem curEp = episodesManager != null ? episodesManager.getCurrentEpisode() : null;
+                if (curEp != null) {
+                    long pos = player != null ? Math.max(0L, player.getCurrentPosition()) : 0L;
+                    if (playerEpisodesController != null) {
+                        playerEpisodesController.setSavedPlayerPosition(pos);
+                    } else {
+                        savedPlayerPosition = pos;
+                    }
+                    playersManager.setCurrentPlayerData(null);
+                    showLoading("Загрузка онлайн-источника...");
+                    playersManager.loadPlayersForEpisode(curEp.getId(), true);
+                }
+                return;
+            }
+        }
+
+        if ("kodik".equalsIgnoreCase(currentPlayer.getPlayer())
+                && (currentKodikResponse == null || currentKodikResponse.getData() == null || currentKodikResponse.getData().isEmpty())) {
+            String kodikSrc = currentPlayer.getSrc();
+            if (kodikSrc != null && !kodikSrc.isEmpty()) {
+                if (!kodikSrc.startsWith("http")) kodikSrc = "https:" + kodikSrc;
+                final String finalKodikSrc = kodikSrc;
+                final EpisodeResponse.PlayerData targetPd = currentPlayer;
+                final long posToRestore = player != null ? Math.max(0L, player.getCurrentPosition()) : 0L;
+                final boolean wasPlaying = player == null || player.getPlayWhenReady();
+                final boolean shouldBeSeamless = player != null && (player.isPlaying() || player.getPlaybackState() == Player.STATE_READY) && !isSeamlessSwitching;
+                final int switchGen = playbackRestartGeneration;
+                if (!shouldBeSeamless) {
+                    showLoading("Загрузка онлайн-качества...");
+                }
+                apiService.fetchKodikVideoLinks(finalKodikSrc, false, new ApiService.KodikVideoCallback() {
+                    @Override
+                    public void onKodikVideoReceived(KodikResponse response) {
+                        safeRunOnUiThread(() -> {
+                            if (switchGen != playbackRestartGeneration || isPlayingDownloadedVideo()) {
+                                return;
+                            }
+                            if (!shouldBeSeamless) {
+                                hideLoading();
+                            }
+                            currentKodikResponse = response;
+                            if (playerQualityController != null) {
+                                playerQualityController.setCurrentKodikResponse(response);
+                            }
+                            if (playersManager != null) {
+                                playersManager.setCurrentKodikResponse(response);
+                            }
+                            if (playerVideoResolverController != null) {
+                                playerVideoResolverController.resetKodikRecoveryState();
+                                playerVideoResolverController.setActiveKodikContext(finalKodikSrc, response, preferredQuality);
+                            }
+                            String newVideoUrl = resolveKodikHlsUrl(response, preferredQuality);
+                            refreshQualityUiState();
+                            if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
+                                if (shouldBeSeamless && player != null && (player.isPlaying() || player.getPlaybackState() == Player.STATE_READY)) {
+                                    switchQualitySeamlessly(preferredQuality, oldQuality, newVideoUrl);
+                                } else {
+                                    currentVideoUrl = newVideoUrl;
+                                    if (timecodeManager != null) {
+                                        timecodeManager.setTimecodes(targetPd);
+                                    }
+                                    switchMediaSource(newVideoUrl, posToRestore, wasPlaying);
+                                }
+                            } else {
+                                savedPlayerPosition = posToRestore;
+                                stopCurrentPlaybackAndRestartVoiceover(targetPd);
+                            }
+                        });
+                    }
+
+                    @Override
+                    public void onError(String error) {
+                        safeRunOnUiThread(() -> {
+                            if (switchGen != playbackRestartGeneration) {
+                                return;
+                            }
+                            hideLoading();
+                            savedPlayerPosition = posToRestore;
+                            stopCurrentPlaybackAndRestartVoiceover(targetPd);
+                        });
+                    }
+                });
+                return;
+            }
+        }
+
+        if ("animelib".equalsIgnoreCase(currentPlayer.getPlayer())
+                && currentPlayer.getVideoDomain() != null && !currentPlayer.getVideoDomain().isEmpty()) {
+            currentVideoDomain = currentPlayer.getVideoDomain();
+        }
+
+        String newVideoUrl = resolveUrlForQuality(currentPlayer, newOnlineQuality);
+        refreshQualityUiState();
+        if (newVideoUrl != null) {
+            applyStreamUrlSwitch(newOnlineQuality, newVideoUrl);
+        } else {
+            restartPlayerWithNewQuality();
+        }
+    }
+
+    private void applyStreamUrlSwitch(String targetLabel, String newVideoUrl) {
+        if (newVideoUrl == null) {
+            restartPlayerWithNewQuality();
+            return;
+        }
         boolean isCurrentlyPlaying = player != null && (player.isPlaying() || player.getPlaybackState() == Player.STATE_READY) && !isSeamlessSwitching;
-
-        if (isCurrentlyPlaying && newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
-            switchQualitySeamlessly(newQuality, oldQuality, newVideoUrl);
-        } else if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
+        if (isCurrentlyPlaying && !newVideoUrl.equals(currentVideoUrl)) {
+            switchQualitySeamlessly(targetLabel, preferredQuality, newVideoUrl);
+        } else if (!newVideoUrl.equals(currentVideoUrl)) {
             long currentPos = player != null ? player.getCurrentPosition() : 0;
             boolean wasPlaying = player == null || player.getPlayWhenReady();
             currentVideoUrl = newVideoUrl;
             switchMediaSource(newVideoUrl, currentPos, wasPlaying);
-            updateSettingsQualityTag();
+            refreshQualityUiState();
         } else {
-            restartPlayerWithNewQuality();
+            refreshQualityUiState();
         }
+    }
+
+    private void changeQuality(String newQuality, String oldQuality) {
+        if (!isDownloadedQuality(newQuality)) {
+            preferredQuality = com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(newQuality);
+        }
+        EpisodeResponse.PlayerData currentPlayerData = playersManager != null ? playersManager.getCurrentPlayerData() : null;
+        String newVideoUrl = resolveUrlForQuality(currentPlayerData, newQuality);
+        applyStreamUrlSwitch(newQuality, newVideoUrl);
     }
 
     private void switchMediaSource(String newVideoUrl, long startPosition, boolean playWhenReady) {
@@ -5097,6 +5338,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 if (videoSize.width > 0 && videoSize.height > 0) {
                     lastValidAspectRatio = (float) (videoSize.width * videoSize.pixelWidthHeightRatio) / (float) videoSize.height;
                     preservePlayerAspectRatio();
+                    String detected = com.example.animelib.util.AutoQualityHelper.formatVideoDimensionsToQuality(videoSize.width, videoSize.height);
+                    if (detected != null) {
+                        activePlayingQuality = detected;
+                    }
                 }
             }
 
@@ -5169,6 +5414,14 @@ public class VideoPlayerActivity extends AppCompatActivity {
         hideLoading();
         updatePlayPauseAndLoadingState(false);
 
+        if (player.getVideoFormat() != null) {
+            String detected = com.example.animelib.util.AutoQualityHelper.formatVideoDimensionsToQuality(
+                    player.getVideoFormat().width, player.getVideoFormat().height);
+            if (detected != null) {
+                activePlayingQuality = detected;
+            }
+        }
+
         setupPlayerListener();
         setupSubtitlePlayerListener(player);
         applySubtitlesStateToPlayer();
@@ -5181,7 +5434,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
             } catch (Exception ignored) {}
         }
 
-        updateSettingsQualityTag();
+        refreshQualityUiState();
+        updateEpisodeHeaderQuick();
+        updatePortraitVoiceoverPlayerUI();
         EpisodeResponse.PlayerData currentPlayerData = playersManager != null ? playersManager.getCurrentPlayerData() : null;
         if (currentPlayerData != null) {
             playersManager.setCurrentPlayerData(currentPlayerData);
@@ -5203,7 +5458,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     @androidx.annotation.Nullable
-    private String resolveAnimelibUrl(EpisodeResponse.PlayerData playerData, String preferredQuality) {
+    private String resolveAnimelibUrl(EpisodeResponse.PlayerData playerData, String targetQuality) {
         if (playerData == null || playerData.getVideo() == null || playerData.getVideo().getQuality() == null || playerData.getVideo().getQuality().isEmpty()) {
             return null;
         }
@@ -5222,7 +5477,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             estimate = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.getSingletonInstance(this).getBitrateEstimate();
         } catch (Exception ignored) {}
 
-        String effectiveQuality = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, available, preferredQuality, estimate);
+        String effectiveQuality = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, available, targetQuality, estimate);
         int targetRes = com.example.animelib.util.AutoQualityHelper.extractResolution(effectiveQuality);
 
         EpisodeResponse.QualityData selectedQuality = null;
@@ -5233,9 +5488,17 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
         }
         if (selectedQuality == null && !qList.isEmpty()) {
-            selectedQuality = qList.get(0);
+            for (EpisodeResponse.QualityData qData : qList) {
+                if (qData.getQuality() == 2160 && !enable4K) continue;
+                selectedQuality = qData;
+                break;
+            }
+            if (selectedQuality == null) {
+                selectedQuality = qList.get(0);
+            }
         }
         if (selectedQuality != null && selectedQuality.getHref() != null) {
+            activePlayingQuality = selectedQuality.getQuality() + "p";
             String domain = (playerData.getVideoDomain() != null && !playerData.getVideoDomain().isEmpty())
                     ? playerData.getVideoDomain() : currentVideoDomain;
             return VideoUrlHelper.toAbsoluteVideoUrl(selectedQuality.getHref(), domain);
@@ -5244,7 +5507,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     @androidx.annotation.Nullable
-    private String resolveKodikHlsUrl(KodikResponse kodikResponse, String preferredQuality) {
+    private String resolveKodikHlsUrl(KodikResponse kodikResponse, String targetQuality) {
         if (kodikResponse == null || kodikResponse.getData() == null || kodikResponse.getData().isEmpty()) {
             return null;
         }
@@ -5271,7 +5534,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
             estimate = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.getSingletonInstance(this).getBitrateEstimate();
         } catch (Exception ignored) {}
 
-        String effectiveQuality = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, availableQualities, preferredQuality, estimate);
+        String effectiveQuality = com.example.animelib.util.AutoQualityHelper.resolveBestQuality(this, availableQualities, targetQuality, estimate);
+        String normEffective = com.example.animelib.util.AutoQualityHelper.normalizeResolutionLabel(effectiveQuality);
+        if (normEffective != null) {
+            activePlayingQuality = normEffective;
+        }
         List<String> candidates = com.example.animelib.api.KodikLinksExtractor.collectCandidateUrls(
                 kodikResponse, effectiveQuality, enable4K);
         return candidates.isEmpty() ? null : candidates.get(0);
@@ -5291,21 +5558,18 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         stopCurrentPlayback();
 
-        if (isDownloadedQuality(preferredQuality)) {
+        if (isPlayingDownloadedVideo()) {
             com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
-            if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
+            if (hasValidDownloadedFile(downloadedEp)) {
                 java.io.File file = new java.io.File(downloadedEp.getLocalFilePath());
-                if (file.exists() && file.length() > 0) {
-                    currentVideoUrl = Uri.fromFile(file).toString();
-                    timecodeManager.setTimecodes(currentPlayerData);
-                    initializePlayer();
-                    if (currentPosition > 0 && player != null) {
-                        player.seekTo(currentPosition);
-                    }
-                    playersManager.setCurrentPlayerData(currentPlayerData);
-                    Log.d("VideoPlayer", "Restarted player with local downloaded file: " + file.getAbsolutePath());
-                    return;
-                }
+                currentVideoUrl = Uri.fromFile(file).toString();
+                activePlayingQuality = com.example.animelib.util.AutoQualityHelper.normalizeResolutionLabel(downloadedEp.getQuality());
+                timecodeManager.setTimecodes(currentPlayerData);
+                initializePlayer(currentPosition);
+                playersManager.setCurrentPlayerData(currentPlayerData);
+                refreshQualityUiState();
+                Log.d("VideoPlayer", "Restarted player with local downloaded file: " + file.getAbsolutePath());
+                return;
             }
         }
 
@@ -5313,18 +5577,6 @@ public class VideoPlayerActivity extends AppCompatActivity {
             handleAnimelibPlayer(currentPlayerData, currentPosition);
         } else if ("kodik".equalsIgnoreCase(currentPlayerData.getPlayer())) {
             if (currentKodikResponse != null && currentKodikResponse.getData() != null) {
-                String qualityKey = preferredQuality != null ? preferredQuality.replace("p", "") : null;
-                if (qualityKey != null && currentKodikResponse.getData().containsKey(qualityKey) &&
-                        Objects.requireNonNull(currentKodikResponse.getData().get(qualityKey)).length > 0) {
-                    String newHlsUrl = Objects.requireNonNull(currentKodikResponse.getData().get(qualityKey))[0].getSrc();
-                    if (newHlsUrl != null && !newHlsUrl.isEmpty()) {
-                        if (!newHlsUrl.startsWith("http")) {
-                            newHlsUrl = "https:" + newHlsUrl;
-                        }
-                        currentVideoUrl = newHlsUrl;
-                        Log.d("VideoPlayer", "Updated HLS URL for quality " + preferredQuality + ": " + currentVideoUrl);
-                    }
-                }
                 startHlsPlayer(currentKodikResponse, currentPosition);
                 playersManager.setCurrentPlayerData(currentPlayerData);
                 return;
@@ -5844,9 +6096,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private void updateEpisodeHeaderQuick() {
         safeRunOnUiThread(() -> {
             com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
-            boolean isPlayingDownloaded = isOfflineMode || isPlayingDownloadedVideo() ||
-                    (downloadedEp != null && downloadedEp.getLocalFilePath() != null && new File(downloadedEp.getLocalFilePath()).exists() &&
-                     (currentVideoUrl == null || currentVideoUrl.startsWith("file:") || currentVideoUrl.startsWith("/") || isDownloadedQuality(preferredQuality)));
+            boolean isPlayingDownloaded = isPlayingDownloadedVideo();
 
             if (isPlayingDownloaded && downloadedEp != null) {
                 hideAllSkeletonsForOffline();
@@ -5861,9 +6111,6 @@ public class VideoPlayerActivity extends AppCompatActivity {
             
             String tm = (currentPlayerData != null && currentPlayerData.getTeam() != null)
                     ? currentPlayerData.getTeam().getName() : null;
-            if (downloadedEp != null && isPlayingDownloadedVideo()) {
-                tm = downloadedEp.getTeamName();
-            }
             String ep = (currentEpisode != null) ? currentEpisode.getNumber() : null;
             String rawEm = (currentEpisode != null && currentEpisode.getName() != null && !Objects.equals(currentEpisode.getName(), ""))
                     ? currentEpisode.getName() : null;

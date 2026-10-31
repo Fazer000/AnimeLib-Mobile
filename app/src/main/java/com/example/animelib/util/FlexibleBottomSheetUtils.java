@@ -26,24 +26,35 @@ import com.google.android.material.bottomsheet.BottomSheetDialog;
 public class FlexibleBottomSheetUtils {
 
     /**
+     * Возвращает строгий короткий бейдж разрешения ("4K", "2K", "FHD", "HD", "SD") или "",
+     * никогда не возвращая "AUTO" или "СКАЧАНО".
+     */
+    public static String getStrictResolutionBadge(String quality) {
+        if (quality == null || quality.trim().isEmpty() || AutoQualityHelper.isAutoQuality(quality)) {
+            return "";
+        }
+        int res = AutoQualityHelper.extractResolution(quality);
+        if (res >= 2160) return "4K";
+        if (res >= 1440) return "2K";
+        if (res >= 1080) return "FHD";
+        if (res >= 720) return "HD";
+        if (res > 0) return "SD";
+        return "";
+    }
+
+    /**
      * Возвращает тег качества ("4K", "2K", "FHD", "HD", "SD") по строковому значению ("2160p", "1080p", "720p", "480p", etc.)
      */
     public static String getQualityTag(String quality) {
         if (quality == null || quality.trim().isEmpty()) return "";
+        String strict = getStrictResolutionBadge(quality);
+        if (!strict.isEmpty()) {
+            return strict;
+        }
         String q = quality.toLowerCase().trim();
-        if (q.contains("2160") || q.contains("4k")) {
-            return "4K";
-        } else if (q.contains("1440") || q.contains("2k")) {
-            return "2K";
-        } else if (q.contains("1080") || q.contains("fhd")) {
-            return "FHD";
-        } else if (q.contains("720") || q.contains("hd")) {
-            return "HD";
-        } else if (q.contains("480") || q.contains("360") || q.contains("240") || q.contains("sd")) {
-            return "SD";
-        } else if (q.contains("auto") || q.contains("авто")) {
+        if (q.contains("auto") || q.contains("авто")) {
             return "AUTO";
-        } else if (q.contains("загруженное") || q.contains("скачанное") || q.contains("локальное") || q.contains("офлайн")) {
+        } else if (q.contains("загруженное") || q.contains("скачанное") || q.contains("скачанный") || q.contains("локальное") || q.contains("офлайн")) {
             return "СКАЧАНО";
         }
         return q.replace("p", "").toUpperCase();

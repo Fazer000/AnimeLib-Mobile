@@ -1932,6 +1932,10 @@ public class ApiService {
     public void savePlayerPreferences(String player, Integer teamId, String preferredQuality) {
         databaseManager.savePlayerPreferences(player, teamId, preferredQuality);
     }
+
+    public void savePreferredQuality(String preferredQuality) {
+        databaseManager.savePreferredQuality(preferredQuality);
+    }
     
     public com.example.animelib.data.entity.PlayerPreferences loadPlayerPreferences() {
         return databaseManager.loadPlayerPreferences();

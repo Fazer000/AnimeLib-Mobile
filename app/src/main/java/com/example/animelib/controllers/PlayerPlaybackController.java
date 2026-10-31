@@ -59,6 +59,7 @@ public class PlayerPlaybackController {
         void onPlaybackStateChanged(int state, boolean playWhenReady);
         void onPlayerError(PlaybackException error);
         void safeRunOnUiThread(Runnable runnable);
+        default void onVideoSizeChanged(@NonNull androidx.media3.common.VideoSize videoSize) {}
     }
 
     private final Context context;
@@ -335,6 +336,13 @@ public class PlayerPlaybackController {
     private void setupPlayerListener() {
         if (player == null) return;
         player.addListener(new Player.Listener() {
+            @Override
+            public void onVideoSizeChanged(@NonNull androidx.media3.common.VideoSize videoSize) {
+                if (callback != null) {
+                    callback.onVideoSizeChanged(videoSize);
+                }
+            }
+
             @Override
             public void onRenderedFirstFrame() {
                 isFirstFrameRendered = true;

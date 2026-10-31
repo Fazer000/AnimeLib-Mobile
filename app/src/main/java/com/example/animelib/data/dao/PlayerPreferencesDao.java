@@ -20,10 +20,16 @@ public interface PlayerPreferencesDao {
     void upsert(PlayerPreferences preferences);
     
     /**
-     * Получение предпочтений синхронно
+     * Получение предпочтений синхронно (самая актуальная запись)
      */
-    @Query("SELECT * FROM player_preferences LIMIT 1")
+    @Query("SELECT * FROM player_preferences ORDER BY id DESC LIMIT 1")
     PlayerPreferences getPreferencesSync();
+
+    /**
+     * Удаление устаревших дублирующих строк при наличии
+     */
+    @Query("DELETE FROM player_preferences WHERE id != :keepId")
+    void deleteDuplicatesExcept(int keepId);
     
     /**
      * Получение количества записей (для проверки существования)

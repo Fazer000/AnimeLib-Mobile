@@ -258,6 +258,9 @@ public class PlayerDialogsController {
         default boolean isPlayingDownloadedVideo() {
             return isOfflineMode();
         }
+        default String getActivePlayingQuality() {
+            return null;
+        }
     }
 
     public void showSettingsDialog(SettingsDataProvider provider) {
@@ -290,6 +293,7 @@ public class PlayerDialogsController {
 
         dialog.setOfflineMode(provider.isOfflineMode());
         dialog.setDownloadedVideo(provider.isPlayingDownloadedVideo());
+        dialog.setActivePlayingQuality(provider.getActivePlayingQuality());
 
         float[] filters = provider.getVideoFilters();
         if (filters != null && filters.length >= 5) {
@@ -356,8 +360,14 @@ public class PlayerDialogsController {
     }
 
     public void updateSettingsQualities(List<String> newQualities, String preferredQuality) {
-        if (currentSettingsBottomSheet != null && currentSettingsBottomSheet.isShowing()) {
+        if (currentSettingsBottomSheet != null) {
             currentSettingsBottomSheet.updateQualities(newQualities, preferredQuality);
+        }
+    }
+
+    public void updateSettingsQualities(List<String> newQualities, String displayQuality, String activePlayingQuality, boolean isDownloaded) {
+        if (currentSettingsBottomSheet != null) {
+            currentSettingsBottomSheet.updateQualities(newQualities, displayQuality, activePlayingQuality, isDownloaded);
         }
     }
 }

@@ -39,8 +39,10 @@ public class PlayerVideoResolverController {
     public interface ResolverProvider {
         android.content.Context getContext();
         boolean isDownloadedQuality(String quality);
+        boolean shouldPlayDownloadedFile();
         DownloadedEpisodeEntity getDownloadedEpisodeForActive();
         void setCurrentVideoUrl(String url);
+        void onActiveQualityResolved(String resolvedQuality);
         String getPreferredQuality();
         void setPreferredQuality(String quality);
         boolean isEnable4K();
@@ -123,20 +125,23 @@ public class PlayerVideoResolverController {
         provider.setHasRenderedFirstFrame(false);
         provider.updatePlayPauseAndLoadingState(true);
 
-        // Если эпизод скачан локально — воспроизводим локальный файл в любом случае
-        DownloadedEpisodeEntity downloadedEp = provider.getDownloadedEpisodeForActive();
-        if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
-            File file = new File(downloadedEp.getLocalFilePath());
-            if (file.exists() && file.length() > 0) {
-                provider.setCurrentVideoUrl(Uri.fromFile(file).toString());
-                if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
-                provider.initializePlayer(seekToPosition);
-                ExoPlayer player = provider.getPlayer();
-                if (seekToPosition > 0 && player != null) {
-                    player.seekTo(seekToPosition);
+        // Если выбран источник скачанного файла — воспроизводим локальный файл
+        if (provider.shouldPlayDownloadedFile()) {
+            DownloadedEpisodeEntity downloadedEp = provider.getDownloadedEpisodeForActive();
+            if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
+                File file = new File(downloadedEp.getLocalFilePath());
+                if (file.exists() && file.length() > 0) {
+                    provider.setCurrentVideoUrl(Uri.fromFile(file).toString());
+                    provider.onActiveQualityResolved(downloadedEp.getQuality());
+                    if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
+                    provider.initializePlayer(seekToPosition);
+                    ExoPlayer player = provider.getPlayer();
+                    if (seekToPosition > 0 && player != null) {
+                        player.seekTo(seekToPosition);
+                    }
+                    Log.d(TAG, "Playing downloaded local file: " + file.getAbsolutePath());
+                    return;
                 }
-                Log.d(TAG, "Playing downloaded local file: " + file.getAbsolutePath());
-                return;
             }
         }
 
@@ -206,6 +211,7 @@ public class PlayerVideoResolverController {
 
             Log.d(TAG, "Final video URL: " + videoUrl);
             provider.setCurrentVideoUrl(videoUrl);
+            provider.onActiveQualityResolved(selectedQuality.getQuality() + "p");
 
             if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
 
@@ -228,20 +234,23 @@ public class PlayerVideoResolverController {
 
         Log.d(TAG, "Handling Kodik player");
 
-        // Если эпизод скачан локально — воспроизводим локальный файл в любом случае
-        DownloadedEpisodeEntity downloadedEp = provider.getDownloadedEpisodeForActive();
-        if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
-            File file = new File(downloadedEp.getLocalFilePath());
-            if (file.exists() && file.length() > 0) {
-                provider.setCurrentVideoUrl(Uri.fromFile(file).toString());
-                if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
-                provider.initializePlayer(seekToPosition);
-                ExoPlayer player = provider.getPlayer();
-                if (seekToPosition > 0 && player != null) {
-                    player.seekTo(seekToPosition);
+        // Если выбран источник скачанного файла — воспроизводим локальный файл
+        if (provider.shouldPlayDownloadedFile()) {
+            DownloadedEpisodeEntity downloadedEp = provider.getDownloadedEpisodeForActive();
+            if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
+                File file = new File(downloadedEp.getLocalFilePath());
+                if (file.exists() && file.length() > 0) {
+                    provider.setCurrentVideoUrl(Uri.fromFile(file).toString());
+                    provider.onActiveQualityResolved(downloadedEp.getQuality());
+                    if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
+                    provider.initializePlayer(seekToPosition);
+                    ExoPlayer player = provider.getPlayer();
+                    if (seekToPosition > 0 && player != null) {
+                        player.seekTo(seekToPosition);
+                    }
+                    Log.d(TAG, "Playing downloaded local file: " + file.getAbsolutePath());
+                    return;
                 }
-                Log.d(TAG, "Playing downloaded local file: " + file.getAbsolutePath());
-                return;
             }
         }
 
@@ -355,6 +364,7 @@ public class PlayerVideoResolverController {
             triedKodikUrls.add(hlsUrl);
             Log.d(TAG, "Starting HLS playback with URL: " + hlsUrl + " (" + effectiveQuality + ", candidates=" + candidates.size() + ")");
             provider.setCurrentVideoUrl(hlsUrl);
+            provider.onActiveQualityResolved(effectiveQuality);
             provider.initializeHlsPlayer(hlsUrl, seekToPosition);
             ExoPlayer player = provider.getPlayer();
             if (seekToPosition > 0 && player != null) {
@@ -454,6 +464,7 @@ public class PlayerVideoResolverController {
                         if (freshUrl != null && !freshUrl.isEmpty()) {
                             triedKodikUrls.add(freshUrl);
                             provider.setCurrentVideoUrl(freshUrl);
+                            provider.onActiveQualityResolved(effectiveQuality);
                             provider.initializeHlsPlayer(freshUrl, Math.max(0L, resumePosition));
                         } else {
                             provider.showVideoErrorDialog("Ошибка воспроизведения Kodik",

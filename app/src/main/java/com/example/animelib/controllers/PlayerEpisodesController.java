@@ -30,6 +30,9 @@ public class PlayerEpisodesController {
         void onResetBookmarkState();
         void onInitializeMenuWithoutAutoPlay();
         void onEpisodeChanged(EpisodesListResponse.EpisodeItem episode);
+        default boolean tryStartDownloadedEpisodeImmediately(EpisodesListResponse.EpisodeItem episode, long initialBookmarkMs) {
+            return false;
+        }
     }
 
     private EpisodesManager episodesManager;
@@ -178,6 +181,9 @@ public class PlayerEpisodesController {
                 if (callback != null) {
                     callback.onEpisodeHeaderUpdateQuick();
                     callback.onEpisodeChanged(firstEpisode);
+                    if (callback.tryStartDownloadedEpisodeImmediately(firstEpisode, 0L)) {
+                        return;
+                    }
                 }
 
                 if (playersManager != null) {
@@ -205,6 +211,9 @@ public class PlayerEpisodesController {
                 if (callback != null) {
                     callback.onEpisodeHeaderUpdateQuick();
                     callback.onEpisodeChanged(currentEpisode);
+                    if (callback.tryStartDownloadedEpisodeImmediately(currentEpisode, 0L)) {
+                        return;
+                    }
                 }
 
                 if (playersManager != null) {

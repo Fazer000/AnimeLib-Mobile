@@ -23,11 +23,17 @@ public class QualityAdapter extends RecyclerView.Adapter<QualityAdapter.QualityV
 
     private final List<String> qualities;
     private String currentQuality;
+    private String activePlayingQuality;
     private final OnQualitySelectedListener listener;
 
     public QualityAdapter(List<String> qualities, String currentQuality, OnQualitySelectedListener listener) {
+        this(qualities, currentQuality, null, listener);
+    }
+
+    public QualityAdapter(List<String> qualities, String currentQuality, String activePlayingQuality, OnQualitySelectedListener listener) {
         this.qualities = qualities;
         this.currentQuality = currentQuality;
+        this.activePlayingQuality = activePlayingQuality;
         this.listener = listener;
     }
 
@@ -58,28 +64,43 @@ public class QualityAdapter extends RecyclerView.Adapter<QualityAdapter.QualityV
             }
         }
 
-        // 2. Title & Tag
+        // 2. Active / Inactive selection state
+        boolean isCurrent = (position == getSelectedIndex());
+
+        // 3. Title & Tag
         if (holder.qualityText != null) {
             holder.qualityText.setText(quality);
         }
 
-        String tag = com.example.animelib.util.FloatingBottomSheetUtils.getQualityTag(quality);
         if (holder.qualityTagText != null) {
-            if (tag != null && !tag.isEmpty() && !com.example.animelib.util.AutoQualityHelper.isAutoQuality(quality)) {
-                holder.qualityTagText.setText(tag);
-                holder.qualityTagText.setVisibility(View.VISIBLE);
+            if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(quality)) {
+                String badge = isCurrent
+                        ? com.example.animelib.util.FloatingBottomSheetUtils.getStrictResolutionBadge(activePlayingQuality)
+                        : "";
+                if (!badge.isEmpty()) {
+                    holder.qualityTagText.setText(badge);
+                    holder.qualityTagText.setVisibility(View.VISIBLE);
+                } else {
+                    holder.qualityTagText.setVisibility(View.GONE);
+                }
             } else {
-                holder.qualityTagText.setVisibility(View.GONE);
+                String badge = com.example.animelib.util.FloatingBottomSheetUtils.getStrictResolutionBadge(quality);
+                if (badge.isEmpty() && com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(quality)) {
+                    badge = com.example.animelib.util.FloatingBottomSheetUtils.getStrictResolutionBadge(activePlayingQuality);
+                }
+                if (!badge.isEmpty()) {
+                    holder.qualityTagText.setText(badge);
+                    holder.qualityTagText.setVisibility(View.VISIBLE);
+                } else {
+                    holder.qualityTagText.setVisibility(View.GONE);
+                }
             }
         }
 
-        // 3. Subtitle description
+        // 4. Subtitle description
         if (holder.qualitySubtitleText != null) {
             holder.qualitySubtitleText.setText(getQualitySubtitle(quality));
         }
-
-        // 4. Active / Inactive selection state
-        boolean isCurrent = (position == getSelectedIndex());
 
         if (holder.selectedPill != null) {
             holder.selectedPill.setVisibility(isCurrent ? View.VISIBLE : View.GONE);
@@ -146,23 +167,7 @@ public class QualityAdapter extends RecyclerView.Adapter<QualityAdapter.QualityV
     public int getSelectedIndex() {
         if (qualities == null || qualities.isEmpty()) return -1;
 
-        // 1. Exact or smart quality match
-        for (int i = 0; i < qualities.size(); i++) {
-            if (com.example.animelib.util.AutoQualityHelper.matchQuality(qualities.get(i), currentQuality)) {
-                return i;
-            }
-        }
-
-        // 2. Fallback if currentQuality is auto-like or null/empty
-        if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(currentQuality)) {
-            for (int i = 0; i < qualities.size(); i++) {
-                if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(qualities.get(i))) {
-                    return i;
-                }
-            }
-        }
-
-        // 3. Fallback if currentQuality is downloaded-like
+        // 1. Downloaded source explicitly active
         if (com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(currentQuality)) {
             for (int i = 0; i < qualities.size(); i++) {
                 if (com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(qualities.get(i))) {
@@ -171,8 +176,50 @@ public class QualityAdapter extends RecyclerView.Adapter<QualityAdapter.QualityV
             }
         }
 
-        // 4. Fallback to first item if available
+        // 2. Auto mode active
+        if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(currentQuality)) {
+            for (int i = 0; i < qualities.size(); i++) {
+                if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(qualities.get(i))) {
+                    return i;
+                }
+            }
+        }
+
+        // 3. Exact resolution match
+        for (int i = 0; i < qualities.size(); i++) {
+            String candidate = qualities.get(i);
+            if (com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(candidate)
+                    || com.example.animelib.util.AutoQualityHelper.isAutoQuality(candidate)) {
+                continue;
+            }
+            if (com.example.animelib.util.AutoQualityHelper.matchQuality(candidate, currentQuality)) {
+                return i;
+            }
+        }
+
+        // 4. Closest lower manual quality (e.g. DB has 1080p, max available is 720p)
+        String closest = com.example.animelib.util.AutoQualityHelper.resolveClosestManualQuality(qualities, currentQuality);
+        if (closest != null) {
+            for (int i = 0; i < qualities.size(); i++) {
+                String candidate = qualities.get(i);
+                if (com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(candidate)
+                        || com.example.animelib.util.AutoQualityHelper.isAutoQuality(candidate)) {
+                    continue;
+                }
+                if (com.example.animelib.util.AutoQualityHelper.matchQuality(candidate, closest)) {
+                    return i;
+                }
+            }
+        }
+
+        // 5. Fallback to first item if available
         return 0;
+    }
+
+    @SuppressLint("NotifyDataSetChanged")
+    public void setActivePlayingQuality(String activePlayingQuality) {
+        this.activePlayingQuality = activePlayingQuality;
+        notifyDataSetChanged();
     }
     
     @SuppressLint("NotifyDataSetChanged")
@@ -183,6 +230,11 @@ public class QualityAdapter extends RecyclerView.Adapter<QualityAdapter.QualityV
     
     @SuppressLint("NotifyDataSetChanged")
     public void updateQualities(List<String> newQualities, String newCurrentQuality) {
+        updateQualities(newQualities, newCurrentQuality, this.activePlayingQuality);
+    }
+
+    @SuppressLint("NotifyDataSetChanged")
+    public void updateQualities(List<String> newQualities, String newCurrentQuality, String newActivePlayingQuality) {
         if (this.qualities != null) {
             this.qualities.clear();
             if (newQualities != null) {
@@ -190,6 +242,7 @@ public class QualityAdapter extends RecyclerView.Adapter<QualityAdapter.QualityV
             }
         }
         this.currentQuality = newCurrentQuality;
+        this.activePlayingQuality = newActivePlayingQuality;
         notifyDataSetChanged();
     }
 

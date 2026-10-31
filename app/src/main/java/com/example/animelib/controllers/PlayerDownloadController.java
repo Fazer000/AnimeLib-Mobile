@@ -232,10 +232,26 @@ public class PlayerDownloadController {
         return downloaded;
     }
 
+    public static String formatDownloadedOptionLabel(DownloadedEpisodeEntity downloadedEp) {
+        if (downloadedEp == null) return "Скачанный файл";
+        String norm = com.example.animelib.util.AutoQualityHelper.normalizeResolutionLabel(downloadedEp.getQuality());
+        if (norm != null && !norm.isEmpty()) {
+            return "Скачанный файл (" + norm + ")";
+        }
+        String raw = downloadedEp.getQuality();
+        if (raw != null && !raw.trim().isEmpty()) {
+            return "Скачанный файл (" + raw.trim() + ")";
+        }
+        return "Скачанный файл";
+    }
+
     public List<String> getQualitiesWithDownloadedOption(List<String> onlineQualities, DownloadedEpisodeEntity downloadedEp) {
         List<String> qualities = new ArrayList<>();
-        if (downloadedEp != null) {
-            qualities.add("Скачанный файл (" + downloadedEp.getQuality() + ")");
+        if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
+            java.io.File f = new java.io.File(downloadedEp.getLocalFilePath());
+            if (f.exists() && f.length() > 0) {
+                qualities.add(formatDownloadedOptionLabel(downloadedEp));
+            }
         }
         if (onlineQualities != null && !onlineQualities.isEmpty()) {
             qualities.add("Авто");

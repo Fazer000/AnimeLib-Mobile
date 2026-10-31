@@ -236,6 +236,10 @@ public class PlayersManager {
         
         // Hide menu
         hideMenu();
+
+        if (context instanceof com.example.animelib.VideoPlayerActivity) {
+            ((com.example.animelib.VideoPlayerActivity) context).onUserManualVoiceoverSelected(playerData);
+        }
         
         // Notify callback
         if (playerSelectionCallback != null) {
@@ -394,11 +398,21 @@ public class PlayersManager {
      * Загрузка плееров для эпизода
      */
     public void loadPlayersForEpisode(int episodeId) {
+        loadPlayersForEpisode(episodeId, true);
+    }
+
+    /**
+     * Загрузка плееров для эпизода.
+     * @param triggerSelectionCallback true для обычного запуска выбранной озвучки;
+     *                                 false для фоновой подгрузки онлайн-озвучек/качеств во время проигрывания скачанного файла.
+     */
+    public void loadPlayersForEpisode(int episodeId, boolean triggerSelectionCallback) {
         final int requestGen = nextLoadRequestGeneration();
-        Log.d(TAG, "Loading players for episode ID: " + episodeId + " (gen=" + requestGen + ")");
+        Log.d(TAG, "Loading players for episode ID: " + episodeId + " (gen=" + requestGen + ", triggerSelection=" + triggerSelectionCallback + ")");
         
-        // Show loading
-        showLoading();
+        if (triggerSelectionCallback) {
+            showLoading();
+        }
         
         apiService.fetchEpisodeData(episodeId, new ApiService.EpisodeDataCallback() {
             @Override
@@ -418,6 +432,10 @@ public class PlayersManager {
                     Log.d(TAG, "Loaded preferences from DB: " + (prefs != null ? 
                           ("player=" + prefs.getPlayer() + ", teamId=" + prefs.getTeamId() + ", quality=" + prefs.getPreferredQuality()) : 
                           "null"));
+
+                    if (prefs != null && prefs.getPreferredQuality() != null && context instanceof com.example.animelib.VideoPlayerActivity) {
+                        ((com.example.animelib.VideoPlayerActivity) context).applyLoadedPreferredQualityIfUnset(prefs.getPreferredQuality());
+                    }
                     
                     EpisodeResponse.PlayerData matchingPlayer = null;
                     
@@ -464,6 +482,14 @@ public class PlayersManager {
                             return;
                         }
                         hideLoading();
+
+                        if (!triggerSelectionCallback) {
+                            setPlayersDataSilent(players);
+                            if (context instanceof com.example.animelib.VideoPlayerActivity) {
+                                ((com.example.animelib.VideoPlayerActivity) context).onBackgroundOnlinePlayersLoadedForDownloaded(players);
+                            }
+                            return;
+                        }
                         
                         if (finalMatchingPlayer != null) {
                             // Автоматически выбираем найденный плеер БЕЗ показа меню
@@ -513,6 +539,10 @@ public class PlayersManager {
                         if (!isCurrentLoadGeneration(requestGen)) {
                             return;
                         }
+                        if (!triggerSelectionCallback) {
+                            Log.w(TAG, "Background online players empty for downloaded episode ID: " + episodeId);
+                            return;
+                        }
                         hideLoading();
                         Log.e(TAG, "No players found in response");
                         if (dataCallback != null) {
@@ -527,6 +557,10 @@ public class PlayersManager {
                 safeRunOnUiThread(() -> {
                     if (!isCurrentLoadGeneration(requestGen)) {
                         Log.d(TAG, "Ignoring stale error callback for episode ID: " + episodeId + " (gen=" + requestGen + ")");
+                        return;
+                    }
+                    if (!triggerSelectionCallback) {
+                        Log.w(TAG, "Background online players load failed for downloaded episode: " + error);
                         return;
                     }
                     hideLoading();

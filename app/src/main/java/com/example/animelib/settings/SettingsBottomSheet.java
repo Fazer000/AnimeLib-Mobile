@@ -70,6 +70,7 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
     private OnResizeModeChangedListener onResizeModeChangedListener;
     private boolean isOfflineMode = false;
     private boolean isDownloadedVideo = false;
+    private String activePlayingQuality = null;
 
     private boolean subtitlesEnabled = true;
     private String subtitleFormat = "ass";
@@ -159,9 +160,18 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
 
     public void setDownloadedVideo(boolean downloadedVideo) {
         this.isDownloadedVideo = downloadedVideo;
+        updateQualityViews(currentQuality);
         View view = getWindow() != null ? getWindow().getDecorView() : null;
         if (view != null) {
             setupVideoServerOption(view);
+        }
+    }
+
+    public void setActivePlayingQuality(String activePlayingQuality) {
+        this.activePlayingQuality = activePlayingQuality;
+        updateQualityViews(currentQuality);
+        if (currentQualityBottomSheet != null) {
+            currentQualityBottomSheet.setActivePlayingQuality(activePlayingQuality);
         }
     }
 
@@ -527,7 +537,7 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
     }
 
     private boolean isDownloadedQuality(String quality) {
-        return quality != null && (quality.startsWith("Скачанный файл") || quality.startsWith("Загруженное"));
+        return com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(quality);
     }
 
     private void showVideoServerDialog() {
@@ -553,24 +563,28 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
         // Create dialog only if it doesn't exist
         if (currentQualityBottomSheet == null) {
             currentQualityBottomSheet = new QualityBottomSheet(getContext(), new ArrayList<>(qualities), currentQuality, quality -> {
+                isDownloadedVideo = isOfflineMode || isDownloadedQuality(quality);
+                currentQuality = quality;
                 if (listener != null) {
                     listener.onQualitySelected(quality);
                 }
-                // Update current quality and refresh UI
-                currentQuality = quality;
-                updateQualityViews(quality);
-                // Update the quality dialog itself
+                updateQualityViews(currentQuality);
+                View view = getWindow() != null ? getWindow().getDecorView() : null;
+                if (view != null) {
+                    setupVideoServerOption(view);
+                }
                 if (currentQualityBottomSheet != null) {
-                    currentQualityBottomSheet.updateCurrentQuality(quality);
+                    currentQualityBottomSheet.updateQualities(new ArrayList<>(qualities), currentQuality, activePlayingQuality);
                 }
             });
+            currentQualityBottomSheet.setActivePlayingQuality(activePlayingQuality);
 
             // Set up back button listener
             // Show main settings when back button is pressed
             currentQualityBottomSheet.setOnBackPressedListener(this::show);
         } else {
             // Update existing dialog with current data
-            currentQualityBottomSheet.updateCurrentQuality(currentQuality);
+            currentQualityBottomSheet.updateQualities(new ArrayList<>(qualities), currentQuality, activePlayingQuality);
         }
 
         currentQualityBottomSheet.show();
@@ -666,28 +680,49 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
 
         boolean isDownloaded = isOfflineMode || isDownloadedVideo || isDownloadedQuality(quality);
 
-        if (quality == null) {
-            quality = isDownloaded ? "Скачанный файл" : "Авто";
-        }
-
-        if (isDownloaded && com.example.animelib.util.AutoQualityHelper.isAutoQuality(quality)) {
-            quality = "Скачанный файл";
+        if (isDownloaded) {
+            String label = isDownloadedQuality(quality) ? quality : "Скачанный файл";
+            currentQualityText.setText(label);
+            if (currentQualityTagText != null) {
+                String badge = com.example.animelib.util.FloatingBottomSheetUtils.getStrictResolutionBadge(label);
+                if (badge.isEmpty()) {
+                    badge = com.example.animelib.util.FloatingBottomSheetUtils.getStrictResolutionBadge(activePlayingQuality);
+                }
+                if (!badge.isEmpty()) {
+                    currentQualityTagText.setText(badge);
+                    currentQualityTagText.setVisibility(View.VISIBLE);
+                } else {
+                    currentQualityTagText.setVisibility(View.GONE);
+                }
+            }
+            return;
         }
 
         if (com.example.animelib.util.AutoQualityHelper.isAutoQuality(quality)) {
             currentQualityText.setText("Авто");
             if (currentQualityTagText != null) {
-                currentQualityTagText.setVisibility(View.GONE);
+                String badge = com.example.animelib.util.FloatingBottomSheetUtils.getStrictResolutionBadge(activePlayingQuality);
+                if (!badge.isEmpty()) {
+                    currentQualityTagText.setText(badge);
+                    currentQualityTagText.setVisibility(View.VISIBLE);
+                } else {
+                    currentQualityTagText.setVisibility(View.GONE);
+                }
             }
             return;
         }
 
-        String tag = com.example.animelib.util.FloatingBottomSheetUtils.getQualityTag(quality);
-        currentQualityText.setText(quality);
+        String resolved = com.example.animelib.util.AutoQualityHelper.resolveClosestManualQuality(qualities, quality);
+        String displayQuality = (resolved != null && !resolved.isEmpty()) ? resolved : quality;
+        currentQualityText.setText(displayQuality);
 
         if (currentQualityTagText != null) {
-            if (tag != null && !tag.isEmpty() && !quality.equalsIgnoreCase(tag)) {
-                currentQualityTagText.setText(tag);
+            String badge = com.example.animelib.util.FloatingBottomSheetUtils.getStrictResolutionBadge(displayQuality);
+            if (badge.isEmpty()) {
+                badge = com.example.animelib.util.FloatingBottomSheetUtils.getStrictResolutionBadge(activePlayingQuality);
+            }
+            if (!badge.isEmpty()) {
+                currentQualityTagText.setText(badge);
                 currentQualityTagText.setVisibility(View.VISIBLE);
             } else {
                 currentQualityTagText.setVisibility(View.GONE);
@@ -699,7 +734,7 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
         if (quality == null) {
             quality = isOfflineMode ? "Загруженное" : "Авто";
         }
-        String tag = com.example.animelib.util.FloatingBottomSheetUtils.getQualityTag(quality);
+        String tag = com.example.animelib.util.FloatingBottomSheetUtils.getStrictResolutionBadge(quality);
         if (tag != null && !tag.isEmpty() && !quality.equalsIgnoreCase(tag)) {
             return quality + " (" + tag + ")";
         }
@@ -707,10 +742,40 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
     }
 
     public void updateQualities(List<String> newQualities, String newCurrentQuality) {
-        android.util.Log.d("SettingsDialog", "updateQualities called - newQualities: " + newQualities + ", newCurrentQuality: " + newCurrentQuality);
+        updateQualities(
+                newQualities,
+                newCurrentQuality,
+                this.activePlayingQuality,
+                this.isOfflineMode || isDownloadedQuality(newCurrentQuality)
+        );
+    }
+
+    public void updateQualities(List<String> newQualities, String newCurrentQuality, String newActivePlayingQuality, boolean isDownloaded) {
+        android.util.Log.d("SettingsDialog", "updateQualities called - newQualities: " + newQualities
+                + ", newCurrentQuality: " + newCurrentQuality + ", activePlayingQuality: " + newActivePlayingQuality);
         this.qualities.clear();
-        this.qualities.addAll(newQualities);
+        if (newQualities != null) {
+            this.qualities.addAll(newQualities);
+        }
         this.currentQuality = newCurrentQuality;
+        this.activePlayingQuality = newActivePlayingQuality;
+        this.isDownloadedVideo = this.isOfflineMode || isDownloaded || isDownloadedQuality(newCurrentQuality);
+
+        LinearLayout qualityOption = findViewById(R.id.qualityOption);
+        if (qualityOption != null) {
+            if (this.qualities.isEmpty() || (this.qualities.size() == 1 && isOfflineMode)) {
+                qualityOption.setAlpha(0.5f);
+                qualityOption.setOnClickListener(v -> {
+                    com.example.animelib.util.CustomToast.showInfo(getContext(), "Смена качества недоступна");
+                });
+            } else {
+                qualityOption.setAlpha(1.0f);
+                qualityOption.setOnClickListener(v -> {
+                    dismiss();
+                    showQualityDialog();
+                });
+            }
+        }
 
         // Update UI
         updateQualityViews(newCurrentQuality);
@@ -719,9 +784,9 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
             setupVideoServerOption(view);
         }
 
-        // Update quality dialog if it exists - обновляем весь список, а не только текущее качество
+        // Update quality dialog if it exists - обновляем весь список, текущую опцию и активный бейдж
         if (currentQualityBottomSheet != null) {
-            currentQualityBottomSheet.updateQualities(newQualities, newCurrentQuality);
+            currentQualityBottomSheet.updateQualities(new ArrayList<>(this.qualities), newCurrentQuality, newActivePlayingQuality);
         }
     }
 

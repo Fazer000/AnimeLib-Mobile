@@ -684,67 +684,121 @@ public class DatabaseManager {
     // ========== PlayerPreferences операции ==========
     
     /**
-     * Сохраняет предпочтения по выбору плеера и озвучки
+     * Сохраняет предпочтения по выбору плеера и озвучки, не перезаписывая сохранённое качество
      */
     public void savePlayerPreferences(String player, Integer teamId) {
         executor.execute(() -> {
             try {
-                // Загружаем существующую запись или создаем новую
-                com.example.animelib.data.entity.PlayerPreferences preferences = 
+                com.example.animelib.data.entity.PlayerPreferences preferences =
                     db.playerPreferencesDao().getPreferencesSync();
-                
+
                 if (preferences == null) {
                     preferences = new com.example.animelib.data.entity.PlayerPreferences();
+                    preferences.setId(1);
+                } else if (preferences.getPreferredQuality() != null) {
+                    preferences.setPreferredQuality(
+                        com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(preferences.getPreferredQuality())
+                    );
                 }
-                
-                // Обновляем данные
+
                 preferences.setPlayer(player);
                 preferences.setTeamId(teamId);
-                
+
                 db.playerPreferencesDao().upsert(preferences);
-                Log.d(TAG, "Saved player preferences: player=" + player + ", teamId=" + teamId);
+                if (preferences.getId() > 0) {
+                    db.playerPreferencesDao().deleteDuplicatesExcept(preferences.getId());
+                }
+                Log.d(TAG, "Saved player preferences: player=" + player + ", teamId=" + teamId
+                        + ", preservedQuality=" + preferences.getPreferredQuality());
             } catch (Exception e) {
                 Log.e(TAG, "Failed to save player preferences", e);
             }
         });
     }
-    
+
+    /**
+     * Сохраняет глобальное предпочтение качества ("Авто", "1080p", "720p" и т.д.) независимо от озвучки/команды
+     */
+    public void savePreferredQuality(String preferredQuality) {
+        if (com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(preferredQuality)) {
+            Log.d(TAG, "Ignoring downloaded quality in savePreferredQuality: " + preferredQuality);
+            return;
+        }
+        final String sanitized = com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(preferredQuality);
+        executor.execute(() -> {
+            try {
+                com.example.animelib.data.entity.PlayerPreferences preferences =
+                    db.playerPreferencesDao().getPreferencesSync();
+
+                if (preferences == null) {
+                    preferences = new com.example.animelib.data.entity.PlayerPreferences();
+                    preferences.setId(1);
+                }
+
+                preferences.setPreferredQuality(sanitized);
+                db.playerPreferencesDao().upsert(preferences);
+                if (preferences.getId() > 0) {
+                    db.playerPreferencesDao().deleteDuplicatesExcept(preferences.getId());
+                }
+                Log.d(TAG, "Saved global preferredQuality to DB: " + sanitized);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to save preferred quality", e);
+            }
+        });
+    }
+
     /**
      * Сохраняет предпочтения по выбору плеера, озвучки и качества
      */
     public void savePlayerPreferences(String player, Integer teamId, String preferredQuality) {
         executor.execute(() -> {
             try {
-                // Загружаем существующую запись или создаем новую
-                com.example.animelib.data.entity.PlayerPreferences preferences = 
+                com.example.animelib.data.entity.PlayerPreferences preferences =
                     db.playerPreferencesDao().getPreferencesSync();
-                
+
                 if (preferences == null) {
                     preferences = new com.example.animelib.data.entity.PlayerPreferences();
+                    preferences.setId(1);
                 }
-                
-                // Обновляем данные
+
                 preferences.setPlayer(player);
                 preferences.setTeamId(teamId);
-                preferences.setPreferredQuality(preferredQuality);
-                
+                if (!com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(preferredQuality)) {
+                    preferences.setPreferredQuality(
+                        com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(preferredQuality)
+                    );
+                }
+
                 db.playerPreferencesDao().upsert(preferences);
-                Log.d(TAG, "Saved player preferences: player=" + player + ", teamId=" + teamId + 
-                      ", quality=" + preferredQuality);
+                if (preferences.getId() > 0) {
+                    db.playerPreferencesDao().deleteDuplicatesExcept(preferences.getId());
+                }
+                Log.d(TAG, "Saved player preferences: player=" + player + ", teamId=" + teamId +
+                      ", quality=" + preferences.getPreferredQuality());
             } catch (Exception e) {
                 Log.e(TAG, "Failed to save player preferences", e);
             }
         });
     }
-    
+
     /**
-     * Загружает предпочтения по выбору плеера и озвучки
+     * Загружает предпочтения по выбору плеера, озвучки и качества
      */
     public com.example.animelib.data.entity.PlayerPreferences loadPlayerPreferences() {
         try {
             com.example.animelib.data.entity.PlayerPreferences prefs = db.playerPreferencesDao().getPreferencesSync();
             if (prefs != null) {
-                Log.d(TAG, "Loaded player preferences: player=" + prefs.getPlayer() + ", teamId=" + prefs.getTeamId());
+                if (prefs.getPreferredQuality() != null) {
+                    String raw = prefs.getPreferredQuality();
+                    String sanitized = com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(raw);
+                    prefs.setPreferredQuality(sanitized);
+                    if (!sanitized.equals(raw)) {
+                        savePreferredQuality(sanitized);
+                    }
+                }
+                Log.d(TAG, "Loaded player preferences: player=" + prefs.getPlayer()
+                        + ", teamId=" + prefs.getTeamId()
+                        + ", preferredQuality=" + prefs.getPreferredQuality());
             } else {
                 Log.d(TAG, "No player preferences found in database");
             }

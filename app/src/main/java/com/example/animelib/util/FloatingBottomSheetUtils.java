@@ -8,6 +8,10 @@ public class FloatingBottomSheetUtils {
         return FlexibleBottomSheetUtils.getQualityTag(quality);
     }
 
+    public static String getStrictResolutionBadge(String quality) {
+        return FlexibleBottomSheetUtils.getStrictResolutionBadge(quality);
+    }
+
     public static void setupFloatingStyle(BottomSheetDialog dialog) {
         FlexibleBottomSheetUtils.setupFlexibleStyle(dialog);
     }

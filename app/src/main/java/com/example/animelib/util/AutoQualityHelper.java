@@ -13,6 +13,18 @@ import java.util.List;
 public class AutoQualityHelper {
     private static final String TAG = "AutoQualityHelper";
 
+    private static void logDebug(String msg) {
+        try {
+            Log.d(TAG, msg);
+        } catch (RuntimeException ignored) {}
+    }
+
+    private static void logError(String msg) {
+        try {
+            Log.e(TAG, msg);
+        } catch (RuntimeException ignored) {}
+    }
+
     /**
      * Проверяет, выбрано ли авто-качество.
      */
@@ -28,7 +40,53 @@ public class AutoQualityHelper {
     public static boolean isDownloadedQuality(String quality) {
         if (quality == null) return false;
         String q = quality.toLowerCase().trim();
-        return q.startsWith("скачанный") || q.startsWith("загруженное") || q.startsWith("локальн") || q.startsWith("офлайн");
+        return q.startsWith("скачанный") || q.startsWith("скачанное") || q.startsWith("загруженное")
+                || q.startsWith("локальн") || q.startsWith("офлайн");
+    }
+
+    /**
+     * Нормализует строковое представление онлайн-качества для сохранения в БД.
+     * Никогда не возвращает скачанный источник; возвращает "Авто" или "<res>p" (например "1080p", "720p").
+     */
+    public static String sanitizeSavedOnlineQuality(String quality) {
+        if (quality == null || quality.trim().isEmpty()) {
+            return "Авто";
+        }
+        if (isAutoQuality(quality) || isDownloadedQuality(quality)) {
+            return "Авто";
+        }
+        int res = extractResolution(quality);
+        if (res > 0) {
+            return res + "p";
+        }
+        return "Авто";
+    }
+
+    /**
+     * Нормализует строку конкретного разрешения к виду "<res>p" (например "1080" / "FHD" -> "1080p"),
+     * либо возвращает null, если определить разрешение невозможно.
+     */
+    public static String normalizeResolutionLabel(String quality) {
+        if (quality == null || quality.trim().isEmpty() || isAutoQuality(quality)) {
+            return null;
+        }
+        int res = extractResolution(quality);
+        return res > 0 ? (res + "p") : null;
+    }
+
+    /**
+     * Преобразует реальные декодированные размеры видеокадра ExoPlayer в стандартную метку качества.
+     */
+    public static String formatVideoDimensionsToQuality(int width, int height) {
+        if (width <= 0 && height <= 0) {
+            return null;
+        }
+        if (height >= 1800 || width >= 3200) return "2160p";
+        if (height >= 1300 || width >= 2300) return "1440p";
+        if (height >= 950 || width >= 1700) return "1080p";
+        if (height >= 650 || width >= 1150) return "720p";
+        if (height >= 420 || width >= 760) return "480p";
+        return "360p";
     }
 
     /**
@@ -46,9 +104,9 @@ public class AutoQualityHelper {
         boolean down2 = isDownloadedQuality(q2);
         if (down1 || down2) return down1 && down2;
 
-        String r1 = q1.replaceAll("[^0-9]", "");
-        String r2 = q2.replaceAll("[^0-9]", "");
-        return !r1.isEmpty() && r1.equals(r2);
+        int r1 = extractResolution(q1);
+        int r2 = extractResolution(q2);
+        return r1 > 0 && r1 == r2;
     }
 
     /**
@@ -64,7 +122,7 @@ public class AutoQualityHelper {
 
         if (estimate > 0) {
             long kbps = estimate / 1000;
-            Log.d(TAG, "Measured Bandwidth: " + kbps + " Kbps");
+            logDebug("Measured Bandwidth: " + kbps + " Kbps");
             if (kbps >= 12000) return 2160;
             if (kbps >= 4500) return 1080;
             if (kbps >= 1800) return 720;
@@ -103,7 +161,7 @@ public class AutoQualityHelper {
                     }
                 }
             } catch (Exception e) {
-                Log.e(TAG, "Error resolving network quality: " + e.getMessage());
+                logError("Error resolving network quality: " + e.getMessage());
             }
         }
 
@@ -124,24 +182,70 @@ public class AutoQualityHelper {
     }
 
     /**
-     * Подбирает наиболее подходящее доступное качество из списка на основе скорости/сети.
+     * Для ручного качества (например "1080p" из БД) находит точное совпадение,
+     * либо ближайшее доступное качество НИЖЕ (например "720p"),
+     * а если все доступные выше целевого — минимальное доступное.
+     */
+    public static String resolveClosestManualQuality(List<String> availableQualities, String manualQuality) {
+        if (availableQualities == null || availableQualities.isEmpty() || manualQuality == null) {
+            return null;
+        }
+        if (isAutoQuality(manualQuality) || isDownloadedQuality(manualQuality)) {
+            return null;
+        }
+
+        int targetRes = extractResolution(manualQuality);
+        if (targetRes <= 0) {
+            return null;
+        }
+
+        List<QualityItem> validList = new ArrayList<>();
+        for (String qStr : availableQualities) {
+            if (qStr == null || isAutoQuality(qStr) || isDownloadedQuality(qStr)) continue;
+            int res = extractResolution(qStr);
+            if (res > 0) {
+                validList.add(new QualityItem(qStr, res));
+            }
+        }
+
+        if (validList.isEmpty()) {
+            return null;
+        }
+
+        validList.sort((a, b) -> Integer.compare(a.res, b.res));
+
+        QualityItem bestLowerOrEqual = null;
+        for (QualityItem item : validList) {
+            if (item.res <= targetRes) {
+                bestLowerOrEqual = item;
+            }
+        }
+
+        if (bestLowerOrEqual != null) {
+            return bestLowerOrEqual.qualityStr;
+        }
+        return validList.get(0).qualityStr;
+    }
+
+    /**
+     * Подбирает наиболее подходящее доступное качество из списка:
+     * - если выбрано конкретное качество, выбирает его или ближайшее ниже без перезаписи настройки;
+     * - если выбран режим "Авто", подбирает по текущей пропускной способности сети.
      */
     public static String resolveBestQuality(Context context, List<String> availableQualities, String preferredQuality, long exoPlayerBitrateEstimate) {
         if (availableQualities == null || availableQualities.isEmpty()) {
             return "720p";
         }
 
-        // Если выбрано конкретное качество (не Авто) и оно есть в списке, используем его
-        if (!isAutoQuality(preferredQuality)) {
-            for (String q : availableQualities) {
-                if (q != null && matchQuality(q, preferredQuality)) {
-                    return q;
-                }
+        if (!isAutoQuality(preferredQuality) && !isDownloadedQuality(preferredQuality)) {
+            String manualResolved = resolveClosestManualQuality(availableQualities, preferredQuality);
+            if (manualResolved != null) {
+                return manualResolved;
             }
         }
 
         int targetRes = getOptimalQualityResolution(context, exoPlayerBitrateEstimate);
-        Log.d(TAG, "Auto Quality target resolution: " + targetRes + "p");
+        logDebug("Auto Quality target resolution: " + targetRes + "p");
 
         List<QualityItem> validList = new ArrayList<>();
         for (String qStr : availableQualities) {
@@ -175,7 +279,7 @@ public class AutoQualityHelper {
             bestItem = validList.get(0);
         }
 
-        Log.d(TAG, "Auto Quality resolved: " + bestItem.qualityStr + " (Target: " + targetRes + "p)");
+        logDebug("Auto Quality resolved: " + bestItem.qualityStr + " (Target: " + targetRes + "p)");
         return bestItem.qualityStr;
     }
 
@@ -185,10 +289,27 @@ public class AutoQualityHelper {
 
     public static int extractResolution(String qualityStr) {
         if (qualityStr == null) return 0;
-        String digits = qualityStr.replaceAll("[^0-9]", "");
+        String q = qualityStr.toLowerCase().trim();
+        if (q.isEmpty()) return 0;
+
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(\\d{3,4})").matcher(q);
+        if (matcher.find()) {
+            try {
+                return Integer.parseInt(matcher.group(1));
+            } catch (Exception ignored) {}
+        }
+
+        if (q.contains("4k") || q.contains("uhd")) return 2160;
+        if (q.contains("2k") || q.contains("qhd")) return 1440;
+        if (q.contains("fhd") || q.contains("fullhd") || q.contains("full hd")) return 1080;
+        if (q.contains("hd")) return 720;
+        if (q.contains("sd")) return 480;
+
+        String digits = q.replaceAll("[^0-9]", "");
         if (digits.isEmpty()) return 0;
         try {
-            return Integer.parseInt(digits);
+            int parsed = Integer.parseInt(digits);
+            return parsed >= 144 ? parsed : 0;
         } catch (Exception e) {
             return 0;
         }

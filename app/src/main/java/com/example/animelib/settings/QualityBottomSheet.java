@@ -25,6 +25,7 @@ public class QualityBottomSheet extends FlexibleBottomSheetDialog {
     private QualityAdapter adapter;
     private OnBackPressedListener onBackPressedListener;
     private String titleText;
+    private String activePlayingQuality;
     
     public interface OnBackPressedListener {
         void onBackPressed();
@@ -92,6 +93,13 @@ public class QualityBottomSheet extends FlexibleBottomSheetDialog {
         }
     }
     
+    public void setActivePlayingQuality(String activePlayingQuality) {
+        this.activePlayingQuality = activePlayingQuality;
+        if (adapter != null) {
+            adapter.setActivePlayingQuality(activePlayingQuality);
+        }
+    }
+
     public void updateCurrentQuality(String newCurrentQuality) {
         if (adapter != null) {
             adapter.updateCurrentQuality(newCurrentQuality);
@@ -102,8 +110,13 @@ public class QualityBottomSheet extends FlexibleBottomSheetDialog {
      * Обновляет список доступных качеств
      */
     public void updateQualities(List<String> newQualities, String newCurrentQuality) {
+        updateQualities(newQualities, newCurrentQuality, this.activePlayingQuality);
+    }
+
+    public void updateQualities(List<String> newQualities, String newCurrentQuality, String newActivePlayingQuality) {
+        this.activePlayingQuality = newActivePlayingQuality;
         if (adapter != null) {
-            adapter.updateQualities(newQualities, newCurrentQuality);
+            adapter.updateQualities(newQualities, newCurrentQuality, newActivePlayingQuality);
         }
     }
     
