@@ -1628,8 +1628,15 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 if (content != null) {
                     content.setPadding(0, 0, 0, 0);
                 }
+                int imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
+                int navBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
+                if (playerCommentsController != null) {
+                    playerCommentsController.attachWindowRoot(decorView);
+                    playerCommentsController.onWindowInsetsChanged(imeBottom, navBottom);
+                }
                 return WindowInsetsCompat.CONSUMED;
             });
+            ViewCompat.requestApplyInsets(decorView);
         }
 
         View rootView = findViewById(android.R.id.content);
@@ -2181,7 +2188,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
         if (portraitScrollView != null) {
             portraitScrollView.setOnScrollChangeListener((androidx.core.widget.NestedScrollView.OnScrollChangeListener) (v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
                 if (btnPortraitScrollToTop != null) {
-                    if (scrollY > 300) {
+                    boolean imeActive = playerCommentsController != null && playerCommentsController.isImeVisible();
+                    if (!imeActive && scrollY > 300) {
                         int childHeight = (v.getChildCount() > 0) ? v.getChildAt(0).getMeasuredHeight() : 0;
                         int scrollBottom = scrollY + v.getMeasuredHeight();
                         int threshold = (int) (80 * getResources().getDisplayMetrics().density);

@@ -55,10 +55,12 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         void onSendInlineReply(CommentsResponse.CommentItem comment, CharSequence rawText, EditText inputField);
         void onVoteClicked(CommentsResponse.CommentItem comment, int targetVote);
         void onMoreActionsClicked(View anchorView, CommentsResponse.CommentItem comment);
+        default void onInlineReplyInputBound(EditText inputField, View inlineReplyContainer) {}
     }
 
     private CommentActionListener commentActionListener;
     private Long activeReplyCommentId = null;
+    private Long pendingAutoFocusReplyCommentId = null;
     private Long submittingReplyCommentId = null;
 
     public static void applySendButtonLoadingState(View sendButton, View loadingContainer, boolean isLoading) {
@@ -339,10 +341,22 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
     }
 
     public void setActiveReplyCommentId(Long commentId) {
+        setActiveReplyCommentId(commentId, false);
+    }
+
+    public void setActiveReplyCommentId(Long commentId, boolean requestAutoFocus) {
         if (commentId == null) {
             this.submittingReplyCommentId = null;
+            this.pendingAutoFocusReplyCommentId = null;
+        } else if (requestAutoFocus) {
+            this.pendingAutoFocusReplyCommentId = commentId;
         }
-        if (Objects.equals(this.activeReplyCommentId, commentId)) return;
+        if (Objects.equals(this.activeReplyCommentId, commentId)) {
+            if (requestAutoFocus && commentId != null) {
+                notifyCommentChanged(commentId);
+            }
+            return;
+        }
         Long oldId = this.activeReplyCommentId;
         this.activeReplyCommentId = commentId;
         if (oldId != null) {
@@ -381,6 +395,7 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         cancelPendingInsertions();
         isLoadingMore = false;
         activeReplyCommentId = null;
+        pendingAutoFocusReplyCommentId = null;
         submittingReplyCommentId = null;
         expandedParentIds.clear();
         stickyRoots.clear();
@@ -1123,8 +1138,18 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                 }
                 if (holder.inlineCommentInputField != null) {
                     CommentFormattingHelper.attachFormattingTextWatcher(holder.inlineCommentInputField);
-                    if (!isSubmittingThisReply) {
+                    if (commentActionListener != null) {
+                        commentActionListener.onInlineReplyInputBound(holder.inlineCommentInputField, holder.inlineReplyContainer);
+                    }
+                    boolean shouldAutoFocus = !isSubmittingThisReply
+                            && pendingAutoFocusReplyCommentId != null
+                            && pendingAutoFocusReplyCommentId.equals(item.getId());
+                    if (shouldAutoFocus) {
+                        pendingAutoFocusReplyCommentId = null;
                         holder.inlineCommentInputField.post(() -> {
+                            if (activeReplyCommentId == null || !activeReplyCommentId.equals(item.getId())) {
+                                return;
+                            }
                             holder.inlineCommentInputField.requestFocus();
                             try {
                                 InputMethodManager imm = (InputMethodManager) holder.itemView.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
@@ -1183,12 +1208,12 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                     return;
                 }
                 if (isReplyingToThis) {
-                    setActiveReplyCommentId(null);
+                    setActiveReplyCommentId(null, false);
                     if (commentActionListener != null) {
                         commentActionListener.onReplyCancelled(item);
                     }
                 } else {
-                    setActiveReplyCommentId(item.getId());
+                    setActiveReplyCommentId(item.getId(), true);
                     if (commentActionListener != null) {
                         commentActionListener.onReplyClicked(item);
                     }

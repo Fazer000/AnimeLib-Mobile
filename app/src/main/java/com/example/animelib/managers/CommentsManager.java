@@ -42,6 +42,7 @@ import com.example.animelib.settings.CommentSettingsBottomSheet;
 import com.example.animelib.ui.RulesBottomSheet;
 import com.example.animelib.util.CommentFormattingHelper;
 import com.example.animelib.util.CommentHtmlProcessor;
+import com.example.animelib.util.CommentKeyboardScrollHelper;
 import com.example.animelib.util.CustomToast;
 
 import java.util.ArrayList;
@@ -109,6 +110,7 @@ public class CommentsManager {
     private NestedScrollView portraitScrollView;
 
     // Компоненты ввода комментария и ответа (Landscape / Panel)
+    private View commentInputContainer;
     private EditText commentInputField;
     private ImageButton btnSendComment;
     private View sendCommentLoadingContainer;
@@ -200,6 +202,7 @@ public class CommentsManager {
         void onRepliesLimitChanged(int limit);
     }
 
+    private final CommentKeyboardScrollHelper keyboardScrollHelper;
     private CommentsVisibilityCallback visibilityCallback;
     private CommentsDataCallback dataCallback;
     private CommentsSettingsCallback settingsCallback;
@@ -207,8 +210,27 @@ public class CommentsManager {
     public CommentsManager(Context context, ApiService apiService) {
         this.context = context;
         this.apiService = apiService;
+        this.keyboardScrollHelper = new CommentKeyboardScrollHelper(context);
+        if (context instanceof Activity) {
+            Activity act = (Activity) context;
+            if (act.getWindow() != null) {
+                this.keyboardScrollHelper.attachWindowRoot(act.getWindow().getDecorView());
+            }
+        }
         this.sharedCommentViewPool.setMaxRecycledViews(CommentsAdapter.DisplayItem.TYPE_COMMENT, 20);
         this.sharedCommentViewPool.setMaxRecycledViews(CommentsAdapter.DisplayItem.TYPE_SHOW_MORE, 8);
+    }
+
+    public void attachWindowRoot(View decorView) {
+        keyboardScrollHelper.attachWindowRoot(decorView);
+    }
+
+    public void onWindowInsetsChanged(int imeBottom, int navBarBottom) {
+        keyboardScrollHelper.onWindowInsetsChanged(imeBottom, navBarBottom);
+    }
+
+    public boolean isImeVisible() {
+        return keyboardScrollHelper.isImeVisible();
     }
 
     private boolean isPortraitOrientation() {
@@ -261,6 +283,7 @@ public class CommentsManager {
                 });
             }
 
+            commentInputContainer = commentsPanel.findViewById(R.id.commentInputContainer);
             commentInputField = commentsPanel.findViewById(R.id.commentInputField);
             btnSendComment = commentsPanel.findViewById(R.id.btnSendComment);
             sendCommentLoadingContainer = commentsPanel.findViewById(R.id.sendCommentLoadingContainer);
@@ -325,6 +348,23 @@ public class CommentsManager {
 
         setupCommentsOptionsButton();
         setupCommentsRecyclerView();
+        keyboardScrollHelper.bindLandscapeViews(
+                commentsPanel,
+                commentsRecyclerView,
+                commentInputContainer,
+                commentInputField,
+                new CommentKeyboardScrollHelper.LandscapeInputStateProvider() {
+                    @Override
+                    public boolean shouldShowMainInputWhenIdle() {
+                        return !isOfflineMode && !isCommentsDisabledInPlayer();
+                    }
+
+                    @Override
+                    public boolean hasActiveInlineReply() {
+                        return commentsAdapter != null && commentsAdapter.getActiveReplyCommentId() != null;
+                    }
+                }
+        );
     }
 
     private void initializePanelPosition() {
@@ -799,6 +839,7 @@ public class CommentsManager {
                     portraitCommentsAdapter.setActiveReplyCommentId(targetId);
                 }
                 cancelMainInputReplyMode();
+                keyboardScrollHelper.updateLandscapeMainInputVisibility();
             }
 
             @Override
@@ -807,6 +848,7 @@ public class CommentsManager {
                     portraitCommentsAdapter.setActiveReplyCommentId(null);
                 }
                 cancelMainInputReplyMode();
+                keyboardScrollHelper.updateLandscapeMainInputVisibility();
             }
 
             @Override
@@ -822,6 +864,11 @@ public class CommentsManager {
             @Override
             public void onMoreActionsClicked(View anchorView, CommentsResponse.CommentItem comment) {
                 showCommentActionsPopup(anchorView, comment);
+            }
+
+            @Override
+            public void onInlineReplyInputBound(EditText inputField, View inlineReplyContainer) {
+                keyboardScrollHelper.attachInlineReplyInput(inputField, inlineReplyContainer, false);
             }
         });
 
@@ -1544,6 +1591,7 @@ public class CommentsManager {
                         commentsAdapter.setActiveReplyCommentId(targetId);
                     }
                     cancelMainInputReplyMode();
+                    keyboardScrollHelper.updateLandscapeMainInputVisibility();
                 }
 
                 @Override
@@ -1552,6 +1600,7 @@ public class CommentsManager {
                         commentsAdapter.setActiveReplyCommentId(null);
                     }
                     cancelMainInputReplyMode();
+                    keyboardScrollHelper.updateLandscapeMainInputVisibility();
                 }
 
                 @Override
@@ -1567,6 +1616,11 @@ public class CommentsManager {
                 @Override
                 public void onMoreActionsClicked(View anchorView, CommentsResponse.CommentItem comment) {
                     showCommentActionsPopup(anchorView, comment);
+                }
+
+                @Override
+                public void onInlineReplyInputBound(EditText inputField, View inlineReplyContainer) {
+                    keyboardScrollHelper.attachInlineReplyInput(inputField, inlineReplyContainer, true);
                 }
             });
             this.portraitCommentsAdapter.setRepliesLimit(loadSavedRepliesLimit());
@@ -1592,6 +1646,9 @@ public class CommentsManager {
 
         if (context instanceof Activity) {
             Activity act = (Activity) context;
+            if (act.getWindow() != null) {
+                keyboardScrollHelper.attachWindowRoot(act.getWindow().getDecorView());
+            }
             portraitScrollView = act.findViewById(R.id.portraitScrollView);
             portraitOfflineCommentsNotice = act.findViewById(R.id.portraitOfflineCommentsNotice);
             portraitCommentsDisabledNotice = act.findViewById(R.id.portraitCommentsDisabledNotice);
@@ -1646,6 +1703,13 @@ public class CommentsManager {
                     return false;
                 });
             }
+
+            keyboardScrollHelper.bindPortraitViews(
+                    portraitScrollView,
+                    portraitCommentInputContainer,
+                    portraitCommentInputField,
+                    act.findViewById(R.id.btnPortraitScrollToTop)
+            );
         }
 
         if (sortBtn != null) {
@@ -1890,23 +1954,25 @@ public class CommentsManager {
         if (commentInputField != null) {
             commentInputField.setText(cleanText);
             try { commentInputField.setSelection(cleanText.length()); } catch (Exception ignored) {}
-            commentInputField.requestFocus();
         }
         if (portraitCommentInputField != null) {
             portraitCommentInputField.setText(cleanText);
             try { portraitCommentInputField.setSelection(cleanText.length()); } catch (Exception ignored) {}
-            portraitCommentInputField.requestFocus();
         }
 
-        try {
-            InputMethodManager imm = (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (imm != null) {
-                View target = (commentInputField != null && commentInputField.hasFocus()) ? commentInputField : portraitCommentInputField;
-                if (target != null) {
-                    imm.showSoftInput(target, InputMethodManager.SHOW_IMPLICIT);
+        boolean portraitMode = isPortraitOrientation();
+        EditText targetInput = portraitMode ? portraitCommentInputField : commentInputField;
+        View targetContainer = portraitMode ? portraitCommentInputContainer : commentInputContainer;
+        if (targetInput != null) {
+            targetInput.requestFocus();
+            keyboardScrollHelper.onCommentInputActivated(targetInput, targetContainer, portraitMode);
+            try {
+                InputMethodManager imm = (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.showSoftInput(targetInput, InputMethodManager.SHOW_IMPLICIT);
                 }
-            }
-        } catch (Exception ignored) {}
+            } catch (Exception ignored) {}
+        }
     }
 
     public void cancelMainInputReplyMode() {
@@ -1924,6 +1990,7 @@ public class CommentsManager {
         cancelMainInputReplyMode();
         if (commentsAdapter != null) commentsAdapter.setActiveReplyCommentId(null);
         if (portraitCommentsAdapter != null) portraitCommentsAdapter.setActiveReplyCommentId(null);
+        keyboardScrollHelper.updateLandscapeMainInputVisibility();
     }
 
     public void insertSpoilerTag(EditText editText) {
@@ -2756,6 +2823,7 @@ public class CommentsManager {
     public void cleanup() {
         requestGeneration++;
         mainHandler.removeCallbacksAndMessages(null);
+        keyboardScrollHelper.cleanup();
         commentsProcessingExecutor.shutdownNow();
 
         if (commentsAdapter != null) {

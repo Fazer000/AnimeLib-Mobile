@@ -163,6 +163,22 @@ public class PlayerCommentsController {
         }
     }
 
+    public void attachWindowRoot(View decorView) {
+        if (commentsManager != null) {
+            commentsManager.attachWindowRoot(decorView);
+        }
+    }
+
+    public void onWindowInsetsChanged(int imeBottom, int navBarBottom) {
+        if (commentsManager != null) {
+            commentsManager.onWindowInsetsChanged(imeBottom, navBarBottom);
+        }
+    }
+
+    public boolean isImeVisible() {
+        return commentsManager != null && commentsManager.isImeVisible();
+    }
+
     public void cleanup() {
         if (commentsManager != null) {
             commentsManager.cleanup();

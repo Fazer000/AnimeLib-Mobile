@@ -63,6 +63,7 @@
             android:screenOrientation="fullUser"
             android:supportsPictureInPicture="true"
             android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.AnimeLIB.VideoPlayer" />
 
         <activity
