@@ -75,13 +75,37 @@ class DomainChangeHandler {
         console.log('DomainChangeHandler: URL change listener setup completed');
     }
 
+    isIgnoredActionTarget(target) {
+        if (!target) return false;
+        const el = target.nodeType === 1 ? target : target.parentElement;
+        if (!el) return false;
+        if (typeof el.closest === 'function' && el.closest('.wh_w, svg.fa-trash-can, .fa-trash-can, [data-icon="trash-can"]')) {
+            return true;
+        }
+        if (el.tagName && el.tagName.toUpperCase() !== 'A' && el.children && el.children.length === 1) {
+            const onlyChild = el.children[0];
+            if (onlyChild && (
+                (onlyChild.getAttribute && onlyChild.getAttribute('data-icon') === 'trash-can') ||
+                (onlyChild.classList && onlyChild.classList.contains('fa-trash-can'))
+            )) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Настраивает отслеживание кликов по ссылкам
      */
     setupLinkClickListener() {
         // Используем capture: true для перехвата событий раньше
         document.addEventListener('click', (event) => {
-            const link = event.target.closest('a');
+            if (this.isIgnoredActionTarget(event.target)) return;
+
+            const startEl = (event.target && event.target.nodeType === 1) ? event.target : (event.target ? event.target.parentElement : null);
+            if (!startEl || typeof startEl.closest !== 'function') return;
+
+            const link = startEl.closest('a');
             if (!link || !link.href) return;
 
             const href = link.getAttribute('href') || link.href;
@@ -113,6 +137,7 @@ class DomainChangeHandler {
                                         console.log('DomainChangeHandler: External link detected in dynamic content:', href);
                                         // Добавляем обработчик клика к новой ссылке
                                         link.addEventListener('click', (e) => {
+                                            if (this.isIgnoredActionTarget(e.target)) return;
                                             console.log('DomainChangeHandler: Dynamic link clicked:', href);
                                             this.showSpinner();
                                         });

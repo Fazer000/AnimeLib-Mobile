@@ -136,6 +136,19 @@
                     }
                 }
             };
+
+            const originalRemoveItem = localStorage.removeItem;
+            localStorage.removeItem = function(key) {
+                originalRemoveItem.apply(this, arguments);
+                if (key === 'latest-views') {
+                    const host = (window.location && window.location.hostname) ? window.location.hostname.toLowerCase() : '';
+                    if (host.indexOf('animelib') !== -1) {
+                        if (window.AndroidInterface && typeof window.AndroidInterface.saveLatestViews === 'function') {
+                            window.AndroidInterface.saveLatestViews('[]');
+                        }
+                    }
+                }
+            };
         } catch (e) {
             console.error('Error overriding localStorage.setItem:', e);
         }
