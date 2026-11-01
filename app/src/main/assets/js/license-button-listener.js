@@ -161,6 +161,25 @@
         return ['btn', 'is-filled', 'variant-primary'].concat(extra).join(' ');
     }
 
+    var WATCH_BTN_STYLE_ID = 'animelib-licensed-watch-btn-style';
+
+    function ensureWatchButtonStyle() {
+        if (!document || (document.getElementById && document.getElementById(WATCH_BTN_STYLE_ID))) {
+            return;
+        }
+        var target = document.head || document.documentElement;
+        if (!target || !document.createElement) return;
+        var style = document.createElement('style');
+        style.id = WATCH_BTN_STYLE_ID;
+        style.textContent =
+            'a[data-animelib-watch-btn="true"] > span::before,' +
+            'a[data-animelib-watch-btn="true"] > span::after {' +
+            'content: none !important;' +
+            'display: none !important;' +
+            '}';
+        target.appendChild(style);
+    }
+
     if (!window.__animelibLicensedAnchors) {
         window.__animelibLicensedAnchors = [];
     }
@@ -197,7 +216,9 @@
             var siblingLinks = parent.querySelectorAll ? parent.querySelectorAll('a[href*="/watch"]') : [];
             var hasNativeWatchSibling = false;
             for (var j = 0; j < siblingLinks.length; j++) {
-                if (siblingLinks[j] !== anchor && !siblingLinks[j].__animelibLicensedWatch) {
+                if (siblingLinks[j] !== anchor &&
+                    !siblingLinks[j].__animelibLicensedWatch &&
+                    !siblingLinks[j].hasAttribute('data-animelib-watch-btn')) {
                     hasNativeWatchSibling = true;
                     break;
                 }
@@ -213,6 +234,20 @@
             if (freshHref && anchor.getAttribute('href') !== freshHref) {
                 anchor.setAttribute('href', freshHref);
             }
+
+            // Гарантируем чистый текст "Смотреть" без атрибутов/классов, добавляющих "Продолжить" через CSS ::before
+            var spanEl = anchor.querySelector ? anchor.querySelector('span') : null;
+            if (spanEl) {
+                if (spanEl.hasAttribute('data-bookmark')) {
+                    spanEl.removeAttribute('data-bookmark');
+                }
+                if (spanEl.hasAttribute('class')) {
+                    spanEl.removeAttribute('class');
+                }
+                if (spanEl.textContent !== 'Смотреть') {
+                    spanEl.textContent = 'Смотреть';
+                }
+            }
         }
     }
 
@@ -220,6 +255,8 @@
         if (!isLicensedButton(button)) return null;
         var parent = button.parentNode;
         if (!parent) return null;
+
+        ensureWatchButtonStyle();
 
         var routeInfo = extractAnimeRouteInfo(button);
         var href = buildWatchHref(button);
@@ -230,6 +267,7 @@
         anchor.setAttribute('disabled', 'false');
         anchor.setAttribute('type', button.getAttribute('type') || 'button');
         anchor.setAttribute('media', button.hasAttribute('media') ? (button.getAttribute('media') || '[object Object]') : '[object Object]');
+        anchor.setAttribute('data-animelib-watch-btn', 'true');
 
         if (button.attributes) {
             for (var a = 0; a < button.attributes.length; a++) {
@@ -242,7 +280,7 @@
 
         var existingSvg = button.querySelector('svg');
         var svgHtml = existingSvg ? existingSvg.outerHTML : PLAY_SVG_HTML;
-        anchor.innerHTML = '<!---->' + svgHtml + '<span class="at1_jw at1_at2" data-bookmark="true">Смотреть</span><!----><!---->';
+        anchor.innerHTML = '<!---->' + svgHtml + '<span>Смотреть</span><!----><!---->';
 
         anchor.__animelibLicensedWatch = true;
         anchor.__originalLicensedButton = button;
@@ -262,7 +300,8 @@
         // Удаляем прежний заменённый якорь в том же контейнере, если был
         var oldLinks = parent.querySelectorAll ? parent.querySelectorAll('a') : [];
         for (var k = 0; k < oldLinks.length; k++) {
-            if (oldLinks[k] !== anchor && oldLinks[k].__animelibLicensedWatch) {
+            if (oldLinks[k] !== anchor &&
+                (oldLinks[k].__animelibLicensedWatch || oldLinks[k].hasAttribute('data-animelib-watch-btn'))) {
                 try { oldLinks[k].remove(); } catch (err) {}
             }
         }
