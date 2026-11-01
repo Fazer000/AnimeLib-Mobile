@@ -48,9 +48,13 @@ public class PlayerAnimeInfoController {
     private TextView tvPortraitInfoReleaseDate;
     private HorizontalScrollView hsvPortraitAuthors;
     private LinearLayout llPortraitAuthorsContainer;
+    private View llPortraitMetadataGrid;
+    private View llPortraitSummarySection;
+    private View llPortraitAuthorsSection;
     private TextView tvPortraitInfoSummary;
     private TextView btnToggleSummary;
     private boolean isSummaryExpanded = false;
+    private String lastCleanSummary = "";
     private com.google.android.material.chip.ChipGroup cgPortraitInfoTagsAndGenres;
 
     // Error & Retry views
@@ -98,6 +102,9 @@ public class PlayerAnimeInfoController {
         tvPortraitInfoReleaseDate = rootView.findViewById(R.id.tvPortraitInfoReleaseDate);
         hsvPortraitAuthors = rootView.findViewById(R.id.hsvPortraitAuthors);
         llPortraitAuthorsContainer = rootView.findViewById(R.id.llPortraitAuthorsContainer);
+        llPortraitMetadataGrid = rootView.findViewById(R.id.llPortraitMetadataGrid);
+        llPortraitSummarySection = rootView.findViewById(R.id.llPortraitSummarySection);
+        llPortraitAuthorsSection = rootView.findViewById(R.id.llPortraitAuthorsSection);
         tvPortraitInfoSummary = rootView.findViewById(R.id.tvPortraitInfoSummary);
         btnToggleSummary = rootView.findViewById(R.id.btnToggleSummary);
         cgPortraitInfoTagsAndGenres = rootView.findViewById(R.id.cgPortraitInfoTagsAndGenres);
@@ -171,7 +178,7 @@ public class PlayerAnimeInfoController {
             this.onRetryListener = retryAction;
         }
 
-        hideSkeletons(null);
+        clearSkeletonsInternal(null);
 
         if (portraitInfoContentLayout != null) portraitInfoContentLayout.setVisibility(View.GONE);
         if (portraitInfoErrorLayout != null) portraitInfoErrorLayout.setVisibility(View.VISIBLE);
@@ -182,10 +189,16 @@ public class PlayerAnimeInfoController {
 
     public void showSkeletons() {
         if (portraitInfoErrorLayout != null) portraitInfoErrorLayout.setVisibility(View.GONE);
-        if (portraitInfoContentLayout != null) portraitInfoContentLayout.setVisibility(View.VISIBLE);
+        if (portraitInfoContentLayout != null) {
+            portraitInfoContentLayout.setVisibility(View.VISIBLE);
+            portraitInfoContentLayout.setAlpha(1f);
+        }
 
         if (animeInfoErrorLayout != null) animeInfoErrorLayout.setVisibility(View.GONE);
-        if (animeInfoContentLayout != null) animeInfoContentLayout.setVisibility(View.VISIBLE);
+        if (animeInfoContentLayout != null) {
+            animeInfoContentLayout.setVisibility(View.VISIBLE);
+            animeInfoContentLayout.setAlpha(1f);
+        }
 
         // Landscape skeletons
         if (animeInfoPoster != null) SkeletonHelper.showSkeleton(animeInfoPoster, 0, 16f);
@@ -201,21 +214,57 @@ public class PlayerAnimeInfoController {
         if (animeInfoShikimori != null) SkeletonHelper.showSkeleton(animeInfoShikimori, 40);
 
         // Portrait skeletons
-        if (tvPortraitInfoTitle != null) SkeletonHelper.showSkeleton(tvPortraitInfoTitle, 180);
-        if (tvPortraitInfoEngName != null) SkeletonHelper.showSkeleton(tvPortraitInfoEngName, 120);
-        if (ivPortraitInfoPoster != null) SkeletonHelper.showSkeleton(ivPortraitInfoPoster, 0, 12f);
-        if (tvPortraitInfoRatingPill != null) SkeletonHelper.showSkeleton(tvPortraitInfoRatingPill, 80);
-        if (tvPortraitInfoType != null) SkeletonHelper.showSkeleton(tvPortraitInfoType, 60);
-        if (tvPortraitInfoStatus != null) SkeletonHelper.showSkeleton(tvPortraitInfoStatus, 70);
-        if (tvPortraitInfoEpisodes != null) SkeletonHelper.showSkeleton(tvPortraitInfoEpisodes, 80);
-        if (tvPortraitInfoReleaseDate != null) SkeletonHelper.showSkeleton(tvPortraitInfoReleaseDate, 100);
-        if (tvPortraitInfoSummary != null) SkeletonHelper.showSkeleton(tvPortraitInfoSummary, 240);
+        if (tvPortraitInfoTitle != null) {
+            tvPortraitInfoTitle.setVisibility(View.VISIBLE);
+            SkeletonHelper.showSkeleton(tvPortraitInfoTitle, 180);
+        }
+        if (tvPortraitInfoEngName != null) {
+            tvPortraitInfoEngName.setVisibility(View.VISIBLE);
+            SkeletonHelper.showSkeleton(tvPortraitInfoEngName, 120);
+        }
+        if (ivPortraitInfoPoster != null) {
+            ivPortraitInfoPoster.setVisibility(View.VISIBLE);
+            SkeletonHelper.showSkeleton(ivPortraitInfoPoster, 0, 12f);
+        }
+        if (tvPortraitInfoRatingPill != null) {
+            SkeletonHelper.hideSkeleton(tvPortraitInfoRatingPill, "");
+            tvPortraitInfoRatingPill.setVisibility(View.GONE);
+        }
+        if (tvPortraitInfoType != null) {
+            tvPortraitInfoType.setVisibility(View.VISIBLE);
+            SkeletonHelper.showSkeleton(tvPortraitInfoType, 60);
+        }
+        if (tvPortraitInfoStatus != null) {
+            tvPortraitInfoStatus.setVisibility(View.VISIBLE);
+            SkeletonHelper.showSkeleton(tvPortraitInfoStatus, 70);
+        }
+        if (llPortraitMetadataGrid != null) {
+            llPortraitMetadataGrid.setVisibility(View.VISIBLE);
+        }
+        if (tvPortraitInfoEpisodes != null) {
+            tvPortraitInfoEpisodes.setVisibility(View.VISIBLE);
+            SkeletonHelper.showSkeleton(tvPortraitInfoEpisodes, 80);
+        }
+        if (tvPortraitInfoReleaseDate != null) {
+            tvPortraitInfoReleaseDate.setVisibility(View.VISIBLE);
+            SkeletonHelper.showSkeleton(tvPortraitInfoReleaseDate, 100);
+        }
+        if (llPortraitSummarySection != null) {
+            llPortraitSummarySection.setVisibility(View.VISIBLE);
+        }
+        if (tvPortraitInfoSummary != null) {
+            tvPortraitInfoSummary.setVisibility(View.VISIBLE);
+            SkeletonHelper.showSkeleton(tvPortraitInfoSummary, 240);
+        }
 
         if (llPortraitAuthorsContainer != null) {
             llPortraitAuthorsContainer.removeAllViews();
         }
         if (hsvPortraitAuthors != null) {
             hsvPortraitAuthors.setVisibility(View.GONE);
+        }
+        if (llPortraitAuthorsSection != null) {
+            llPortraitAuthorsSection.setVisibility(View.GONE);
         }
         if (cgPortraitInfoTagsAndGenres != null) {
             cgPortraitInfoTagsAndGenres.removeAllViews();
@@ -224,6 +273,7 @@ public class PlayerAnimeInfoController {
         if (btnToggleSummary != null) {
             btnToggleSummary.setVisibility(View.GONE);
         }
+        this.lastCleanSummary = "";
         this.currentAnimeInfo = null;
         this.currentPosterUrl = "";
     }
@@ -241,6 +291,18 @@ public class PlayerAnimeInfoController {
     }
 
     public void hideSkeletons(String defaultTitle) {
+        // Не затираем уже загруженную подробную информацию об аниме в онлайн-режиме
+        // (например, при воспроизведении скачанной серии поверх открытой карточки тайтла)
+        if (!isOfflineMode && currentAnimeInfo != null && currentAnimeInfo.getData() != null) {
+            if (portraitExpandedAnimeInfoContainer != null) {
+                populatePortraitViews(portraitExpandedAnimeInfoContainer.getContext(), currentAnimeInfo.getData());
+            }
+            return;
+        }
+        clearSkeletonsInternal(defaultTitle);
+    }
+
+    private void clearSkeletonsInternal(String defaultTitle) {
         // Landscape
         if (animeInfoPoster != null) SkeletonHelper.hideSkeleton(animeInfoPoster, "");
         if (animeInfoTitle != null) SkeletonHelper.hideSkeleton(animeInfoTitle, defaultTitle != null ? defaultTitle : "");
@@ -256,14 +318,32 @@ public class PlayerAnimeInfoController {
 
         // Portrait
         if (tvPortraitInfoTitle != null) SkeletonHelper.hideSkeleton(tvPortraitInfoTitle, defaultTitle != null ? defaultTitle : "");
-        if (tvPortraitInfoEngName != null) SkeletonHelper.hideSkeleton(tvPortraitInfoEngName, "");
+        if (tvPortraitInfoEngName != null) {
+            SkeletonHelper.hideSkeleton(tvPortraitInfoEngName, "");
+            tvPortraitInfoEngName.setVisibility(View.GONE);
+        }
         if (ivPortraitInfoPoster != null) SkeletonHelper.hideSkeleton(ivPortraitInfoPoster, "");
-        if (tvPortraitInfoRatingPill != null) SkeletonHelper.hideSkeleton(tvPortraitInfoRatingPill, "");
-        if (tvPortraitInfoType != null) SkeletonHelper.hideSkeleton(tvPortraitInfoType, "");
-        if (tvPortraitInfoStatus != null) SkeletonHelper.hideSkeleton(tvPortraitInfoStatus, "");
-        if (tvPortraitInfoEpisodes != null) SkeletonHelper.hideSkeleton(tvPortraitInfoEpisodes, "");
-        if (tvPortraitInfoReleaseDate != null) SkeletonHelper.hideSkeleton(tvPortraitInfoReleaseDate, "");
-        if (tvPortraitInfoSummary != null) SkeletonHelper.hideSkeleton(tvPortraitInfoSummary, "");
+        if (tvPortraitInfoRatingPill != null) {
+            SkeletonHelper.hideSkeleton(tvPortraitInfoRatingPill, "");
+            tvPortraitInfoRatingPill.setVisibility(View.GONE);
+        }
+        if (tvPortraitInfoType != null) SkeletonHelper.hideSkeleton(tvPortraitInfoType, "—");
+        if (tvPortraitInfoStatus != null) SkeletonHelper.hideSkeleton(tvPortraitInfoStatus, "—");
+        if (tvPortraitInfoEpisodes != null) SkeletonHelper.hideSkeleton(tvPortraitInfoEpisodes, "—");
+        if (tvPortraitInfoReleaseDate != null) SkeletonHelper.hideSkeleton(tvPortraitInfoReleaseDate, "—");
+        if (tvPortraitInfoSummary != null) {
+            SkeletonHelper.hideSkeleton(tvPortraitInfoSummary, "");
+            tvPortraitInfoSummary.setVisibility(View.GONE);
+        }
+        if (btnToggleSummary != null) {
+            btnToggleSummary.setVisibility(View.GONE);
+        }
+        if (llPortraitSummarySection != null) {
+            llPortraitSummarySection.setVisibility(View.GONE);
+        }
+        if (llPortraitAuthorsSection != null) {
+            llPortraitAuthorsSection.setVisibility(View.GONE);
+        }
     }
 
     public void displayAnimeInfo(Context context, AnimeInfoResponse animeInfo) {
@@ -369,8 +449,35 @@ public class PlayerAnimeInfoController {
         populatePortraitViews(context, data);
     }
 
+    private boolean isPortraitSkeletonActive() {
+        return tvPortraitInfoTitle != null && Boolean.TRUE.equals(tvPortraitInfoTitle.getTag(R.id.tag_skeleton_active));
+    }
+
     public void togglePortraitInfoExpanded() {
         if (isOfflineMode || portraitExpandedAnimeInfoContainer == null) return;
+
+        boolean isExpanded = portraitExpandedAnimeInfoContainer.getVisibility() == View.VISIBLE;
+
+        if (!isExpanded) {
+            if (currentAnimeInfo != null && currentAnimeInfo.getData() != null) {
+                boolean needsRepopulate = (tvPortraitInfoStatus != null && TextUtils.isEmpty(tvPortraitInfoStatus.getText())
+                        && !Boolean.TRUE.equals(tvPortraitInfoStatus.getTag(R.id.tag_skeleton_active)))
+                        || (tvPortraitInfoEpisodes != null && TextUtils.isEmpty(tvPortraitInfoEpisodes.getText())
+                        && !Boolean.TRUE.equals(tvPortraitInfoEpisodes.getTag(R.id.tag_skeleton_active)));
+                if (needsRepopulate) {
+                    populatePortraitViews(portraitExpandedAnimeInfoContainer.getContext(), currentAnimeInfo.getData());
+                }
+                if (portraitInfoContentLayout != null) {
+                    portraitInfoContentLayout.setVisibility(View.VISIBLE);
+                    portraitInfoContentLayout.setAlpha(1f);
+                }
+            } else if (!isPortraitSkeletonActive()
+                    && (portraitInfoErrorLayout == null || portraitInfoErrorLayout.getVisibility() != View.VISIBLE)
+                    && onRetryListener != null) {
+                showSkeletons();
+                onRetryListener.run();
+            }
+        }
 
         android.view.ViewGroup parent = (android.view.ViewGroup) portraitExpandedAnimeInfoContainer.getParent();
         if (parent != null) {
@@ -379,7 +486,6 @@ public class PlayerAnimeInfoController {
             android.transition.TransitionManager.beginDelayedTransition(parent, transition);
         }
 
-        boolean isExpanded = portraitExpandedAnimeInfoContainer.getVisibility() == View.VISIBLE;
         if (isExpanded) {
             portraitExpandedAnimeInfoContainer.setVisibility(View.GONE);
             if (portraitTitleContainer != null) {
@@ -396,17 +502,65 @@ public class PlayerAnimeInfoController {
             if (ivPortraitAnimeTitleChevron != null) {
                 ivPortraitAnimeTitleChevron.animate().rotation(270f).setDuration(200).start();
             }
+            if (tvPortraitInfoSummary != null && !TextUtils.isEmpty(lastCleanSummary)) {
+                tvPortraitInfoSummary.post(this::updateSummaryToggleButtonVisibility);
+            }
+        }
+    }
+
+    private void updateSummaryToggleButtonVisibility() {
+        if (tvPortraitInfoSummary == null || btnToggleSummary == null) return;
+        if (TextUtils.isEmpty(lastCleanSummary) || tvPortraitInfoSummary.getVisibility() != View.VISIBLE) {
+            btnToggleSummary.setVisibility(View.GONE);
+            return;
+        }
+        if (isSummaryExpanded) {
+            btnToggleSummary.setVisibility(View.VISIBLE);
+            btnToggleSummary.setText("Свернуть");
+            return;
+        }
+        android.text.Layout layout = tvPortraitInfoSummary.getLayout();
+        if (layout != null && layout.getLineCount() > 0) {
+            int lineCount = layout.getLineCount();
+            boolean isEllipsized = layout.getEllipsisCount(lineCount - 1) > 0;
+            if (lineCount > 3 || isEllipsized || lastCleanSummary.length() > 150) {
+                btnToggleSummary.setVisibility(View.VISIBLE);
+                btnToggleSummary.setText("Развернуть");
+            } else {
+                btnToggleSummary.setVisibility(View.GONE);
+            }
+        } else if (lastCleanSummary.length() > 140) {
+            btnToggleSummary.setVisibility(View.VISIBLE);
+            btnToggleSummary.setText("Развернуть");
+        } else {
+            btnToggleSummary.setVisibility(View.GONE);
         }
     }
 
     private void populatePortraitViews(Context context, AnimeInfoResponse.Data data) {
-        if (data == null) return;
+        if (data == null || context == null) return;
+
+        if (portraitInfoErrorLayout != null) portraitInfoErrorLayout.setVisibility(View.GONE);
+        if (portraitInfoContentLayout != null) {
+            portraitInfoContentLayout.setVisibility(View.VISIBLE);
+            portraitInfoContentLayout.setAlpha(1f);
+        }
 
         // 1. Poster
         if (ivPortraitInfoPoster != null) {
             SkeletonHelper.hideSkeleton(ivPortraitInfoPoster, "");
-            String posterUrl = data.getCover() != null ? data.getCover().getDefaultUrl() : null;
-            if (posterUrl != null && !posterUrl.isEmpty()) {
+            ivPortraitInfoPoster.setVisibility(View.VISIBLE);
+            String posterUrl = null;
+            if (data.getCover() != null) {
+                if (!TextUtils.isEmpty(data.getCover().getDefaultUrl())) {
+                    posterUrl = data.getCover().getDefaultUrl();
+                } else if (!TextUtils.isEmpty(data.getCover().getMd())) {
+                    posterUrl = data.getCover().getMd();
+                } else if (!TextUtils.isEmpty(data.getCover().getThumbnail())) {
+                    posterUrl = data.getCover().getThumbnail();
+                }
+            }
+            if (!TextUtils.isEmpty(posterUrl)) {
                 ImageLoader.getInstance().loadInto(ivPortraitInfoPoster, posterUrl, R.drawable.ic_image_placeholder);
             } else {
                 ivPortraitInfoPoster.setImageResource(R.drawable.ic_image_placeholder);
@@ -415,9 +569,15 @@ public class PlayerAnimeInfoController {
 
         // 2. Rating Pill Overlay
         if (tvPortraitInfoRatingPill != null) {
-            String ratingStr = (data.getRating() != null && !TextUtils.isEmpty(data.getRating().getAverageFormated()))
-                    ? data.getRating().getAverageFormated() : null;
-            if (ratingStr != null) {
+            String ratingStr = null;
+            if (data.getRating() != null) {
+                if (!TextUtils.isEmpty(data.getRating().getAverageFormated())) {
+                    ratingStr = data.getRating().getAverageFormated().trim();
+                } else if (!TextUtils.isEmpty(data.getRating().getAverage())) {
+                    ratingStr = data.getRating().getAverage().trim();
+                }
+            }
+            if (!TextUtils.isEmpty(ratingStr) && !"0".equals(ratingStr) && !"0.0".equals(ratingStr) && !"0.00".equals(ratingStr)) {
                 SkeletonHelper.hideSkeleton(tvPortraitInfoRatingPill, ratingStr);
                 tvPortraitInfoRatingPill.setVisibility(View.VISIBLE);
             } else {
@@ -429,10 +589,8 @@ public class PlayerAnimeInfoController {
         // 3. Titles
         if (tvPortraitInfoTitle != null) {
             String title = !TextUtils.isEmpty(data.getRus_name()) ? data.getRus_name() : data.getName();
-            if (!TextUtils.isEmpty(title)) {
-                SkeletonHelper.hideSkeleton(tvPortraitInfoTitle, title);
-                tvPortraitInfoTitle.setVisibility(View.VISIBLE);
-            }
+            SkeletonHelper.hideSkeleton(tvPortraitInfoTitle, !TextUtils.isEmpty(title) ? title : "—");
+            tvPortraitInfoTitle.setVisibility(View.VISIBLE);
         }
 
         if (tvPortraitInfoEngName != null) {
@@ -447,32 +605,44 @@ public class PlayerAnimeInfoController {
 
         // 4. Metadata Grid: Type, Status, Episodes, Release
         if (tvPortraitInfoType != null) {
-            String type = (data.getType() != null && data.getType().getLabel() != null)
+            String type = (data.getType() != null && !TextUtils.isEmpty(data.getType().getLabel()))
                     ? data.getType().getLabel().replace("TV ", "") : "—";
             SkeletonHelper.hideSkeleton(tvPortraitInfoType, type);
+            tvPortraitInfoType.setVisibility(View.VISIBLE);
         }
 
         if (tvPortraitInfoStatus != null) {
-            String status = (data.getStatus() != null && data.getStatus().getLabel() != null)
+            String status = (data.getStatus() != null && !TextUtils.isEmpty(data.getStatus().getLabel()))
                     ? data.getStatus().getLabel() : "—";
             SkeletonHelper.hideSkeleton(tvPortraitInfoStatus, status);
+            tvPortraitInfoStatus.setVisibility(View.VISIBLE);
+        }
+
+        if (llPortraitMetadataGrid != null) {
+            llPortraitMetadataGrid.setVisibility(View.VISIBLE);
         }
 
         if (tvPortraitInfoEpisodes != null) {
             String epStr = "—";
             if (data.getItems_count() != null) {
-                if (data.getItems_count().getTotal() > 0 && data.getItems_count().getUploaded() > 0) {
-                    epStr = data.getItems_count().getUploaded() + " из " + data.getItems_count().getTotal();
-                } else if (data.getItems_count().getUploaded() > 0) {
-                    epStr = data.getItems_count().getUploaded() + " эп.";
+                int uploaded = data.getItems_count().getUploaded();
+                int total = data.getItems_count().getTotal();
+                if (total > 0 && uploaded > 0) {
+                    epStr = uploaded + " из " + total;
+                } else if (uploaded > 0) {
+                    epStr = uploaded + " эп.";
+                } else if (total > 0) {
+                    epStr = total + " эп.";
                 }
             }
             SkeletonHelper.hideSkeleton(tvPortraitInfoEpisodes, epStr);
+            tvPortraitInfoEpisodes.setVisibility(View.VISIBLE);
         }
 
         if (tvPortraitInfoReleaseDate != null) {
             String releaseStr = !TextUtils.isEmpty(data.getReleaseDateString()) ? data.getReleaseDateString() : "—";
             SkeletonHelper.hideSkeleton(tvPortraitInfoReleaseDate, releaseStr);
+            tvPortraitInfoReleaseDate.setVisibility(View.VISIBLE);
         }
 
         // 5. Authors & Publisher Cards
@@ -482,6 +652,7 @@ public class PlayerAnimeInfoController {
 
             if (data.getAuthors() != null && !data.getAuthors().isEmpty()) {
                 for (AnimeInfoResponse.TagOrGenre author : data.getAuthors()) {
+                    if (author == null || TextUtils.isEmpty(author.getName())) continue;
                     View card = createAuthorCardView(context, author.getName(), "Автор", author.getAvatarUrl());
                     llPortraitAuthorsContainer.addView(card);
                     hasAuthors = true;
@@ -490,12 +661,16 @@ public class PlayerAnimeInfoController {
 
             if (data.getPublisher() != null && !data.getPublisher().isEmpty()) {
                 for (AnimeInfoResponse.TagOrGenre pub : data.getPublisher()) {
+                    if (pub == null || TextUtils.isEmpty(pub.getName())) continue;
                     View card = createAuthorCardView(context, pub.getName(), "Издатель", pub.getAvatarUrl());
                     llPortraitAuthorsContainer.addView(card);
                     hasAuthors = true;
                 }
             }
 
+            if (llPortraitAuthorsSection != null) {
+                llPortraitAuthorsSection.setVisibility(hasAuthors ? View.VISIBLE : View.GONE);
+            }
             if (hsvPortraitAuthors != null) {
                 hsvPortraitAuthors.setVisibility(hasAuthors ? View.VISIBLE : View.GONE);
             } else {
@@ -506,15 +681,21 @@ public class PlayerAnimeInfoController {
         // 6. Summary / Synopsis
         String summaryText = data.getSummaryText();
         if (tvPortraitInfoSummary != null) {
+            CharSequence formattedSummary = "";
             if (!TextUtils.isEmpty(summaryText)) {
-                CharSequence formattedSummary;
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
                     formattedSummary = android.text.Html.fromHtml(summaryText, android.text.Html.FROM_HTML_MODE_LEGACY);
                 } else {
                     formattedSummary = android.text.Html.fromHtml(summaryText);
                 }
+            }
+            final String cleanSummary = formattedSummary != null ? formattedSummary.toString().trim() : "";
+            this.lastCleanSummary = cleanSummary;
 
-                final String cleanSummary = formattedSummary.toString().trim();
+            if (!TextUtils.isEmpty(cleanSummary)) {
+                if (llPortraitSummarySection != null) {
+                    llPortraitSummarySection.setVisibility(View.VISIBLE);
+                }
                 SkeletonHelper.hideSkeleton(tvPortraitInfoSummary, cleanSummary);
                 tvPortraitInfoSummary.setVisibility(View.VISIBLE);
 
@@ -523,32 +704,8 @@ public class PlayerAnimeInfoController {
                 tvPortraitInfoSummary.setMaxLines(3);
                 tvPortraitInfoSummary.setEllipsize(android.text.TextUtils.TruncateAt.END);
 
-                // Determine if expansion button should be shown
-                tvPortraitInfoSummary.post(() -> {
-                    if (tvPortraitInfoSummary.getLayout() != null) {
-                        int lineCount = tvPortraitInfoSummary.getLineCount();
-                        boolean isEllipsized = tvPortraitInfoSummary.getLayout().getEllipsisCount(lineCount - 1) > 0;
-                        if (lineCount > 3 || isEllipsized || cleanSummary.length() > 150) {
-                            if (btnToggleSummary != null) {
-                                btnToggleSummary.setVisibility(View.VISIBLE);
-                                btnToggleSummary.setText("Развернуть");
-                            }
-                        } else {
-                            if (btnToggleSummary != null) {
-                                btnToggleSummary.setVisibility(View.GONE);
-                            }
-                        }
-                    } else if (cleanSummary.length() > 150) {
-                        if (btnToggleSummary != null) {
-                            btnToggleSummary.setVisibility(View.VISIBLE);
-                            btnToggleSummary.setText("Развернуть");
-                        }
-                    } else {
-                        if (btnToggleSummary != null) {
-                            btnToggleSummary.setVisibility(View.GONE);
-                        }
-                    }
-                });
+                updateSummaryToggleButtonVisibility();
+                tvPortraitInfoSummary.post(this::updateSummaryToggleButtonVisibility);
 
                 View.OnClickListener toggleClickListener = v -> {
                     if (btnToggleSummary != null && btnToggleSummary.getVisibility() == View.VISIBLE) {
@@ -570,11 +727,14 @@ public class PlayerAnimeInfoController {
                     btnToggleSummary.setOnClickListener(toggleClickListener);
                 }
                 tvPortraitInfoSummary.setOnClickListener(toggleClickListener);
-
             } else {
+                SkeletonHelper.hideSkeleton(tvPortraitInfoSummary, "");
                 tvPortraitInfoSummary.setVisibility(View.GONE);
                 if (btnToggleSummary != null) {
                     btnToggleSummary.setVisibility(View.GONE);
+                }
+                if (llPortraitSummarySection != null) {
+                    llPortraitSummarySection.setVisibility(View.GONE);
                 }
             }
         }
@@ -594,6 +754,7 @@ public class PlayerAnimeInfoController {
             // Genres
             if (data.getGenres() != null && !data.getGenres().isEmpty()) {
                 for (AnimeInfoResponse.TagOrGenre genre : data.getGenres()) {
+                    if (genre == null || TextUtils.isEmpty(genre.getName())) continue;
                     com.google.android.material.chip.Chip chip = createTagChip(context, genre.getName(), true);
                     cgPortraitInfoTagsAndGenres.addView(chip);
                     hasChips = true;
@@ -603,6 +764,7 @@ public class PlayerAnimeInfoController {
             // Tags
             if (data.getTags() != null && !data.getTags().isEmpty()) {
                 for (AnimeInfoResponse.TagOrGenre tag : data.getTags()) {
+                    if (tag == null || TextUtils.isEmpty(tag.getName())) continue;
                     com.google.android.material.chip.Chip chip = createTagChip(context, "# " + tag.getName(), false);
                     cgPortraitInfoTagsAndGenres.addView(chip);
                     hasChips = true;

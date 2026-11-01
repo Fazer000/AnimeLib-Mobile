@@ -120,6 +120,9 @@ public class SkeletonHelper {
     public static void showSkeleton(android.view.View view, int minWidthDp, float cornerRadiusDp) {
         if (view == null) return;
 
+        view.animate().cancel();
+        view.setAlpha(1.0f);
+
         // Если скелетон уже запущен, пропускаем
         if (Boolean.TRUE.equals(view.getTag(R.id.tag_skeleton_active))) {
             return;
@@ -168,7 +171,12 @@ public class SkeletonHelper {
     public static void hideSkeleton(android.view.View view, CharSequence actualText) {
         if (view == null) return;
 
+        view.animate().cancel();
+
         if (!Boolean.TRUE.equals(view.getTag(R.id.tag_skeleton_active))) {
+            if (view.getAlpha() < 1.0f) {
+                view.setAlpha(1.0f);
+            }
             if (view instanceof TextView && actualText != null) {
                 ((TextView) view).setText(actualText);
             }
@@ -209,11 +217,16 @@ public class SkeletonHelper {
         view.setMinimumWidth(0);
         view.setTag(R.id.tag_skeleton_active, false);
 
-        // Плавно подставляем текст или рисунок с короткой анимацией альфа
-        view.setAlpha(0.2f);
-        view.animate()
-                .alpha(1.0f)
-                .setDuration(220)
-                .start();
+        // Плавно подставляем текст или рисунок только если View реально виден на экране;
+        // для скрытых (GONE) контейнеров сразу ставим alpha=1f, чтобы TransitionManager не захватил 0.2f
+        if (view.isShown()) {
+            view.setAlpha(0.2f);
+            view.animate()
+                    .alpha(1.0f)
+                    .setDuration(220)
+                    .start();
+        } else {
+            view.setAlpha(1.0f);
+        }
     }
 }

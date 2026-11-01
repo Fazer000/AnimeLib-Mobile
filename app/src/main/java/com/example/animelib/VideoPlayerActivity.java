@@ -560,7 +560,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         if (playerAnimeInfoController != null) {
             playerAnimeInfoController.collapsePortraitInfo();
-            playerAnimeInfoController.showSkeletons();
+            playerAnimeInfoController.setOfflineMode(localFilePath != null);
+            if (localFilePath == null) {
+                playerAnimeInfoController.showSkeletons();
+            }
         }
         if (animeTitleView != null) {
             SkeletonHelper.showSkeleton(animeTitleView, 160);
@@ -606,6 +609,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 return;
             }
         }
+        ThemeUtils.applyTheme(ThemeUtils.getSavedThemePreference(this));
         super.onCreate(savedInstanceState);
         setTheme(R.style.Theme_AnimeLIB_VideoPlayer);
         setContentView(R.layout.activity_video_player);
@@ -1467,26 +1471,32 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     private void loadAndApplyTheme() {
+        final int initialSavedTheme = ThemeUtils.getSavedThemePreference(this);
         executor.execute(() -> {
             try {
                 int sharedPrefTheme = ThemeUtils.getSavedThemePreference(this);
                 int themeMode = apiService.loadThemeSetting();
                 Log.d("VideoPlayerTheme", "Loaded theme - SharedPref: " + sharedPrefTheme + ", DB: " + themeMode);
-                
+
                 int finalTheme = (sharedPrefTheme >= 0 && sharedPrefTheme <= 2) ? sharedPrefTheme : themeMode;
-                
-                // Применяем тему в главном потоке
+
+                // Применяем тему в главном потоке только при реальном отличии, чтобы не сбивать переходы/состояния View на старте
                 safeRunOnUiThread(() -> {
-                    ThemeUtils.applyThemeToActivity(VideoPlayerActivity.this, finalTheme);
+                    boolean currentNight = ThemeUtils.isDarkTheme(VideoPlayerActivity.this);
+                    boolean needsChange = (finalTheme != initialSavedTheme)
+                            || (finalTheme == ThemeUtils.THEME_DARK && !currentNight)
+                            || (finalTheme == ThemeUtils.THEME_LIGHT && currentNight);
+                    if (needsChange) {
+                        ThemeUtils.applyThemeToActivity(VideoPlayerActivity.this, finalTheme);
+                    }
                     setupFullscreen();
                     checkAndUpdateOrientation();
-                    Log.d("VideoPlayerTheme", "Theme applied on startup: " + finalTheme);
+                    Log.d("VideoPlayerTheme", "Theme checked on startup: " + finalTheme + ", changed=" + needsChange);
                 });
-                
+
             } catch (Exception e) {
                 Log.e("VideoPlayerTheme", "Failed to load and apply theme", e);
                 safeRunOnUiThread(() -> {
-                    ThemeUtils.applyThemeToActivity(VideoPlayerActivity.this, ThemeUtils.getSavedThemePreference(VideoPlayerActivity.this));
                     setupFullscreen();
                     checkAndUpdateOrientation();
                 });
@@ -2103,10 +2113,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 }
             }
 
-            if (playerAnimeInfoController != null) {
-                if (isOfflineMode) {
-                    playerAnimeInfoController.setOfflineMode(true);
-                }
+            if (playerAnimeInfoController != null && isOfflineMode) {
+                playerAnimeInfoController.setOfflineMode(true);
                 playerAnimeInfoController.hideSkeletons(animeTitle);
             }
 
@@ -2388,6 +2396,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     }
                 }
 
+                if ((animeTitleStr == null || animeTitleStr.trim().isEmpty()) && isPlayingDownloadedVideo()) {
+                    com.example.animelib.data.entity.DownloadedEpisodeEntity dlEp = getDownloadedEpisodeForActive();
+                    if (dlEp != null && dlEp.getAnimeTitle() != null && !dlEp.getAnimeTitle().trim().isEmpty()) {
+                        animeTitleStr = dlEp.getAnimeTitle().trim();
+                    }
+                }
+
                 if (animeTitleStr != null && !animeTitleStr.trim().isEmpty()) {
                     SkeletonHelper.hideSkeleton(tvPortraitAnimeTitle, animeTitleStr.trim());
                     tvPortraitAnimeTitle.setVisibility(View.VISIBLE);
@@ -2401,10 +2416,22 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
             if (tvPortraitEpisodeTitle != null) {
                 EpisodesListResponse.EpisodeItem curEp = episodesManager != null ? episodesManager.getCurrentEpisode() : null;
+                com.example.animelib.data.entity.DownloadedEpisodeEntity dlEp = getDownloadedEpisodeForActive();
                 if (curEp != null) {
                     String num = curEp.getNumber() != null ? curEp.getNumber().trim() : "";
                     String name = cleanEpisodeName(curEp.getName(), num);
                     String displayEpTitle = name != null ? name.trim() : "";
+                    if (!displayEpTitle.isEmpty()) {
+                        SkeletonHelper.hideSkeleton(tvPortraitEpisodeTitle, displayEpTitle);
+                        tvPortraitEpisodeTitle.setVisibility(View.VISIBLE);
+                    } else {
+                        SkeletonHelper.hideSkeleton(tvPortraitEpisodeTitle, "");
+                        tvPortraitEpisodeTitle.setVisibility(View.GONE);
+                    }
+                } else if (isPlayingDownloadedVideo() && dlEp != null) {
+                    String epNum = dlEp.getEpisodeNumber();
+                    String cleanName = cleanEpisodeName(dlEp.getEpisodeName(), epNum);
+                    String displayEpTitle = cleanName != null ? cleanName.trim() : "";
                     if (!displayEpTitle.isEmpty()) {
                         SkeletonHelper.hideSkeleton(tvPortraitEpisodeTitle, displayEpTitle);
                         tvPortraitEpisodeTitle.setVisibility(View.VISIBLE);
@@ -3675,9 +3702,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
             menuLoadingOverlay.setVisibility(View.VISIBLE);
         }
         
-        // Показываем anime info placeholder и загружаем информацию
-        // Placeholder будет скрыт автоматически при выборе озвучки
-        loadAnimeInfoForPlaceholder();
+        // Загружаем anime info здесь только если передан прямой currentVideoUrl;
+        // при загрузке по animeUrl метаданные загружаются в loadAnimeFromUrl без двойного сброса скелетонов
+        if (currentVideoUrl != null && animeUrl != null) {
+            loadAnimeInfoForPlaceholder();
+        }
     }
     
     /**
@@ -3694,30 +3723,41 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     private void loadAnimeInfoForPlaceholder() {
-        if (animeUrl == null) return;
-        String animeSlug = apiService.extractAnimeSlug(animeUrl);
+        if (isOfflineMode) return;
+        if (currentAnimeInfo != null && currentAnimeInfo.getData() != null) {
+            displayAnimeInfo(currentAnimeInfo);
+            return;
+        }
+        String animeSlug = animeUrl != null ? apiService.extractAnimeSlug(animeUrl) : null;
+        if (animeSlug == null && animeUrl != null) {
+            animeSlug = apiService.extractAnimeId(animeUrl);
+        }
+        if (animeSlug == null) {
+            animeSlug = currentAnimeId;
+        }
         if (animeSlug == null) return;
 
         if (playerAnimeInfoController != null) {
+            playerAnimeInfoController.setOnRetryListener(this::loadAnimeInfoForPlaceholder);
             playerAnimeInfoController.showSkeletons();
         }
 
         apiService.fetchAnimeInfo(animeSlug, new ApiService.AnimeInfoCallback() {
             @Override
             public void onAnimeInfoReceived(AnimeInfoResponse response) {
-                runOnUiThread(() -> displayAnimeInfo(response));
+                safeRunOnUiThread(() -> displayAnimeInfo(response));
             }
 
             @Override
             public void onError(String errorMessage) {
                 Log.e("VideoPlayer", "Failed to load anime info: " + errorMessage);
-                runOnUiThread(() -> {
+                safeRunOnUiThread(() -> {
                     isAnimeInfoLoaded = true;
                     if (playerSplashScreenController != null && playerSplashScreenController.isShowing()) {
                         playerSplashScreenController.dismissWithAnimation(null);
                     }
-                    if (playerAnimeInfoController != null) {
-                        playerAnimeInfoController.showError(() -> loadAnimeInfoForPlaceholder());
+                    if (playerAnimeInfoController != null && currentAnimeInfo == null) {
+                        playerAnimeInfoController.showError(VideoPlayerActivity.this::loadAnimeInfoForPlaceholder);
                     }
                 });
             }
@@ -5815,6 +5855,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
         if (animeSlug == null) animeSlug = currentAnimeId;
 
         if (playerAnimeInfoController != null) {
+            playerAnimeInfoController.setOfflineMode(false);
+            playerAnimeInfoController.setOnRetryListener(this::loadAnimeInfoForPlaceholder);
             playerAnimeInfoController.showSkeletons();
         }
 
@@ -5838,7 +5880,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                         playerSplashScreenController.dismissWithAnimation(null);
                     }
                     if (playerAnimeInfoController != null && currentAnimeInfo == null) {
-                        playerAnimeInfoController.showError(() -> loadAnimeFromUrl(url));
+                        playerAnimeInfoController.showError(VideoPlayerActivity.this::loadAnimeInfoForPlaceholder);
                     }
                 });
             }
@@ -6101,34 +6143,43 @@ public class VideoPlayerActivity extends AppCompatActivity {
      */
     private void updateEpisodeHeaderQuick() {
         safeRunOnUiThread(() -> {
-            com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
-            boolean isPlayingDownloaded = isPlayingDownloadedVideo();
-
-            if (isPlayingDownloaded && downloadedEp != null) {
-                hideAllSkeletonsForOffline();
-                return;
-            } else if (isOfflineMode) {
+            if (isOfflineMode) {
                 hideAllSkeletonsForOffline();
                 return;
             }
 
+            com.example.animelib.data.entity.DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+            boolean isPlayingDownloaded = isPlayingDownloadedVideo();
+
             EpisodeResponse.PlayerData currentPlayerData = playersManager != null ? playersManager.getCurrentPlayerData() : null;
             EpisodesListResponse.EpisodeItem currentEpisode = episodesManager != null ? episodesManager.getCurrentEpisode() : null;
-            
+
             String tm = (currentPlayerData != null && currentPlayerData.getTeam() != null)
                     ? currentPlayerData.getTeam().getName() : null;
+            if ((tm == null || tm.isEmpty()) && isPlayingDownloaded && downloadedEp != null
+                    && downloadedEp.getTeamName() != null && !downloadedEp.getTeamName().trim().isEmpty()) {
+                tm = downloadedEp.getTeamName().trim();
+            }
+
             String ep = (currentEpisode != null) ? currentEpisode.getNumber() : null;
+            if ((ep == null || ep.isEmpty()) && isPlayingDownloaded && downloadedEp != null) {
+                ep = downloadedEp.getEpisodeNumber();
+            }
+
             String rawEm = (currentEpisode != null && currentEpisode.getName() != null && !Objects.equals(currentEpisode.getName(), ""))
                     ? currentEpisode.getName() : null;
+            if ((rawEm == null || rawEm.isEmpty()) && isPlayingDownloaded && downloadedEp != null) {
+                rawEm = downloadedEp.getEpisodeName();
+            }
             String em = cleanEpisodeName(rawEm, ep);
 
             if (currentTeamName != null) {
                 if (tm != null && !tm.isEmpty()) {
                     SkeletonHelper.hideSkeleton(currentTeamName, tm);
-                } else if (currentPlayerData == null) {
+                } else if (currentPlayerData == null && !isPlayingDownloaded) {
                     SkeletonHelper.showSkeleton(currentTeamName, 80);
                 } else {
-                    SkeletonHelper.hideSkeleton(currentTeamName, "");
+                    SkeletonHelper.hideSkeleton(currentTeamName, isPlayingDownloaded ? getOfflineVoiceoverName() : "");
                 }
             }
 
@@ -6136,7 +6187,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 if (ep != null && !ep.isEmpty()) {
                     SkeletonHelper.hideSkeleton(currentEpisodeNumberView, ep + " серия");
                     Log.d("VideoPlayer", "Quick header update: episode " + ep);
-                } else if (currentEpisode == null) {
+                } else if (currentEpisode == null && !isPlayingDownloaded) {
                     SkeletonHelper.showSkeleton(currentEpisodeNumberView, 65);
                 } else {
                     SkeletonHelper.hideSkeleton(currentEpisodeNumberView, "");
@@ -6148,6 +6199,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     SkeletonHelper.hideSkeleton(currentEpisodeName, ", " + em);
                 } else {
                     SkeletonHelper.hideSkeleton(currentEpisodeName, "");
+                }
+            }
+
+            if (isPlayingDownloaded && downloadedEp != null && animeTitleView != null) {
+                boolean isTitleSkeleton = Boolean.TRUE.equals(animeTitleView.getTag(R.id.tag_skeleton_active));
+                if (isTitleSkeleton && currentAnimeInfo == null && downloadedEp.getAnimeTitle() != null && !downloadedEp.getAnimeTitle().trim().isEmpty()) {
+                    SkeletonHelper.hideSkeleton(animeTitleView, downloadedEp.getAnimeTitle().trim());
                 }
             }
 
@@ -6180,7 +6238,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         // Затем асинхронно загружаем название аниме
         if (animeTitleView == null) return;
-        String slugOrId = apiService.extractAnimeSlug(animeUrl);
+        String slugOrId = animeUrl != null ? apiService.extractAnimeSlug(animeUrl) : null;
+        if (slugOrId == null && animeUrl != null) {
+            slugOrId = apiService.extractAnimeId(animeUrl);
+        }
+        if (slugOrId == null) {
+            slugOrId = currentAnimeId;
+        }
         if (slugOrId == null) return;
 
         apiService.fetchAnimeInfo(slugOrId, new ApiService.AnimeInfoCallback() {

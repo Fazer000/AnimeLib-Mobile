@@ -663,57 +663,33 @@
         android:elevation="60dp"
         android:visibility="gone">
 
-        <LinearLayout
+        <FrameLayout
             android:id="@+id/playerSplashContent"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:gravity="center"
-            android:orientation="vertical">
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
 
-            <!-- Logo without background -->
-            <ImageView
-                android:id="@+id/playerSplashLogoImage"
-                android:layout_width="64dp"
-                android:layout_height="64dp"
+            <com.example.animelib.ui.PlayerSplashLogoView
+                android:id="@+id/playerSplashLogoView"
+                android:layout_width="98dp"
+                android:layout_height="98dp"
                 android:layout_gravity="center"
-                android:src="@drawable/ic_player_splash_logo"
-                android:contentDescription="AnimeLib Logo" />
-
-            <TextView
-                android:id="@+id/playerSplashAppName"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:fontFamily="@font/open_sans_bold"
-                android:letterSpacing="0.10"
-                android:text="ANIMELIB"
-                android:textColor="@color/primary_text_color"
-                android:textSize="18sp"
-                android:visibility="gone" />
+                android:contentDescription="@string/app_name" />
 
             <TextView
                 android:id="@+id/playerSplashStatusText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:fontFamily="@font/open_sans"
-                android:text="Загрузка информации…"
+                android:layout_gravity="center"
+                android:layout_marginTop="74dp"
+                android:alpha="0"
+                android:fontFamily="@font/open_sans_semibold"
+                android:letterSpacing="0.02"
+                android:text="Подключение к плееру…"
                 android:textColor="@color/secondary_text_color"
-                android:textSize="13sp" />
+                android:textSize="12.5sp"
+                android:visibility="invisible" />
 
-            <com.google.android.material.progressindicator.CircularProgressIndicator
-                android:id="@+id/playerSplashProgress"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:indeterminate="true"
-                app:indicatorColor="@color/purple_primary"
-                app:trackCornerRadius="8dp"
-                app:trackThickness="4dp"
-                app:indicatorSize="48dp" />
-
-        </LinearLayout>
+        </FrameLayout>
 
     </FrameLayout>
 

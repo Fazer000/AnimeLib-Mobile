@@ -1000,6 +1000,15 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         if (rawHolder instanceof ShowMoreVH) {
             ShowMoreVH holder = (ShowMoreVH) rawHolder;
             DisplayItem di = flat.get(position);
+            int baseH = portraitViewportMode ? 0 : padBaseH;
+            int leftPad = baseH + padReplyIndent;
+            int rightPad = baseH;
+            if (holder.itemView.getPaddingLeft() != leftPad
+                    || holder.itemView.getPaddingTop() != padBaseV
+                    || holder.itemView.getPaddingRight() != rightPad
+                    || holder.itemView.getPaddingBottom() != padBaseV) {
+                holder.itemView.setPadding(leftPad, padBaseV, rightPad, padBaseV);
+            }
             if (holder.ivShowMoreIcon != null) {
                 holder.ivShowMoreIcon.setRotation(0f);
             }
@@ -1249,12 +1258,14 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             holder.threadGuideLine.setVisibility(di.level > 0 ? View.VISIBLE : View.GONE);
         }
 
-        int leftPad = padBaseH + (di.level > 0 ? padReplyIndent : 0);
+        int baseH = portraitViewportMode ? 0 : padBaseH;
+        int leftPad = baseH + (di.level > 0 ? padReplyIndent : 0);
+        int rightPad = baseH;
         if (holder.itemView.getPaddingLeft() != leftPad
                 || holder.itemView.getPaddingTop() != padBaseV
-                || holder.itemView.getPaddingRight() != padBaseH
+                || holder.itemView.getPaddingRight() != rightPad
                 || holder.itemView.getPaddingBottom() != padBaseV) {
-            holder.itemView.setPadding(leftPad, padBaseV, padBaseH, padBaseV);
+            holder.itemView.setPadding(leftPad, padBaseV, rightPad, padBaseV);
         }
 
         String avatarUrl = null;
