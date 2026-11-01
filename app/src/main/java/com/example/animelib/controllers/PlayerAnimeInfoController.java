@@ -739,15 +739,15 @@ public class PlayerAnimeInfoController {
             }
         }
 
-        // 7. Flow Chips (Age restriction, Genres, Tags)
+        // 7. Flow Badges (Age restriction, Genres, Tags)
         if (cgPortraitInfoTagsAndGenres != null) {
             cgPortraitInfoTagsAndGenres.removeAllViews();
             boolean hasChips = false;
 
             // Age restriction
             if (data.getAgeRestriction() != null && !TextUtils.isEmpty(data.getAgeRestriction().getLabel())) {
-                com.google.android.material.chip.Chip ageChip = createAgeChip(context, data.getAgeRestriction().getLabel());
-                cgPortraitInfoTagsAndGenres.addView(ageChip);
+                View ageBadge = createInfoBadgeView(context, data.getAgeRestriction().getLabel(), true);
+                cgPortraitInfoTagsAndGenres.addView(ageBadge);
                 hasChips = true;
             }
 
@@ -755,8 +755,8 @@ public class PlayerAnimeInfoController {
             if (data.getGenres() != null && !data.getGenres().isEmpty()) {
                 for (AnimeInfoResponse.TagOrGenre genre : data.getGenres()) {
                     if (genre == null || TextUtils.isEmpty(genre.getName())) continue;
-                    com.google.android.material.chip.Chip chip = createTagChip(context, genre.getName(), true);
-                    cgPortraitInfoTagsAndGenres.addView(chip);
+                    View genreBadge = createInfoBadgeView(context, genre.getName(), false);
+                    cgPortraitInfoTagsAndGenres.addView(genreBadge);
                     hasChips = true;
                 }
             }
@@ -765,8 +765,8 @@ public class PlayerAnimeInfoController {
             if (data.getTags() != null && !data.getTags().isEmpty()) {
                 for (AnimeInfoResponse.TagOrGenre tag : data.getTags()) {
                     if (tag == null || TextUtils.isEmpty(tag.getName())) continue;
-                    com.google.android.material.chip.Chip chip = createTagChip(context, "# " + tag.getName(), false);
-                    cgPortraitInfoTagsAndGenres.addView(chip);
+                    View tagBadge = createInfoBadgeView(context, "# " + tag.getName(), false);
+                    cgPortraitInfoTagsAndGenres.addView(tagBadge);
                     hasChips = true;
                 }
             }
@@ -830,51 +830,37 @@ public class PlayerAnimeInfoController {
         return card;
     }
 
-    private com.google.android.material.chip.Chip createAgeChip(Context context, String text) {
-        com.google.android.material.chip.Chip chip = new com.google.android.material.chip.Chip(context);
-        chip.setText(text);
-        chip.setTextSize(10.5f);
-        chip.setTextColor(android.graphics.Color.parseColor("#FF6B6B"));
-        chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#261418")));
-        chip.setChipStrokeColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4D2026")));
-        chip.setChipStrokeWidth(dpToPx(context, 0.5f));
-        chip.setEnsureMinTouchTargetSize(false);
-        chip.setChipStartPadding(dpToPx(context, 7));
-        chip.setChipEndPadding(dpToPx(context, 7));
-        chip.setTextStartPadding(dpToPx(context, 1));
-        chip.setTextEndPadding(dpToPx(context, 1));
-        chip.setChipMinHeight(dpToPx(context, 20));
-        chip.setPadding(0, 0, 0, 0);
-        return chip;
-    }
-
-    private com.google.android.material.chip.Chip createTagChip(Context context, String text, boolean isGenre) {
-        com.google.android.material.chip.Chip chip = new com.google.android.material.chip.Chip(context);
-        chip.setText(text);
-        chip.setTextSize(10.5f);
-        if (isGenre) {
-            chip.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.purple_primary));
-            chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(
-                    androidx.core.content.ContextCompat.getColor(context, R.color.purple_alpha_10)));
-            chip.setChipStrokeColor(android.content.res.ColorStateList.valueOf(
-                    androidx.core.content.ContextCompat.getColor(context, R.color.purple_alpha_25)));
-            chip.setChipStrokeWidth(dpToPx(context, 0.5f));
-        } else {
-            chip.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.accent_text_color));
-            chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(
-                    androidx.core.content.ContextCompat.getColor(context, R.color.chip_unselected_bg)));
-            chip.setChipStrokeColor(android.content.res.ColorStateList.valueOf(
-                    androidx.core.content.ContextCompat.getColor(context, R.color.chip_unselected_stroke)));
-            chip.setChipStrokeWidth(dpToPx(context, 0.5f));
+    private TextView createInfoBadgeView(Context context, String text, boolean isAgeRestriction) {
+        TextView badge = new TextView(context);
+        badge.setText(text);
+        badge.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12.5f);
+        android.graphics.Typeface tf = androidx.core.content.res.ResourcesCompat.getFont(context, R.font.open_sans);
+        if (tf != null) {
+            badge.setTypeface(tf, android.graphics.Typeface.NORMAL);
         }
-        chip.setEnsureMinTouchTargetSize(false);
-        chip.setChipStartPadding(dpToPx(context, 7));
-        chip.setChipEndPadding(dpToPx(context, 7));
-        chip.setTextStartPadding(dpToPx(context, 1));
-        chip.setTextEndPadding(dpToPx(context, 1));
-        chip.setChipMinHeight(dpToPx(context, 20));
-        chip.setPadding(0, 0, 0, 0);
-        return chip;
+        badge.setIncludeFontPadding(false);
+        badge.setGravity(android.view.Gravity.CENTER);
+        badge.setSingleLine(true);
+        badge.setEllipsize(TextUtils.TruncateAt.END);
+
+        int padH = dpToPx(context, 10);
+        int padV = Math.round(dpToPx(context, 5.5f));
+        badge.setPadding(padH, padV, padH, padV);
+
+        if (isAgeRestriction) {
+            badge.setBackgroundResource(R.drawable.bg_anime_info_age_item);
+            badge.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.anime_info_age_text));
+        } else {
+            badge.setBackgroundResource(R.drawable.bg_anime_info_tag_item);
+            badge.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.anime_info_tag_text));
+        }
+
+        com.google.android.material.chip.ChipGroup.LayoutParams lp =
+                new com.google.android.material.chip.ChipGroup.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        badge.setLayoutParams(lp);
+        return badge;
     }
 
     private float dpToPx(Context context, float dp) {

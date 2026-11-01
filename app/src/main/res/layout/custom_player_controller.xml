@@ -343,6 +343,8 @@
                 android:background="@drawable/video_time_background"
                 android:paddingVertical="3dp"
                 android:paddingHorizontal="8dp"
+                android:singleLine="true"
+                android:ellipsize="end"
                 android:textColor="@color/white_color"
                 android:textSize="10.5sp"
                 android:textStyle="bold"
@@ -363,6 +365,8 @@
                 android:layout_marginEnd="8dp"
                 android:paddingVertical="0dp"
                 android:paddingHorizontal="10dp"
+                android:singleLine="true"
+                android:ellipsize="end"
                 android:textAllCaps="false"
                 android:text="Пропустить сегмент"
                 android:textColor="@color/gray_color"
@@ -392,7 +396,7 @@
                 app:tint="@color/white_color"
                 android:src="@drawable/ic_skip"
                 android:scaleType="fitCenter"
-                android:contentDescription="Skip Forward 1:25"/>
+                android:contentDescription="@string/player_skip_opening"/>
 
             <ImageButton
                 android:id="@+id/bookmarkButton"

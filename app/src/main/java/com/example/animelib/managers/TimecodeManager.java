@@ -70,8 +70,10 @@ public class TimecodeManager {
                 timebarSegmentsView = controllerView.findViewById(R.id.timebarSegmentsView);
                 timeBar = controllerView.findViewById(R.id.exo_progress);
                 currentSegmentBadge = controllerView.findViewById(R.id.currentSegmentBadge);
+                this.isControllerVisible = controllerView.getVisibility() == View.VISIBLE && controllerView.getAlpha() > 0.05f;
             }
         }
+        applyOrientationSizing();
         
         // Настраиваем обработчик нажатия кнопки пропуска
         if (skipSegmentButton != null) {
@@ -105,6 +107,9 @@ public class TimecodeManager {
                 @Override
                 public void onScrubStart(@NonNull TimeBar timeBar, long position) {
                     isScrubbing = true;
+                    if (isPortraitOrientation() && skipSegmentButton != null) {
+                        skipSegmentButton.setVisibility(View.GONE);
+                    }
                     if (timebarSegmentsView != null && TimecodeManager.this.player != null) {
                         timebarSegmentsView.setProgress(position, TimecodeManager.this.player.getBufferedPosition(), TimecodeManager.this.player.getDuration());
                     }
@@ -114,6 +119,9 @@ public class TimecodeManager {
                 @Override
                 public void onScrubMove(@NonNull TimeBar timeBar, long position) {
                     isScrubbing = true;
+                    if (isPortraitOrientation() && skipSegmentButton != null) {
+                        skipSegmentButton.setVisibility(View.GONE);
+                    }
                     if (timebarSegmentsView != null && TimecodeManager.this.player != null) {
                         timebarSegmentsView.setProgress(position, TimecodeManager.this.player.getBufferedPosition(), TimecodeManager.this.player.getDuration());
                     }
@@ -261,10 +269,11 @@ public class TimecodeManager {
         }
         
         if (activeSegment != null) {
-            // Обновляем бейдж текущего сегмента
+            boolean isPortrait = isPortraitOrientation();
+            // В портретном режиме скрываем дублирующий бейдж "• Оппенинг", так как справа отображается сама кнопка пропуска
             if (currentSegmentBadge != null) {
                 currentSegmentBadge.setText("• " + getSegmentDisplayName(activeSegment.getType()));
-                if (isControllerVisible) {
+                if (isControllerVisible && !isPortrait) {
                     currentSegmentBadge.setVisibility(View.VISIBLE);
                 } else {
                     currentSegmentBadge.setVisibility(View.GONE);
@@ -329,6 +338,34 @@ public class TimecodeManager {
     public void setControllerVisibility(boolean visible) {
         this.isControllerVisible = visible;
         updateTimecodeButtonsVisibility();
+    }
+
+    /**
+     * Адаптирует размеры кнопки пропуска и видимость бейджа при смене ориентации экрана
+     */
+    public void updateForOrientation() {
+        applyOrientationSizing();
+        updateTimecodeButtonsVisibility();
+    }
+
+    private boolean isPortraitOrientation() {
+        return context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT;
+    }
+
+    private void applyOrientationSizing() {
+        if (skipSegmentButton == null || context == null) return;
+        float density = context.getResources().getDisplayMetrics().density;
+        boolean isPortrait = isPortraitOrientation();
+        int hPad = Math.round((isPortrait ? 8f : 10f) * density);
+        skipSegmentButton.setPadding(hPad, 0, hPad, 0);
+        skipSegmentButton.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, isPortrait ? 10.5f : 11f);
+        android.view.ViewGroup.LayoutParams lp = skipSegmentButton.getLayoutParams();
+        if (lp instanceof android.view.ViewGroup.MarginLayoutParams) {
+            android.view.ViewGroup.MarginLayoutParams mlp = (android.view.ViewGroup.MarginLayoutParams) lp;
+            mlp.height = Math.round((isPortrait ? 26f : 28f) * density);
+            mlp.setMarginEnd(Math.round((isPortrait ? 6f : 8f) * density));
+            skipSegmentButton.setLayoutParams(mlp);
+        }
     }
     
     /**

@@ -85,4 +85,5 @@
     <string name="btn_download_apk">СКАЧАТЬ И УСТАНОВИТЬ APK</string>
     <string name="btn_open_github">Открыть страницу на GitHub</string>
     <string name="btn_reset">Сбросить</string>
+    <string name="player_skip_opening">Пропуск опенинга</string>
 </resources>

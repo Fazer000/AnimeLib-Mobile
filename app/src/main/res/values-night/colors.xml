@@ -29,6 +29,12 @@
     <color name="chip_selected_stroke">@color/purple_primary</color>
     <color name="chip_unselected_bg">#1C1C1E</color>
     <color name="chip_unselected_stroke">#33333C</color>
+    <color name="anime_info_tag_bg">#17171A</color>
+    <color name="anime_info_tag_stroke">#303036</color>
+    <color name="anime_info_tag_text">#BFBFBF</color>
+    <color name="anime_info_age_bg">#231A1B</color>
+    <color name="anime_info_age_stroke">#A8686C</color>
+    <color name="anime_info_age_text">#CE7478</color>
     <color name="close_btn_bg">#20FFFFFF</color>
     <color name="placeholder_bg">#1C1C1E</color>
     <color name="stop_btn_bg">#2A1B20</color>

@@ -18,6 +18,7 @@ public class PlayerUIBinder {
     public ImageButton settingsButton;
     public TextView settingsQualityTag;
     public ImageButton menuToggleFullscreen;
+    public ImageButton skipForwardButton;
     public ImageButton pipButton;
     public ImageButton btnLockScreen;
     public TextView animeTitleView;
@@ -47,6 +48,7 @@ public class PlayerUIBinder {
         settingsButton = controllerView.findViewById(R.id.settingsButton);
         settingsQualityTag = controllerView.findViewById(R.id.settingsQualityTag);
         menuToggleFullscreen = controllerView.findViewById(R.id.menuToggleFullscreen);
+        skipForwardButton = controllerView.findViewById(R.id.skipForwardButton);
         pipButton = controllerView.findViewById(R.id.pipButton);
         btnLockScreen = controllerView.findViewById(R.id.btnLockScreen);
 

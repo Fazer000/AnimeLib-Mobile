@@ -174,6 +174,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private ImageButton settingsButton;
     private TextView settingsQualityTag;
     private ImageButton menuToggleFullscreen;
+    private ImageButton skipForwardButton;
     private LinearLayout slidingMenuPanel;
     private View menuLoadingIndicator;
     private View menuLoadingOverlay;
@@ -1814,6 +1815,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             settingsButton = playerUIBinder.settingsButton;
             settingsQualityTag = playerUIBinder.settingsQualityTag;
             menuToggleFullscreen = playerUIBinder.menuToggleFullscreen;
+            skipForwardButton = playerUIBinder.skipForwardButton;
             if (pipButton == null) pipButton = playerUIBinder.pipButton;
             if (btnLockScreen == null) btnLockScreen = playerUIBinder.btnLockScreen;
             animeTitleView = playerUIBinder.animeTitleView;
@@ -1833,6 +1835,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             settingsButton = controllerView.findViewById(R.id.settingsButton);
             settingsQualityTag = controllerView.findViewById(R.id.settingsQualityTag);
             menuToggleFullscreen = controllerView.findViewById(R.id.menuToggleFullscreen);
+            skipForwardButton = controllerView.findViewById(R.id.skipForwardButton);
             if (pipButton == null) pipButton = controllerView.findViewById(R.id.pipButton);
             if (btnLockScreen == null) btnLockScreen = controllerView.findViewById(R.id.btnLockScreen);
             animeTitleView = controllerView.findViewById(R.id.animeTitle);
@@ -2664,6 +2667,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
         if (settingsButton != null) settingsButton.setVisibility(visibility);
         updateSettingsQualityTag();
         
+        if (skipForwardButton != null) {
+            skipForwardButton.setVisibility(visibility);
+        }
+
         if (menuToggleFullscreen != null) {
             menuToggleFullscreen.setVisibility(visibility);
             menuToggleFullscreen.setImageResource(isPortrait ? R.drawable.ic_fullscreen : R.drawable.ic_fullscreen_exit);
@@ -7139,14 +7146,32 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
 
             // 4. Hide / show bottom buttons in portrait
-            View skipForwardButton = controllerView.findViewById(R.id.skipForwardButton);
+            View skipForwardBtn = controllerView.findViewById(R.id.skipForwardButton);
             View bookmarkBtn = controllerView.findViewById(R.id.bookmarkButton);
             View commentsBtn = controllerView.findViewById(R.id.commentsButton);
             View episodesMenuBtn = controllerView.findViewById(R.id.episodesMenuButton);
             View menuToggleBtn = controllerView.findViewById(R.id.menuToggleButton);
             View menuToggleFullscreenBtn = controllerView.findViewById(R.id.menuToggleFullscreen);
 
-            if (skipForwardButton != null) skipForwardButton.setVisibility(isPortrait ? View.GONE : View.VISIBLE);
+            if (skipForwardBtn != null) {
+                skipForwardBtn.setVisibility(View.VISIBLE);
+                float d = getResources().getDisplayMetrics().density;
+                int btnSize = Math.round((isPortrait ? 30f : 36f) * d);
+                int btnPad = Math.round((isPortrait ? 5f : 8f) * d);
+                int btnMarginEnd = Math.round((isPortrait ? 6f : 8f) * d);
+                skipForwardBtn.setPadding(btnPad, btnPad, btnPad, btnPad);
+                android.view.ViewGroup.LayoutParams sfLp = skipForwardBtn.getLayoutParams();
+                if (sfLp instanceof android.view.ViewGroup.MarginLayoutParams) {
+                    android.view.ViewGroup.MarginLayoutParams sfMlp = (android.view.ViewGroup.MarginLayoutParams) sfLp;
+                    sfMlp.width = btnSize;
+                    sfMlp.height = btnSize;
+                    sfMlp.setMarginEnd(btnMarginEnd);
+                    skipForwardBtn.setLayoutParams(sfMlp);
+                }
+            }
+            if (timecodeManager != null) {
+                timecodeManager.updateForOrientation();
+            }
             if (bookmarkBtn != null) {
                 bookmarkBtn.setVisibility(isPortrait ? View.GONE : View.VISIBLE);
                 if (isOfflineMode) {

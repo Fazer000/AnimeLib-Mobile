@@ -578,8 +578,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:visibility="gone"
-                    app:chipSpacingHorizontal="6dp"
-                    app:chipSpacingVertical="4dp" />
+                    app:chipSpacingHorizontal="8dp"
+                    app:chipSpacingVertical="8dp" />
 
             </LinearLayout>
 
