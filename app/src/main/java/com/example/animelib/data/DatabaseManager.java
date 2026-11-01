@@ -17,6 +17,7 @@ import java.util.concurrent.Executors;
 public class DatabaseManager {
     private static final String TAG = "DatabaseManager";
     private static volatile TokenEntity cachedToken = null;
+    private static volatile String cachedSiteUrl = null;
 
     private final AppDatabase db;
     private final ExecutorService executor;
@@ -47,18 +48,43 @@ public class DatabaseManager {
     /**
      * Получает URL сайта из базы данных. Вызывать вне главного потока
      */
+    private static String normalizeSiteUrlValue(String rawUrl) {
+        if (rawUrl == null || rawUrl.trim().isEmpty()) {
+            return null;
+        }
+        String url = rawUrl.trim();
+        if (url.endsWith("/")) {
+            url = url.substring(0, url.length() - 1);
+        }
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            url = "https://" + url;
+        }
+        return url;
+    }
+
+    /**
+     * Возвращает закэшированный в памяти URL сайта без обращения к SQLite (O(1), безопасно для UI-потока).
+     */
+    public String getCachedSiteUrlOrNull() {
+        return cachedSiteUrl;
+    }
+
+    /**
+     * Получает URL сайта из памяти или базы данных.
+     */
     public String getSiteUrl() {
+        String cached = cachedSiteUrl;
+        if (cached != null && !cached.isEmpty()) {
+            return cached;
+        }
         try {
             AppSettings settings = db.appSettingsDao().getSettingsSync();
-            if (settings != null && settings.getSiteUrl() != null && !settings.getSiteUrl().trim().isEmpty()) {
-                String url = settings.getSiteUrl().trim();
-                if (url.endsWith("/")) {
-                    url = url.substring(0, url.length() - 1);
+            if (settings != null) {
+                String normalized = normalizeSiteUrlValue(settings.getSiteUrl());
+                if (normalized != null) {
+                    cachedSiteUrl = normalized;
+                    return normalized;
                 }
-                if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                    url = "https://" + url;
-                }
-                return url;
             }
         } catch (Exception e) {
             Log.e(TAG, "Failed to get site URL from DB", e);
@@ -67,16 +93,20 @@ public class DatabaseManager {
     }
 
     /**
-     * Сохраняет URL сайта в базу данных
+     * Сохраняет URL сайта в кэш памяти и базу данных
      */
     public void saveSiteUrl(String siteUrl) {
+        String normalized = normalizeSiteUrlValue(siteUrl);
+        if (normalized != null) {
+            cachedSiteUrl = normalized;
+        }
         executor.execute(() -> {
             try {
                 AppSettings settings = db.appSettingsDao().getSettingsSync();
                 if (settings == null) {
                     settings = new AppSettings();
                 }
-                settings.setSiteUrl(siteUrl);
+                settings.setSiteUrl(normalized != null ? normalized : siteUrl);
                 db.appSettingsDao().upsert(settings);
                 Log.d(TAG, "Saved site URL: " + siteUrl);
             } catch (Exception e) {

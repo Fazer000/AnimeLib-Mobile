@@ -16,14 +16,20 @@ import com.example.animelib.util.CookieSyncManager;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
-import java.util.concurrent.Executor;
+import android.os.Handler;
+import android.os.Looper;
+
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MainAuthController {
 
     private final Context context;
     private final DatabaseManager databaseManager;
-    private final Executor executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private long lastPlayerLaunchTimeMs = 0L;
 
     public MainAuthController(Context context, DatabaseManager databaseManager) {
         this.context = context;
@@ -122,12 +128,40 @@ public class MainAuthController {
     }
 
     public void getAuthAndStartVideoPlayer(WebView webView, String animeUrl) {
-        Log.d("MainAuthController", "Getting auth token before starting VideoPlayerActivity");
+        long now = System.currentTimeMillis();
+        if (now - lastPlayerLaunchTimeMs < 600L) {
+            Log.d("MainAuthController", "Ignoring duplicate rapid player launch request");
+            return;
+        }
+        lastPlayerLaunchTimeMs = now;
+
         String currentUrl = webView != null ? webView.getUrl() : null;
-        String resolvedUrl = VideoUrlHelper.resolveAnimeUrl(animeUrl, currentUrl);
-        getAuthFromLocalStorage(webView, () -> {
-            Log.d("MainAuthController", "Starting VideoPlayerActivity with resolved URL: " + resolvedUrl);
+        final String resolvedUrl = VideoUrlHelper.resolveAnimeUrl(animeUrl, currentUrl);
+
+        // Быстрый путь (0 мс): если токен уже есть в кэше памяти/БД, открываем плеер мгновенно,
+        // а синхронизацию localStorage выполняем параллельно в фоне.
+        TokenEntity cached = databaseManager.getToken();
+        if (cached != null && cached.getAccessToken() != null && !cached.getAccessToken().isEmpty()) {
             VideoPlayerActivity.startFromAnimePage(context, resolvedUrl);
+            if (webView != null) {
+                getAuthFromLocalStorage(webView, null);
+            }
+            return;
+        }
+
+        // Если токена ещё нет в кэше — опрашиваем localStorage с жестким таймаутом 200 мс,
+        // чтобы занятый поток WebView никогда не задерживал открытие плеера.
+        final AtomicBoolean launched = new AtomicBoolean(false);
+        final Runnable launchOnce = () -> {
+            if (launched.compareAndSet(false, true)) {
+                VideoPlayerActivity.startFromAnimePage(context, resolvedUrl);
+            }
+        };
+
+        mainHandler.postDelayed(launchOnce, 200L);
+        getAuthFromLocalStorage(webView, () -> {
+            mainHandler.removeCallbacks(launchOnce);
+            launchOnce.run();
         });
     }
 
@@ -336,5 +370,10 @@ public class MainAuthController {
         } else {
             runnable.run();
         }
+    }
+
+    public void shutdown() {
+        mainHandler.removeCallbacksAndMessages(null);
+        executor.shutdown();
     }
 }

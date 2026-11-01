@@ -25,7 +25,6 @@ import com.example.animelib.controllers.MainBannerController;
 import com.example.animelib.controllers.MainWebViewController;
 import com.example.animelib.data.DatabaseManager;
 import com.example.animelib.dialogs.ThemeSelectionDialog;
-import com.example.animelib.models.ToastData;
 import com.example.animelib.models.UpdateInfo;
 import com.example.animelib.ui.JSInjectionsHandler;
 import com.example.animelib.util.CustomToast;
@@ -35,12 +34,14 @@ import com.example.animelib.viewmodel.AppSettingsViewModel;
 import com.google.android.material.progressindicator.CircularProgressIndicator;
 import com.google.gson.Gson;
 
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import okhttp3.OkHttpClient;
 
 public class MainActivity extends AppCompatActivity {
+
+    private static final String SEARCH_FRAGMENT_TAG = "search_dialog";
 
     private WebView webView;
     private CircularProgressIndicator spinner;
@@ -53,16 +54,18 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_URL_INPUT = 1001;
 
     private OkHttpClient httpClient;
-    private Executor executor;
+    private ExecutorService executor;
     private Gson gson;
 
     private AppSettingsViewModel viewModel;
     private ApiService apiService;
-    private JSInjectionsHandler JSInjectionsHandler;
+    private JSInjectionsHandler jsInjectionsHandler;
     private ThemeSelectionDialog themeDialog;
     private DatabaseManager databaseManager;
 
     private boolean isUrlInputShowing = false;
+    private boolean hasInitialUrlLoaded = false;
+    private boolean hasShownInitialBanner = false;
 
     private MainBannerController bannerController;
     private MainAuthController authController;
@@ -76,10 +79,12 @@ public class MainActivity extends AppCompatActivity {
         SplashScreen.installSplashScreen(this);
 
         super.onCreate(savedInstanceState);
+        JSInjectionsHandler.preloadAssetsAsync(this);
         setContentView(R.layout.activity_main);
 
         if (savedInstanceState != null) {
             isUrlInputShowing = savedInstanceState.getBoolean("isUrlInputShowing", false);
+            hasShownInitialBanner = savedInstanceState.getBoolean("hasShownInitialBanner", false);
         }
 
         webView = findViewById(R.id.webView);
@@ -94,10 +99,10 @@ public class MainActivity extends AppCompatActivity {
 
         viewModel = new ViewModelProvider(this).get(AppSettingsViewModel.class);
         apiService = new ApiService(this);
-        databaseManager = new DatabaseManager(this);
+        databaseManager = DatabaseManager.getInstance(this);
 
         authController = new MainAuthController(this, databaseManager);
-        JSInjectionsHandler = new JSInjectionsHandler(this);
+        jsInjectionsHandler = new JSInjectionsHandler(this);
         themeDialog = new ThemeSelectionDialog(this, apiService);
 
         bannerController = new MainBannerController(this, new MainBannerController.BannerCallback() {
@@ -108,13 +113,14 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onDomainSelected(String targetUrl) {
+                hasInitialUrlLoaded = true;
                 try {
                     if (viewModel != null) viewModel.saveSettings(targetUrl);
                     if (databaseManager != null) databaseManager.saveSiteUrl(targetUrl);
                 } catch (Exception e) {
                     Log.e("MainActivity", "Failed to save domain from banner", e);
                 }
-                loadUrl(targetUrl);
+                loadUrl(targetUrl, true);
             }
         });
 
@@ -125,7 +131,7 @@ public class MainActivity extends AppCompatActivity {
                 spinnerBackground,
                 swipeRefreshLayout,
                 fullscreenContainer,
-                JSInjectionsHandler,
+                jsInjectionsHandler,
                 new MainWebViewController.WebViewCallback() {
                     @Override
                     public void onWatchUrlIntercepted(String resolvedUrl) {
@@ -140,15 +146,6 @@ public class MainActivity extends AppCompatActivity {
                 }
         );
 
-        try {
-            android.webkit.WebView tempWebView = new android.webkit.WebView(this);
-            tempWebView.clearCache(true);
-            tempWebView.clearHistory();
-            tempWebView.destroy();
-        } catch (Exception e) {
-            Log.w("MainActivity", "Failed to clear WebView cache", e);
-        }
-
         getWindow().setFlags(
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
@@ -160,7 +157,7 @@ public class MainActivity extends AppCompatActivity {
         setupRefreshLayout();
         setupBackPressHandler();
 
-        checkAndLoadUrl();
+        checkAndLoadUrl(savedInstanceState);
         checkForUpdatesOnStartup();
     }
 
@@ -187,17 +184,22 @@ public class MainActivity extends AppCompatActivity {
     private void loadAndApplyTheme() {
         executor.execute(() -> {
             try {
+                // Заодно прогреваем кэш URL сайта вне UI-потока
+                databaseManager.getSiteUrl();
+
                 int sharedPrefTheme = ThemeUtils.getSavedThemePreference(this);
                 int dbThemeMode = databaseManager.loadThemeSetting();
                 int finalTheme = (sharedPrefTheme >= 0 && sharedPrefTheme <= 2) ? sharedPrefTheme : dbThemeMode;
 
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     ThemeUtils.applyThemeToActivity(MainActivity.this, finalTheme);
                     updateSystemBarColors();
                 });
             } catch (Exception e) {
                 Log.e("Theme", "Failed to load and apply theme", e);
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     ThemeUtils.applyThemeToActivity(MainActivity.this, 0);
                     updateSystemBarColors();
                 });
@@ -205,14 +207,36 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    public void updateSystemBarColors() {
-        String currentUrl = null;
-        if (webView != null && webView.getUrl() != null && !webView.getUrl().isEmpty()) {
-            currentUrl = webView.getUrl();
-        } else if (databaseManager != null) {
-            currentUrl = databaseManager.getSiteUrl();
+    public void onAppThemeSelected(int themeMode) {
+        ThemeUtils.applyThemeToActivity(this, themeMode);
+        updateSystemBarColors();
+        if (jsInjectionsHandler != null && webView != null) {
+            jsInjectionsHandler.syncAppThemeToWebView(webView, themeMode);
         }
-        updateSystemBarColors(currentUrl);
+    }
+
+    private String getFastKnownSiteUrl() {
+        if (webView != null && webView.getUrl() != null && !webView.getUrl().isEmpty()
+                && !"about:blank".equals(webView.getUrl())) {
+            return webView.getUrl();
+        }
+        if (databaseManager != null) {
+            String cached = databaseManager.getCachedSiteUrlOrNull();
+            if (cached != null && !cached.isEmpty()) {
+                return cached;
+            }
+        }
+        if (viewModel != null && viewModel.getSettings().getValue() != null) {
+            String vmUrl = viewModel.getSettings().getValue().getSiteUrl();
+            if (vmUrl != null && !vmUrl.trim().isEmpty()) {
+                return vmUrl.trim();
+            }
+        }
+        return null;
+    }
+
+    public void updateSystemBarColors() {
+        updateSystemBarColors(getFastKnownSiteUrl());
     }
 
     public void updateSystemBarColors(String url) {
@@ -229,6 +253,11 @@ public class MainActivity extends AppCompatActivity {
 
         if (swipeRefreshLayout != null) {
             swipeRefreshLayout.setBackgroundColor(headerColor);
+        }
+        if (webView != null) {
+            try {
+                webView.setBackgroundColor(headerColor);
+            } catch (Exception ignored) {}
         }
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
@@ -253,6 +282,26 @@ public class MainActivity extends AppCompatActivity {
     protected void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putBoolean("isUrlInputShowing", isUrlInputShowing);
+        outState.putBoolean("hasShownInitialBanner", hasShownInitialBanner);
+        if (webViewController != null) {
+            webViewController.saveState(outState);
+        }
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (webViewController != null) {
+            webViewController.onStart();
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        if (webViewController != null) {
+            webViewController.onStop();
+        }
+        super.onStop();
     }
 
     @Override
@@ -266,12 +315,13 @@ public class MainActivity extends AppCompatActivity {
                 if (getSupportFragmentManager().getBackStackEntryCount() > 0) {
                     getSupportFragmentManager().popBackStackImmediate(null, androidx.fragment.app.FragmentManager.POP_BACK_STACK_INCLUSIVE);
                 }
-                loadUrl(openUrl.trim());
+                hasInitialUrlLoaded = true;
+                loadUrl(openUrl.trim(), false);
             }
         }
     }
 
-    private void checkAndLoadUrl() {
+    private void checkAndLoadUrl(Bundle savedInstanceState) {
         if (viewModel == null) return;
 
         if (getIntent() != null && getIntent().hasExtra("EXTRA_OPEN_URL")) {
@@ -281,40 +331,63 @@ public class MainActivity extends AppCompatActivity {
                 if (getSupportFragmentManager().getBackStackEntryCount() > 0) {
                     getSupportFragmentManager().popBackStackImmediate(null, androidx.fragment.app.FragmentManager.POP_BACK_STACK_INCLUSIVE);
                 }
-                loadUrl(openUrl.trim());
+                hasInitialUrlLoaded = true;
+                loadUrl(openUrl.trim(), false);
                 checkApiForToast();
                 return;
             }
         }
 
-        viewModel.getSettings().observe(this, appSettings -> {
-            String siteUrl = null;
+        // Восстанавливаем историю и открытую страницу при пересоздании Activity (смена темы / поворот)
+        if (savedInstanceState != null && webViewController != null && webViewController.restoreState(savedInstanceState)) {
+            hasInitialUrlLoaded = true;
+            updateSystemBarColors(webView != null ? webView.getUrl() : null);
+            checkApiForToast();
+            return;
+        }
 
+        // Быстрый путь: если URL уже прогрет в памяти DatabaseManager — начинаем загрузку сразу без ожидания LiveData
+        String cachedSiteUrl = databaseManager != null ? databaseManager.getCachedSiteUrlOrNull() : null;
+        if (cachedSiteUrl != null && !cachedSiteUrl.isEmpty()) {
+            hasInitialUrlLoaded = true;
+            loadUrl(cachedSiteUrl, !hasShownInitialBanner);
+            hasShownInitialBanner = true;
+            checkApiForToast();
+            return;
+        }
+
+        viewModel.getSettings().observe(this, appSettings -> {
+            if (hasInitialUrlLoaded) {
+                return;
+            }
+
+            String siteUrl = null;
             if (appSettings != null && appSettings.getSiteUrl() != null && !appSettings.getSiteUrl().trim().isEmpty()) {
                 siteUrl = appSettings.getSiteUrl().trim();
                 Log.d("MainActivity", "URL loaded from AppSettings: " + siteUrl);
             }
 
-            if (siteUrl == null || siteUrl.isEmpty()) {
-                siteUrl = databaseManager.getSiteUrl();
-                if (siteUrl != null && !siteUrl.trim().isEmpty()) {
-                    Log.d("MainActivity", "URL loaded from DatabaseManager: " + siteUrl);
-                    viewModel.saveSettings(siteUrl);
-                }
-            }
-
-            if (siteUrl != null && !siteUrl.trim().isEmpty()) {
-                loadUrl(siteUrl);
+            if (siteUrl != null && !siteUrl.isEmpty()) {
+                hasInitialUrlLoaded = true;
+                loadUrl(siteUrl, !hasShownInitialBanner);
+                hasShownInitialBanner = true;
             } else {
-                Log.d("MainActivity", "No site URL found, opening UrlInputActivity");
-                showUrlInputActivity();
+                String fallbackCached = databaseManager != null ? databaseManager.getCachedSiteUrlOrNull() : null;
+                if (fallbackCached != null && !fallbackCached.isEmpty()) {
+                    hasInitialUrlLoaded = true;
+                    loadUrl(fallbackCached, !hasShownInitialBanner);
+                    hasShownInitialBanner = true;
+                } else {
+                    Log.d("MainActivity", "No site URL found, opening UrlInputActivity");
+                    showUrlInputActivity();
+                }
             }
         });
 
         checkApiForToast();
     }
 
-    private void loadUrl(String url) {
+    private void loadUrl(String url, boolean showTopBanner) {
         if (url == null || url.trim().isEmpty()) {
             showUrlInputActivity();
             return;
@@ -328,7 +401,8 @@ public class MainActivity extends AppCompatActivity {
         Log.d("MainActivity", "Loading URL: " + targetUrl);
         updateSystemBarColors(targetUrl);
         webViewController.loadUrlInWebView(targetUrl);
-        if (bannerController != null) {
+        if (showTopBanner && bannerController != null) {
+            hasShownInitialBanner = true;
             bannerController.showUrlTopBannerAnimated(targetUrl);
         }
     }
@@ -339,13 +413,7 @@ public class MainActivity extends AppCompatActivity {
         }
         isUrlInputShowing = true;
         Intent intent = new Intent(this, UrlInputActivity.class);
-        String currentUrl = null;
-        if (webView != null && webView.getUrl() != null && !webView.getUrl().isEmpty()) {
-            currentUrl = webView.getUrl();
-        }
-        if (currentUrl == null || currentUrl.isEmpty()) {
-            currentUrl = databaseManager.getSiteUrl();
-        }
+        String currentUrl = getFastKnownSiteUrl();
         if (currentUrl != null && !currentUrl.isEmpty()) {
             intent.putExtra("current_url", currentUrl);
         }
@@ -358,7 +426,7 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void onToastReceived(String message, String newUrl) {
                     runOnUiThread(() -> {
-                        if (message != null && !message.trim().isEmpty()) {
+                        if (!isFinishing() && !isDestroyed() && message != null && !message.trim().isEmpty()) {
                             CustomToast.showInfo(MainActivity.this, message.trim());
                         }
                     });
@@ -391,7 +459,7 @@ public class MainActivity extends AppCompatActivity {
 
         if (webView != null) {
             webView.setOnTouchListener((v, event) -> {
-                switch (event.getAction()) {
+                switch (event.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
                         startTouchX = event.getX();
                         startTouchY = event.getY();
@@ -432,12 +500,19 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void showThemeDialog() {
-        if (themeDialog != null) {
+        if (themeDialog != null && !isFinishing() && !isDestroyed()) {
             themeDialog.show();
         }
     }
 
     public void showSearchFragment() {
+        if (isFinishing() || isDestroyed() || getSupportFragmentManager().isStateSaved()) {
+            return;
+        }
+        if (getSupportFragmentManager().findFragmentByTag(SEARCH_FRAGMENT_TAG) != null) {
+            return;
+        }
+
         SearchFragment searchFragment = new SearchFragment();
 
         getSupportFragmentManager().beginTransaction()
@@ -447,8 +522,8 @@ public class MainActivity extends AppCompatActivity {
                         R.anim.fragment_scale_fade_in,
                         R.anim.fragment_scale_fade_out
                 )
-                .add(R.id.fragment_container, searchFragment)
-                .addToBackStack(null)
+                .add(R.id.fragment_container, searchFragment, SEARCH_FRAGMENT_TAG)
+                .addToBackStack(SEARCH_FRAGMENT_TAG)
                 .commit();
 
         Log.d("MainActivity", "Search fragment shown with scale-fade animation");
@@ -470,6 +545,10 @@ public class MainActivity extends AppCompatActivity {
             } catch (Exception e) {
                 Log.w("MainActivity", "Failed to parse WebView URL: " + currentUrl, e);
             }
+        }
+        String cached = databaseManager != null ? databaseManager.getCachedSiteUrlOrNull() : null;
+        if (cached != null && !cached.isEmpty()) {
+            return cached;
         }
         return "https://" + getString(R.string.site_url);
     }
@@ -512,6 +591,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void showCustomSelectDialog(String dialogDataJson) {
+        if (isFinishing() || isDestroyed()) return;
         try {
             Gson gsonInstance = gson != null ? gson : new Gson();
             SelectDialogData dialogData = gsonInstance.fromJson(dialogDataJson, SelectDialogData.class);
@@ -538,13 +618,24 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private static String escapeJsSingleQuoted(String raw) {
+        if (raw == null) return "";
+        return raw
+                .replace("\\", "\\\\")
+                .replace("'", "\\'")
+                .replace("\r", "\\r")
+                .replace("\n", "\\n");
+    }
+
     public void updateSelectButton(String selectId, String selectedValue, String selectedText) {
         if (webView != null) {
             String jsCode = String.format(
                 "if (window.customSelectHandler) { " +
                 "  window.customSelectHandler.updateButtonAfterSelection('%s', '%s', '%s'); " +
                 "}",
-                selectId, selectedValue, selectedText
+                escapeJsSingleQuoted(selectId),
+                escapeJsSingleQuoted(selectedValue),
+                escapeJsSingleQuoted(selectedText)
             );
 
             webView.evaluateJavascript(jsCode, result -> {
@@ -574,15 +665,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void showSiteSelectionBottomSheet() {
+        if (isFinishing() || isDestroyed()) return;
         try {
-            String currentUrl = null;
-            if (webView != null) {
-                currentUrl = webView.getUrl();
-            }
-            if (currentUrl == null || currentUrl.isEmpty()) {
-                currentUrl = databaseManager.getSiteUrl();
-            }
-
+            String currentUrl = getFastKnownSiteUrl();
             boolean isOtherRegion = com.example.animelib.util.SiteUtils.isOtherRegion(currentUrl, this);
 
             String animeUrl = com.example.animelib.util.SiteUtils.getUrlForSiteAndRegion("animelib", isOtherRegion);
@@ -608,11 +693,12 @@ public class MainActivity extends AppCompatActivity {
                     this,
                     filteredSites,
                     site -> {
+                        hasInitialUrlLoaded = true;
                         boolean isSelectedOther = com.example.animelib.util.SiteUtils.isOtherRegion(site.getUrl(), this);
                         com.example.animelib.util.SiteUtils.setSavedRegionOther(this, isSelectedOther);
                         viewModel.saveSettings(site.getUrl());
                         databaseManager.saveSiteUrl(site.getUrl());
-                        loadUrl(site.getUrl());
+                        loadUrl(site.getUrl(), true);
                     }
                 );
             bottomSheet.setOnDismissListener(dialog -> {
@@ -640,12 +726,14 @@ public class MainActivity extends AppCompatActivity {
             if (resultCode == RESULT_OK && data != null) {
                 String siteUrl = data.getStringExtra("site_url");
                 if (siteUrl != null && !siteUrl.isEmpty()) {
+                    hasInitialUrlLoaded = true;
                     viewModel.saveSettings(siteUrl);
-                    loadUrl(siteUrl);
+                    databaseManager.saveSiteUrl(siteUrl);
+                    loadUrl(siteUrl, true);
                     Log.d("MainActivity", "URL received from UrlInputActivity: " + siteUrl);
                 }
             } else {
-                if (viewModel.getSettings().getValue() == null || viewModel.getSettings().getValue().getSiteUrl() == null) {
+                if (getFastKnownSiteUrl() == null) {
                     CustomToast.showWarning(this, "Для работы приложения необходимо указать URL сайта");
                     showUrlInputActivity();
                 }
@@ -661,8 +749,14 @@ public class MainActivity extends AppCompatActivity {
         if (webViewController != null) {
             webViewController.destroy();
         }
+        if (authController != null) {
+            authController.shutdown();
+        }
         if (apiService != null) {
             apiService.shutdown();
+        }
+        if (executor != null) {
+            executor.shutdown();
         }
 
         super.onDestroy();

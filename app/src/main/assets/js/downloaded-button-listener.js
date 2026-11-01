@@ -61,21 +61,40 @@
     if (!window.animelibDownloadedObserverSetup) {
         window.animelibDownloadedObserverSetup = true;
 
-        var observer = new MutationObserver(function() {
-            injectDownloadedMenuItem();
+        var rafPending = false;
+        var scheduleInject = function() {
+            if (rafPending || document.getElementById('app-downloaded-anime-item')) return;
+            rafPending = true;
+            requestAnimationFrame(function() {
+                rafPending = false;
+                injectDownloadedMenuItem();
+            });
+        };
+
+        var observer = new MutationObserver(function(mutations) {
+            if (document.getElementById('app-downloaded-anime-item')) return;
+            for (var i = 0; i < mutations.length; i++) {
+                var added = mutations[i].addedNodes;
+                for (var j = 0; j < added.length; j++) {
+                    if (added[j] && added[j].nodeType === 1) {
+                        scheduleInject();
+                        return;
+                    }
+                }
+            }
         });
 
-        if (document.body) {
-            observer.observe(document.body, { childList: true, subtree: true });
-        } else {
-            document.addEventListener('DOMContentLoaded', function() {
-                if (document.body) {
-                    observer.observe(document.body, { childList: true, subtree: true });
-                }
-            });
-        }
+        var attach = function() {
+            if (document.body) {
+                observer.observe(document.body, { childList: true, subtree: true });
+            }
+        };
 
-        setInterval(injectDownloadedMenuItem, 1500);
+        if (document.body) {
+            attach();
+        } else {
+            document.addEventListener('DOMContentLoaded', attach, { once: true });
+        }
     }
     return 'downloaded_button_setup_ok';
 })();

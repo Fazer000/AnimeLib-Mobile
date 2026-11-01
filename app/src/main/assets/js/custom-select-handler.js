@@ -67,12 +67,19 @@ class CustomSelectHandler {
             });
         });
 
-        this.observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-        
-        console.log('MutationObserver setup completed');
+        const attach = () => {
+            if (document.body && this.observer) {
+                this.observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+            }
+        };
+        if (document.body) {
+            attach();
+        } else {
+            document.addEventListener('DOMContentLoaded', attach, { once: true });
+        }
     }
 
     /**
@@ -229,8 +236,13 @@ class CustomSelectHandler {
             return;
         }
         
-        // Обновляем текст кнопки (убираем стрелку и добавляем новый текст)
-        button.innerHTML = selectedText + '<span style="margin-left: 8px; font-size: 12px; color: #666;">▼</span>';
+        button.textContent = selectedText || '';
+        const arrow = document.createElement('span');
+        arrow.textContent = '▼';
+        arrow.style.marginLeft = '8px';
+        arrow.style.fontSize = '12px';
+        arrow.style.color = '#666';
+        button.appendChild(arrow);
         
         // Находим соответствующий select и обновляем его значение
         const selectElement = this.selectElements.get(buttonId);
@@ -263,17 +275,15 @@ class CustomSelectHandler {
     }
 }
 
-// Создаем глобальный экземпляр
-window.customSelectHandler = new CustomSelectHandler();
+if (!window.customSelectHandler) {
+    window.customSelectHandler = new CustomSelectHandler();
+}
 
-// Инициализируем при загрузке страницы
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         window.customSelectHandler.init();
-    });
+    }, { once: true });
 } else {
     window.customSelectHandler.init();
 }
-
-console.log('CustomSelectHandler script loaded');
 'custom_select_ok';

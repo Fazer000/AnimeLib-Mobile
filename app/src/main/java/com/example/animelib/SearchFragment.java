@@ -87,6 +87,15 @@ public class SearchFragment extends Fragment {
         }
         closeKeyboard();
     }
+
+    @Override
+    public void onDestroy() {
+        if (apiService != null) {
+            apiService.shutdown();
+            apiService = null;
+        }
+        super.onDestroy();
+    }
     
     /**
      * Закрывает поиск и убирает клавиатуру

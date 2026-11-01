@@ -21,8 +21,11 @@ try {
     return false;
   }
 
-  function replaceThemeButton() {
-    var spans = document.querySelectorAll('span');
+  var MENU_SPAN_SELECTOR = '.abr_abv span, .menu-item span, .popup span, nav span, aside span, [class*="menu"] span';
+
+  function replaceThemeButton(rootNode) {
+    var scope = (rootNode && rootNode.querySelectorAll) ? rootNode : document;
+    var spans = scope.querySelectorAll(MENU_SPAN_SELECTOR);
     for (var i = 0; i < spans.length; i++) {
       var span = spans[i];
       var text = (span.textContent || '').trim().toLowerCase();
@@ -89,26 +92,44 @@ try {
   }
 
   // Запускаем замену
-  replaceThemeButton();
+  replaceThemeButton(document);
 
   if (!window.animelibThemeReplacerSetup) {
     window.animelibThemeReplacerSetup = true;
 
-    var observer = new MutationObserver(function() {
-      replaceThemeButton();
+    var rafScheduled = false;
+    var scheduleReplace = function() {
+      if (rafScheduled) return;
+      rafScheduled = true;
+      requestAnimationFrame(function() {
+        rafScheduled = false;
+        replaceThemeButton(document);
+      });
+    };
+
+    var observer = new MutationObserver(function(mutations) {
+      for (var i = 0; i < mutations.length; i++) {
+        var added = mutations[i].addedNodes;
+        for (var j = 0; j < added.length; j++) {
+          if (added[j] && added[j].nodeType === 1) {
+            scheduleReplace();
+            return;
+          }
+        }
+      }
     });
 
-    if (document.body) {
-      observer.observe(document.body, { childList: true, subtree: true });
-    } else {
-      document.addEventListener('DOMContentLoaded', function() {
-        if (document.body) {
-          observer.observe(document.body, { childList: true, subtree: true });
-        }
-      });
-    }
+    var attachObserver = function() {
+      if (document.body) {
+        observer.observe(document.body, { childList: true, subtree: true });
+      }
+    };
 
-    setInterval(replaceThemeButton, 1000);
+    if (document.body) {
+      attachObserver();
+    } else {
+      document.addEventListener('DOMContentLoaded', attachObserver, { once: true });
+    }
   }
 
   'theme_setup_ok';

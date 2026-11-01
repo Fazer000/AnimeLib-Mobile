@@ -35,8 +35,9 @@
     }
 
     function initTouchFix() {
-        var startX = 0, startY = 0;
+        var startX = 0, startY = 0, disallowed = false;
         document.addEventListener('touchstart', function(e) {
+            disallowed = false;
             if (e.touches && e.touches.length === 1) {
                 startX = e.touches[0].clientX;
                 startY = e.touches[0].clientY;
@@ -44,10 +45,11 @@
         }, { passive: true });
 
         document.addEventListener('touchmove', function(e) {
-            if (!e.touches || e.touches.length !== 1) return;
+            if (disallowed || !e.touches || e.touches.length !== 1) return;
             var dx = Math.abs(e.touches[0].clientX - startX);
             var dy = Math.abs(e.touches[0].clientY - startY);
             if (dx > dy && dx > 8) {
+                disallowed = true;
                 if (window.AndroidInterface && window.AndroidInterface.disallowInterceptTouch) {
                     window.AndroidInterface.disallowInterceptTouch();
                 }

@@ -73,28 +73,26 @@ try {
 
     document.addEventListener('click', function (e) {
       if (isExcludedFromPlayerInterception(e.target)) {
-        console.log('[AnimeLIB] Skipping player click interception for excluded element (.wh_w / trash-can)');
         syncLatestViewsAfterVanillaAction();
         return;
       }
 
       var startTarget = (e.target && e.target.nodeType === 1) ? e.target : (e.target ? e.target.parentElement : null);
-      console.log('[AnimeLIB] Player click detected on: ' + (startTarget ? startTarget.tagName : 'unknown'));
+      if (!startTarget) return;
 
       let el = startTarget;
       for (let i = 0; i < 5 && el; i++) {
         if (el.tagName && el.tagName.toUpperCase() === 'A') {
           let href = el.href || el.getAttribute('href') || '';
-          console.log('[AnimeLIB] Player link found: ' + href);
-
           if (href.includes('/watch') || href.includes('episode')) {
             if (!isAnimelibDomain(href)) {
-              console.log('[AnimeLIB] Skipping player button click interception for non-animelib domain');
               return;
             }
-            console.log('[AnimeLIB] Player button clicked: ' + href);
             e.preventDefault();
             e.stopPropagation();
+            if (e.stopImmediatePropagation) {
+              e.stopImmediatePropagation();
+            }
             AndroidInterface.onPlayerButtonClicked(href);
             break;
           }

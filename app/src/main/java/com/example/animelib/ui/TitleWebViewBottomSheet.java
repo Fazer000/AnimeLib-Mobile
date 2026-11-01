@@ -70,8 +70,11 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
         String baseUrl = "https://v5.animelib.org";
         if (context != null) {
             try {
-                com.example.animelib.data.DatabaseManager db = new com.example.animelib.data.DatabaseManager(context);
-                String dbUrl = db.getSiteUrl();
+                com.example.animelib.data.DatabaseManager db = com.example.animelib.data.DatabaseManager.getInstance(context);
+                String dbUrl = db.getCachedSiteUrlOrNull();
+                if (dbUrl == null || dbUrl.trim().isEmpty()) {
+                    dbUrl = db.getSiteUrl();
+                }
                 if (dbUrl != null && !dbUrl.trim().isEmpty()) {
                     baseUrl = dbUrl;
                 }
@@ -274,16 +277,21 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
             webSettings.setAllowContentAccess(true);
             webSettings.setLoadsImagesAutomatically(true);
             webSettings.setMediaPlaybackRequiresUserGesture(false);
-            webSettings.setGeolocationEnabled(true);
-            webSettings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36");
+            webSettings.setGeolocationEnabled(false);
+            webSettings.setSafeBrowsingEnabled(false);
+            webSettings.setOffscreenPreRaster(true);
+            webSettings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36");
             try {
                 webSettings.setForceDark(WebSettings.FORCE_DARK_AUTO);
             } catch (Exception ignored) {}
 
+            try {
+                webViewTitle.setBackgroundColor(com.example.animelib.util.ThemeUtils.getSiteHeaderColor(getContext(), targetUrl));
+            } catch (Exception ignored) {}
             webViewTitle.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
             webViewTitle.setOnTouchListener((v, event) -> {
-                int action = event.getAction();
+                int action = event.getActionMasked();
                 if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE) {
                     if (v.getParent() != null) {
                         v.getParent().requestDisallowInterceptTouchEvent(true);
@@ -300,7 +308,6 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
                 CookieManager cookieManager = CookieManager.getInstance();
                 cookieManager.setAcceptCookie(true);
                 cookieManager.setAcceptThirdPartyCookies(webViewTitle, true);
-                cookieManager.flush();
             } catch (Exception e) {
                 Log.w(TAG, "CookieManager setup failed: " + e.getMessage());
             }
@@ -363,6 +370,18 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
                     }
                     if (jsInjectionsHandler != null) {
                         jsInjectionsHandler.setupPlayerButtonListeners(view);
+                        jsInjectionsHandler.setupBottomSheetInjections(view);
+                    }
+                }
+
+                @Override
+                public void onPageCommitVisible(WebView view, String url) {
+                    super.onPageCommitVisible(view, url);
+                    if (progressBarWeb != null) {
+                        progressBarWeb.setVisibility(View.GONE);
+                    }
+                    if (jsInjectionsHandler != null) {
+                        jsInjectionsHandler.reinjectDomListeners(view);
                         jsInjectionsHandler.setupBottomSheetInjections(view);
                     }
                 }
@@ -431,9 +450,6 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
         Map<String, String> headers = new java.util.HashMap<>();
         headers.put("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
         headers.put("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7");
-        headers.put("Accept-Encoding", "gzip, deflate, br");
-        headers.put("Cache-Control", "max-age=0");
-        headers.put("Connection", "keep-alive");
         return headers;
     }
 

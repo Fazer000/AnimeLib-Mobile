@@ -30,6 +30,27 @@ public class CookieSyncManager {
     private static volatile String savedAuthJson = null;
     private static volatile String lastSyncedCookieHash = "";
     private static volatile long lastSyncTimestamp = 0;
+    private static volatile String lastSyncSourceUrl = "";
+
+    /**
+     * Предварительно прогревает кэш токена и куки в фоновом потоке при старте приложения,
+     * чтобы не блокировать UI-поток во время навигации WebView.
+     */
+    public static void warmUpAsync(final Context context) {
+        executor.execute(() -> {
+            try {
+                Context appCtx = context != null ? context.getApplicationContext() : AnimeLibApplication.getInstance();
+                if (appCtx != null) {
+                    DatabaseManager dbManager = DatabaseManager.getInstance(appCtx);
+                    dbManager.getSiteUrl();
+                    getAuthJson(appCtx);
+                }
+                syncFromUrlInternal(null);
+            } catch (Exception e) {
+                Log.w(TAG, "Warmup error", e);
+            }
+        });
+    }
 
     // Все ключевые URL сети Lib
     public static final List<String> ALL_LIB_URLS = Arrays.asList(
@@ -178,37 +199,52 @@ public class CookieSyncManager {
     }
 
     /**
-     * Внедряет объект auth из localStorage на загруженную страницу WebView, ТОЛЬКО ЕСЛИ есть авторизация в БД
+     * Внедряет объект auth в localStorage загружаемой страницы WebView без блокировки главного потока на чтении БД.
      */
-    public static void injectAuthLocalStorage(WebView webView) {
+    public static void injectAuthLocalStorage(final WebView webView) {
         if (webView == null) return;
 
-        Context context = webView.getContext();
-        if (!isAuthorizedOnAnimeLib(context)) {
-            Log.d(TAG, "User is not authorized on AnimeLib (no token in DB), skipping auth injection.");
+        final Context appContext = webView.getContext() != null
+                ? webView.getContext().getApplicationContext()
+                : AnimeLibApplication.getInstance();
+
+        String fastCachedAuth = savedAuthJson;
+        if (fastCachedAuth != null && !fastCachedAuth.isEmpty() && !"null".equals(fastCachedAuth)) {
+            postAuthScriptToWebView(webView, fastCachedAuth);
             return;
         }
 
-        final String authStr = getAuthJson(context);
-        if (authStr == null || authStr.isEmpty() || "null".equals(authStr)) return;
+        executor.execute(() -> {
+            try {
+                if (!isAuthorizedOnAnimeLib(appContext)) {
+                    return;
+                }
+                final String authStr = getAuthJson(appContext);
+                if (authStr == null || authStr.isEmpty() || "null".equals(authStr)) {
+                    return;
+                }
+                postAuthScriptToWebView(webView, authStr);
+            } catch (Exception e) {
+                Log.e(TAG, "Error preparing auth injection off main thread", e);
+            }
+        });
+    }
 
+    private static void postAuthScriptToWebView(final WebView webView, final String authStr) {
+        if (webView == null || authStr == null || authStr.isEmpty()) return;
+        final String quotedJsonLiteral = org.json.JSONObject.quote(authStr);
         webView.post(() -> {
             try {
                 String jsScript =
                     "(function() {" +
                     "  try {" +
-                    "    var authVal = " + authStr + ";" +
-                    "    var authStr = (typeof authVal === 'string') ? authVal : JSON.stringify(authVal);" +
+                    "    var authStr = " + quotedJsonLiteral + ";" +
                     "    var current = localStorage.getItem('auth');" +
                     "    if (authStr && current !== authStr) {" +
                     "      localStorage.setItem('auth', authStr);" +
-                    "      console.log('[CookieSyncManager] LocalStorage auth synced to ' + window.location.hostname);" +
                     "    }" +
-                    "  } catch(e) {" +
-                    "    console.error('[CookieSyncManager] Auth injection error:', e);" +
-                    "  }" +
+                    "  } catch(e) {}" +
                     "})();";
-
                 webView.evaluateJavascript(jsScript, null);
             } catch (Exception e) {
                 Log.e(TAG, "Failed to inject auth into localStorage", e);
@@ -230,52 +266,55 @@ public class CookieSyncManager {
      */
     public static void syncFromUrl(final String sourceUrl) {
         long now = System.currentTimeMillis();
-        if (sourceUrl == null && (now - lastSyncTimestamp < 1000)) {
+        String normalizedSource = sourceUrl != null ? sourceUrl : "";
+        if ((now - lastSyncTimestamp < 1500) && normalizedSource.equals(lastSyncSourceUrl)) {
             return;
         }
+        lastSyncSourceUrl = normalizedSource;
 
-        executor.execute(() -> {
-            try {
-                Context context = AnimeLibApplication.getInstance();
-                if (!isAuthorizedOnAnimeLib(context)) {
-                    Log.d(TAG, "User is not authorized on AnimeLib (no token in DB), skipping cookie sync.");
-                    return;
-                }
+        executor.execute(() -> syncFromUrlInternal(sourceUrl));
+    }
 
-                CookieManager cookieManager = CookieManager.getInstance();
-                if (cookieManager == null) return;
-
-                cookieManager.setAcceptCookie(true);
-
-                Set<String> sourceUrls = new HashSet<>();
-                if (sourceUrl != null && !sourceUrl.trim().isEmpty() && sourceUrl.startsWith("http")) {
-                    sourceUrls.add(sourceUrl);
-                }
-                sourceUrls.add("https://v5.animelib.org");
-                sourceUrls.add("https://animelib.org");
-                sourceUrls.add("https://animelib.me");
-                sourceUrls.add("https://mangalib.me");
-                sourceUrls.add("https://ranobelib.me");
-                sourceUrls.add("https://lib.social");
-
-                StringBuilder combinedCookies = new StringBuilder();
-                for (String src : sourceUrls) {
-                    String cookies = cookieManager.getCookie(src);
-                    if (cookies != null && !cookies.trim().isEmpty()) {
-                        combinedCookies.append(cookies).append("; ");
-                    }
-                }
-
-                String fullCookieStr = combinedCookies.toString().trim();
-                if (!fullCookieStr.isEmpty()) {
-                    copyCookieStringToAllDomainsInternal(cookieManager, fullCookieStr);
-                }
-
-                lastSyncTimestamp = System.currentTimeMillis();
-            } catch (Exception e) {
-                Log.e(TAG, "Error in async syncFromUrl", e);
+    private static void syncFromUrlInternal(final String sourceUrl) {
+        try {
+            Context context = AnimeLibApplication.getInstance();
+            if (!isAuthorizedOnAnimeLib(context)) {
+                return;
             }
-        });
+
+            CookieManager cookieManager = CookieManager.getInstance();
+            if (cookieManager == null) return;
+
+            cookieManager.setAcceptCookie(true);
+
+            Set<String> sourceUrls = new HashSet<>();
+            if (sourceUrl != null && !sourceUrl.trim().isEmpty() && sourceUrl.startsWith("http")) {
+                sourceUrls.add(sourceUrl);
+            }
+            sourceUrls.add("https://v5.animelib.org");
+            sourceUrls.add("https://animelib.org");
+            sourceUrls.add("https://animelib.me");
+            sourceUrls.add("https://mangalib.me");
+            sourceUrls.add("https://ranobelib.me");
+            sourceUrls.add("https://lib.social");
+
+            StringBuilder combinedCookies = new StringBuilder();
+            for (String src : sourceUrls) {
+                String cookies = cookieManager.getCookie(src);
+                if (cookies != null && !cookies.trim().isEmpty()) {
+                    combinedCookies.append(cookies).append("; ");
+                }
+            }
+
+            String fullCookieStr = combinedCookies.toString().trim();
+            if (!fullCookieStr.isEmpty()) {
+                copyCookieStringToAllDomainsInternal(cookieManager, fullCookieStr);
+            }
+
+            lastSyncTimestamp = System.currentTimeMillis();
+        } catch (Exception e) {
+            Log.e(TAG, "Error in async syncFromUrl", e);
+        }
     }
 
     /**

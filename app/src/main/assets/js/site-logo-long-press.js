@@ -81,19 +81,33 @@
         document.addEventListener('DOMContentLoaded', injectHideStyle);
     }
 
-    // 2. Observer to auto-close and clean up any native sites-list popup created by site JS
+    // 2. Lightweight observer: only inspect newly added element nodes for sites-list popup (no attribute watching)
     try {
-        var observer = new MutationObserver(function() {
-            if (document.querySelector('[data-name="sites-list"]')) {
-                window.animelibKillSitesPopup();
-            }
-        });
-        observer.observe(document.body || document.documentElement, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class', 'style']
-        });
+        var attachPopupObserver = function() {
+            var targetRoot = document.body || document.documentElement;
+            if (!targetRoot) return;
+            var observer = new MutationObserver(function(mutations) {
+                for (var i = 0; i < mutations.length; i++) {
+                    var added = mutations[i].addedNodes;
+                    for (var j = 0; j < added.length; j++) {
+                        var node = added[j];
+                        if (node && node.nodeType === 1) {
+                            if ((node.getAttribute && node.getAttribute('data-name') === 'sites-list') ||
+                                (node.querySelector && node.querySelector('[data-name="sites-list"]'))) {
+                                window.animelibKillSitesPopup();
+                                return;
+                            }
+                        }
+                    }
+                }
+            });
+            observer.observe(targetRoot, { childList: true, subtree: true });
+        };
+        if (document.body) {
+            attachPopupObserver();
+        } else {
+            document.addEventListener('DOMContentLoaded', attachPopupObserver, { once: true });
+        }
     } catch(e) {}
 
     window.animelibKillSitesPopup();
@@ -228,7 +242,7 @@
     }
 
     ['touchstart', 'mousedown', 'pointerdown'].forEach(function(evt) {
-        document.addEventListener(evt, handleStart, { passive: false, capture: true });
+        document.addEventListener(evt, handleStart, { passive: true, capture: true });
     });
 
     ['touchmove', 'mousemove', 'pointermove'].forEach(function(evt) {

@@ -10,22 +10,52 @@ import androidx.media3.common.util.UnstableApi;
 
 import com.example.animelib.VideoPlayerActivity;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
- * Класс для обработки нажатий кнопок плеера в WebView.
- * Содержит JavaScript интерфейс и логику настройки слушателей
+ * Класс для обработки нажатий кнопок плеера и пакетного внедрения JS-скриптов в WebView.
  */
 public class JSInjectionsHandler {
     private static final String TAG = "PlayerButtonHandler";
     private static final String JS_INTERFACE_NAME = "AndroidInterface";
-    
+
+    private static final Map<String, String> JS_CACHE = new ConcurrentHashMap<>();
+    private static volatile String cachedStartBundle = null;
+    private static volatile String cachedFinishBundle = null;
+    private static final ExecutorService PRELOAD_EXECUTOR = Executors.newSingleThreadExecutor();
+
+    private static final String[] START_SCRIPTS = new String[] {
+            "js/license-button-listener.js",
+            "js/player-button-listener.js",
+            "js/theme-button-listener.js",
+            "js/custom-select-handler.js",
+            "js/domain-change-handler.js",
+            "js/auth-handler.js",
+            "js/search-button-listener.js",
+            "js/downloaded-button-listener.js",
+            "js/carousel-fix.js",
+            "js/site-logo-long-press.js"
+    };
+
+    private static final String[] FINISH_SCRIPTS = new String[] {
+            "js/license-button-listener.js",
+            "js/player-button-listener.js",
+            "js/theme-button-listener.js",
+            "js/search-button-listener.js",
+            "js/downloaded-button-listener.js",
+            "js/carousel-fix.js",
+            "js/auth-handler.js",
+            "js/site-logo-long-press.js"
+    };
+
     private final Context context;
-    private final Map<String, String> jsCache = new ConcurrentHashMap<>();
 
     public interface OnPlayerButtonClickListener {
         void onPlayerButtonClicked(String buttonHref);
@@ -36,56 +66,90 @@ public class JSInjectionsHandler {
     public void setOnPlayerButtonClickListener(OnPlayerButtonClickListener listener) {
         this.onPlayerButtonClickListener = listener;
     }
-    
+
     public JSInjectionsHandler(Context context) {
         this.context = context;
+        preloadAssetsAsync(context);
     }
-    
+
+    /**
+     * Асинхронно предзагружает и собирает единые JS-бандлы в памяти,
+     * чтобы исключить чтение файлов из assets на UI-потоке и сократить число IPC вызовов evaluateJavascript.
+     */
+    public static void preloadAssetsAsync(final Context ctx) {
+        if (ctx == null || (cachedStartBundle != null && cachedFinishBundle != null)) {
+            return;
+        }
+        final Context appCtx = ctx.getApplicationContext();
+        PRELOAD_EXECUTOR.execute(() -> {
+            try {
+                ensureBundlesBuilt(appCtx);
+                readAssetStatic(appCtx, "js/theme-color-override.js");
+                readAssetStatic(appCtx, "js/remove-bottom-menu.js");
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to preload JS bundles", e);
+            }
+        });
+    }
+
+    private static synchronized void ensureBundlesBuilt(Context ctx) {
+        if (cachedStartBundle == null) {
+            cachedStartBundle = buildCombinedBundle(ctx, START_SCRIPTS);
+        }
+        if (cachedFinishBundle == null) {
+            cachedFinishBundle = buildCombinedBundle(ctx, FINISH_SCRIPTS);
+        }
+    }
+
+    private static String buildCombinedBundle(Context ctx, String[] paths) {
+        StringBuilder sb = new StringBuilder(32768);
+        sb.append("(function(){");
+        for (String path : paths) {
+            String code = readAssetStatic(ctx, path);
+            if (code != null && !code.isEmpty()) {
+                sb.append("\ntry {\n").append(code).append("\n} catch(_e) {}\n");
+            }
+        }
+        sb.append("})();");
+        return sb.toString();
+    }
+
     /**
      * Добавляет JavaScript интерфейс к WebView
      */
     public void addJavaScriptInterface(WebView webView) {
         webView.addJavascriptInterface(new PlayerButtonJSInterface(), JS_INTERFACE_NAME);
-        Log.d(TAG, "JavaScript interface added to WebView");
     }
-    
+
     /**
-     * Настраивает слушатели кнопок плеера для SPA приложений
+     * Настраивает слушатели кнопок плеера для SPA приложений одним пакетным IPC-вызовом
      */
     public void setupPlayerButtonListeners(WebView webView) {
-        Log.d(TAG, "Setting up SPA-aware player button listeners");
-
-        // Загружаем и выполняем JavaScript файлы
-        loadAndExecuteJS(webView, "js/license-button-listener.js", "License button listener");
-        loadAndExecuteJS(webView, "js/player-button-listener.js", "Player button listener");
-        loadAndExecuteJS(webView, "js/theme-button-listener.js", "Theme button listener");
-        loadAndExecuteJS(webView, "js/custom-select-handler.js", "Custom select handler");
-        loadAndExecuteJS(webView, "js/domain-change-handler.js", "Domain change handler");
-        loadAndExecuteJS(webView, "js/auth-handler.js", "Auth handler");
-        loadAndExecuteJS(webView, "js/search-button-listener.js", "Search button listener");
-        loadAndExecuteJS(webView, "js/downloaded-button-listener.js", "Downloaded button listener");
-        loadAndExecuteJS(webView, "js/carousel-fix.js", "Carousel scroll fix");
-        loadAndExecuteJS(webView, "js/debug-info.js", "Debug info");
-        loadAndExecuteJS(webView, "js/button-checker.js", "Button checker");
-        loadAndExecuteJS(webView, "js/site-logo-long-press.js", "Site logo long press listener");
+        if (webView == null) return;
+        String bundle = cachedStartBundle;
+        if (bundle == null) {
+            ensureBundlesBuilt(context.getApplicationContext());
+            bundle = cachedStartBundle;
+        }
+        if (bundle != null && !bundle.isEmpty()) {
+            webView.evaluateJavascript(bundle, null);
+        }
         injectThemeColorOverride(webView);
-
     }
 
     /**
-     * Повторно внедряет DOM-зависимые слушатели после полной загрузки страницы
+     * Повторно внедряет DOM-зависимые слушатели после отрисовки/загрузки страницы одним вызовом
      */
     public void reinjectDomListeners(WebView webView) {
-        Log.d(TAG, "Re-injecting DOM-dependent listeners");
-
-        loadAndExecuteJS(webView, "js/license-button-listener.js", "License button listener");
-        loadAndExecuteJS(webView, "js/player-button-listener.js", "Player button listener");
-        loadAndExecuteJS(webView, "js/theme-button-listener.js", "Theme button listener");
-        loadAndExecuteJS(webView, "js/search-button-listener.js", "Search button listener");
-        loadAndExecuteJS(webView, "js/downloaded-button-listener.js", "Downloaded button listener");
-        loadAndExecuteJS(webView, "js/carousel-fix.js", "Carousel scroll fix");
-        loadAndExecuteJS(webView, "js/auth-handler.js", "Auth handler");
-        loadAndExecuteJS(webView, "js/site-logo-long-press.js", "Site logo long press listener");
+        if (webView == null) return;
+        String bundle = cachedFinishBundle;
+        if (bundle == null) {
+            ensureBundlesBuilt(context.getApplicationContext());
+            bundle = cachedFinishBundle;
+        }
+        if (bundle != null && !bundle.isEmpty()) {
+            webView.evaluateJavascript(bundle, null);
+        }
         injectThemeColorOverride(webView);
     }
 
@@ -99,32 +163,65 @@ public class JSInjectionsHandler {
         if (webView == null) return;
         String url = webView.getUrl();
         if (isIgnoredColorDomain(url)) {
-            Log.d(TAG, "Skipping theme-color-override.js for ignored color domain: " + url);
             webView.evaluateJavascript(
                 "(function(){ var el = document.getElementById('animelib-player-theme-colors-override'); if (el) el.remove(); })();",
                 null
             );
             return;
         }
-        loadAndExecuteJS(webView, "js/theme-color-override.js", "Theme color override");
+        loadAndExecuteJS(webView, "js/theme-color-override.js");
+    }
+
+    /**
+     * Синхронизирует выбранную пользователем тему приложения ("light", "dark", "auto") с атрибутом data-theme сайта.
+     */
+    public void syncAppThemeToWebView(WebView webView, int themeMode) {
+        if (webView == null) return;
+        String url = webView.getUrl();
+        if (url == null || "about:blank".equals(url) || isIgnoredColorDomain(url)) return;
+
+        final String webThemeValue;
+        if (themeMode == com.example.animelib.util.ThemeUtils.THEME_DARK) {
+            webThemeValue = "dark";
+        } else if (themeMode == com.example.animelib.util.ThemeUtils.THEME_LIGHT) {
+            webThemeValue = "light";
+        } else {
+            webThemeValue = "auto";
+        }
+
+        String syncJs = "(function(){" +
+                "try {" +
+                "  if (document.documentElement) {" +
+                "    document.documentElement.setAttribute('data-theme', '" + webThemeValue + "');" +
+                "  }" +
+                "} catch(e) {}" +
+                "})();";
+        webView.evaluateJavascript(syncJs, null);
+        injectThemeColorOverride(webView);
     }
 
     /**
      * Внедряет скрипты, специфичные для BottomSheet WebView (например, скрытие нижнего меню)
      */
     public void setupBottomSheetInjections(WebView webView) {
-        loadAndExecuteJS(webView, "js/remove-bottom-menu.js", "Remove bottom menu");
+        loadAndExecuteJS(webView, "js/remove-bottom-menu.js");
     }
 
-    private String getJSFromAsset(String assetPath) {
-        if (jsCache.containsKey(assetPath)) {
-            return jsCache.get(assetPath);
+    private static String readAssetStatic(Context ctx, String assetPath) {
+        String existing = JS_CACHE.get(assetPath);
+        if (existing != null) {
+            return existing;
         }
-        try (InputStream inputStream = context.getAssets().open(assetPath)) {
-            byte[] buffer = new byte[inputStream.available()];
-            inputStream.read(buffer);
-            String jsCode = new String(buffer, StandardCharsets.UTF_8);
-            jsCache.put(assetPath, jsCode);
+        if (ctx == null) return null;
+        try (InputStream inputStream = ctx.getAssets().open(assetPath);
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buf = new byte[4096];
+            int read;
+            while ((read = inputStream.read(buf)) != -1) {
+                out.write(buf, 0, read);
+            }
+            String jsCode = out.toString(StandardCharsets.UTF_8.name());
+            JS_CACHE.put(assetPath, jsCode);
             return jsCode;
         } catch (IOException e) {
             Log.e(TAG, "Failed to load JS file: " + assetPath, e);
@@ -132,12 +229,9 @@ public class JSInjectionsHandler {
         }
     }
 
-    /**
-     * Загружает и выполняет JavaScript файл из assets
-     */
-    private void loadAndExecuteJS(WebView webView, String assetPath, String description) {
+    private void loadAndExecuteJS(WebView webView, String assetPath) {
         if (webView == null) return;
-        String jsCode = getJSFromAsset(assetPath);
+        String jsCode = readAssetStatic(context.getApplicationContext(), assetPath);
         if (jsCode != null && !jsCode.isEmpty()) {
             webView.evaluateJavascript(jsCode, null);
         }

@@ -35,28 +35,19 @@ class LicenseButtonHandler {
      */
     setupClickListener() {
         document.addEventListener('click', (e) => {
-            console.log('[LicenseButtonHandler] Click detected on:', e.target.tagName);
+            const startEl = (e.target && e.target.nodeType === 1) ? e.target : (e.target ? e.target.parentElement : null);
+            if (!startEl) return;
+            const button = typeof startEl.closest === 'function' ? startEl.closest('button') : null;
+            if (!button) return;
 
-            let element = e.target;
-            for (let i = 0; i < 5 && element; i++) {
-                if (element.tagName === 'BUTTON') {
-                    const buttonText = this.getButtonText(element);
-                    console.log('[LicenseButtonHandler] Button text:', buttonText);
-                    
-                    if (buttonText.trim() === 'Лицензирован') {
-                        console.log('[LicenseButtonHandler] Licensed button clicked');
-                        const currentPageUrl = window.location.href;
-                        e.preventDefault();
-                        e.stopPropagation();
-                        AndroidInterface.onPlayerButtonClicked(currentPageUrl);
-                        break;
-                    }
-                }
-                element = element.parentElement;
+            const buttonText = this.getButtonText(button).trim();
+            if (buttonText === 'Лицензирован') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+                AndroidInterface.onPlayerButtonClicked(window.location.href);
             }
         }, true);
-
-        console.log('[LicenseButtonHandler] Click listener setup completed');
     }
 
     /**
@@ -85,12 +76,19 @@ class LicenseButtonHandler {
             });
         });
 
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-
-        console.log('[LicenseButtonHandler] Text replacement observer setup completed');
+        const attach = () => {
+            if (document.body) {
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+            }
+        };
+        if (document.body) {
+            attach();
+        } else {
+            document.addEventListener('DOMContentLoaded', attach, { once: true });
+        }
     }
 
     /**

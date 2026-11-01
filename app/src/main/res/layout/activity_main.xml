@@ -41,6 +41,19 @@
             android:id="@+id/webErrorLayout"
             layout="@layout/view_web_error" />
 
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+            android:id="@+id/webProgressBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:indeterminate="false"
+            android:max="100"
+            android:visibility="gone"
+            app:indicatorColor="?attr/secondaryColor"
+            app:trackColor="@android:color/transparent"
+            app:trackCornerRadius="2dp"
+            app:trackThickness="2.5dp" />
+
         <include
             layout="@layout/view_url_top_banner" />
 

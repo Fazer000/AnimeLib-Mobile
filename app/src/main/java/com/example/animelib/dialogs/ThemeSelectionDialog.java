@@ -43,7 +43,9 @@ public class ThemeSelectionDialog {
             
             ThemeUtils.saveThemePreference(context, themeMode);
             
-            if (context instanceof android.app.Activity) {
+            if (context instanceof com.example.animelib.MainActivity) {
+                ((com.example.animelib.MainActivity) context).onAppThemeSelected(themeMode);
+            } else if (context instanceof android.app.Activity) {
                 ThemeUtils.applyThemeToActivity((android.app.Activity) context, themeMode);
             } else {
                 ThemeUtils.applyTheme(themeMode);

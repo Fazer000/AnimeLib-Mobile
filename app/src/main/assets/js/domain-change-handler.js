@@ -31,10 +31,9 @@ class DomainChangeHandler {
      */
     extractDomain(url) {
         try {
-            const urlObj = new URL(url);
-            return urlObj.hostname;
+            const urlObj = new URL(url, window.location.origin);
+            return urlObj.hostname ? urlObj.hostname.toLowerCase() : null;
         } catch (e) {
-            console.warn('DomainChangeHandler: Failed to extract domain from:', url);
             return null;
         }
     }
@@ -69,9 +68,6 @@ class DomainChangeHandler {
             setTimeout(() => this.handleUrlChange(), 10);
         });
 
-        // Отслеживаем изменения через MutationObserver для динамических изменений
-        this.setupMutationObserver();
-
         console.log('DomainChangeHandler: URL change listener setup completed');
     }
 
@@ -98,64 +94,33 @@ class DomainChangeHandler {
      * Настраивает отслеживание кликов по ссылкам
      */
     setupLinkClickListener() {
-        // Используем capture: true для перехвата событий раньше
         document.addEventListener('click', (event) => {
-            if (this.isIgnoredActionTarget(event.target)) return;
+            if (event.defaultPrevented || this.isIgnoredActionTarget(event.target)) return;
 
             const startEl = (event.target && event.target.nodeType === 1) ? event.target : (event.target ? event.target.parentElement : null);
             if (!startEl || typeof startEl.closest !== 'function') return;
 
             const link = startEl.closest('a');
             if (!link || !link.href) return;
+            if (link.target === '_blank' || link.hasAttribute('download')) return;
 
-            const href = link.getAttribute('href') || link.href;
-            if (href.startsWith('#') || href.startsWith('javascript:')) return;
+            const rawHref = (link.getAttribute('href') || '').trim();
+            if (!rawHref || rawHref.startsWith('#') || rawHref.startsWith('javascript:') ||
+                rawHref.startsWith('mailto:') || rawHref.startsWith('tel:') ||
+                rawHref.startsWith('sms:') || rawHref.startsWith('intent:') || rawHref.startsWith('market:')) {
+                return;
+            }
 
-            console.log('DomainChangeHandler: Link click detected:', href);
-            this.showSpinner();
+            const fullHref = link.href;
+            if (fullHref.includes('/watch') || fullHref.includes('episode')) {
+                return;
+            }
+
+            const targetDomain = this.extractDomain(fullHref);
+            if (targetDomain && this.currentDomain && targetDomain !== this.currentDomain) {
+                this.showSpinner();
+            }
         }, true);
-
-        console.log('DomainChangeHandler: Link click listener setup completed');
-    }
-
-    /**
-     * Настраивает MutationObserver для отслеживания динамических изменений
-     */
-    setupMutationObserver() {
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                if (mutation.type === 'childList') {
-                    mutation.addedNodes.forEach((node) => {
-                        if (node.nodeType === Node.ELEMENT_NODE) {
-                            // Проверяем добавленные ссылки
-                            const links = node.querySelectorAll ? node.querySelectorAll('a[href]') : [];
-                            links.forEach((link) => {
-                                const href = link.getAttribute('href');
-                                if (href) {
-                                    const targetDomain = this.extractDomain(href);
-                                    if (targetDomain && targetDomain !== this.currentDomain) {
-                                        console.log('DomainChangeHandler: External link detected in dynamic content:', href);
-                                        // Добавляем обработчик клика к новой ссылке
-                                        link.addEventListener('click', (e) => {
-                                            if (this.isIgnoredActionTarget(e.target)) return;
-                                            console.log('DomainChangeHandler: Dynamic link clicked:', href);
-                                            this.showSpinner();
-                                        });
-                                    }
-                                }
-                            });
-                        }
-                    });
-                }
-            });
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-
-        console.log('DomainChangeHandler: MutationObserver setup completed');
     }
 
     /**
@@ -208,8 +173,9 @@ class DomainChangeHandler {
     }
 }
 
-// Создаем глобальный экземпляр
-window.domainChangeHandler = new DomainChangeHandler();
-
-console.log('DomainChangeHandler: Script loaded and initialized');
+if (!window.domainChangeHandler) {
+    window.domainChangeHandler = new DomainChangeHandler();
+} else {
+    window.domainChangeHandler.updateCurrentDomain(window.location.href);
+}
 'domain_change_ok';

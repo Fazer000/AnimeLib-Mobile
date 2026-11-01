@@ -93,9 +93,10 @@ try {
             }
         }
 
-        ['pointerdown', 'mousedown', 'touchstart', 'click'].forEach(function (type) {
-            document.addEventListener(type, handleEvent, true);
+        ['pointerdown', 'mousedown', 'touchstart'].forEach(function (type) {
+            document.addEventListener(type, handleEvent, { passive: true, capture: true });
         });
+        document.addEventListener('click', handleEvent, { passive: false, capture: true });
 
         console.log('[AnimeLIB Search] Listener setup complete');
     }
