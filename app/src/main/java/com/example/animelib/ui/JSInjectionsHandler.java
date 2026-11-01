@@ -104,6 +104,7 @@ public class JSInjectionsHandler {
     private static String buildCombinedBundle(Context ctx, String[] paths) {
         StringBuilder sb = new StringBuilder(32768);
         sb.append("(function(){");
+        sb.append("if(!window.location||!window.location.href||window.location.href==='about:blank'||!window.location.hostname){return;}");
         for (String path : paths) {
             String code = readAssetStatic(ctx, path);
             if (code != null && !code.isEmpty()) {
@@ -255,9 +256,12 @@ public class JSInjectionsHandler {
         @OptIn(markerClass = UnstableApi.class)
         @JavascriptInterface
         public void onPlayerButtonClicked(String buttonHref) {
-            if (buttonHref != null && buttonHref.startsWith("http") && !buttonHref.toLowerCase().contains("animelib")) {
-                Log.d(TAG, "Ignoring player button click for non-animelib domain: " + buttonHref);
-                return;
+            if (buttonHref != null && buttonHref.startsWith("http")) {
+                String lowerHref = buttonHref.toLowerCase();
+                if (!lowerHref.contains("animelib") && !lowerHref.contains("anilib")) {
+                    Log.d(TAG, "Ignoring player button click for non-animelib domain: " + buttonHref);
+                    return;
+                }
             }
             if (onPlayerButtonClickListener != null) {
                 onPlayerButtonClickListener.onPlayerButtonClicked(buttonHref);

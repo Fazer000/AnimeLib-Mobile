@@ -408,6 +408,24 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
                 }
 
                 @Override
+                public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
+                    super.doUpdateVisitedHistory(view, url, isReload);
+                    if (url == null || "about:blank".equals(url)) {
+                        return;
+                    }
+                    String lowerUrl = url.toLowerCase();
+                    if (!isReload && (lowerUrl.contains("animelib") || lowerUrl.contains("anilib"))
+                            && url.contains("/watch")) {
+                        openPlayerFromUrl(url);
+                        return;
+                    }
+                    if (jsInjectionsHandler != null) {
+                        jsInjectionsHandler.reinjectDomListeners(view);
+                        jsInjectionsHandler.setupBottomSheetInjections(view);
+                    }
+                }
+
+                @Override
                 public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                     super.onReceivedError(view, request, error);
                     if (request != null && request.isForMainFrame()) {

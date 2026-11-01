@@ -3556,8 +3556,14 @@ public class VideoPlayerActivity extends AppCompatActivity {
                                         if (playerEpisodesController != null && playerEpisodesController.hasUserSwitchedEpisode()) {
                                             return;
                                         }
-                                        Log.d("VideoPlayer", "No bookmark found, loading first episode");
-                                        loadFirstEpisode();
+                                        String activeUrl = VideoPlayerActivity.this.animeUrl;
+                                        if (activeUrl != null && activeUrl.contains("episode=")) {
+                                            Log.d("VideoPlayer", "No bookmark found, using episode from watch URL");
+                                            fallbackToUrlDetection();
+                                        } else {
+                                            Log.d("VideoPlayer", "No bookmark found, loading first episode");
+                                            loadFirstEpisode();
+                                        }
                                     });
                                 }
                             });

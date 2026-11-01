@@ -4,8 +4,11 @@ try {
 
   function isAnimelibDomain(href) {
     var host = (window.location && window.location.hostname) ? window.location.hostname.toLowerCase() : '';
-    if (host.indexOf('animelib') !== -1) return true;
-    if (href && typeof href === 'string' && href.toLowerCase().indexOf('animelib') !== -1) return true;
+    if (host.indexOf('animelib') !== -1 || host.indexOf('anilib') !== -1) return true;
+    if (href && typeof href === 'string') {
+      var lowerHref = href.toLowerCase();
+      if (lowerHref.indexOf('animelib') !== -1 || lowerHref.indexOf('anilib') !== -1) return true;
+    }
     return false;
   }
 
@@ -66,10 +69,10 @@ try {
     }
   }
 
-  if (window.animelibPlayerSetup) {
-    console.log('[AnimeLIB] Player listener already setup');
+  if (document.__animelibPlayerSetup) {
+    console.log('[AnimeLIB] Player listener already setup on document');
   } else {
-    window.animelibPlayerSetup = true;
+    document.__animelibPlayerSetup = true;
 
     document.addEventListener('click', function (e) {
       if (isExcludedFromPlayerInterception(e.target)) {
@@ -81,7 +84,7 @@ try {
       if (!startTarget) return;
 
       let el = startTarget;
-      for (let i = 0; i < 5 && el; i++) {
+      for (let i = 0; i < 8 && el; i++) {
         if (el.tagName && el.tagName.toUpperCase() === 'A') {
           let href = el.href || el.getAttribute('href') || '';
           if (href.includes('/watch') || href.includes('episode')) {

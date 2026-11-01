@@ -63,6 +63,8 @@ public class MainWebViewController {
     private static final Map<String, String> NAVIGATION_HEADERS;
     private static final Set<String> WARMED_HOSTS = ConcurrentHashMap.newKeySet();
     private static final ExecutorService IO_EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final java.util.regex.Pattern SPA_WATCH_PATTERN =
+            java.util.regex.Pattern.compile("(?:/[a-z]{2})?/anime/[^/?#]+/watch(?:[/?#]|$)", java.util.regex.Pattern.CASE_INSENSITIVE);
 
     static {
         Map<String, String> map = new HashMap<>();
@@ -408,6 +410,30 @@ public class MainWebViewController {
                 }
                 if (swipeRefreshLayout != null) {
                     swipeRefreshLayout.setRefreshing(false);
+                }
+            }
+
+            @Override
+            public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
+                super.doUpdateVisitedHistory(view, url, isReload);
+                if (url == null || "about:blank".equals(url)) {
+                    return;
+                }
+                String lowerUrl = url.toLowerCase();
+                if (!isReload && (lowerUrl.contains("animelib") || lowerUrl.contains("anilib"))
+                        && SPA_WATCH_PATTERN.matcher(url).find()) {
+                    String resolvedUrl = VideoUrlHelper.resolveAnimeUrl(url, lastRequestedUrl);
+                    if (view.canGoBack()) {
+                        view.goBack();
+                    }
+                    if (callback != null) {
+                        callback.onWatchUrlIntercepted(resolvedUrl);
+                    }
+                    return;
+                }
+                lastRequestedUrl = url;
+                if (jsInjectionsHandler != null) {
+                    jsInjectionsHandler.reinjectDomListeners(view);
                 }
             }
 
@@ -791,6 +817,13 @@ public class MainWebViewController {
     public void onStart() {
         if (webView != null && !isDestroyed) {
             webView.onResume();
+            String currentUrl = webView.getUrl();
+            if (currentUrl != null && !"about:blank".equals(currentUrl)) {
+                LatestViewsManager.injectLatestViewsToWebView(webView);
+                if (jsInjectionsHandler != null) {
+                    jsInjectionsHandler.reinjectDomListeners(webView);
+                }
+            }
         }
     }
 
