@@ -332,6 +332,9 @@ public class MainWebViewController {
                 }
 
                 lastRequestedUrl = url;
+                if (isInitialSplashShowing()) {
+                    hasNotifiedInitialPageLoaded = false;
+                }
                 if (webErrorLayout != null && webErrorLayout.getVisibility() == View.VISIBLE) {
                     webErrorLayout.setVisibility(View.GONE);
                 }
@@ -567,43 +570,121 @@ public class MainWebViewController {
     }
 
     private void notifyInitialPageLoadedWhenRendered(WebView view, String url) {
-        if (hasNotifiedInitialPageLoaded || callback == null || isDestroyed) {
+        if (!isInitialSplashShowing() || hasNotifiedInitialPageLoaded || callback == null || isDestroyed) {
             return;
         }
         hasNotifiedInitialPageLoaded = true;
 
+        final long checkStartedMs = android.os.SystemClock.uptimeMillis();
+        final long maxWaitForSpaMs = 7500L;
+
         final Runnable deliverLoaded = () -> {
-            if (!isDestroyed && callback != null) {
-                callback.onInitialPageLoaded(url);
+            if (isDestroyed || callback == null) {
+                return;
+            }
+            if (view != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                final boolean[] delivered = {false};
+                final Runnable fallbackRunnable = () -> {
+                    if (!delivered[0]) {
+                        delivered[0] = true;
+                        if (!isDestroyed && callback != null) {
+                            callback.onInitialPageLoaded(url);
+                        }
+                    }
+                };
+                uiHandler.postDelayed(fallbackRunnable, 160L);
+                try {
+                    view.postVisualStateCallback(visualStateRequestId++, new WebView.VisualStateCallback() {
+                        @Override
+                        public void onComplete(long requestId) {
+                            if (!delivered[0]) {
+                                delivered[0] = true;
+                                uiHandler.removeCallbacks(fallbackRunnable);
+                                uiHandler.post(() -> {
+                                    if (!isDestroyed && callback != null) {
+                                        callback.onInitialPageLoaded(url);
+                                    }
+                                });
+                            }
+                        }
+                    });
+                    return;
+                } catch (Exception ignored) {
+                    uiHandler.removeCallbacks(fallbackRunnable);
+                }
+            }
+            uiHandler.postDelayed(() -> {
+                if (!isDestroyed && callback != null) {
+                    callback.onInitialPageLoaded(url);
+                }
+            }, 80L);
+        };
+
+        if (view == null) {
+            deliverLoaded.run();
+            return;
+        }
+
+        final String readinessJs =
+                "(function(){"
+                + "try {"
+                + "  if (document.readyState !== 'complete') return 'loading';"
+                + "  var b = document.body;"
+                + "  if (!b) return 'no_body';"
+                + "  var h = Math.max(b.scrollHeight || 0, document.documentElement ? (document.documentElement.scrollHeight || 0) : 0);"
+                + "  var textLen = (b.innerText || '').replace(/\\s+/g, '').length;"
+                + "  var mediaCount = b.querySelectorAll('img, picture, canvas, video, [style*=\"background-image\"]').length;"
+                + "  var linkCount = b.querySelectorAll('a[href]').length;"
+                + "  var formCount = b.querySelectorAll('input, button, form').length;"
+                + "  var skels = b.querySelectorAll('[class*=\"skeleton\"], [class*=\"preloader\"], [class*=\"spinner\"], .is-loading');"
+                + "  var visSkels = 0;"
+                + "  for (var i = 0; i < skels.length && i < 24; i++) {"
+                + "    var r = skels[i].getBoundingClientRect();"
+                + "    if (r && r.width > 24 && r.height > 20 && r.top < (window.innerHeight || 900)) visSkels++;"
+                + "  }"
+                + "  var hasRichContent = (textLen >= 120 && (mediaCount >= 2 || linkCount >= 6)) || mediaCount >= 5 || (formCount >= 2 && textLen >= 30);"
+                + "  if (!hasRichContent) return 'waiting_content';"
+                + "  if (visSkels >= 4 && mediaCount < 4 && textLen < 280) return 'waiting_skeletons';"
+                + "  if (h < 260 && formCount < 2) return 'waiting_layout';"
+                + "  return 'ready';"
+                + "} catch(e) { return 'ready'; }"
+                + "})();";
+
+        final Runnable[] pollTask = new Runnable[1];
+        final int[] readyStreak = {0};
+        pollTask[0] = () -> {
+            if (isDestroyed || callback == null || !isInitialSplashShowing()) {
+                return;
+            }
+            long elapsed = android.os.SystemClock.uptimeMillis() - checkStartedMs;
+            if (elapsed >= maxWaitForSpaMs) {
+                deliverLoaded.run();
+                return;
+            }
+            try {
+                view.evaluateJavascript(readinessJs, value -> {
+                    if (isDestroyed || callback == null || !isInitialSplashShowing()) {
+                        return;
+                    }
+                    boolean isReady = value != null && value.contains("ready");
+                    if (isReady) {
+                        readyStreak[0]++;
+                        if (readyStreak[0] >= 2) {
+                            deliverLoaded.run();
+                        } else {
+                            uiHandler.postDelayed(pollTask[0], 120L);
+                        }
+                    } else {
+                        readyStreak[0] = 0;
+                        uiHandler.postDelayed(pollTask[0], 140L);
+                    }
+                });
+            } catch (Exception e) {
+                deliverLoaded.run();
             }
         };
 
-        if (view != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-            final boolean[] delivered = {false};
-            final Runnable fallbackRunnable = () -> {
-                if (!delivered[0]) {
-                    delivered[0] = true;
-                    deliverLoaded.run();
-                }
-            };
-            uiHandler.postDelayed(fallbackRunnable, 140L);
-            try {
-                view.postVisualStateCallback(visualStateRequestId++, new WebView.VisualStateCallback() {
-                    @Override
-                    public void onComplete(long requestId) {
-                        if (!delivered[0]) {
-                            delivered[0] = true;
-                            uiHandler.removeCallbacks(fallbackRunnable);
-                            uiHandler.post(deliverLoaded);
-                        }
-                    }
-                });
-                return;
-            } catch (Exception ignored) {
-                uiHandler.removeCallbacks(fallbackRunnable);
-            }
-        }
-        uiHandler.postDelayed(deliverLoaded, 60L);
+        uiHandler.postDelayed(pollTask[0], 100L);
     }
 
     private void showTopProgress(int progress) {

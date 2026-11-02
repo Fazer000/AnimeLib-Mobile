@@ -72,7 +72,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean hasCompletedInitialWebSplash = false;
     private String pendingBannerUrlAfterSplash = null;
 
-    private static final long INITIAL_WEB_SPLASH_TIMEOUT_MS = 14000L;
+    private static final long INITIAL_WEB_SPLASH_TIMEOUT_MS = 16000L;
 
     private MainBannerController bannerController;
     private MainAuthController authController;
@@ -88,6 +88,11 @@ public class MainActivity extends AppCompatActivity {
         splashScreen.setOnExitAnimationListener(SplashScreenViewProvider::remove);
 
         super.onCreate(savedInstanceState);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            try {
+                getSplashScreen().setOnExitAnimationListener(android.window.SplashScreenView::remove);
+            } catch (Exception ignored) {}
+        }
         JSInjectionsHandler.preloadAssetsAsync(this);
         setContentView(R.layout.activity_main);
 
