@@ -76,6 +76,9 @@ public class MainWebViewController {
     public interface WebViewCallback {
         void onWatchUrlIntercepted(String resolvedUrl);
         void onDomainChanged(String newDomain);
+        void onInitialPageLoaded(String loadedUrl);
+        void onInitialPageLoadFailed(String failingUrl);
+        boolean isInitialSplashActive();
     }
 
     private final AppCompatActivity activity;
@@ -99,6 +102,8 @@ public class MainWebViewController {
     private String lastFailedUrl = null;
     private String lastRequestedUrl = null;
     private boolean isFirstLoad = true;
+    private boolean hasNotifiedInitialPageLoaded = false;
+    private long visualStateRequestId = 1L;
     private boolean isDestroyed = false;
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
@@ -334,7 +339,9 @@ public class MainWebViewController {
                     webView.setVisibility(View.VISIBLE);
                 }
 
-                showTopProgress(15);
+                if (!isInitialSplashShowing()) {
+                    showTopProgress(15);
+                }
 
                 String newDomain = extractDomain(url);
                 boolean isEmbedOrPlayer =
@@ -343,7 +350,7 @@ public class MainWebViewController {
                         url.contains("/player") || url.contains("iframe");
 
                 boolean domainChanged = newDomain != null && (currentDomain == null || !currentDomain.equalsIgnoreCase(newDomain));
-                if (!isEmbedOrPlayer && (isFirstLoad || (currentDomain != null && domainChanged))) {
+                if (!isInitialSplashShowing() && !isEmbedOrPlayer && (isFirstLoad || (currentDomain != null && domainChanged))) {
                     showDomainChangeSpinner();
                 }
 
@@ -411,6 +418,8 @@ public class MainWebViewController {
                 if (swipeRefreshLayout != null) {
                     swipeRefreshLayout.setRefreshing(false);
                 }
+
+                notifyInitialPageLoadedWhenRendered(view, url);
             }
 
             @Override
@@ -553,8 +562,52 @@ public class MainWebViewController {
         } catch (Exception ignored) {}
     }
 
+    private boolean isInitialSplashShowing() {
+        return callback != null && callback.isInitialSplashActive();
+    }
+
+    private void notifyInitialPageLoadedWhenRendered(WebView view, String url) {
+        if (hasNotifiedInitialPageLoaded || callback == null || isDestroyed) {
+            return;
+        }
+        hasNotifiedInitialPageLoaded = true;
+
+        final Runnable deliverLoaded = () -> {
+            if (!isDestroyed && callback != null) {
+                callback.onInitialPageLoaded(url);
+            }
+        };
+
+        if (view != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            final boolean[] delivered = {false};
+            final Runnable fallbackRunnable = () -> {
+                if (!delivered[0]) {
+                    delivered[0] = true;
+                    deliverLoaded.run();
+                }
+            };
+            uiHandler.postDelayed(fallbackRunnable, 140L);
+            try {
+                view.postVisualStateCallback(visualStateRequestId++, new WebView.VisualStateCallback() {
+                    @Override
+                    public void onComplete(long requestId) {
+                        if (!delivered[0]) {
+                            delivered[0] = true;
+                            uiHandler.removeCallbacks(fallbackRunnable);
+                            uiHandler.post(deliverLoaded);
+                        }
+                    }
+                });
+                return;
+            } catch (Exception ignored) {
+                uiHandler.removeCallbacks(fallbackRunnable);
+            }
+        }
+        uiHandler.postDelayed(deliverLoaded, 60L);
+    }
+
     private void showTopProgress(int progress) {
-        if (webProgressBar == null) return;
+        if (webProgressBar == null || isInitialSplashShowing()) return;
         uiHandler.removeCallbacks(hideTopProgressRunnable);
         if (webProgressBar.getVisibility() != View.VISIBLE) {
             webProgressBar.setAlpha(1f);
@@ -662,6 +715,11 @@ public class MainWebViewController {
             if (swipeRefreshLayout != null) {
                 swipeRefreshLayout.setRefreshing(false);
             }
+
+            if (callback != null && callback.isInitialSplashActive()) {
+                hasNotifiedInitialPageLoaded = true;
+                callback.onInitialPageLoadFailed(failingUrl);
+            }
         });
     }
 
@@ -715,6 +773,9 @@ public class MainWebViewController {
 
     public void showDomainChangeSpinner() {
         activity.runOnUiThread(() -> {
+            if (isInitialSplashShowing()) {
+                return;
+            }
             uiHandler.removeCallbacks(hideSpinnerRunnable);
             if (spinnerBackground != null) {
                 spinnerBackground.animate().cancel();
@@ -808,6 +869,7 @@ public class MainWebViewController {
         lastRequestedUrl = savedInstanceState.getString("webview_last_requested_url", null);
         if (webView.restoreState(savedInstanceState) != null && webView.getUrl() != null) {
             isFirstLoad = false;
+            hasNotifiedInitialPageLoaded = true;
             currentDomain = extractDomain(webView.getUrl());
             return true;
         }

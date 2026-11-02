@@ -18,10 +18,12 @@ import com.example.animelib.ui.PlayerSplashLogoView;
 public class PlayerSplashScreenController {
 
     private static final String TAG = "PlayerSplashCtrl";
-    private static final long SAFETY_TIMEOUT_MS = 7000L;
-    private static final long MIN_ENTRY_DISPLAY_MS = 340L;
+    private static final long DEFAULT_SAFETY_TIMEOUT_MS = 7000L;
+    private static final long MIN_ENTRY_DISPLAY_MS = 380L;
     private static final long SLOW_NETWORK_HINT_DELAY_MS = 1800L;
     private static final long EXIT_ANIMATION_MS = 240L;
+
+    private final long safetyTimeoutMs;
 
     private View splashOverlay;
     private View splashContent;
@@ -36,6 +38,19 @@ public class PlayerSplashScreenController {
     private boolean hasDismissed = false;
     private long shownAtUptimeMs = 0L;
     private Runnable pendingDismissRunnable;
+    private Runnable onSafetyTimeoutCallback;
+
+    public PlayerSplashScreenController() {
+        this(DEFAULT_SAFETY_TIMEOUT_MS);
+    }
+
+    public PlayerSplashScreenController(long safetyTimeoutMs) {
+        this.safetyTimeoutMs = safetyTimeoutMs;
+    }
+
+    public void setOnSafetyTimeoutCallback(Runnable callback) {
+        this.onSafetyTimeoutCallback = callback;
+    }
 
     private final Runnable slowNetworkHintRunnable = () -> {
         if (isShowing && !isDismissing && !hasDismissed && splashStatusText != null) {
@@ -53,21 +68,31 @@ public class PlayerSplashScreenController {
     private final Runnable safetyTimeoutRunnable = () -> {
         if (isShowing && !hasDismissed) {
             Log.d(TAG, "Safety timeout reached, dismissing splash screen");
-            dismissWithAnimation(null);
+            dismissWithAnimation(onSafetyTimeoutCallback);
         }
     };
 
     public void initViews(View rootView) {
+        initViews(
+                rootView,
+                R.id.playerSplashScreenOverlay,
+                R.id.playerSplashContent,
+                R.id.playerSplashLogoView,
+                R.id.playerSplashStatusText
+        );
+    }
+
+    public void initViews(View rootView, int overlayId, int contentId, int logoViewId, int statusTextId) {
         if (rootView == null) return;
 
-        splashOverlay = rootView.findViewById(R.id.playerSplashScreenOverlay);
-        splashContent = rootView.findViewById(R.id.playerSplashContent);
-        splashLogoView = rootView.findViewById(R.id.playerSplashLogoView);
-        splashStatusText = rootView.findViewById(R.id.playerSplashStatusText);
+        splashOverlay = rootView.findViewById(overlayId);
+        splashContent = rootView.findViewById(contentId);
+        splashLogoView = rootView.findViewById(logoViewId);
+        splashStatusText = rootView.findViewById(statusTextId);
     }
 
     /**
-     * Показывает сплешскрин при первом входе в плеер и запускает хореографию логотипа.
+     * Показывает сплешскрин и запускает хореографию логотипа.
      */
     public void showOnEntry() {
         if (hasDismissed || splashOverlay == null) return;
@@ -104,7 +129,20 @@ public class PlayerSplashScreenController {
         handler.postDelayed(slowNetworkHintRunnable, SLOW_NETWORK_HINT_DELAY_MS);
 
         handler.removeCallbacks(safetyTimeoutRunnable);
-        handler.postDelayed(safetyTimeoutRunnable, SAFETY_TIMEOUT_MS);
+        handler.postDelayed(safetyTimeoutRunnable, safetyTimeoutMs);
+    }
+
+    public void pauseTimers() {
+        handler.removeCallbacks(slowNetworkHintRunnable);
+        handler.removeCallbacks(safetyTimeoutRunnable);
+    }
+
+    public void restartTimers() {
+        if (!isShowing || isDismissing || hasDismissed) return;
+        handler.removeCallbacks(slowNetworkHintRunnable);
+        handler.postDelayed(slowNetworkHintRunnable, SLOW_NETWORK_HINT_DELAY_MS);
+        handler.removeCallbacks(safetyTimeoutRunnable);
+        handler.postDelayed(safetyTimeoutRunnable, safetyTimeoutMs);
     }
 
     /**

@@ -14,7 +14,9 @@ import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.annotation.OptIn;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.core.splashscreen.SplashScreen;
+import androidx.core.splashscreen.SplashScreenViewProvider;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.media3.common.util.UnstableApi;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
@@ -23,6 +25,7 @@ import com.example.animelib.api.ApiService;
 import com.example.animelib.controllers.MainAuthController;
 import com.example.animelib.controllers.MainBannerController;
 import com.example.animelib.controllers.MainWebViewController;
+import com.example.animelib.controllers.PlayerSplashScreenController;
 import com.example.animelib.data.DatabaseManager;
 import com.example.animelib.dialogs.ThemeSelectionDialog;
 import com.example.animelib.models.UpdateInfo;
@@ -66,17 +69,23 @@ public class MainActivity extends AppCompatActivity {
     private boolean isUrlInputShowing = false;
     private boolean hasInitialUrlLoaded = false;
     private boolean hasShownInitialBanner = false;
+    private boolean hasCompletedInitialWebSplash = false;
+    private String pendingBannerUrlAfterSplash = null;
+
+    private static final long INITIAL_WEB_SPLASH_TIMEOUT_MS = 14000L;
 
     private MainBannerController bannerController;
     private MainAuthController authController;
     private MainWebViewController webViewController;
+    private PlayerSplashScreenController webSplashController;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         int initialTheme = ThemeUtils.getSavedThemePreference(this);
         ThemeUtils.applyThemeToActivity(this, initialTheme);
 
-        SplashScreen.installSplashScreen(this);
+        SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
+        splashScreen.setOnExitAnimationListener(SplashScreenViewProvider::remove);
 
         super.onCreate(savedInstanceState);
         JSInjectionsHandler.preloadAssetsAsync(this);
@@ -85,6 +94,8 @@ public class MainActivity extends AppCompatActivity {
         if (savedInstanceState != null) {
             isUrlInputShowing = savedInstanceState.getBoolean("isUrlInputShowing", false);
             hasShownInitialBanner = savedInstanceState.getBoolean("hasShownInitialBanner", false);
+            hasCompletedInitialWebSplash = savedInstanceState.getBoolean("hasCompletedInitialWebSplash", false);
+            pendingBannerUrlAfterSplash = savedInstanceState.getString("pendingBannerUrlAfterSplash", null);
         }
 
         webView = findViewById(R.id.webView);
@@ -92,6 +103,29 @@ public class MainActivity extends AppCompatActivity {
         spinnerBackground = findViewById(R.id.spinnerBackground);
         swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout);
         fullscreenContainer = findViewById(R.id.fullscreenContainer);
+
+        webSplashController = new PlayerSplashScreenController(INITIAL_WEB_SPLASH_TIMEOUT_MS);
+        webSplashController.initViews(
+                findViewById(R.id.mainRootContainer),
+                R.id.webSplashScreenOverlay,
+                R.id.webSplashContent,
+                R.id.webSplashLogoView,
+                R.id.webSplashStatusText
+        );
+        webSplashController.setOnSafetyTimeoutCallback(() -> {
+            hasCompletedInitialWebSplash = true;
+            updateSystemBarColors();
+            flushPendingBannerAfterSplash();
+        });
+        if (hasCompletedInitialWebSplash) {
+            webSplashController.dismissImmediately();
+        } else {
+            webSplashController.showOnEntry();
+            if (isUrlInputShowing) {
+                webSplashController.pauseTimers();
+            }
+            updateSystemBarColors();
+        }
 
         httpClient = new OkHttpClient();
         executor = Executors.newSingleThreadExecutor();
@@ -142,6 +176,24 @@ public class MainActivity extends AppCompatActivity {
                     public void onDomainChanged(String newDomain) {
                         Log.d("MainActivity", "Domain changed to: " + newDomain);
                         runOnUiThread(() -> updateSystemBarColors(webView != null ? webView.getUrl() : newDomain));
+                    }
+
+                    @Override
+                    public void onInitialPageLoaded(String loadedUrl) {
+                        runOnUiThread(() -> dismissInitialWebSplash(loadedUrl));
+                    }
+
+                    @Override
+                    public void onInitialPageLoadFailed(String failingUrl) {
+                        runOnUiThread(() -> {
+                            pendingBannerUrlAfterSplash = null;
+                            dismissInitialWebSplash(failingUrl);
+                        });
+                    }
+
+                    @Override
+                    public boolean isInitialSplashActive() {
+                        return isInitialWebSplashActive();
                     }
                 }
         );
@@ -235,6 +287,39 @@ public class MainActivity extends AppCompatActivity {
         return null;
     }
 
+    private boolean isInitialWebSplashActive() {
+        return !hasCompletedInitialWebSplash
+                && webSplashController != null
+                && !webSplashController.hasDismissed();
+    }
+
+    private void dismissInitialWebSplash(String url) {
+        if (hasCompletedInitialWebSplash) {
+            return;
+        }
+        hasCompletedInitialWebSplash = true;
+        updateSystemBarColors(url != null ? url : getFastKnownSiteUrl());
+
+        if (webSplashController != null && !webSplashController.hasDismissed()) {
+            webSplashController.dismissWithAnimation(() -> {
+                if (!isFinishing() && !isDestroyed()) {
+                    updateSystemBarColors();
+                    flushPendingBannerAfterSplash();
+                }
+            });
+        } else {
+            flushPendingBannerAfterSplash();
+        }
+    }
+
+    private void flushPendingBannerAfterSplash() {
+        if (pendingBannerUrlAfterSplash != null && bannerController != null) {
+            String bannerUrl = pendingBannerUrlAfterSplash;
+            pendingBannerUrlAfterSplash = null;
+            bannerController.showUrlTopBannerAnimated(bannerUrl);
+        }
+    }
+
     public void updateSystemBarColors() {
         updateSystemBarColors(getFastKnownSiteUrl());
     }
@@ -243,12 +328,21 @@ public class MainActivity extends AppCompatActivity {
         if (isFinishing() || isDestroyed()) return;
 
         boolean isDarkTheme = ThemeUtils.isDarkTheme(this);
+        boolean splashActive = isInitialWebSplashActive();
         int headerColor = ThemeUtils.getSiteHeaderColor(this, url);
+        int statusBarColor = splashActive
+                ? ContextCompat.getColor(this, R.color.bs_bg_color)
+                : headerColor;
+        int navBarColor = ContextCompat.getColor(
+                this,
+                splashActive ? R.color.bs_bg_color : (isDarkTheme ? R.color.dt_primary_color : R.color.lt_primary_color)
+        );
 
         try {
-            getWindow().setStatusBarColor(headerColor);
+            getWindow().setStatusBarColor(statusBarColor);
+            getWindow().setNavigationBarColor(navBarColor);
         } catch (Exception e) {
-            Log.w("MainActivity", "Failed to set status bar color", e);
+            Log.w("MainActivity", "Failed to set system bar color", e);
         }
 
         if (swipeRefreshLayout != null) {
@@ -263,16 +357,24 @@ public class MainActivity extends AppCompatActivity {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             android.view.WindowInsetsController controller = getWindow().getInsetsController();
             if (controller != null) {
-                int appearance = isDarkTheme ? 0 : android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS;
-                controller.setSystemBarsAppearance(appearance, android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS);
+                int mask = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                        | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                int appearance = isDarkTheme ? 0 : mask;
+                controller.setSystemBarsAppearance(appearance, mask);
             }
         } else {
             View decorView = getWindow().getDecorView();
             int flags = decorView.getSystemUiVisibility();
             if (isDarkTheme) {
                 flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                }
             } else {
                 flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                }
             }
             decorView.setSystemUiVisibility(flags);
         }
@@ -283,6 +385,10 @@ public class MainActivity extends AppCompatActivity {
         super.onSaveInstanceState(outState);
         outState.putBoolean("isUrlInputShowing", isUrlInputShowing);
         outState.putBoolean("hasShownInitialBanner", hasShownInitialBanner);
+        outState.putBoolean("hasCompletedInitialWebSplash", hasCompletedInitialWebSplash);
+        if (pendingBannerUrlAfterSplash != null) {
+            outState.putString("pendingBannerUrlAfterSplash", pendingBannerUrlAfterSplash);
+        }
         if (webViewController != null) {
             webViewController.saveState(outState);
         }
@@ -341,6 +447,10 @@ public class MainActivity extends AppCompatActivity {
         // Восстанавливаем историю и открытую страницу при пересоздании Activity (смена темы / поворот)
         if (savedInstanceState != null && webViewController != null && webViewController.restoreState(savedInstanceState)) {
             hasInitialUrlLoaded = true;
+            hasCompletedInitialWebSplash = true;
+            if (webSplashController != null) {
+                webSplashController.dismissImmediately();
+            }
             updateSystemBarColors(webView != null ? webView.getUrl() : null);
             checkApiForToast();
             return;
@@ -399,11 +509,18 @@ public class MainActivity extends AppCompatActivity {
         }
 
         Log.d("MainActivity", "Loading URL: " + targetUrl);
+        if (isInitialWebSplashActive() && webSplashController != null) {
+            webSplashController.restartTimers();
+        }
         updateSystemBarColors(targetUrl);
         webViewController.loadUrlInWebView(targetUrl);
         if (showTopBanner && bannerController != null) {
             hasShownInitialBanner = true;
-            bannerController.showUrlTopBannerAnimated(targetUrl);
+            if (isInitialWebSplashActive()) {
+                pendingBannerUrlAfterSplash = targetUrl;
+            } else {
+                bannerController.showUrlTopBannerAnimated(targetUrl);
+            }
         }
     }
 
@@ -412,6 +529,9 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         isUrlInputShowing = true;
+        if (isInitialWebSplashActive() && webSplashController != null) {
+            webSplashController.pauseTimers();
+        }
         Intent intent = new Intent(this, UrlInputActivity.class);
         String currentUrl = getFastKnownSiteUrl();
         if (currentUrl != null && !currentUrl.isEmpty()) {
@@ -743,6 +863,9 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        if (webSplashController != null) {
+            webSplashController.dismissImmediately();
+        }
         if (bannerController != null) {
             bannerController.destroy();
         }

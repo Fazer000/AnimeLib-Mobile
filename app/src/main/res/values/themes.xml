@@ -69,7 +69,14 @@
     </style>
 
     <style name="SplashScreenTheme.WebView" parent="SplashScreenTheme">
+        <item name="windowSplashScreenBackground">@color/bs_bg_color</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_transparent</item>
+        <item name="windowSplashScreenAnimationDuration">0</item>
+        <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
         <item name="postSplashScreenTheme">@style/Theme.AnimeLIB.WebView</item>
+        <item name="android:statusBarColor">@color/bs_bg_color</item>
+        <item name="android:navigationBarColor">@color/bs_bg_color</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 
     <style name="Theme.AnimeLIB.WebView" parent="Theme.AnimeLIB">

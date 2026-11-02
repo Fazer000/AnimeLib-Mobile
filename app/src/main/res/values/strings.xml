@@ -86,4 +86,5 @@
     <string name="btn_open_github">Открыть страницу на GitHub</string>
     <string name="btn_reset">Сбросить</string>
     <string name="player_skip_opening">Пропуск опенинга</string>
+    <string name="web_splash_loading_hint">Загрузка сайта…</string>
 </resources>
