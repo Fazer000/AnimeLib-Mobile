@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Inner center ring -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M12,9.1 A2.9,2.9 0 1,1 12,14.9 A2.9,2.9 0 1,1 12,9.1 Z" />
+    <!-- Symmetrical rounded 6-tooth gear contour -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M10.09,5.65 A0.85,0.85 0 0,0 10.52,4.98 L10.59,4.02 A1.05,1.05 0 0,1 11.64,3.05 L12.36,3.05 A1.05,1.05 0 0,1 13.41,4.02 L13.48,4.98 A0.85,0.85 0 0,0 13.91,5.65 L16.55,7.17 A0.85,0.85 0 0,0 17.34,7.20 L18.21,6.79 A1.05,1.05 0 0,1 19.57,7.21 L19.93,7.84 A1.05,1.05 0 0,1 19.62,9.23 L18.83,9.77 A0.85,0.85 0 0,0 18.46,10.48 L18.46,13.52 A0.85,0.85 0 0,0 18.83,14.23 L19.62,14.77 A1.05,1.05 0 0,1 19.93,16.16 L19.57,16.79 A1.05,1.05 0 0,1 18.21,17.21 L17.34,16.80 A0.85,0.85 0 0,0 16.55,16.83 L13.91,18.35 A0.85,0.85 0 0,0 13.48,19.02 L13.41,19.98 A1.05,1.05 0 0,1 12.36,20.95 L11.64,20.95 A1.05,1.05 0 0,1 10.59,19.98 L10.52,19.02 A0.85,0.85 0 0,0 10.09,18.35 L7.45,16.83 A0.85,0.85 0 0,0 6.66,16.80 L5.79,17.21 A1.05,1.05 0 0,1 4.43,16.79 L4.07,16.16 A1.05,1.05 0 0,1 4.38,14.77 L5.17,14.23 A0.85,0.85 0 0,0 5.54,13.52 L5.54,10.48 A0.85,0.85 0 0,0 5.17,9.77 L4.38,9.23 A1.05,1.05 0 0,1 4.07,7.84 L4.43,7.21 A1.05,1.05 0 0,1 5.79,6.79 L6.66,7.20 A0.85,0.85 0 0,0 7.45,7.17 Z" />
+</vector>

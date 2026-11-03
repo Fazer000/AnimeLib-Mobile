@@ -135,7 +135,7 @@ public class PlayerLockController {
         }
 
         if (ivSwipeLockIcon != null) {
-            ivSwipeLockIcon.setImageResource(R.drawable.ic_lock);
+            ivSwipeLockIcon.setImageResource(R.drawable.ic_player_ctrl_lock);
         }
         if (tvSwipeUnlockText != null) {
             tvSwipeUnlockText.setText("Смахните вверх для разблокировки");
@@ -258,14 +258,14 @@ public class PlayerLockController {
 
                             if (deltaY >= unlockThresholdPx) {
                                 if (ivSwipeLockIcon != null) {
-                                    ivSwipeLockIcon.setImageResource(R.drawable.ic_lock_open);
+                                    ivSwipeLockIcon.setImageResource(R.drawable.ic_player_ctrl_lock_open);
                                 }
                                 if (tvSwipeUnlockText != null) {
                                     tvSwipeUnlockText.setText("Отпустите для разблокировки");
                                 }
                             } else {
                                 if (ivSwipeLockIcon != null) {
-                                    ivSwipeLockIcon.setImageResource(R.drawable.ic_lock);
+                                    ivSwipeLockIcon.setImageResource(R.drawable.ic_player_ctrl_lock);
                                 }
                                 if (tvSwipeUnlockText != null) {
                                     tvSwipeUnlockText.setText("Смахните вверх для разблокировки");
@@ -298,7 +298,7 @@ public class PlayerLockController {
                                         .start();
                             }
                             if (ivSwipeLockIcon != null) {
-                                ivSwipeLockIcon.setImageResource(R.drawable.ic_lock);
+                                ivSwipeLockIcon.setImageResource(R.drawable.ic_player_ctrl_lock);
                             }
                             if (tvSwipeUnlockText != null) {
                                 tvSwipeUnlockText.setText("Смахните вверх для разблокировки");

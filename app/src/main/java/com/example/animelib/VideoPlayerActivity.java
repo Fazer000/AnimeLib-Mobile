@@ -2673,7 +2673,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         if (menuToggleFullscreen != null) {
             menuToggleFullscreen.setVisibility(visibility);
-            menuToggleFullscreen.setImageResource(isPortrait ? R.drawable.ic_fullscreen : R.drawable.ic_fullscreen_exit);
+            menuToggleFullscreen.setImageResource(isPortrait ? R.drawable.ic_player_ctrl_fullscreen : R.drawable.ic_player_ctrl_fullscreen_exit);
         }
 
         if (!isPortrait) {
@@ -7156,8 +7156,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
             if (skipForwardBtn != null) {
                 skipForwardBtn.setVisibility(View.VISIBLE);
                 float d = getResources().getDisplayMetrics().density;
-                int btnSize = Math.round((isPortrait ? 30f : 36f) * d);
-                int btnPad = Math.round((isPortrait ? 5f : 8f) * d);
+                int btnSize = Math.round((isPortrait ? 32f : 36f) * d);
+                int btnPad = Math.round((isPortrait ? 5f : 6f) * d);
                 int btnMarginEnd = Math.round((isPortrait ? 6f : 8f) * d);
                 skipForwardBtn.setPadding(btnPad, btnPad, btnPad, btnPad);
                 android.view.ViewGroup.LayoutParams sfLp = skipForwardBtn.getLayoutParams();
@@ -7219,8 +7219,18 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
             if (menuToggleFullscreenBtn != null) {
                 menuToggleFullscreenBtn.setVisibility(View.VISIBLE);
+                float d = getResources().getDisplayMetrics().density;
+                int fsSize = Math.round((isPortrait ? 32f : 36f) * d);
+                int fsPad = Math.round((isPortrait ? 5f : 6f) * d);
+                menuToggleFullscreenBtn.setPadding(fsPad, fsPad, fsPad, fsPad);
+                android.view.ViewGroup.LayoutParams fsLp = menuToggleFullscreenBtn.getLayoutParams();
+                if (fsLp != null) {
+                    fsLp.width = fsSize;
+                    fsLp.height = fsSize;
+                    menuToggleFullscreenBtn.setLayoutParams(fsLp);
+                }
                 if (menuToggleFullscreenBtn instanceof ImageButton) {
-                    ((ImageButton) menuToggleFullscreenBtn).setImageResource(isPortrait ? R.drawable.ic_fullscreen : R.drawable.ic_fullscreen_exit);
+                    ((ImageButton) menuToggleFullscreenBtn).setImageResource(isPortrait ? R.drawable.ic_player_ctrl_fullscreen : R.drawable.ic_player_ctrl_fullscreen_exit);
                 }
             }
             View landscapeTargetView = controllerView.findViewById(R.id.landscapeEpisodesContainer);

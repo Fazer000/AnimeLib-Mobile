@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Smooth rounded speech bubble -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M8,4.2 H16 C18.65,4.2 20.8,6.35 20.8,9 V13.2 C20.8,15.85 18.65,18 16,18 H10.2 L6.05,20.3 C5.35,20.69 4.5,20.18 4.5,19.38 V16.9 C3.68,15.88 3.2,14.6 3.2,13.2 V9 C3.2,6.35 5.35,4.2 8,4.2 Z" />
+    <!-- Message lines -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M8.2,9.5 H15.8 M8.2,13.0 H13.2" />
+</vector>

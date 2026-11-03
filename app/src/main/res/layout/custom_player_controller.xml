@@ -23,9 +23,13 @@
             android:layout_height="36dp"
             android:layout_alignParentStart="true"
             android:layout_centerVertical="true"
-            android:src="@drawable/ic_close"
+            android:padding="6dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_player_ctrl_close"
+            app:tint="@color/white_color"
             android:background="@android:color/transparent"
-            android:foreground="@drawable/ripple_circle"/>
+            android:foreground="@drawable/ripple_circle"
+            android:contentDescription="Close"/>
 
         <LinearLayout
             android:id="@+id/topRightButtons"
@@ -51,7 +55,8 @@
                     android:layout_height="36dp"
                     android:background="@android:color/transparent"
                     android:foreground="@drawable/ripple_circle"
-                    android:src="@drawable/ic_settings"
+                    android:src="@drawable/ic_player_ctrl_settings"
+                    app:tint="@color/white_color"
                     android:scaleType="fitCenter"
                     android:contentDescription="Settings"
                     android:padding="6dp" />
@@ -389,12 +394,12 @@
                 android:layout_width="36dp"
                 android:layout_height="36dp"
                 android:layout_gravity="center_vertical"
-                android:padding="8dp"
+                android:padding="6dp"
                 android:layout_marginEnd="8dp"
                 android:background="@android:color/transparent"
                 android:foreground="@drawable/ripple_circle"
                 app:tint="@color/white_color"
-                android:src="@drawable/ic_skip"
+                android:src="@drawable/ic_player_ctrl_skip_opening"
                 android:scaleType="fitCenter"
                 android:contentDescription="@string/player_skip_opening"/>
 
@@ -404,11 +409,10 @@
                 android:layout_height="36dp"
                 android:layout_gravity="center_vertical"
                 android:layout_marginEnd="8dp"
-                android:padding="8dp"
+                android:padding="6dp"
                 android:background="@android:color/transparent"
                 android:foreground="@drawable/ripple_circle"
-                android:src="@drawable/ic_bookmark"
-                app:tint="@color/white_color"
+                android:src="@drawable/ic_player_ctrl_bookmark"
                 android:scaleType="fitCenter"
                 android:contentDescription="Bookmark" />
 
@@ -422,7 +426,7 @@
                 android:padding="6dp"
                 android:background="@android:color/transparent"
                 android:foreground="@drawable/ripple_circle"
-                android:src="@drawable/ic_comments_2"
+                android:src="@drawable/ic_player_ctrl_comments"
                 app:tint="@color/white_color"
                 android:scaleType="fitCenter"
                 android:contentDescription="Comments" />
@@ -436,7 +440,8 @@
                 android:layout_marginEnd="8dp"
                 android:background="@android:color/transparent"
                 android:foreground="@drawable/ripple_circle"
-                android:src="@drawable/ic_episodes"
+                android:src="@drawable/ic_player_ctrl_episodes"
+                app:tint="@color/white_color"
                 android:scaleType="fitCenter"
                 android:contentDescription="Episodes Menu"
                 android:padding="6dp" />
@@ -450,23 +455,24 @@
                 android:layout_marginEnd="8dp"
                 android:background="@android:color/transparent"
                 android:foreground="@drawable/ripple_circle"
-                android:src="@drawable/ic_voice"
+                android:src="@drawable/ic_player_ctrl_voice"
+                app:tint="@color/white_color"
                 android:scaleType="fitCenter"
                 android:contentDescription="Players Menu"
                 android:padding="6dp" />
 
             <ImageButton
                 android:id="@+id/menuToggleFullscreen"
-                android:layout_width="30dp"
-                android:layout_height="30dp"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
                 android:layout_gravity="center_vertical"
                 android:padding="6dp"
                 android:background="@android:color/transparent"
                 android:foreground="@drawable/ripple_circle"
                 app:tint="@color/white_color"
-                android:src="@drawable/ic_fullscreen"
+                android:src="@drawable/ic_player_ctrl_fullscreen"
                 android:scaleType="fitCenter"
-                android:contentDescription="Players Menu" />
+                android:contentDescription="Fullscreen" />
 
         </LinearLayout>
 
@@ -585,7 +591,8 @@
         android:layout_marginEnd="16dp"
         android:background="@android:color/transparent"
         android:foreground="@drawable/ripple_circle"
-        android:src="@drawable/ic_lock"
+        android:src="@drawable/ic_player_ctrl_lock"
+        app:tint="@color/white_color"
         android:scaleType="fitCenter"
         android:contentDescription="Блокировка экрана"
         android:padding="6dp"

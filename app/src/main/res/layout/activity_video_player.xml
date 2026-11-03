@@ -293,7 +293,7 @@
                         android:layout_width="18dp"
                         android:layout_height="18dp"
                         android:layout_marginEnd="8dp"
-                        android:src="@drawable/ic_lock"
+                        android:src="@drawable/ic_player_ctrl_lock"
                         app:tint="@color/white_color" />
 
                     <TextView
@@ -330,7 +330,7 @@
                         android:layout_width="18dp"
                         android:layout_height="18dp"
                         android:layout_marginEnd="8dp"
-                        android:src="@drawable/ic_lock"
+                        android:src="@drawable/ic_player_ctrl_lock"
                         app:tint="@color/white_color" />
 
                     <TextView

@@ -1,0 +1,30 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Open shackle -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M8,10.5 V6.8 C8,4.59 9.79,2.8 12,2.8 C13.9,2.8 15.49,4.12 15.9,5.9" />
+    <!-- Rounded body -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M8,10.5 H16 C17.93,10.5 19.5,12.07 19.5,14 V17 C19.5,18.93 17.93,20.5 16,20.5 H8 C6.07,20.5 4.5,18.93 4.5,17 V14 C4.5,12.07 6.07,10.5 8,10.5 Z" />
+    <!-- Keyhole -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M12,14.3 V16.7" />
+</vector>
