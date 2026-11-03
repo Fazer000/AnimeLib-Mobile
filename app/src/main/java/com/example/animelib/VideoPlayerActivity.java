@@ -1765,6 +1765,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
         this.gestureIndicatorIcon = findViewById(R.id.gestureIndicatorIcon);
         this.gestureIndicatorProgress = findViewById(R.id.gestureIndicatorProgress);
         this.gestureIndicatorText = findViewById(R.id.gestureIndicatorText);
+        if (this.gestureIndicatorText != null) {
+            int maxPercentWidth = (int) Math.ceil(this.gestureIndicatorText.getPaint().measureText("100%"));
+            this.gestureIndicatorText.setWidth(maxPercentWidth);
+        }
         
         // Comments components
         View commentsPanel = findViewById(R.id.commentsPanel);
