@@ -180,11 +180,10 @@ public class CustomToast {
         androidx.core.view.ViewCompat.setElevation(toastView, 2000f);
         androidx.core.view.ViewCompat.setTranslationZ(toastView, 2000f);
 
-        View iconWrapper = toastView.findViewById(R.id.customToastIconWrapper);
         iconView.setImageResource(R.drawable.ic_toast_update);
 
         boolean isDark = isDarkTheme(activity);
-        applyToastSurfaceAndGlow(activity, toastView, iconWrapper, textView, isDark, 0xFF7C5CFC);
+        applyToastSurfaceAndGlow(activity, toastView, textView, isDark, 0xFF7C5CFC);
 
         float initialTranslationY = TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 48f, activity.getResources().getDisplayMetrics());
@@ -356,7 +355,6 @@ public class CustomToast {
         androidx.core.view.ViewCompat.setElevation(toastView, 2000f);
         androidx.core.view.ViewCompat.setTranslationZ(toastView, 2000f);
 
-        View iconWrapper = toastView.findViewById(R.id.customToastIconWrapper);
         int accentColor;
         switch (type) {
             case TYPE_SUCCESS:
@@ -374,9 +372,9 @@ public class CustomToast {
                 break;
         }
 
-        // Адаптация под тему (Light / Dark) + рассеянная подсветка под иконкой в стиле матового стекла
+        // Адаптация под тему (Light / Dark) + рассеянная подсветка под иконкой
         boolean isDark = isDarkTheme(activity);
-        applyToastSurfaceAndGlow(activity, toastView, iconWrapper, textView, isDark, accentColor);
+        applyToastSurfaceAndGlow(activity, toastView, textView, isDark, accentColor);
 
         try {
             rootView.addView(toastView);
@@ -417,7 +415,6 @@ public class CustomToast {
     private static void applyToastSurfaceAndGlow(
             Activity activity,
             View toastView,
-            View iconWrapper,
             TextView textView,
             boolean isDark,
             int accentRgb
@@ -426,17 +423,20 @@ public class CustomToast {
         float cornerRadius = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 12f, dm);
         int strokeWidth = Math.max(1, Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 0.5f, dm)));
 
+        // В тёмной теме используем точно такой же цвет и обводку, как у карточек/блоков в плеере (#1C1C1E / #33333C)
         int surfaceColor = isDark
-                ? android.graphics.Color.parseColor("#EE1E1E26")
-                : android.graphics.Color.parseColor("#F5FFFFFF");
+                ? android.graphics.Color.parseColor("#1C1C1E")
+                : android.graphics.Color.parseColor("#FFFFFF");
         int borderColor = isDark
-                ? android.graphics.Color.parseColor("#38FFFFFF")
-                : android.graphics.Color.parseColor("#180F172A");
+                ? android.graphics.Color.parseColor("#33333C")
+                : android.graphics.Color.parseColor("#E5E7EB");
 
         textView.setTextColor(androidx.core.content.ContextCompat.getColor(activity, R.color.app_text_primary));
 
-        float ambientCenterX = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 26f, dm);
-        float ambientRadius = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 72f, dm);
+        // Центр подсветки строго под иконкой (13dp paddingStart + 11dp половина иконки = 24dp)
+        float glowCenterX = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 24f, dm);
+        float coreRadius = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 24f, dm);
+        float ambientRadius = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 68f, dm);
         toastView.setBackground(new FrostedToastBackgroundDrawable(
                 surfaceColor,
                 borderColor,
@@ -444,38 +444,11 @@ public class CustomToast {
                 isDark,
                 cornerRadius,
                 strokeWidth,
-                ambientCenterX,
+                glowCenterX,
+                coreRadius,
                 ambientRadius
         ));
         toastView.setClipToOutline(true);
-
-        if (iconWrapper != null) {
-            float badgeRadius = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 9f, dm);
-            float badgeGlowRadius = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 22f, dm);
-
-            android.graphics.drawable.GradientDrawable badgeBase = new android.graphics.drawable.GradientDrawable();
-            badgeBase.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
-            badgeBase.setCornerRadius(badgeRadius);
-            badgeBase.setColor(withAlpha(accentRgb, isDark ? 0.14f : 0.10f));
-
-            android.graphics.drawable.GradientDrawable badgeCoreGlow = new android.graphics.drawable.GradientDrawable();
-            badgeCoreGlow.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
-            badgeCoreGlow.setCornerRadius(badgeRadius);
-            badgeCoreGlow.setGradientType(android.graphics.drawable.GradientDrawable.RADIAL_GRADIENT);
-            badgeCoreGlow.setGradientCenter(0.5f, 0.5f);
-            badgeCoreGlow.setGradientRadius(badgeGlowRadius);
-            badgeCoreGlow.setColors(new int[]{
-                    withAlpha(accentRgb, isDark ? 0.28f : 0.18f),
-                    withAlpha(accentRgb, isDark ? 0.08f : 0.05f),
-                    0x00000000
-            });
-            badgeCoreGlow.setStroke(strokeWidth, withAlpha(accentRgb, isDark ? 0.34f : 0.24f));
-
-            android.graphics.drawable.LayerDrawable badgeDrawable = new android.graphics.drawable.LayerDrawable(
-                    new android.graphics.drawable.Drawable[]{badgeBase, badgeCoreGlow}
-            );
-            iconWrapper.setBackground(badgeDrawable);
-        }
     }
 
     private static int withAlpha(int rgb, float alphaFraction) {
@@ -484,13 +457,13 @@ public class CustomToast {
     }
 
     /**
-     * Легковесный аппаратно-ускоренный фон тоста с рассеянной подсветкой под иконкой
-     * в стиле матового стекла (кэширует RadialGradient только при изменении размера View).
+     * Легковесный аппаратно-ускоренный фон тоста с мягкой рассеянной подсветкой под иконкой
+     * без отдельной подложки вокруг самой иконки.
      */
     private static final class FrostedToastBackgroundDrawable extends android.graphics.drawable.Drawable {
         private final android.graphics.Paint basePaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-        private final android.graphics.Paint glowPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-        private final android.graphics.Paint frostSheenPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.Paint ambientGlowPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.Paint coreGlowPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
         private final android.graphics.Paint strokePaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
         private final android.graphics.RectF rect = new android.graphics.RectF();
         private final android.graphics.RectF strokeRect = new android.graphics.RectF();
@@ -500,7 +473,8 @@ public class CustomToast {
         private final float cornerRadius;
         private final float strokeWidth;
         private final float glowCenterX;
-        private final float glowRadius;
+        private final float coreRadius;
+        private final float ambientRadius;
 
         FrostedToastBackgroundDrawable(
                 int surfaceColor,
@@ -510,22 +484,25 @@ public class CustomToast {
                 float cornerRadius,
                 int strokeWidth,
                 float glowCenterX,
-                float glowRadius
+                float coreRadius,
+                float ambientRadius
         ) {
             this.accentRgb = accentRgb;
             this.isDark = isDark;
             this.cornerRadius = cornerRadius;
             this.strokeWidth = strokeWidth;
             this.glowCenterX = glowCenterX;
-            this.glowRadius = Math.max(1f, glowRadius);
+            this.coreRadius = Math.max(1f, coreRadius);
+            this.ambientRadius = Math.max(1f, ambientRadius);
 
             basePaint.setStyle(android.graphics.Paint.Style.FILL);
             basePaint.setColor(surfaceColor);
 
-            glowPaint.setStyle(android.graphics.Paint.Style.FILL);
-            glowPaint.setDither(true);
-            frostSheenPaint.setStyle(android.graphics.Paint.Style.FILL);
-            frostSheenPaint.setDither(true);
+            ambientGlowPaint.setStyle(android.graphics.Paint.Style.FILL);
+            ambientGlowPaint.setDither(true);
+
+            coreGlowPaint.setStyle(android.graphics.Paint.Style.FILL);
+            coreGlowPaint.setDither(true);
 
             strokePaint.setStyle(android.graphics.Paint.Style.STROKE);
             strokePaint.setStrokeWidth(strokeWidth);
@@ -546,27 +523,31 @@ public class CustomToast {
 
             float cx = bounds.left + glowCenterX;
             float cy = bounds.exactCenterY();
-            glowPaint.setShader(new android.graphics.RadialGradient(
+
+            ambientGlowPaint.setShader(new android.graphics.RadialGradient(
                     cx,
                     cy,
-                    glowRadius,
+                    ambientRadius,
                     new int[]{
-                            withAlpha(accentRgb, isDark ? 0.30f : 0.20f),
-                            withAlpha(accentRgb, isDark ? 0.15f : 0.10f),
-                            withAlpha(accentRgb, isDark ? 0.05f : 0.03f),
+                            withAlpha(accentRgb, isDark ? 0.22f : 0.14f),
+                            withAlpha(accentRgb, isDark ? 0.11f : 0.07f),
+                            withAlpha(accentRgb, isDark ? 0.035f : 0.02f),
                             withAlpha(accentRgb, 0f)
                     },
-                    new float[]{0f, 0.34f, 0.68f, 1f},
+                    new float[]{0f, 0.36f, 0.70f, 1f},
                     android.graphics.Shader.TileMode.CLAMP
             ));
 
-            frostSheenPaint.setShader(new android.graphics.LinearGradient(
-                    bounds.left,
-                    bounds.top,
-                    bounds.left,
-                    bounds.bottom,
-                    isDark ? 0x10FFFFFF : 0x55FFFFFF,
-                    0x00FFFFFF,
+            coreGlowPaint.setShader(new android.graphics.RadialGradient(
+                    cx,
+                    cy,
+                    coreRadius,
+                    new int[]{
+                            withAlpha(accentRgb, isDark ? 0.26f : 0.18f),
+                            withAlpha(accentRgb, isDark ? 0.10f : 0.07f),
+                            withAlpha(accentRgb, 0f)
+                    },
+                    new float[]{0f, 0.52f, 1f},
                     android.graphics.Shader.TileMode.CLAMP
             ));
         }
@@ -574,8 +555,8 @@ public class CustomToast {
         @Override
         public void draw(android.graphics.Canvas canvas) {
             canvas.drawRoundRect(rect, cornerRadius, cornerRadius, basePaint);
-            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, glowPaint);
-            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, frostSheenPaint);
+            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, ambientGlowPaint);
+            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, coreGlowPaint);
             float strokeRadius = Math.max(0f, cornerRadius - strokeWidth * 0.5f);
             canvas.drawRoundRect(strokeRect, strokeRadius, strokeRadius, strokePaint);
         }
@@ -588,8 +569,8 @@ public class CustomToast {
         @Override
         public void setAlpha(int alpha) {
             basePaint.setAlpha(alpha);
-            glowPaint.setAlpha(alpha);
-            frostSheenPaint.setAlpha(alpha);
+            ambientGlowPaint.setAlpha(alpha);
+            coreGlowPaint.setAlpha(alpha);
             strokePaint.setAlpha(alpha);
             invalidateSelf();
         }
@@ -597,8 +578,8 @@ public class CustomToast {
         @Override
         public void setColorFilter(android.graphics.ColorFilter colorFilter) {
             basePaint.setColorFilter(colorFilter);
-            glowPaint.setColorFilter(colorFilter);
-            frostSheenPaint.setColorFilter(colorFilter);
+            ambientGlowPaint.setColorFilter(colorFilter);
+            coreGlowPaint.setColorFilter(colorFilter);
             strokePaint.setColorFilter(colorFilter);
             invalidateSelf();
         }

@@ -10,32 +10,23 @@
     android:elevation="16dp"
     android:gravity="center_vertical"
     android:orientation="horizontal"
-    android:paddingStart="10dp"
-    android:paddingTop="9dp"
+    android:paddingStart="13dp"
+    android:paddingTop="10dp"
     android:paddingEnd="15dp"
-    android:paddingBottom="9dp"
+    android:paddingBottom="10dp"
     android:clipChildren="false"
     android:clipToPadding="false"
     android:clickable="true"
     android:focusable="true">
 
-    <FrameLayout
-        android:id="@+id/customToastIconWrapper"
-        android:layout_width="32dp"
-        android:layout_height="32dp"
+    <ImageView
+        android:id="@+id/customToastIcon"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
         android:layout_marginEnd="11dp"
-        android:clipChildren="false"
-        android:clipToPadding="false">
-
-        <ImageView
-            android:id="@+id/customToastIcon"
-            android:layout_width="20dp"
-            android:layout_height="20dp"
-            android:layout_gravity="center"
-            android:scaleType="fitCenter"
-            android:contentDescription="Notification Icon"
-            android:src="@drawable/ic_toast_warning" />
-    </FrameLayout>
+        android:scaleType="fitCenter"
+        android:contentDescription="Notification Icon"
+        android:src="@drawable/ic_toast_warning" />
 
     <TextView
         android:id="@+id/customToastText"
