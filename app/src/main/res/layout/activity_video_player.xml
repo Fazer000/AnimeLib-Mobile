@@ -224,7 +224,7 @@
             <!-- Unified vertical gesture indicator plaque (Brightness & Volume) -->
             <LinearLayout
                 android:id="@+id/gestureIndicatorPlaque"
-                android:layout_width="160dp"
+                android:layout_width="172dp"
                 android:layout_height="36dp"
                 android:layout_gravity="center_horizontal"
                 android:layout_marginTop="80dp"
@@ -239,25 +239,32 @@
                     android:layout_width="20dp"
                     android:layout_height="20dp"
                     android:src="@drawable/ic_brightness"
-                    app:tint="@color/white_color" />
+                    app:tint="@color/white_color"
+                    android:contentDescription="@null" />
 
-                <ProgressBar
+                <com.example.animelib.ui.M3LinearProgressIndicator
                     android:id="@+id/gestureIndicatorProgress"
-                    style="@android:style/Widget.ProgressBar.Horizontal"
                     android:layout_width="0dp"
-                    android:layout_height="4dp"
+                    android:layout_height="12dp"
                     android:layout_weight="1"
                     android:layout_marginStart="8dp"
                     android:layout_marginEnd="8dp"
                     android:max="100"
                     android:progress="50"
-                    android:progressDrawable="@drawable/bg_gesture_progress_bar" />
+                    app:m3TrackHeight="6dp"
+                    app:m3GapSize="3dp"
+                    app:m3StopDotSize="3dp"
+                    app:m3ShowStopDot="true"
+                    app:m3IndicatorColor="@color/player_item_inactive_text"
+                    app:m3TrackColor="@color/player_gesture_track_bg"
+                    app:m3StopDotColor="@color/player_item_inactive_text" />
 
                 <TextView
                     android:id="@+id/gestureIndicatorText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:gravity="center_vertical|start"
+                    android:minWidth="34dp"
+                    android:gravity="center_vertical|end"
                     android:text="100%"
                     android:textColor="@color/player_item_inactive_text"
                     android:textSize="13sp"

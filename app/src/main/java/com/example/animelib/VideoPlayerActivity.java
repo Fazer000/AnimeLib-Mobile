@@ -250,7 +250,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     // Unified gesture indicator plaque (Brightness & Volume)
     private View gestureIndicatorPlaque;
     private ImageView gestureIndicatorIcon;
-    private ProgressBar gestureIndicatorProgress;
+    private com.example.animelib.ui.M3LinearProgressIndicator gestureIndicatorProgress;
     private TextView gestureIndicatorText;
     private final Handler gestureIndicatorHandler = new Handler(Looper.getMainLooper());
     private Runnable hideGestureIndicatorsRunnable;
@@ -3384,35 +3384,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
             gestureIndicatorIcon.setImageResource(iconResId);
         }
         if (gestureIndicatorProgress != null) {
-            gestureIndicatorProgress.setProgress(percent);
+            gestureIndicatorProgress.setProgress(percent, false);
         }
         if (gestureIndicatorText != null) {
             gestureIndicatorText.setText(percent + "%");
         }
         
-        if (gestureIndicatorPlaque != null) {
-            if (gestureIndicatorPlaque.getVisibility() != View.VISIBLE) {
-                gestureIndicatorPlaque.animate().cancel();
-                gestureIndicatorPlaque.setVisibility(View.VISIBLE);
-                gestureIndicatorPlaque.setAlpha(0f);
-                gestureIndicatorPlaque.setScaleX(0.85f);
-                gestureIndicatorPlaque.setScaleY(0.85f);
-                gestureIndicatorPlaque.animate()
-                        .alpha(1.0f)
-                        .scaleX(1.0f)
-                        .scaleY(1.0f)
-                        .setDuration(150)
-                        .setInterpolator(new android.view.animation.OvershootInterpolator(1.1f))
-                        .start();
-            } else {
-                if (gestureIndicatorPlaque.getAlpha() < 1.0f) {
-                    gestureIndicatorPlaque.animate().cancel();
-                    gestureIndicatorPlaque.setAlpha(1.0f);
-                    gestureIndicatorPlaque.setScaleX(1.0f);
-                    gestureIndicatorPlaque.setScaleY(1.0f);
-                }
-            }
-        }
+        com.example.animelib.util.GesturePlaqueAnimationHelper.show(gestureIndicatorPlaque);
     }
 
     private void scheduleHideGestureIndicators() {
@@ -3426,22 +3404,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     private void hideGestureIndicatorWithAnimation() {
-        if (gestureIndicatorPlaque != null && gestureIndicatorPlaque.getVisibility() == View.VISIBLE) {
-            gestureIndicatorPlaque.animate().cancel();
-            gestureIndicatorPlaque.animate()
-                    .alpha(0f)
-                    .scaleX(0.85f)
-                    .scaleY(0.85f)
-                    .setDuration(180)
-                    .setInterpolator(new android.view.animation.AccelerateInterpolator())
-                    .withEndAction(() -> {
-                        gestureIndicatorPlaque.setVisibility(View.GONE);
-                        gestureIndicatorPlaque.setAlpha(1.0f);
-                        gestureIndicatorPlaque.setScaleX(1.0f);
-                        gestureIndicatorPlaque.setScaleY(1.0f);
-                    })
-                    .start();
-        }
+        com.example.animelib.util.GesturePlaqueAnimationHelper.hide(gestureIndicatorPlaque);
     }
 
     /**

@@ -13,6 +13,8 @@ import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.ui.PlayerView;
 
+import com.example.animelib.util.GesturePlaqueAnimationHelper;
+
 import java.util.Locale;
 
 /**
@@ -76,6 +78,8 @@ public class GesturesManager {
     
     // GestureDetector для двойного нажатия
     private GestureDetector doubleTapDetector;
+    private Runnable hideLeftSkipRunnable;
+    private Runnable hideRightSkipRunnable;
     
     // Callback интерфейсы (только для горизонтальных жестов и других не-вертикальных действий)
     public interface GestureCallback {
@@ -340,14 +344,11 @@ public class GesturesManager {
                     };
                     v.postDelayed(holdToSpeedRunnable, 500); // 500ms для активации hold-to-speed
                     
-                    if (seekPreviewText != null) {
-                        seekPreviewText.setVisibility(View.GONE);
-                        if (seekPreviewText instanceof android.widget.TextView) {
-                            long dur = player != null ? player.getDuration() : 0;
-                            String currentFormatted = com.example.animelib.api.ApiService.formatTimecode(basePositionMs);
-                            String durationFormatted = com.example.animelib.api.ApiService.formatTimecode(dur);
-                            ((android.widget.TextView) seekPreviewText).setText("+0 [" + currentFormatted + " / " + durationFormatted + "]");
-                        }
+                    if (seekPreviewText != null && seekPreviewText instanceof android.widget.TextView) {
+                        long dur = player != null ? player.getDuration() : 0;
+                        String currentFormatted = com.example.animelib.api.ApiService.formatTimecode(basePositionMs);
+                        String durationFormatted = com.example.animelib.api.ApiService.formatTimecode(dur);
+                        ((android.widget.TextView) seekPreviewText).setText("+0 [" + currentFormatted + " / " + durationFormatted + "]");
                     }
                     return false; // НЕ перехватываем событие, позволяем контролам работать
                     
@@ -418,7 +419,7 @@ public class GesturesManager {
                             // блокируем перехват родителями (ViewPager и т.п.)
                             android.view.ViewParent p = v.getParent();
                             if (p != null) p.requestDisallowInterceptTouchEvent(true);
-                            // показать превью
+                            // показать превью с единой анимацией
                             if (seekPreviewText != null) {
                                 if (seekPreviewText instanceof android.widget.TextView) {
                                     long dur = player != null ? player.getDuration() : 0;
@@ -426,7 +427,7 @@ public class GesturesManager {
                                     String durationFormatted = com.example.animelib.api.ApiService.formatTimecode(dur);
                                     ((android.widget.TextView) seekPreviewText).setText("+0 [" + currentFormatted + " / " + durationFormatted + "]");
                                 }
-                                seekPreviewText.setVisibility(View.VISIBLE);
+                                GesturePlaqueAnimationHelper.show(seekPreviewText);
                             }
                             if (gestureCallback != null && player != null) {
                                 gestureCallback.updatePlayLoadingIndicator(player.getPlaybackState());
@@ -485,9 +486,9 @@ public class GesturesManager {
                         holdToSpeedRunnable = null;
                     }
                     
-                    // Принудительно скрываем seek preview если он видим
+                    // Плавно скрываем seek preview если он видим
                     if (seekPreviewText != null && seekPreviewText.getVisibility() == View.VISIBLE) {
-                        seekPreviewText.setVisibility(View.GONE);
+                        GesturePlaqueAnimationHelper.hide(seekPreviewText);
                     }
                     
                     boolean handledGesture = false;
@@ -710,15 +711,9 @@ public class GesturesManager {
             player.setPlaybackSpeed(currentSpeedMultiplier);
         }
         
-        // Show speed toast
-        if (holdSpeedToast != null) {
-            holdSpeedToast.setVisibility(View.VISIBLE);
-            holdSpeedToast.setAlpha(0f);
-            holdSpeedToast.animate().alpha(1f).setDuration(120).start();
-        }
-        
-        // Обновляем текст в toast
+        // Обновляем текст в toast и показываем с единой анимацией
         updateSpeedToast();
+        GesturePlaqueAnimationHelper.show(holdSpeedToast);
         
         // Notify callback about speed change
         if (gestureCallback != null) {
@@ -741,12 +736,8 @@ public class GesturesManager {
             player.setPlaybackSpeed(1.0f);
         }
         
-        // Hide speed toast
-        if (holdSpeedToast != null) {
-            holdSpeedToast.animate().alpha(0f).setDuration(120)
-                    .withEndAction(() -> holdSpeedToast.setVisibility(View.GONE))
-                    .start();
-        }
+        // Hide speed toast with unified animation
+        GesturePlaqueAnimationHelper.hide(holdSpeedToast);
         
         // Notify callback about speed reset
         if (gestureCallback != null) {
@@ -829,28 +820,21 @@ public class GesturesManager {
             gestureCallback.onDoubleTapSkip(isForward, DOUBLE_TAP_SKIP_SECONDS);
         }
 
-        indicator.setVisibility(View.VISIBLE);
-        indicator.setAlpha(0f);
-        indicator.setScaleX(0.8f);
-        indicator.setScaleY(0.8f);
-
-        indicator.animate()
-                .alpha(1f)
-                .scaleX(1f)
-                .scaleY(1f)
-                .setDuration(200)
-                .withEndAction(() -> {
-                    indicator.postDelayed(() -> {
-                        indicator.animate()
-                                .alpha(0f)
-                                .scaleX(0.8f)
-                                .scaleY(0.8f)
-                                .setDuration(200)
-                                .withEndAction(() -> indicator.setVisibility(View.GONE))
-                                .start();
-                    }, 500);
-                })
-                .start();
+        if (isForward) {
+            if (hideRightSkipRunnable != null) {
+                indicator.removeCallbacks(hideRightSkipRunnable);
+            }
+            hideRightSkipRunnable = () -> GesturePlaqueAnimationHelper.hide(indicator);
+            GesturePlaqueAnimationHelper.show(indicator);
+            indicator.postDelayed(hideRightSkipRunnable, 680);
+        } else {
+            if (hideLeftSkipRunnable != null) {
+                indicator.removeCallbacks(hideLeftSkipRunnable);
+            }
+            hideLeftSkipRunnable = () -> GesturePlaqueAnimationHelper.hide(indicator);
+            GesturePlaqueAnimationHelper.show(indicator);
+            indicator.postDelayed(hideLeftSkipRunnable, 680);
+        }
         
         Log.d(TAG, "Skip indicator shown: " + (isForward ? "forward" : "backward"));
     }
@@ -962,9 +946,7 @@ public class GesturesManager {
         }
         
         // Принудительно скрываем seek preview
-        if (seekPreviewText != null) {
-            seekPreviewText.setVisibility(View.GONE);
-        }
+        GesturePlaqueAnimationHelper.hideImmediate(seekPreviewText);
         
         // Принудительно сбрасываем hold-to-speed
         if (isHoldToSpeed && player != null) {
@@ -986,21 +968,21 @@ public class GesturesManager {
             resetHoldToSpeed();
         }
         
-        if (holdSpeedToast != null) {
-            holdSpeedToast.setVisibility(View.GONE);
-        }
-        
-        // Принудительно скрываем seek preview
-        if (seekPreviewText != null) {
-            seekPreviewText.setVisibility(View.GONE);
-        }
+        GesturePlaqueAnimationHelper.hideImmediate(holdSpeedToast);
+        GesturePlaqueAnimationHelper.hideImmediate(seekPreviewText);
         
         // Скрываем skip индикаторы
         if (skipIndicatorLeft != null) {
-            skipIndicatorLeft.setVisibility(View.GONE);
+            if (hideLeftSkipRunnable != null) {
+                skipIndicatorLeft.removeCallbacks(hideLeftSkipRunnable);
+            }
+            GesturePlaqueAnimationHelper.hideImmediate(skipIndicatorLeft);
         }
         if (skipIndicatorRight != null) {
-            skipIndicatorRight.setVisibility(View.GONE);
+            if (hideRightSkipRunnable != null) {
+                skipIndicatorRight.removeCallbacks(hideRightSkipRunnable);
+            }
+            GesturePlaqueAnimationHelper.hideImmediate(skipIndicatorRight);
         }
         
         // Stop any active gestures
