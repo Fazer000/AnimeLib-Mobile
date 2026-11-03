@@ -876,19 +876,19 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
             } else {
                 switch (surroundMode) {
                     case 0:
-                        currentSurroundSoundText.setText("🎬 Кинотеатр 3D");
+                        currentSurroundSoundText.setText("Кинотеатр 3D");
                         break;
                     case 1:
-                        currentSurroundSoundText.setText("🎧 Концерт & OST 3D");
+                        currentSurroundSoundText.setText("Концерт & OST 3D");
                         break;
                     case 2:
-                        currentSurroundSoundText.setText("🎙️ Четкая Озвучка 3D");
+                        currentSurroundSoundText.setText("Четкая Озвучка 3D");
                         break;
                     case 3:
-                        currentSurroundSoundText.setText("🔊 Классический 5.1");
+                        currentSurroundSoundText.setText("Классический 5.1");
                         break;
                     case 4:
-                        currentSurroundSoundText.setText("🌌 Экстрим 3D HRTF");
+                        currentSurroundSoundText.setText("Экстрим 3D HRTF");
                         break;
                     default:
                         currentSurroundSoundText.setText("Объемный звук");

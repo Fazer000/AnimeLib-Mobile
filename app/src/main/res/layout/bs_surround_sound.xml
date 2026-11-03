@@ -182,7 +182,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="🎬 Кинотеатр 3D"
+                            android:text="Кинотеатр 3D"
                             android:textColor="?attr/primaryTextColor"
                             android:fontFamily="@font/open_sans_bold"
                             android:textSize="15.5sp"/>
@@ -239,7 +239,7 @@
                     <ImageView
                         android:layout_width="22dp"
                         android:layout_height="22dp"
-                        android:src="@drawable/ic_star"
+                        android:src="@drawable/ic_headphones"
                         app:tint="?attr/secondaryColor"
                         android:layout_marginEnd="12dp"/>
 
@@ -252,7 +252,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="🎧 Концерт &amp; OST 3D"
+                            android:text="Концерт &amp; OST 3D"
                             android:textColor="?attr/primaryTextColor"
                             android:fontFamily="@font/open_sans_bold"
                             android:textSize="15.5sp"/>
@@ -322,7 +322,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="🎙️ Четкая Озвучка 3D"
+                            android:text="Четкая Озвучка 3D"
                             android:textColor="?attr/primaryTextColor"
                             android:fontFamily="@font/open_sans_bold"
                             android:textSize="15.5sp"/>
@@ -379,7 +379,7 @@
                     <ImageView
                         android:layout_width="22dp"
                         android:layout_height="22dp"
-                        android:src="@drawable/ic_surround_sound"
+                        android:src="@drawable/ic_volume"
                         app:tint="?attr/secondaryColor"
                         android:layout_marginEnd="12dp"/>
 
@@ -392,7 +392,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="🔊 Классический 5.1"
+                            android:text="Классический 5.1"
                             android:textColor="?attr/primaryTextColor"
                             android:fontFamily="@font/open_sans_bold"
                             android:textSize="15.5sp"/>
@@ -449,7 +449,7 @@
                     <ImageView
                         android:layout_width="22dp"
                         android:layout_height="22dp"
-                        android:src="@drawable/ic_tune_sliders"
+                        android:src="@drawable/ic_spatial_3d"
                         app:tint="?attr/secondaryColor"
                         android:layout_marginEnd="12dp"/>
 
@@ -462,7 +462,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="🌌 Экстрим 3D HRTF"
+                            android:text="Экстрим 3D HRTF"
                             android:textColor="?attr/primaryTextColor"
                             android:fontFamily="@font/open_sans_bold"
                             android:textSize="15.5sp"/>

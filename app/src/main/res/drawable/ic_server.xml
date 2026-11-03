@@ -6,22 +6,8 @@
     <path
         android:fillColor="#00000000"
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="1.5"
+        android:strokeWidth="1.4"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M4,4 H20 C21.1,4 22,4.9 22,6 V9 C22,10.1 21.1,11 20,11 H4 C2.9,11 2,10.1 2,9 V6 C2,4.9 2.9,4 4,4 Z" />
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="1.5"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M4,13 H20 C21.1,13 22,13.9 22,15 V18 C22,19.1 21.1,20 20,20 H4 C2.9,20 2,19.1 2,18 V15 C2,13.9 2.9,13 4,13 Z" />
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="1.5"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M6,7.5 H7.5 M6,16.5 H7.5 M17,7.5 H18 M17,16.5 H18" />
+        android:pathData="M5.8,4.2 H18.2 C19.75,4.2 21,5.45 21,7 V8.5 C21,10.05 19.75,11.3 18.2,11.3 H5.8 C4.25,11.3 3,10.05 3,8.5 V7 C3,5.45 4.25,4.2 5.8,4.2 Z M5.8,12.7 H18.2 C19.75,12.7 21,13.95 21,15.5 V17 C21,18.55 19.75,19.8 18.2,19.8 H5.8 C4.25,19.8 3,18.55 3,17 V15.5 C3,13.95 4.25,12.7 5.8,12.7 Z M6.8,7.75 H8.2 M6.8,16.25 H8.2 M16.8,7.75 H17.2 M16.8,16.25 H17.2" />
 </vector>

@@ -466,7 +466,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="1dp"
-                            android:text="🎬 Кинотеатр 3D"
+                            android:text="Кинотеатр 3D"
                             android:textColor="@color/accent_text_color"
                             android:textSize="12.5sp"/>
                     </LinearLayout>
