@@ -143,6 +143,9 @@ public class CommentsManager {
     private int commentsCurrentPage = 0;
     private boolean commentsHasNextPage = false;
     private boolean isLoadingComments = false;
+    private boolean hasInitialCommentsLoadError = false;
+    private long lastPaginationErrorTimeMs = 0L;
+    private static final long PAGINATION_ERROR_COOLDOWN_MS = 4000L;
     private String commentsSortType = "desc";
     private int requestGeneration = 0;
     private boolean isPortraitCommentsRequested = false;
@@ -278,6 +281,8 @@ public class CommentsManager {
             btnRetryComments = commentsPanel.findViewById(R.id.btnRetryComments);
             if (btnRetryComments != null) {
                 btnRetryComments.setOnClickListener(v -> {
+                    hasInitialCommentsLoadError = false;
+                    lastPaginationErrorTimeMs = 0L;
                     if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
                     loadCommentsPage(1);
                 });
@@ -933,7 +938,8 @@ public class CommentsManager {
         }
 
         if (scrollY >= dpToPx(60)) {
-            if (!isPortraitCommentsRequested || (loadedPageResponses.isEmpty() && !isLoadingComments && currentEpisode != null)) {
+            if (!hasInitialCommentsLoadError
+                    && (!isPortraitCommentsRequested || (loadedPageResponses.isEmpty() && !isLoadingComments && currentEpisode != null))) {
                 mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
                 isPortraitCommentsRequested = true;
                 triggerInitialLoadIfNeeded();
@@ -1061,7 +1067,7 @@ public class CommentsManager {
             return;
         }
 
-        if (!isLoadingComments && !commentsAdapter.hasAnySourceComments() && loadedPageResponses.isEmpty()) {
+        if (!isLoadingComments && !hasInitialCommentsLoadError && !commentsAdapter.hasAnySourceComments() && loadedPageResponses.isEmpty()) {
             loadCommentsPage(1);
         }
     }
@@ -1142,6 +1148,10 @@ public class CommentsManager {
         }
 
         isLoadingComments = true;
+        if (isInitialPage) {
+            hasInitialCommentsLoadError = false;
+            lastPaginationErrorTimeMs = 0L;
+        }
         final int gen = isInitialPage ? (++requestGeneration) : requestGeneration;
 
         if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
@@ -1283,6 +1293,8 @@ public class CommentsManager {
                                 }
 
                                 if (response != null) {
+                                    hasInitialCommentsLoadError = false;
+                                    lastPaginationErrorTimeMs = 0L;
                                     if (isInitialPage) {
                                         loadedPageResponses.clear();
                                     }
@@ -1317,6 +1329,9 @@ public class CommentsManager {
                                         dataCallback.onCommentsLoaded(allItems);
                                     }
                                 } else {
+                                    if (isInitialPage && loadedPageResponses.isEmpty()) {
+                                        loadedPageResponses.add(new CommentsResponse());
+                                    }
                                     updateEmptyCommentsState();
                                 }
                             });
@@ -1340,6 +1355,8 @@ public class CommentsManager {
                                     || (commentsAdapter != null && commentsAdapter.hasAnySourceComments());
 
                             if (!hasLoadedData) {
+                                hasInitialCommentsLoadError = true;
+                                mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
                                 if (emptyCommentsText != null) emptyCommentsText.setVisibility(View.GONE);
                                 if (portraitEmptyCommentsText != null) portraitEmptyCommentsText.setVisibility(View.GONE);
 
@@ -1356,6 +1373,8 @@ public class CommentsManager {
                                     portraitCommentsErrorLayout.setVisibility(View.VISIBLE);
                                 }
                                 CustomToast.showWarning(context, "Ошибка загрузки комментариев");
+                            } else if (!isInitialPage) {
+                                lastPaginationErrorTimeMs = android.os.SystemClock.elapsedRealtime();
                             }
 
                             if (dataCallback != null) {
@@ -1385,6 +1404,11 @@ public class CommentsManager {
         }
 
         if (!isOfflineMode && !isCommentsDisabledInPlayer() && !isLoadingComments) {
+            if (hasInitialCommentsLoadError && !hasComments) {
+                if (emptyCommentsText != null) emptyCommentsText.setVisibility(View.GONE);
+                if (portraitEmptyCommentsText != null) portraitEmptyCommentsText.setVisibility(View.GONE);
+                return;
+            }
             if (emptyCommentsText != null) {
                 emptyCommentsText.setVisibility(hasComments ? View.GONE : View.VISIBLE);
             }
@@ -1399,6 +1423,7 @@ public class CommentsManager {
         isPlayerReadyForComments = true;
         if (!isOfflineMode && !isCommentsDisabledInPlayer() && isPortraitOrientation()
                 && isPortraitCommentsRequested && currentEpisode != null
+                && !hasInitialCommentsLoadError
                 && loadedPageResponses.isEmpty() && !isLoadingComments) {
             mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
             mainHandler.postDelayed(deferredPortraitLoadRunnable, POST_PLAYBACK_PORTRAIT_LOAD_DELAY_MS);
@@ -1428,6 +1453,8 @@ public class CommentsManager {
         commentsCurrentPage = 0;
         commentsHasNextPage = false;
         isLoadingComments = false;
+        hasInitialCommentsLoadError = false;
+        lastPaginationErrorTimeMs = 0L;
         resetAllSubmittingUiStates();
         isPortraitCommentsRequested = false;
         if (reloadIfVisible) {
@@ -1490,6 +1517,8 @@ public class CommentsManager {
             commentsCurrentPage = 0;
             commentsHasNextPage = false;
             isLoadingComments = false;
+            hasInitialCommentsLoadError = false;
+            lastPaginationErrorTimeMs = 0L;
             landscapeAdapterNeedsSync = false;
             portraitAdapterNeedsSync = false;
             loadedStickyComments.clear();
@@ -1522,11 +1551,13 @@ public class CommentsManager {
         this.currentEpisode = episode;
         if (episodeChanged) {
             isPlayerReadyForComments = false;
+            hasInitialCommentsLoadError = false;
+            lastPaginationErrorTimeMs = 0L;
         }
 
         if (episode == null) return;
 
-        if (shouldLoadComments() && loadedPageResponses.isEmpty() && !isLoadingComments) {
+        if (shouldLoadComments() && !hasInitialCommentsLoadError && loadedPageResponses.isEmpty() && !isLoadingComments) {
             if (isPortraitOrientation()) {
                 scheduleDeferredPortraitLoad();
             } else if (!isPanelAnimatingOpen) {
@@ -1568,6 +1599,8 @@ public class CommentsManager {
                 btnPortraitRetryComments = root.findViewById(R.id.btnPortraitRetryComments);
                 if (btnPortraitRetryComments != null) {
                     btnPortraitRetryComments.setOnClickListener(v -> {
+                        hasInitialCommentsLoadError = false;
+                        lastPaginationErrorTimeMs = 0L;
                         if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
                         loadCommentsPage(1);
                     });
@@ -1800,6 +1833,8 @@ public class CommentsManager {
             settingsCallback.onCommentsInPlayerToggled(false);
         }
         if (loadedPageResponses.isEmpty() && !isLoadingComments) {
+            hasInitialCommentsLoadError = false;
+            lastPaginationErrorTimeMs = 0L;
             isPortraitCommentsRequested = true;
             loadCommentsPage(1);
         } else {
@@ -1864,7 +1899,7 @@ public class CommentsManager {
     }
 
     private void triggerInitialLoadIfNeeded() {
-        if (isOfflineMode || isCommentsDisabledInPlayer() || currentEpisode == null) return;
+        if (isOfflineMode || isCommentsDisabledInPlayer() || currentEpisode == null || hasInitialCommentsLoadError) return;
         if (portraitAdapterNeedsSync && portraitCommentsAdapter != null && !loadedPageResponses.isEmpty()) {
             portraitAdapterNeedsSync = false;
             syncCachedPagesIntoAdapter(portraitCommentsAdapter);
@@ -1895,14 +1930,18 @@ public class CommentsManager {
             return;
         }
 
-        if (currentEpisode != null && !isLoadingComments && loadedPageResponses.isEmpty()
+        if (currentEpisode != null && !isLoadingComments && !hasInitialCommentsLoadError && loadedPageResponses.isEmpty()
                 && (portraitCommentsAdapter == null || !portraitCommentsAdapter.hasAnySourceComments())) {
             scheduleDeferredPortraitLoad();
         }
     }
 
     public void loadNextCommentsPageIfAvailable() {
-        if (isOfflineMode || isCommentsDisabledInPlayer()) return;
+        if (isOfflineMode || isCommentsDisabledInPlayer() || hasInitialCommentsLoadError) return;
+        if (lastPaginationErrorTimeMs > 0L
+                && (android.os.SystemClock.elapsedRealtime() - lastPaginationErrorTimeMs) < PAGINATION_ERROR_COOLDOWN_MS) {
+            return;
+        }
         if (!isLoadingComments && commentsHasNextPage && currentEpisode != null) {
             int nextPage = Math.max(2, commentsCurrentPage + 1);
             loadCommentsPage(nextPage);
@@ -2220,6 +2259,8 @@ public class CommentsManager {
 
         mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
         isPortraitCommentsRequested = true;
+        hasInitialCommentsLoadError = false;
+        lastPaginationErrorTimeMs = 0L;
 
         boolean prependRoot = !"asc".equals(commentsSortType);
         if (mutatedComment != null && mutatedComment.getId() > 0) {
@@ -2721,6 +2762,8 @@ public class CommentsManager {
                             } else {
                                 updateCommentsButtonVisibility(true);
                                 if (loadedPageResponses.isEmpty() && !isLoadingComments) {
+                                    hasInitialCommentsLoadError = false;
+                                    lastPaginationErrorTimeMs = 0L;
                                     isPortraitCommentsRequested = true;
                                     loadCommentsPage(1);
                                 } else {
@@ -2844,6 +2887,8 @@ public class CommentsManager {
         commentsCurrentPage = 0;
         commentsHasNextPage = false;
         isLoadingComments = false;
+        hasInitialCommentsLoadError = false;
+        lastPaginationErrorTimeMs = 0L;
         resetAllSubmittingUiStates();
         isCommentsVisible = false;
         isPanelAnimatingOpen = false;
