@@ -235,52 +235,48 @@ public class SurroundSoundBottomSheet extends FlexibleBottomSheetDialog {
 
     private void updateWidthChipsUI() {
         int selectedIdx = getClosestIndex(currentSpatialWidth, widthValues);
-        int selectedColor = androidx.core.content.ContextCompat.getColor(getContext(), R.color.secondary_text_color);
-        int unselectedColor = androidx.core.content.ContextCompat.getColor(getContext(), R.color.primary_text_color);
+        int purpleColor = androidx.core.content.ContextCompat.getColor(getContext(), R.color.purple_primary);
         for (int i = 0; i < 4; i++) {
             if (widthChips[i] != null) {
                 boolean isSelected = (i == selectedIdx);
                 widthChips[i].setBackgroundResource(isSelected ? R.drawable.chip_selected : R.drawable.chip_unselected);
-                widthChips[i].setTextColor(isSelected ? selectedColor : unselectedColor);
+                widthChips[i].setTextColor(purpleColor);
             }
         }
     }
 
     private void updateDialogueChipsUI() {
         int selectedIdx = getClosestIndex(currentDialogueBoost, dialogueValues);
-        int selectedColor = androidx.core.content.ContextCompat.getColor(getContext(), R.color.secondary_text_color);
-        int unselectedColor = androidx.core.content.ContextCompat.getColor(getContext(), R.color.primary_text_color);
+        int purpleColor = androidx.core.content.ContextCompat.getColor(getContext(), R.color.purple_primary);
         for (int i = 0; i < 4; i++) {
             if (dialogueChips[i] != null) {
                 boolean isSelected = (i == selectedIdx);
                 dialogueChips[i].setBackgroundResource(isSelected ? R.drawable.chip_selected : R.drawable.chip_unselected);
-                dialogueChips[i].setTextColor(isSelected ? selectedColor : unselectedColor);
+                dialogueChips[i].setTextColor(purpleColor);
             }
         }
     }
 
     private void updateBassChipsUI() {
         int selectedIdx = getClosestIndex(currentBassBoost, bassValues);
-        int selectedColor = androidx.core.content.ContextCompat.getColor(getContext(), R.color.secondary_text_color);
-        int unselectedColor = androidx.core.content.ContextCompat.getColor(getContext(), R.color.primary_text_color);
+        int purpleColor = androidx.core.content.ContextCompat.getColor(getContext(), R.color.purple_primary);
         for (int i = 0; i < 4; i++) {
             if (bassChips[i] != null) {
                 boolean isSelected = (i == selectedIdx);
                 bassChips[i].setBackgroundResource(isSelected ? R.drawable.chip_selected : R.drawable.chip_unselected);
-                bassChips[i].setTextColor(isSelected ? selectedColor : unselectedColor);
+                bassChips[i].setTextColor(purpleColor);
             }
         }
     }
 
     private void updateTrebleChipsUI() {
         int selectedIdx = getClosestIndex(currentTrebleBoost, trebleValues);
-        int selectedColor = androidx.core.content.ContextCompat.getColor(getContext(), R.color.secondary_text_color);
-        int unselectedColor = androidx.core.content.ContextCompat.getColor(getContext(), R.color.primary_text_color);
+        int purpleColor = androidx.core.content.ContextCompat.getColor(getContext(), R.color.purple_primary);
         for (int i = 0; i < 4; i++) {
             if (trebleChips[i] != null) {
                 boolean isSelected = (i == selectedIdx);
                 trebleChips[i].setBackgroundResource(isSelected ? R.drawable.chip_selected : R.drawable.chip_unselected);
-                trebleChips[i].setTextColor(isSelected ? selectedColor : unselectedColor);
+                trebleChips[i].setTextColor(purpleColor);
             }
         }
     }

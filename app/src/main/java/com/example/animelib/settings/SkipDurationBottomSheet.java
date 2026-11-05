@@ -144,11 +144,10 @@ public class SkipDurationBottomSheet extends FlexibleBottomSheetDialog {
         if (presetView == null) return;
         if (presetVal == currentVal) {
             presetView.setBackgroundResource(R.drawable.chip_selected);
-            presetView.setTextColor(androidx.core.content.ContextCompat.getColor(getContext(), R.color.secondary_text_color));
         } else {
             presetView.setBackgroundResource(R.drawable.chip_unselected);
-            presetView.setTextColor(androidx.core.content.ContextCompat.getColor(getContext(), R.color.primary_text_color));
         }
+        presetView.setTextColor(androidx.core.content.ContextCompat.getColor(getContext(), R.color.purple_primary));
     }
 
     public void setOnBackPressedListener(OnBackPressedListener listener) {

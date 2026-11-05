@@ -188,8 +188,7 @@ public class SpeedBottomSheet extends FlexibleBottomSheetDialog {
             speedSlider.setValue(clamped);
         }
 
-        int secondaryColor = ContextCompat.getColor(getContext(), R.color.secondary_text_color);
-        int primaryColor = ContextCompat.getColor(getContext(), R.color.primary_text_color);
+        int purpleColor = ContextCompat.getColor(getContext(), R.color.purple_primary);
 
         for (Map.Entry<Float, TextView> entry : presetButtons.entrySet()) {
             float presetSpeed = entry.getKey();
@@ -200,15 +199,10 @@ public class SpeedBottomSheet extends FlexibleBottomSheetDialog {
 
             if (isSelected) {
                 chip.setBackgroundResource(R.drawable.chip_selected);
-                chip.setTextColor(secondaryColor);
             } else {
                 chip.setBackgroundResource(R.drawable.chip_unselected);
-                if (presetSpeed == 10.0f) {
-                    chip.setTextColor(secondaryColor);
-                } else {
-                    chip.setTextColor(primaryColor);
-                }
             }
+            chip.setTextColor(purpleColor);
         }
     }
 

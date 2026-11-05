@@ -205,6 +205,10 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         btnSelectAll = view.findViewById(R.id.btnSelectAll);
         btnDeselectAll = view.findViewById(R.id.btnDeselectAll);
         btnInvertSelection = view.findViewById(R.id.btnInvertSelection);
+        int purpleColor = ContextCompat.getColor(requireContext(), R.color.purple_primary);
+        if (btnSelectAll != null) btnSelectAll.setTextColor(purpleColor);
+        if (btnDeselectAll != null) btnDeselectAll.setTextColor(purpleColor);
+        if (btnInvertSelection != null) btnInvertSelection.setTextColor(purpleColor);
         tvSelectedCounter = view.findViewById(R.id.tvSelectedCounter);
         pbLoading = view.findViewById(R.id.pbLoading);
         rvEpisodes = view.findViewById(R.id.rvEpisodes);
@@ -408,26 +412,25 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             selectedPlayerType = "animelib";
         }
 
-        int selectedTextColor = ContextCompat.getColor(requireContext(), R.color.secondary_text_color);
-        int unselectedTextColor = ContextCompat.getColor(requireContext(), R.color.primary_text_color);
+        int purpleTextColor = ContextCompat.getColor(requireContext(), R.color.purple_primary);
 
         if ("animelib".equalsIgnoreCase(selectedPlayerType)) {
             if (chipPlayerAnimelib != null) {
                 chipPlayerAnimelib.setBackgroundResource(R.drawable.chip_selected);
-                chipPlayerAnimelib.setTextColor(selectedTextColor);
+                chipPlayerAnimelib.setTextColor(purpleTextColor);
             }
             if (chipPlayerKodik != null) {
                 chipPlayerKodik.setBackgroundResource(R.drawable.chip_unselected);
-                chipPlayerKodik.setTextColor(unselectedTextColor);
+                chipPlayerKodik.setTextColor(purpleTextColor);
             }
         } else {
             if (chipPlayerKodik != null) {
                 chipPlayerKodik.setBackgroundResource(R.drawable.chip_selected);
-                chipPlayerKodik.setTextColor(selectedTextColor);
+                chipPlayerKodik.setTextColor(purpleTextColor);
             }
             if (chipPlayerAnimelib != null) {
                 chipPlayerAnimelib.setBackgroundResource(R.drawable.chip_unselected);
-                chipPlayerAnimelib.setTextColor(unselectedTextColor);
+                chipPlayerAnimelib.setTextColor(purpleTextColor);
             }
         }
     }
@@ -458,18 +461,16 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         allChips.addAll(dynamicQualityChips);
 
         if (!isAdded() || getContext() == null) return;
-        int selectedTextColor = ContextCompat.getColor(requireContext(), R.color.secondary_text_color);
-        int unselectedTextColor = ContextCompat.getColor(requireContext(), R.color.primary_text_color);
+        int purpleTextColor = ContextCompat.getColor(requireContext(), R.color.purple_primary);
 
         for (TextView chip : allChips) {
             if (chip != null) {
                 if (chip.getText().toString().equalsIgnoreCase(selectedQuality)) {
                     chip.setBackgroundResource(R.drawable.chip_selected);
-                    chip.setTextColor(selectedTextColor);
                 } else {
                     chip.setBackgroundResource(R.drawable.chip_unselected);
-                    chip.setTextColor(unselectedTextColor);
                 }
+                chip.setTextColor(purpleTextColor);
             }
         }
     }
@@ -619,7 +620,7 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         TextView chip = new TextView(requireContext());
         chip.setText(qualityKey + "p");
         chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        chip.setTextColor(ContextCompat.getColor(requireContext(), R.color.primary_text_color));
+        chip.setTextColor(ContextCompat.getColor(requireContext(), R.color.purple_primary));
         chip.setBackgroundResource(R.drawable.chip_unselected);
         int pdH = (int) (16 * getResources().getDisplayMetrics().density);
         int pdV = (int) (7 * getResources().getDisplayMetrics().density);

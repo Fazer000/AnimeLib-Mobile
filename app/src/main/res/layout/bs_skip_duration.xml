@@ -93,7 +93,7 @@
                     android:layout_width="38dp"
                     android:layout_height="38dp"
                     android:text="-10"
-                    android:textColor="@color/primary_text_color"
+                    android:textColor="@color/purple_primary"
                     android:textSize="13sp"
                     android:fontFamily="@font/open_sans_bold"
                     android:gravity="center"
@@ -107,7 +107,7 @@
                     android:layout_height="38dp"
                     android:layout_marginStart="4dp"
                     android:text="-5"
-                    android:textColor="@color/primary_text_color"
+                    android:textColor="@color/purple_primary"
                     android:textSize="13sp"
                     android:fontFamily="@font/open_sans_bold"
                     android:gravity="center"
@@ -146,7 +146,7 @@
                     android:layout_height="38dp"
                     android:layout_marginEnd="4dp"
                     android:text="+5"
-                    android:textColor="@color/primary_text_color"
+                    android:textColor="@color/purple_primary"
                     android:textSize="13sp"
                     android:fontFamily="@font/open_sans_bold"
                     android:gravity="center"
@@ -159,7 +159,7 @@
                     android:layout_width="38dp"
                     android:layout_height="38dp"
                     android:text="+10"
-                    android:textColor="@color/primary_text_color"
+                    android:textColor="@color/purple_primary"
                     android:textSize="13sp"
                     android:fontFamily="@font/open_sans_bold"
                     android:gravity="center"
@@ -213,7 +213,7 @@
                 android:background="@drawable/chip_unselected"
                 android:text="30s"
                 android:textSize="12sp"
-                android:textColor="@color/primary_text_color"/>
+                android:textColor="@color/purple_primary"/>
 
             <TextView android:id="@+id/preset60"
                 android:layout_width="0dp"
@@ -224,7 +224,7 @@
                 android:background="@drawable/chip_unselected"
                 android:text="60s"
                 android:textSize="12sp"
-                android:textColor="@color/primary_text_color"/>
+                android:textColor="@color/purple_primary"/>
 
             <TextView android:id="@+id/preset85"
                 android:layout_width="0dp"
@@ -234,7 +234,7 @@
                 android:background="@drawable/chip_unselected"
                 android:text="85s"
                 android:textSize="12sp"
-                android:textColor="@color/primary_text_color"/>
+                android:textColor="@color/purple_primary"/>
 
         </LinearLayout>
 
@@ -256,7 +256,7 @@
                 android:background="@drawable/chip_unselected"
                 android:text="90s"
                 android:textSize="12sp"
-                android:textColor="@color/primary_text_color"/>
+                android:textColor="@color/purple_primary"/>
 
             <TextView android:id="@+id/preset110"
                 android:layout_width="0dp"
@@ -267,7 +267,7 @@
                 android:background="@drawable/chip_unselected"
                 android:text="110s"
                 android:textSize="12sp"
-                android:textColor="@color/primary_text_color"/>
+                android:textColor="@color/purple_primary"/>
 
             <TextView android:id="@+id/preset120"
                 android:layout_width="0dp"
@@ -277,7 +277,7 @@
                 android:background="@drawable/chip_unselected"
                 android:text="120s"
                 android:textSize="12sp"
-                android:textColor="@color/primary_text_color"/>
+                android:textColor="@color/purple_primary"/>
 
         </LinearLayout>
 

@@ -59,7 +59,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="1.0x (Сброс)"
-            android:textColor="@color/secondary_text_color"
+            android:textColor="@color/purple_primary"
             android:textSize="12sp"
             android:fontFamily="@font/open_sans_bold"
             android:paddingHorizontal="10dp"
@@ -97,7 +97,7 @@
                 android:layout_width="38dp"
                 android:layout_height="38dp"
                 android:text="-0.1"
-                android:textColor="@color/primary_text_color"
+                android:textColor="@color/purple_primary"
                 android:textSize="13sp"
                 android:fontFamily="@font/open_sans_bold"
                 android:gravity="center"
@@ -137,7 +137,7 @@
                 android:layout_width="38dp"
                 android:layout_height="38dp"
                 android:text="+0.1"
-                android:textColor="@color/primary_text_color"
+                android:textColor="@color/purple_primary"
                 android:textSize="13sp"
                 android:fontFamily="@font/open_sans_bold"
                 android:gravity="center"
@@ -191,7 +191,7 @@
             android:background="@drawable/chip_unselected"
             android:text="0.5x"
             android:textSize="12sp"
-            android:textColor="@color/primary_text_color"/>
+            android:textColor="@color/purple_primary"/>
 
         <TextView android:id="@+id/speed075x"
             android:layout_width="0dp"
@@ -202,7 +202,7 @@
             android:background="@drawable/chip_unselected"
             android:text="0.75x"
             android:textSize="12sp"
-            android:textColor="@color/primary_text_color"/>
+            android:textColor="@color/purple_primary"/>
 
         <TextView android:id="@+id/speed1x"
             android:layout_width="0dp"
@@ -213,7 +213,7 @@
             android:background="@drawable/chip_unselected"
             android:text="1.0x"
             android:textSize="12sp"
-            android:textColor="@color/primary_text_color"/>
+            android:textColor="@color/purple_primary"/>
 
         <TextView android:id="@+id/speed125x"
             android:layout_width="0dp"
@@ -224,7 +224,7 @@
             android:background="@drawable/chip_unselected"
             android:text="1.25x"
             android:textSize="12sp"
-            android:textColor="@color/primary_text_color"/>
+            android:textColor="@color/purple_primary"/>
 
         <TextView android:id="@+id/speed15x"
             android:layout_width="0dp"
@@ -234,7 +234,7 @@
             android:background="@drawable/chip_unselected"
             android:text="1.5x"
             android:textSize="12sp"
-            android:textColor="@color/primary_text_color"/>
+            android:textColor="@color/purple_primary"/>
 
     </LinearLayout>
 
@@ -256,7 +256,7 @@
             android:background="@drawable/chip_unselected"
             android:text="1.75x"
             android:textSize="12sp"
-            android:textColor="@color/primary_text_color"/>
+            android:textColor="@color/purple_primary"/>
 
         <TextView android:id="@+id/speed2x"
             android:layout_width="0dp"
@@ -267,7 +267,7 @@
             android:background="@drawable/chip_unselected"
             android:text="2.0x"
             android:textSize="12sp"
-            android:textColor="@color/primary_text_color"/>
+            android:textColor="@color/purple_primary"/>
 
         <TextView android:id="@+id/speed25x"
             android:layout_width="0dp"
@@ -278,7 +278,7 @@
             android:background="@drawable/chip_unselected"
             android:text="2.5x"
             android:textSize="12sp"
-            android:textColor="@color/primary_text_color"/>
+            android:textColor="@color/purple_primary"/>
 
         <TextView android:id="@+id/speed3x"
             android:layout_width="0dp"
@@ -289,7 +289,7 @@
             android:background="@drawable/chip_unselected"
             android:text="3.0x"
             android:textSize="12sp"
-            android:textColor="@color/primary_text_color"/>
+            android:textColor="@color/purple_primary"/>
 
         <TextView android:id="@+id/speedSkip"
             android:layout_width="0dp"
@@ -300,7 +300,7 @@
             android:text="10.0x"
             android:textSize="12sp"
             android:fontFamily="@font/open_sans_bold"
-            android:textColor="@color/secondary_text_color"/>
+            android:textColor="@color/purple_primary"/>
 
     </LinearLayout>
 

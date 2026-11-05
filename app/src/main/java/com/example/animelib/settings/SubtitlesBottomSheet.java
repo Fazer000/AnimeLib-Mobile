@@ -299,6 +299,7 @@ public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
     private void updateChipState(TextView chip, boolean isSelected) {
         if (chip == null) return;
         chip.setBackgroundResource(isSelected ? R.drawable.chip_selected : R.drawable.chip_unselected);
+        chip.setTextColor(androidx.core.content.ContextCompat.getColor(getContext(), R.color.purple_primary));
     }
 
     private void notifyStyleChanged() {
