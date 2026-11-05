@@ -344,12 +344,7 @@ public class GesturesManager {
                     };
                     v.postDelayed(holdToSpeedRunnable, 500); // 500ms для активации hold-to-speed
                     
-                    if (seekPreviewText != null && seekPreviewText instanceof android.widget.TextView) {
-                        long dur = player != null ? player.getDuration() : 0;
-                        String currentFormatted = com.example.animelib.api.ApiService.formatTimecode(basePositionMs);
-                        String durationFormatted = com.example.animelib.api.ApiService.formatTimecode(dur);
-                        ((android.widget.TextView) seekPreviewText).setText("+0 [" + currentFormatted + " / " + durationFormatted + "]");
-                    }
+                    updateSeekPreviewText(0, basePositionMs, player != null ? player.getDuration() : 0);
                     return false; // НЕ перехватываем событие, позволяем контролам работать
                     
                 case MotionEvent.ACTION_MOVE:
@@ -421,12 +416,7 @@ public class GesturesManager {
                             if (p != null) p.requestDisallowInterceptTouchEvent(true);
                             // показать превью с единой анимацией
                             if (seekPreviewText != null) {
-                                if (seekPreviewText instanceof android.widget.TextView) {
-                                    long dur = player != null ? player.getDuration() : 0;
-                                    String currentFormatted = com.example.animelib.api.ApiService.formatTimecode(basePositionMs);
-                                    String durationFormatted = com.example.animelib.api.ApiService.formatTimecode(dur);
-                                    ((android.widget.TextView) seekPreviewText).setText("+0 [" + currentFormatted + " / " + durationFormatted + "]");
-                                }
+                                updateSeekPreviewText(0, basePositionMs, player != null ? player.getDuration() : 0);
                                 GesturePlaqueAnimationHelper.show(seekPreviewText);
                             }
                             if (gestureCallback != null && player != null) {
@@ -456,13 +446,7 @@ public class GesturesManager {
                     long dragDur = player != null ? player.getDuration() : 0;
                     if (dragDur > 0) dragNewPos = Math.min(dragNewPos, dragDur);
 
-                    if (seekPreviewText != null && seekPreviewText instanceof android.widget.TextView) {
-                        String offsetStr = (offsetSec >= 0 ? "+" : "") + offsetSec;
-                        String currentFormatted = com.example.animelib.api.ApiService.formatTimecode(dragNewPos);
-                        String durationFormatted = com.example.animelib.api.ApiService.formatTimecode(dragDur);
-                        String previewText = offsetStr + " [" + currentFormatted + " / " + durationFormatted + "]";
-                        ((android.widget.TextView) seekPreviewText).setText(previewText);
-                    }
+                    updateSeekPreviewText(offsetSec, dragNewPos, dragDur);
                     if (gestureCallback != null && player != null) {
                         gestureCallback.updatePlayLoadingIndicator(player.getPlaybackState());
                     }
@@ -713,6 +697,16 @@ public class GesturesManager {
         
         // Обновляем текст в toast и показываем с единой анимацией
         updateSpeedToast();
+        if (holdSpeedToast != null) {
+            android.widget.ImageView icon = holdSpeedToast.findViewById(com.example.animelib.R.id.holdSpeedIcon);
+            if (icon != null) {
+                android.view.animation.AlphaAnimation blink = new android.view.animation.AlphaAnimation(1.0f, 0.25f);
+                blink.setDuration(400);
+                blink.setRepeatCount(android.view.animation.Animation.INFINITE);
+                blink.setRepeatMode(android.view.animation.Animation.REVERSE);
+                icon.startAnimation(blink);
+            }
+        }
         GesturePlaqueAnimationHelper.show(holdSpeedToast);
         
         // Notify callback about speed change
@@ -737,6 +731,12 @@ public class GesturesManager {
         }
         
         // Hide speed toast with unified animation
+        if (holdSpeedToast != null) {
+            android.widget.ImageView icon = holdSpeedToast.findViewById(com.example.animelib.R.id.holdSpeedIcon);
+            if (icon != null) {
+                icon.clearAnimation();
+            }
+        }
         GesturePlaqueAnimationHelper.hide(holdSpeedToast);
         
         // Notify callback about speed reset
@@ -796,11 +796,39 @@ public class GesturesManager {
      * Обновляет отображение скорости в toast
      */
     private void updateSpeedToast() {
-        if (holdSpeedToast != null && holdSpeedToast instanceof android.widget.TextView) {
-            @SuppressLint("DefaultLocale")
-            String speedText = String.format(Locale.US, "%.1f", currentSpeedMultiplier) + "x";
+        if (holdSpeedToast != null) {
+            android.widget.TextView tv = holdSpeedToast instanceof android.widget.TextView ?
+                    (android.widget.TextView) holdSpeedToast : holdSpeedToast.findViewById(com.example.animelib.R.id.holdSpeedToast);
+            if (tv != null) {
+                @SuppressLint("DefaultLocale")
+                String speedText = String.format(Locale.US, "%.1f", currentSpeedMultiplier) + "x";
+                tv.setText(speedText);
+            }
+        }
+    }
 
-            ((android.widget.TextView) holdSpeedToast).setText(speedText);
+    private void updateSeekPreviewText(long offsetSec, long currentPosMs, long totalDurationMs) {
+        if (seekPreviewText == null) return;
+
+        android.widget.TextView tvOffset = seekPreviewText.findViewById(com.example.animelib.R.id.seekPreviewOffset);
+        android.widget.TextView tvTime = seekPreviewText.findViewById(com.example.animelib.R.id.seekPreviewTime);
+        android.widget.TextView tvDuration = seekPreviewText.findViewById(com.example.animelib.R.id.seekPreviewDuration);
+        android.widget.ImageView icon = seekPreviewText.findViewById(com.example.animelib.R.id.seekPreviewIcon);
+
+        String offsetStr = (offsetSec >= 0 ? "+" : "") + offsetSec + " сек";
+        String currentFormatted = com.example.animelib.api.ApiService.formatTimecode(currentPosMs);
+        String durationFormatted = com.example.animelib.api.ApiService.formatTimecode(totalDurationMs);
+
+        if (tvOffset != null && tvTime != null && tvDuration != null) {
+            tvOffset.setText(offsetStr);
+            tvTime.setText(currentFormatted);
+            tvDuration.setText(" / " + durationFormatted);
+            if (icon != null) {
+                icon.setRotation(offsetSec >= 0 ? 0f : 180f);
+            }
+        } else if (seekPreviewText instanceof android.widget.TextView) {
+            String previewText = (offsetSec >= 0 ? "+" : "") + offsetSec + " [" + currentFormatted + " / " + durationFormatted + "]";
+            ((android.widget.TextView) seekPreviewText).setText(previewText);
         }
     }
     
@@ -1077,11 +1105,28 @@ public class GesturesManager {
                 params.topMargin = (int) ((isPortrait ? 20 : 80) * density);
                 seekPreviewText.setLayoutParams(params);
             }
+            int padH = (int) ((isPortrait ? 8 : 16) * density);
+            int padV = (int) ((isPortrait ? 4 : 9) * density);
+            seekPreviewText.setPadding(padH, padV, padH, padV);
+
+            android.widget.TextView tvOffset = seekPreviewText.findViewById(com.example.animelib.R.id.seekPreviewOffset);
+            android.widget.TextView tvTime = seekPreviewText.findViewById(com.example.animelib.R.id.seekPreviewTime);
+            android.widget.TextView tvDuration = seekPreviewText.findViewById(com.example.animelib.R.id.seekPreviewDuration);
+            android.widget.ImageView icon = seekPreviewText.findViewById(com.example.animelib.R.id.seekPreviewIcon);
+
+            if (tvOffset != null) tvOffset.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, isPortrait ? 12f : 15f);
+            if (tvTime != null) tvTime.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, isPortrait ? 12f : 15f);
+            if (tvDuration != null) tvDuration.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, isPortrait ? 11f : 14f);
+            if (icon != null) {
+                android.view.ViewGroup.LayoutParams iconLp = icon.getLayoutParams();
+                int iconPx = (int) ((isPortrait ? 14 : 18) * density);
+                iconLp.width = iconPx;
+                iconLp.height = iconPx;
+                icon.setLayoutParams(iconLp);
+            }
+
             if (seekPreviewText instanceof android.widget.TextView) {
                 ((android.widget.TextView) seekPreviewText).setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, isPortrait ? 12f : 16f);
-                int padH = (int) ((isPortrait ? 10 : 14) * density);
-                int padV = (int) ((isPortrait ? 5 : 8) * density);
-                seekPreviewText.setPadding(padH, padV, padH, padV);
             }
         }
 
@@ -1092,11 +1137,24 @@ public class GesturesManager {
                 params.topMargin = (int) ((isPortrait ? 20 : 80) * density);
                 holdSpeedToast.setLayoutParams(params);
             }
+            int padH = (int) ((isPortrait ? 10 : 16) * density);
+            int padV = (int) ((isPortrait ? 4 : 8) * density);
+            holdSpeedToast.setPadding(padH, padV, padH, padV);
+
+            android.widget.TextView tvToast = holdSpeedToast.findViewById(com.example.animelib.R.id.holdSpeedToast);
+            android.widget.ImageView icon = holdSpeedToast.findViewById(com.example.animelib.R.id.holdSpeedIcon);
+
+            if (tvToast != null) tvToast.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, isPortrait ? 13f : 15f);
+            if (icon != null) {
+                android.view.ViewGroup.LayoutParams iconLp = icon.getLayoutParams();
+                int iconPx = (int) ((isPortrait ? 15 : 20) * density);
+                iconLp.width = iconPx;
+                iconLp.height = iconPx;
+                icon.setLayoutParams(iconLp);
+            }
+
             if (holdSpeedToast instanceof android.widget.TextView) {
                 ((android.widget.TextView) holdSpeedToast).setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, isPortrait ? 13f : 18f);
-                int padH = (int) ((isPortrait ? 12 : 16) * density);
-                int padV = (int) ((isPortrait ? 3 : 4) * density);
-                holdSpeedToast.setPadding(padH, padV, padH, padV);
             }
         }
     }

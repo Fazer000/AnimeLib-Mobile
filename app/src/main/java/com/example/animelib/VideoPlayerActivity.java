@@ -201,8 +201,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private View commentsLoadingOverlay;
     private View commentsOptionsButton;
     private TextView emptyCommentsText;
-    private TextView seekPreviewText;
-    private TextView holdSpeedToast;
+    private View seekPreviewText;
+    private View holdSpeedToast;
     private ImageButton pipButton;
     private ImageButton btnLockScreen;
     private RecyclerView episodesHorizontalRecyclerView;
@@ -1757,8 +1757,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
         
         // Initialize anime info placeholder
         // Gesture components
-        TextView seekPreviewText = findViewById(R.id.seekPreviewText);
-        TextView holdSpeedToast = findViewById(R.id.holdSpeedToast);
+        View seekPreviewText = findViewById(R.id.seekPreviewPlaque);
+        View holdSpeedToast = findViewById(R.id.holdSpeedPlaque);
         View skipIndicatorLeft = findViewById(R.id.skipIndicatorLeft);
         View skipIndicatorRight = findViewById(R.id.skipIndicatorRight);
         this.gestureIndicatorPlaque = findViewById(R.id.gestureIndicatorPlaque);

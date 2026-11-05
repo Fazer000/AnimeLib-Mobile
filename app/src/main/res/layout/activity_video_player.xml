@@ -120,37 +120,99 @@
                 android:elevation="30dp"
                 android:translationZ="30dp" />
 
-            <!-- Swipe seek preview -->
-            <TextView
-                android:id="@+id/seekPreviewText"
+            <!-- Swipe seek preview plaque -->
+            <LinearLayout
+                android:id="@+id/seekPreviewPlaque"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center_horizontal"
                 android:layout_marginTop="80dp"
                 android:background="@drawable/video_time_background"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="8dp"
-                android:text="+0 c"
-                android:textColor="@color/player_item_inactive_text"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:visibility="gone" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="9dp"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/seekPreviewIcon"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_marginEnd="8dp"
+                    android:src="@drawable/ic_skip"
+                    app:tint="@color/purple_primary"
+                    android:contentDescription="@null" />
+
+                <TextView
+                    android:id="@+id/seekPreviewOffset"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/purple_primary"
+                    android:textSize="15sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:includeFontPadding="false"
+                    android:text="+0 c" />
+
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="14dp"
+                    android:layout_marginHorizontal="10dp"
+                    android:background="#40FFFFFF" />
+
+                <TextView
+                    android:id="@+id/seekPreviewTime"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/white_color"
+                    android:textSize="15sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:includeFontPadding="false"
+                    android:text="00:00" />
+
+                <TextView
+                    android:id="@+id/seekPreviewDuration"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#A0FFFFFF"
+                    android:textSize="14sp"
+                    android:fontFamily="@font/open_sans"
+                    android:includeFontPadding="false"
+                    android:text=" / 00:00" />
+            </LinearLayout>
 
             <!-- Hold-to-speed plaque -->
-            <TextView
-                android:id="@+id/holdSpeedToast"
+            <LinearLayout
+                android:id="@+id/holdSpeedPlaque"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center_horizontal"
                 android:layout_marginTop="80dp"
                 android:background="@drawable/video_time_background"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="4dp"
-                android:text="2x"
-                android:textColor="@color/player_item_inactive_text"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:visibility="gone" />
+                android:paddingVertical="8dp"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/holdSpeedIcon"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginEnd="8dp"
+                    android:src="@drawable/ic_skip"
+                    app:tint="@color/purple_primary"
+                    android:contentDescription="@null" />
+
+                <TextView
+                    android:id="@+id/holdSpeedToast"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="2x"
+                    android:textColor="@color/white_color"
+                    android:textSize="15sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:includeFontPadding="false" />
+            </LinearLayout>
 
             <!-- Double tap skip indicator - Left (backward) -->
             <LinearLayout
@@ -255,9 +317,9 @@
                     app:m3GapSize="3dp"
                     app:m3StopDotSize="3dp"
                     app:m3ShowStopDot="true"
-                    app:m3IndicatorColor="@color/player_item_inactive_text"
+                    app:m3IndicatorColor="@color/white_color"
                     app:m3TrackColor="@color/player_gesture_track_bg"
-                    app:m3StopDotColor="@color/player_item_inactive_text" />
+                    app:m3StopDotColor="@color/white_color" />
 
                 <TextView
                     android:id="@+id/gestureIndicatorText"
