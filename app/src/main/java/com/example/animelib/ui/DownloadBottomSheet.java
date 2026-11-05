@@ -205,10 +205,6 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         btnSelectAll = view.findViewById(R.id.btnSelectAll);
         btnDeselectAll = view.findViewById(R.id.btnDeselectAll);
         btnInvertSelection = view.findViewById(R.id.btnInvertSelection);
-        int purpleColor = ContextCompat.getColor(requireContext(), R.color.purple_primary);
-        if (btnSelectAll != null) btnSelectAll.setTextColor(purpleColor);
-        if (btnDeselectAll != null) btnDeselectAll.setTextColor(purpleColor);
-        if (btnInvertSelection != null) btnInvertSelection.setTextColor(purpleColor);
         tvSelectedCounter = view.findViewById(R.id.tvSelectedCounter);
         pbLoading = view.findViewById(R.id.pbLoading);
         rvEpisodes = view.findViewById(R.id.rvEpisodes);
@@ -412,25 +408,26 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             selectedPlayerType = "animelib";
         }
 
-        int purpleTextColor = ContextCompat.getColor(requireContext(), R.color.purple_primary);
+        int selectedTextColor = ContextCompat.getColor(requireContext(), R.color.purple_primary);
+        int unselectedTextColor = ContextCompat.getColor(requireContext(), R.color.primary_text_color);
 
         if ("animelib".equalsIgnoreCase(selectedPlayerType)) {
             if (chipPlayerAnimelib != null) {
                 chipPlayerAnimelib.setBackgroundResource(R.drawable.chip_selected);
-                chipPlayerAnimelib.setTextColor(purpleTextColor);
+                chipPlayerAnimelib.setTextColor(selectedTextColor);
             }
             if (chipPlayerKodik != null) {
                 chipPlayerKodik.setBackgroundResource(R.drawable.chip_unselected);
-                chipPlayerKodik.setTextColor(purpleTextColor);
+                chipPlayerKodik.setTextColor(unselectedTextColor);
             }
         } else {
             if (chipPlayerKodik != null) {
                 chipPlayerKodik.setBackgroundResource(R.drawable.chip_selected);
-                chipPlayerKodik.setTextColor(purpleTextColor);
+                chipPlayerKodik.setTextColor(selectedTextColor);
             }
             if (chipPlayerAnimelib != null) {
                 chipPlayerAnimelib.setBackgroundResource(R.drawable.chip_unselected);
-                chipPlayerAnimelib.setTextColor(purpleTextColor);
+                chipPlayerAnimelib.setTextColor(unselectedTextColor);
             }
         }
     }
@@ -461,16 +458,18 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         allChips.addAll(dynamicQualityChips);
 
         if (!isAdded() || getContext() == null) return;
-        int purpleTextColor = ContextCompat.getColor(requireContext(), R.color.purple_primary);
+        int selectedTextColor = ContextCompat.getColor(requireContext(), R.color.purple_primary);
+        int unselectedTextColor = ContextCompat.getColor(requireContext(), R.color.primary_text_color);
 
         for (TextView chip : allChips) {
             if (chip != null) {
                 if (chip.getText().toString().equalsIgnoreCase(selectedQuality)) {
                     chip.setBackgroundResource(R.drawable.chip_selected);
+                    chip.setTextColor(selectedTextColor);
                 } else {
                     chip.setBackgroundResource(R.drawable.chip_unselected);
+                    chip.setTextColor(unselectedTextColor);
                 }
-                chip.setTextColor(purpleTextColor);
             }
         }
     }
@@ -620,7 +619,7 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         TextView chip = new TextView(requireContext());
         chip.setText(qualityKey + "p");
         chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        chip.setTextColor(ContextCompat.getColor(requireContext(), R.color.purple_primary));
+        chip.setTextColor(ContextCompat.getColor(requireContext(), R.color.primary_text_color));
         chip.setBackgroundResource(R.drawable.chip_unselected);
         int pdH = (int) (16 * getResources().getDisplayMetrics().density);
         int pdV = (int) (7 * getResources().getDisplayMetrics().density);
@@ -1066,11 +1065,13 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
 
                 if (item.isChecked) {
                     holder.tvStatus.setText("Выбрано");
-                    holder.tvStatus.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.secondary_text_color));
+                    holder.tvStatus.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.purple_primary));
+                    holder.tvEpisodeName.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.purple_primary));
                     holder.itemView.setBackgroundResource(R.drawable.episode_item_selected);
                 } else {
                     holder.tvStatus.setText("Доступно");
                     holder.tvStatus.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.accent_text_color));
+                    holder.tvEpisodeName.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.primary_text_color));
                     holder.itemView.setBackgroundResource(R.drawable.episode_item_normal);
                 }
             }

@@ -12,6 +12,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 import androidx.media3.ui.CaptionStyleCompat;
 
 import com.example.animelib.R;
@@ -297,9 +298,9 @@ public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
     }
 
     private void updateChipState(TextView chip, boolean isSelected) {
-        if (chip == null) return;
+        if (chip == null || getContext() == null) return;
         chip.setBackgroundResource(isSelected ? R.drawable.chip_selected : R.drawable.chip_unselected);
-        chip.setTextColor(androidx.core.content.ContextCompat.getColor(getContext(), R.color.purple_primary));
+        chip.setTextColor(ContextCompat.getColor(getContext(), isSelected ? R.color.purple_primary : R.color.primary_text_color));
     }
 
     private void notifyStyleChanged() {

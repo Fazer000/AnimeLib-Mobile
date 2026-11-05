@@ -27,6 +27,7 @@
     <color name="comment_input_stroke">#33333C</color>
     <color name="chip_selected_bg">@color/purple_secondary_dark</color>
     <color name="chip_selected_stroke">@color/purple_primary</color>
+    <color name="chip_selected_text">@color/purple_primary</color>
     <color name="chip_unselected_bg">#1C1C1E</color>
     <color name="chip_unselected_stroke">#33333C</color>
     <color name="anime_info_tag_bg">#17171A</color>

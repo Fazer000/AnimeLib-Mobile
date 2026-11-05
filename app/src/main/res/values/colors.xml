@@ -114,6 +114,7 @@
     <color name="comment_input_stroke">#E5E7EB</color>
     <color name="chip_selected_bg">@color/purple_secondary</color>
     <color name="chip_selected_stroke">@color/purple_primary</color>
+    <color name="chip_selected_text">@color/purple_primary</color>
     <color name="chip_unselected_bg">#F3F4F6</color>
     <color name="chip_unselected_stroke">#E5E7EB</color>
     <color name="anime_info_tag_bg">#F3F4F6</color>
