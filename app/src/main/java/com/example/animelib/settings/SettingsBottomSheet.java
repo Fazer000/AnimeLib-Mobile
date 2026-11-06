@@ -484,6 +484,22 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
             });
         }
 
+        // Beta updates switch option
+        LinearLayout betaUpdatesOption = view.findViewById(R.id.betaUpdatesOption);
+        com.google.android.material.materialswitch.MaterialSwitch switchBetaUpdates = view.findViewById(R.id.switchBetaUpdates);
+
+        if (switchBetaUpdates != null) {
+            switchBetaUpdates.setChecked(UpdateManager.isBetaUpdatesEnabled(getContext()));
+            switchBetaUpdates.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                UpdateManager.setBetaUpdatesEnabled(getContext(), isChecked);
+                CustomToast.showInfo(getContext(), isChecked ? "Включено получение бета-версий" : "Выключено получение бета-версий");
+            });
+        }
+
+        if (betaUpdatesOption != null && switchBetaUpdates != null) {
+            betaUpdatesOption.setOnClickListener(v -> switchBetaUpdates.toggle());
+        }
+
         setCancelable(true);
     }
 

@@ -2,8 +2,8 @@
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/cardMapNode"
-    android:layout_width="310dp"
-    android:layout_height="110dp"
+    android:layout_width="260dp"
+    android:layout_height="105dp"
     android:clickable="false"
     android:focusable="false"
     app:cardBackgroundColor="@color/card_bg_color"
@@ -37,6 +37,21 @@
                     android:scaleType="centerCrop"
                     android:src="@drawable/ic_image_placeholder"
                     android:contentDescription="Cover" />
+
+                <!-- Sequence step number in chronology -->
+                <TextView
+                    android:id="@+id/tvMapCardStepNumber"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top|start"
+                    android:layout_margin="4dp"
+                    android:background="@drawable/bg_rules_number_circle"
+                    android:gravity="center"
+                    android:paddingHorizontal="5dp"
+                    android:paddingVertical="1dp"
+                    android:textColor="@android:color/white"
+                    android:textSize="9.5sp"
+                    android:fontFamily="@font/open_sans_bold" />
 
                 <TextView
                     android:id="@+id/tvMapCardCurrentBadge"

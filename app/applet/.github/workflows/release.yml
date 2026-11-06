@@ -16,7 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -62,13 +61,32 @@ jobs:
           echo "keyPassword=releasepass" >> keystore.properties
         fi
 
-    - name: Set release version
+    - name: Calculate and set release version from app/build.gradle
       id: versioning
       run: |
-        NEW_TAG="release"
-        NEW_NAME="Beta v0.0.0"
+        CURRENT_VERSION=$(grep -E '(baseVersionName\s*=\s*"[^"]+"|versionName\s+"[^"]+")' app/build.gradle | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+        if [ -z "$CURRENT_VERSION" ]; then
+          CURRENT_VERSION="1.8.9"
+        fi
+        echo "Current app base version in build.gradle: $CURRENT_VERSION"
+
+        # Remove existing -beta or pre-release suffix
+        CLEAN_VERSION=$(echo "$CURRENT_VERSION" | sed -E 's/-.*//')
+
+        # Calculate +0.0.1 patch bump for GitHub Release tag with -beta suffix
+        IFS='.' read -r MAJOR MINOR PATCH <<< "$CLEAN_VERSION"
+        MAJOR=${MAJOR:-1}
+        MINOR=${MINOR:-0}
+        PATCH=${PATCH:-0}
+        NEW_PATCH=$((PATCH + 1))
+        NEW_VERSION_NAME="${MAJOR}.${MINOR}.${NEW_PATCH}-beta"
+        NEW_TAG="v${NEW_VERSION_NAME}"
+
+        echo "App Base Version: $CURRENT_VERSION"
+        echo "GitHub Release Tag (+0.0.1-beta): $NEW_TAG"
+
         echo "tag_name=$NEW_TAG" >> $GITHUB_OUTPUT
-        echo "release_name=$NEW_NAME" >> $GITHUB_OUTPUT
+        echo "version_name=$NEW_VERSION_NAME" >> $GITHUB_OUTPUT
 
     - name: Build Debug & Release APK / AAB
       run: ./gradlew assembleDebug assembleRelease bundleRelease --no-daemon --stacktrace
@@ -85,12 +103,12 @@ jobs:
       if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: release
-        name: Beta v0.0.0
+        tag_name: ${{ steps.versioning.outputs.tag_name }}
+        name: Release ${{ steps.versioning.outputs.tag_name }}
         draft: false
-        prerelease: false
+        prerelease: true
         overwrite: true
-        make_latest: true
+        make_latest: false
         files: |
           app/build/outputs/apk/release/*.apk
           app/build/outputs/apk/debug/*.apk

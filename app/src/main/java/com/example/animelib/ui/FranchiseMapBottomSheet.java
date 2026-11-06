@@ -230,7 +230,7 @@ public class FranchiseMapBottomSheet extends FlexibleBottomSheetDialog {
                         tvZoomPercentage.setText(Math.round(scale * 100) + "%")
                 );
                 tvZoomPercentage.setOnClickListener(v -> {
-                    franchiseGraphView.setScaleFactor(0.70f);
+                    franchiseGraphView.setScaleFactor(0.80f);
                     franchiseGraphView.centerOnCurrent(true);
                 });
             }

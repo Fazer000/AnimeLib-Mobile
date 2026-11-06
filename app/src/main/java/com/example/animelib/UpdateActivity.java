@@ -11,7 +11,8 @@ import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageButton;
-import android.widget.ProgressBar;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -23,6 +24,8 @@ import com.example.animelib.util.CustomToast;
 import com.example.animelib.util.ThemeUtils;
 import com.example.animelib.util.UpdateManager;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.materialswitch.MaterialSwitch;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -40,15 +43,32 @@ public class UpdateActivity extends AppCompatActivity {
     public static final String EXTRA_UPDATE_INFO = "extra_update_info";
 
     private UpdateInfo updateInfo;
+    private UpdateInfo stableInfo;
+
+    private TextView tvVersionTitle;
+    private TextView tvCurrentVsNew;
+    private TextView tvReleaseDate;
+    private TextView tvChangelog;
+
     private com.example.animelib.ui.M3LinearProgressIndicator progressDownload;
     private TextView tvDownloadStatus;
     private MaterialButton btnDownload;
     private MaterialButton btnOpenGithub;
+
+    private MaterialSwitch switchBetaUpdates;
+    private LinearLayout betaUpdatesCard;
+
+    private LinearLayout layoutRollbackSection;
+    private TextView tvRollbackDescription;
+    private MaterialButton btnRollbackToStable;
+
     private boolean isDownloading = false;
 
     public static void start(Context context, UpdateInfo updateInfo) {
         Intent intent = new Intent(context, UpdateActivity.class);
-        intent.putExtra(EXTRA_UPDATE_INFO, updateInfo);
+        if (updateInfo != null) {
+            intent.putExtra(EXTRA_UPDATE_INFO, updateInfo);
+        }
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         context.startActivity(intent);
     }
@@ -66,6 +86,22 @@ public class UpdateActivity extends AppCompatActivity {
         ThemeUtils.applyTheme(ThemeUtils.getSavedThemePreference(this));
         setContentView(R.layout.activity_update);
 
+        setupSystemBars();
+
+        if (getIntent() != null && getIntent().hasExtra(EXTRA_UPDATE_INFO)) {
+            updateInfo = (UpdateInfo) getIntent().getSerializableExtra(EXTRA_UPDATE_INFO);
+        }
+
+        initViews();
+
+        if (updateInfo != null) {
+            bindUpdateInfo(updateInfo);
+        } else {
+            loadUpdatesFromNetwork();
+        }
+    }
+
+    private void setupSystemBars() {
         if (getWindow() != null) {
             getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
             getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
@@ -80,61 +116,52 @@ public class UpdateActivity extends AppCompatActivity {
                 insetsController.setAppearanceLightStatusBars(!isDark);
             }
         }
+    }
 
-        if (getIntent() != null && getIntent().hasExtra(EXTRA_UPDATE_INFO)) {
-            updateInfo = (UpdateInfo) getIntent().getSerializableExtra(EXTRA_UPDATE_INFO);
-        }
-
-        if (updateInfo == null) {
-            CustomToast.showWarning(this, "Информация об обновлении не найдена");
-            finish();
-            return;
-        }
-
+    private void initViews() {
         ImageButton btnBack = findViewById(R.id.btnBack);
-        android.widget.ImageView ivUpdateLogo = findViewById(R.id.ivUpdateLogo);
+        ImageView ivUpdateLogo = findViewById(R.id.ivUpdateLogo);
         if (ivUpdateLogo != null) {
             boolean isDark = ThemeUtils.isDarkTheme(this);
             ivUpdateLogo.setImageResource(isDark ? R.drawable.ic_logo_non_back_night : R.drawable.ic_logo_non_back_light);
         }
-        TextView tvVersionTitle = findViewById(R.id.tvVersionTitle);
-        TextView tvCurrentVsNew = findViewById(R.id.tvCurrentVsNew);
-        TextView tvReleaseDate = findViewById(R.id.tvReleaseDate);
-        TextView tvChangelog = findViewById(R.id.tvChangelog);
+
+        tvVersionTitle = findViewById(R.id.tvVersionTitle);
+        tvCurrentVsNew = findViewById(R.id.tvCurrentVsNew);
+        tvReleaseDate = findViewById(R.id.tvReleaseDate);
+        tvChangelog = findViewById(R.id.tvChangelog);
 
         progressDownload = findViewById(R.id.progressDownload);
         tvDownloadStatus = findViewById(R.id.tvDownloadStatus);
         btnDownload = findViewById(R.id.btnDownload);
         btnOpenGithub = findViewById(R.id.btnOpenGithub);
 
-        String currentVer = UpdateManager.getCurrentVersion(this);
-        String latestTag = updateInfo.getTagName() != null ? updateInfo.getTagName() : "v0.0.0";
+        betaUpdatesCard = findViewById(R.id.betaUpdatesCard);
+        switchBetaUpdates = findViewById(R.id.switchBetaUpdates);
 
-        tvVersionTitle.setText("Доступна версия " + latestTag);
-        tvCurrentVsNew.setText("У вас: v" + currentVer + "  ➔  Новая: " + latestTag);
-
-        String pubDate = formatDate(updateInfo.getPublishedAt());
-        if (!pubDate.isEmpty()) {
-            tvReleaseDate.setText("Дата публикации: " + pubDate);
-            tvReleaseDate.setVisibility(View.VISIBLE);
-        } else {
-            tvReleaseDate.setVisibility(View.GONE);
-        }
-
-        String changelogText = updateInfo.getChangelog();
-        if (changelogText != null && !changelogText.trim().isEmpty()) {
-            // Clean up markdown headers for better display
-            changelogText = changelogText.replaceAll("(?m)^#+\\s*", "• ");
-            tvChangelog.setText(changelogText.trim());
-        } else {
-            tvChangelog.setText("Описание изменений отсутствует.");
-        }
+        layoutRollbackSection = findViewById(R.id.layoutRollbackSection);
+        tvRollbackDescription = findViewById(R.id.tvRollbackDescription);
+        btnRollbackToStable = findViewById(R.id.btnRollbackToStable);
 
         btnBack.setOnClickListener(v -> finish());
 
+        if (switchBetaUpdates != null) {
+            boolean isBetaEnabled = UpdateManager.isBetaUpdatesEnabled(this);
+            switchBetaUpdates.setChecked(isBetaEnabled);
+            switchBetaUpdates.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                UpdateManager.setBetaUpdatesEnabled(this, isChecked);
+                CustomToast.showInfo(this, isChecked ? "Включено получение бета-версий" : "Выключено получение бета-версий");
+                loadUpdatesFromNetwork();
+            });
+        }
+
+        if (betaUpdatesCard != null && switchBetaUpdates != null) {
+            betaUpdatesCard.setOnClickListener(v -> switchBetaUpdates.toggle());
+        }
+
         btnOpenGithub.setOnClickListener(v -> {
             try {
-                String url = updateInfo.getHtmlUrl() != null && !updateInfo.getHtmlUrl().isEmpty()
+                String url = (updateInfo != null && updateInfo.getHtmlUrl() != null && !updateInfo.getHtmlUrl().isEmpty())
                         ? updateInfo.getHtmlUrl()
                         : "https://github.com/Fazer000/AnimeLib-Mobile";
                 Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
@@ -146,11 +173,145 @@ public class UpdateActivity extends AppCompatActivity {
 
         btnDownload.setOnClickListener(v -> {
             if (isDownloading) return;
-            checkInstallPermissionAndDownload();
+            if (updateInfo != null) {
+                checkInstallPermissionAndDownload(updateInfo);
+            }
+        });
+
+        if (btnRollbackToStable != null) {
+            btnRollbackToStable.setOnClickListener(v -> {
+                if (isDownloading) return;
+                confirmAndRollback();
+            });
+        }
+    }
+
+    private void bindUpdateInfo(UpdateInfo info) {
+        this.updateInfo = info;
+        this.stableInfo = info != null ? info.getStableUpdateInfo() : UpdateManager.getCachedLatestStable();
+
+        String currentVer = UpdateManager.getCurrentVersion(this);
+        boolean isCurrentBeta = UpdateManager.isCurrentVersionBeta(this);
+
+        if (info != null) {
+            String latestTag = info.getTagName() != null ? info.getTagName() : "v0.0.0";
+            String typeSuffix = info.isBeta() ? " (Beta)" : " (Релиз)";
+            tvVersionTitle.setText("Доступна версия " + latestTag + typeSuffix);
+            tvCurrentVsNew.setText("У вас: v" + currentVer + "  ➔  Новая: " + latestTag);
+
+            String pubDate = formatDate(info.getPublishedAt());
+            if (!pubDate.isEmpty()) {
+                tvReleaseDate.setText("Дата публикации: " + pubDate);
+                tvReleaseDate.setVisibility(View.VISIBLE);
+            } else {
+                tvReleaseDate.setVisibility(View.GONE);
+            }
+
+            String changelogText = info.getChangelog();
+            if (changelogText != null && !changelogText.trim().isEmpty()) {
+                changelogText = changelogText.replaceAll("(?m)^#+\\s*", "• ");
+                tvChangelog.setText(changelogText.trim());
+            } else {
+                tvChangelog.setText("Описание изменений отсутствует.");
+            }
+
+            btnDownload.setEnabled(true);
+            btnDownload.setText(R.string.btn_download_apk);
+        } else {
+            tvVersionTitle.setText("У вас последняя версия");
+            tvCurrentVsNew.setText("Текущая версия: v" + currentVer);
+            tvReleaseDate.setVisibility(View.GONE);
+            tvChangelog.setText("Обновления отсутствуют.");
+            btnDownload.setEnabled(false);
+            btnDownload.setText("ОБНОВЛЕНИЙ НЕТ");
+        }
+
+        // Configure rollback section if current version is beta
+        if (layoutRollbackSection != null) {
+            if (isCurrentBeta) {
+                layoutRollbackSection.setVisibility(View.VISIBLE);
+                String stableTag = stableInfo != null && stableInfo.getTagName() != null ? stableInfo.getTagName() : "";
+                if (!stableTag.isEmpty()) {
+                    btnRollbackToStable.setText("ОТКАТИТЬСЯ ДО " + stableTag);
+                    tvRollbackDescription.setText("У вас установлена тестовая бета-версия (" + currentVer + "). Вы можете вернуться к стабильной сборке " + stableTag + ".");
+                } else {
+                    btnRollbackToStable.setText("ОТКАТИТЬСЯ ДО СТАБИЛЬНОЙ ВЕРСИИ");
+                    tvRollbackDescription.setText("У вас установлена тестовая бета-версия (" + currentVer + "). Вы можете вернуться к последней стабильной сборке.");
+                }
+            } else {
+                layoutRollbackSection.setVisibility(View.GONE);
+            }
+        }
+    }
+
+    private void loadUpdatesFromNetwork() {
+        if (progressDownload != null) {
+            progressDownload.setVisibility(View.VISIBLE);
+            progressDownload.setIndeterminate(true);
+        }
+        if (tvDownloadStatus != null) {
+            tvDownloadStatus.setVisibility(View.VISIBLE);
+            tvDownloadStatus.setText("Проверка обновлений...");
+        }
+
+        UpdateManager.checkForUpdates(this, null, new UpdateManager.CheckUpdateCallback() {
+            @Override
+            public void onUpdateCheckResult(boolean hasUpdate, UpdateInfo newUpdateInfo, String currentVersion) {
+                runOnUiThread(() -> {
+                    if (progressDownload != null) progressDownload.setVisibility(View.GONE);
+                    if (tvDownloadStatus != null) tvDownloadStatus.setVisibility(View.GONE);
+                    bindUpdateInfo(newUpdateInfo);
+                });
+            }
+
+            @Override
+            public void onError(String errorMessage) {
+                runOnUiThread(() -> {
+                    if (progressDownload != null) progressDownload.setVisibility(View.GONE);
+                    if (tvDownloadStatus != null) tvDownloadStatus.setVisibility(View.GONE);
+                    CustomToast.showWarning(UpdateActivity.this, errorMessage);
+                });
+            }
         });
     }
 
-    private void checkInstallPermissionAndDownload() {
+    private void confirmAndRollback() {
+        UpdateInfo targetStable = stableInfo != null ? stableInfo : UpdateManager.getCachedLatestStable();
+        if (targetStable != null && targetStable.getApkUrl() != null && !targetStable.getApkUrl().isEmpty()) {
+            String stableTag = targetStable.getTagName() != null ? targetStable.getTagName() : "стабильную версию";
+            new MaterialAlertDialogBuilder(this)
+                    .setTitle("Откат до стабильной версии")
+                    .setMessage("Вы уверены, что хотите откатиться на " + stableTag + "?\n\nТекущая тестовая бета-версия будет заменена.")
+                    .setPositiveButton("Откатиться", (dialog, which) -> checkInstallPermissionAndDownload(targetStable))
+                    .setNegativeButton("Отмена", null)
+                    .show();
+        } else {
+            CustomToast.showInfo(this, "Поиск последней стабильной версии...");
+            UpdateManager.checkForUpdates(this, null, new UpdateManager.CheckUpdateCallback() {
+                @Override
+                public void onUpdateCheckResult(boolean hasUpdate, UpdateInfo newInfo, String currentVersion) {
+                    runOnUiThread(() -> {
+                        UpdateInfo foundStable = newInfo != null && newInfo.getStableUpdateInfo() != null
+                                ? newInfo.getStableUpdateInfo()
+                                : UpdateManager.getCachedLatestStable();
+                        if (foundStable != null && foundStable.getApkUrl() != null && !foundStable.getApkUrl().isEmpty()) {
+                            stableInfo = foundStable;
+                            confirmAndRollback();
+                        } else {
+                            CustomToast.showWarning(UpdateActivity.this, "Стабильная версия на сервере не найдена");
+                        }
+                    });
+                }
+
+                @Override
+                public void onError(String errorMessage) {
+                    runOnUiThread(() -> CustomToast.showWarning(UpdateActivity.this, "Не удалось найти стабильную версию: " + errorMessage));
+                }
+            });
+        }
+    }
+
+    private void checkInstallPermissionAndDownload(UpdateInfo infoToDownload) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (!getPackageManager().canRequestPackageInstalls()) {
                 CustomToast.showInfo(this, "Разрешите установку из неизвестных источников");
@@ -164,13 +325,14 @@ public class UpdateActivity extends AppCompatActivity {
                 return;
             }
         }
-        startApkDownload();
+        startApkDownload(infoToDownload);
     }
 
     @SuppressLint("SetTextI18n")
-    private void startApkDownload() {
-        String apkUrl = updateInfo.getApkUrl();
-        if (apkUrl == null || apkUrl.isEmpty() || apkUrl.equalsIgnoreCase(updateInfo.getHtmlUrl())) {
+    private void startApkDownload(UpdateInfo targetInfo) {
+        if (targetInfo == null) return;
+        String apkUrl = targetInfo.getApkUrl();
+        if (apkUrl == null || apkUrl.isEmpty() || apkUrl.equalsIgnoreCase(targetInfo.getHtmlUrl())) {
             CustomToast.showInfo(this, "Открываем страницу релиза на GitHub...");
             btnOpenGithub.performClick();
             return;
@@ -179,6 +341,8 @@ public class UpdateActivity extends AppCompatActivity {
         isDownloading = true;
         btnDownload.setEnabled(false);
         btnDownload.setText("ЗАГРУЗКА...");
+        if (btnRollbackToStable != null) btnRollbackToStable.setEnabled(false);
+
         progressDownload.setVisibility(View.VISIBLE);
         progressDownload.setIndeterminate(true);
         tvDownloadStatus.setVisibility(View.VISIBLE);
@@ -196,10 +360,11 @@ public class UpdateActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     isDownloading = false;
                     btnDownload.setEnabled(true);
-                    btnDownload.setText("СКАЧАТЬ И УСТАНОВИТЬ APK");
+                    btnDownload.setText(R.string.btn_download_apk);
+                    if (btnRollbackToStable != null) btnRollbackToStable.setEnabled(true);
                     progressDownload.setVisibility(View.GONE);
-                    tvDownloadStatus.setText(" Ошибка скачивания");
-                    CustomToast.showWarning(UpdateActivity.this, "Ошибка скачивания обновления");
+                    tvDownloadStatus.setText("Ошибка скачивания");
+                    CustomToast.showWarning(UpdateActivity.this, "Ошибка скачивания файла");
                 });
             }
 
@@ -209,10 +374,11 @@ public class UpdateActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         isDownloading = false;
                         btnDownload.setEnabled(true);
-                        btnDownload.setText("СКАЧАТЬ И УСТАНОВИТЬ APK");
+                        btnDownload.setText(R.string.btn_download_apk);
+                        if (btnRollbackToStable != null) btnRollbackToStable.setEnabled(true);
                         progressDownload.setVisibility(View.GONE);
                         tvDownloadStatus.setText("Ошибка сервера HTTP " + response.code());
-                        CustomToast.showWarning(UpdateActivity.this, "Ошибка загрузки обновления");
+                        CustomToast.showWarning(UpdateActivity.this, "Ошибка загрузки файла");
                     });
                     return;
                 }
@@ -222,7 +388,8 @@ public class UpdateActivity extends AppCompatActivity {
                     if (downloadsDir != null && !downloadsDir.exists()) {
                         downloadsDir.mkdirs();
                     }
-                    File apkFile = new File(downloadsDir, "app-update.apk");
+                    String fileName = targetInfo.isBeta() ? "app-beta-update.apk" : "app-stable-update.apk";
+                    File apkFile = new File(downloadsDir, fileName);
                     if (apkFile.exists()) {
                         apkFile.delete();
                     }
@@ -234,7 +401,8 @@ public class UpdateActivity extends AppCompatActivity {
                         runOnUiThread(() -> {
                             isDownloading = false;
                             btnDownload.setEnabled(true);
-                            btnDownload.setText("СКАЧАТЬ И УСТАНОВИТЬ APK");
+                            btnDownload.setText(R.string.btn_download_apk);
+                            if (btnRollbackToStable != null) btnRollbackToStable.setEnabled(true);
                             progressDownload.setVisibility(View.GONE);
                             CustomToast.showWarning(UpdateActivity.this, "Не удалось получить файл");
                         });
@@ -279,8 +447,9 @@ public class UpdateActivity extends AppCompatActivity {
                         isDownloading = false;
                         btnDownload.setEnabled(true);
                         btnDownload.setText("УСТАНОВИТЬ ПОВТОРНО");
+                        if (btnRollbackToStable != null) btnRollbackToStable.setEnabled(true);
                         progressDownload.setProgress(100);
-                        tvDownloadStatus.setText(" Загрузка завершена!");
+                        tvDownloadStatus.setText("Загрузка завершена!");
                         CustomToast.showSuccess(UpdateActivity.this, "Файл загружен! Запуск установки...");
                         installApk(apkFile);
                     });
@@ -290,9 +459,10 @@ public class UpdateActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         isDownloading = false;
                         btnDownload.setEnabled(true);
-                        btnDownload.setText("СКАЧАТЬ И УСТАНОВИТЬ APK");
+                        btnDownload.setText(R.string.btn_download_apk);
+                        if (btnRollbackToStable != null) btnRollbackToStable.setEnabled(true);
                         progressDownload.setVisibility(View.GONE);
-                        tvDownloadStatus.setText(" Ошибка сохранения файла");
+                        tvDownloadStatus.setText("Ошибка сохранения файла");
                         CustomToast.showWarning(UpdateActivity.this, "Ошибка сохранения файла обновления");
                     });
                 }

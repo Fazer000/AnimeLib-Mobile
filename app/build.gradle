@@ -8,9 +8,19 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
+def baseVersionName = "1.8.9"
+def isStable = project.hasProperty("stable") ||
+               (project.hasProperty("beta") && project.property("beta") == "false") ||
+               gradle.startParameter.taskNames.any { it.toLowerCase().contains("stable") }
+def appVersionName = isStable ? baseVersionName : "${baseVersionName}-beta"
+
 android {
     namespace 'com.example.animelib'
     compileSdk 35
+
+    buildFeatures {
+        buildConfig true
+    }
 
     signingConfigs {
         debug {
@@ -34,7 +44,10 @@ android {
         minSdk 29
         targetSdk 35
         versionCode 25
-        versionName "1.8.9"
+        versionName appVersionName
+
+        buildConfigField "boolean", "IS_BETA", (!isStable).toString()
+        buildConfigField "String", "BASE_VERSION_NAME", "\"${baseVersionName}\""
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -56,6 +69,18 @@ android {
     lintOptions {
         abortOnError false
     }
+}
+
+tasks.register("assembleStableRelease") {
+    group = "build"
+    description = "Builds a stable release APK without -beta suffix"
+    dependsOn "assembleRelease"
+}
+
+tasks.register("assembleStableDebug") {
+    group = "build"
+    description = "Builds a stable debug APK without -beta suffix"
+    dependsOn "assembleDebug"
 }
 
 dependencies {

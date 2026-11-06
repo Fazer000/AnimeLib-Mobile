@@ -10,10 +10,16 @@ public class UpdateInfo implements Serializable {
     private String htmlUrl;
     private String apkUrl;
     private long apkSize;
+    private boolean isBeta;
+    private UpdateInfo stableUpdateInfo;
 
     public UpdateInfo() {}
 
     public UpdateInfo(String tagName, String releaseName, String changelog, String publishedAt, String htmlUrl, String apkUrl, long apkSize) {
+        this(tagName, releaseName, changelog, publishedAt, htmlUrl, apkUrl, apkSize, false);
+    }
+
+    public UpdateInfo(String tagName, String releaseName, String changelog, String publishedAt, String htmlUrl, String apkUrl, long apkSize, boolean isBeta) {
         this.tagName = tagName;
         this.releaseName = releaseName;
         this.changelog = changelog;
@@ -21,6 +27,7 @@ public class UpdateInfo implements Serializable {
         this.htmlUrl = htmlUrl;
         this.apkUrl = apkUrl;
         this.apkSize = apkSize;
+        this.isBeta = isBeta;
     }
 
     public String getTagName() {
@@ -77,5 +84,21 @@ public class UpdateInfo implements Serializable {
 
     public void setApkSize(long apkSize) {
         this.apkSize = apkSize;
+    }
+
+    public boolean isBeta() {
+        return isBeta;
+    }
+
+    public void setBeta(boolean beta) {
+        isBeta = beta;
+    }
+
+    public UpdateInfo getStableUpdateInfo() {
+        return stableUpdateInfo;
+    }
+
+    public void setStableUpdateInfo(UpdateInfo stableUpdateInfo) {
+        this.stableUpdateInfo = stableUpdateInfo;
     }
 }

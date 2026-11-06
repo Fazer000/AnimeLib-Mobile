@@ -223,6 +223,10 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onUpdateCheckResult(boolean hasUpdate, UpdateInfo updateInfo, String currentVersion) {
                 if (hasUpdate && updateInfo != null) {
+                    boolean allowBeta = UpdateManager.isBetaUpdatesEnabled(MainActivity.this);
+                    if (updateInfo.isBeta() && !allowBeta) {
+                        return;
+                    }
                     runOnUiThread(() -> {
                         if (!isFinishing() && !isDestroyed() && !isUrlInputShowing) {
                             CustomToast.showUpdateAlert(MainActivity.this, updateInfo);
