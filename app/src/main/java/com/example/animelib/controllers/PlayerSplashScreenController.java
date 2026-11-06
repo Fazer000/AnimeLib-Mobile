@@ -28,6 +28,7 @@ public class PlayerSplashScreenController {
     private View splashOverlay;
     private View splashContent;
     private PlayerSplashLogoView splashLogoView;
+    private android.widget.ImageView splashSiteLogoView;
     private TextView splashStatusText;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -91,6 +92,66 @@ public class PlayerSplashScreenController {
         splashStatusText = rootView.findViewById(statusTextId);
     }
 
+    public void bindSiteLogoView(android.widget.ImageView logoView) {
+        this.splashSiteLogoView = logoView;
+    }
+
+    public void setSiteLogoRes(int logoRes) {
+        if (splashSiteLogoView != null) {
+            splashSiteLogoView.setVisibility(View.GONE);
+        }
+        if (splashLogoView != null) {
+            splashLogoView.setSiteLogoRes(logoRes);
+            splashLogoView.setVisibility(View.VISIBLE);
+        }
+    }
+
+    public void showForSiteSwitch(int logoRes) {
+        hasDismissed = false;
+        isShowing = true;
+        isDismissing = false;
+        shownAtUptimeMs = SystemClock.uptimeMillis();
+
+        if (pendingDismissRunnable != null) {
+            handler.removeCallbacks(pendingDismissRunnable);
+            pendingDismissRunnable = null;
+        }
+
+        setSiteLogoRes(logoRes);
+
+        if (splashOverlay != null) {
+            splashOverlay.animate().cancel();
+            splashOverlay.setVisibility(View.VISIBLE);
+            splashOverlay.setAlpha(1.0f);
+            splashOverlay.setScaleX(1.0f);
+            splashOverlay.setScaleY(1.0f);
+        }
+
+        if (splashContent != null) {
+            splashContent.animate().cancel();
+            splashContent.setAlpha(1.0f);
+            splashContent.setScaleX(1.0f);
+            splashContent.setScaleY(1.0f);
+        }
+
+        if (splashStatusText != null) {
+            splashStatusText.animate().cancel();
+            splashStatusText.setAlpha(0f);
+            splashStatusText.setTranslationY(0f);
+            splashStatusText.setVisibility(View.INVISIBLE);
+        }
+
+        if (splashLogoView != null && splashLogoView.getVisibility() == View.VISIBLE) {
+            splashLogoView.startAnimation();
+        }
+
+        handler.removeCallbacks(slowNetworkHintRunnable);
+        handler.postDelayed(slowNetworkHintRunnable, SLOW_NETWORK_HINT_DELAY_MS);
+
+        handler.removeCallbacks(safetyTimeoutRunnable);
+        handler.postDelayed(safetyTimeoutRunnable, safetyTimeoutMs);
+    }
+
     /**
      * Показывает сплешскрин и запускает хореографию логотипа.
      */
@@ -121,7 +182,7 @@ public class PlayerSplashScreenController {
             splashStatusText.setVisibility(View.INVISIBLE);
         }
 
-        if (splashLogoView != null) {
+        if (splashLogoView != null && splashLogoView.getVisibility() == View.VISIBLE) {
             splashLogoView.startAnimation();
         }
 

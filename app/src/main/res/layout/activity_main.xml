@@ -124,6 +124,14 @@
                 android:layout_gravity="center"
                 android:contentDescription="@string/app_name" />
 
+            <ImageView
+                android:id="@+id/webSplashSiteLogo"
+                android:layout_width="96dp"
+                android:layout_height="96dp"
+                android:layout_gravity="center"
+                android:visibility="gone"
+                android:contentDescription="@null" />
+
             <TextView
                 android:id="@+id/webSplashStatusText"
                 android:layout_width="wrap_content"

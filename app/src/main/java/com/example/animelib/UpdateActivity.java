@@ -82,14 +82,20 @@ public class UpdateActivity extends AppCompatActivity {
                 return;
             }
         }
+        try {
+            ThemeUtils.applyThemeToActivity(this, ThemeUtils.getSavedThemePreference(this));
+        } catch (Exception ignored) {}
         super.onCreate(savedInstanceState);
-        ThemeUtils.applyThemeToActivity(this, ThemeUtils.getSavedThemePreference(this));
         setContentView(R.layout.activity_update);
 
         setupSystemBars();
 
         if (getIntent() != null && getIntent().hasExtra(EXTRA_UPDATE_INFO)) {
-            updateInfo = (UpdateInfo) getIntent().getSerializableExtra(EXTRA_UPDATE_INFO);
+            try {
+                updateInfo = (UpdateInfo) getIntent().getSerializableExtra(EXTRA_UPDATE_INFO);
+            } catch (Exception e) {
+                Log.e(TAG, "Error reading updateInfo extra", e);
+            }
         }
 
         initViews();
@@ -102,19 +108,21 @@ public class UpdateActivity extends AppCompatActivity {
     }
 
     private void setupSystemBars() {
-        if (getWindow() != null) {
-            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-            getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
-            int headerColor = androidx.core.content.ContextCompat.getColor(this, R.color.toolbar_header_bg);
-            getWindow().setStatusBarColor(headerColor);
-            boolean isDark = ThemeUtils.getSavedThemePreference(this) == ThemeUtils.THEME_DARK ||
-                    (ThemeUtils.getSavedThemePreference(this) == ThemeUtils.THEME_SYSTEM &&
-                            (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES);
-            androidx.core.view.WindowInsetsControllerCompat insetsController =
-                    androidx.core.view.WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
-            if (insetsController != null) {
-                insetsController.setAppearanceLightStatusBars(!isDark);
+        try {
+            if (getWindow() != null) {
+                getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+                getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
+                int headerColor = androidx.core.content.ContextCompat.getColor(this, R.color.toolbar_header_bg);
+                getWindow().setStatusBarColor(headerColor);
+                boolean isDark = ThemeUtils.isDarkTheme(this);
+                androidx.core.view.WindowInsetsControllerCompat insetsController =
+                        androidx.core.view.WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+                if (insetsController != null) {
+                    insetsController.setAppearanceLightStatusBars(!isDark);
+                }
             }
+        } catch (Exception e) {
+            Log.e(TAG, "Error setting system bars", e);
         }
     }
 

@@ -117,6 +117,7 @@ public class MainActivity extends AppCompatActivity {
                 R.id.webSplashLogoView,
                 R.id.webSplashStatusText
         );
+        webSplashController.bindSiteLogoView(findViewById(R.id.webSplashSiteLogo));
         webSplashController.setOnSafetyTimeoutCallback(() -> {
             hasCompletedInitialWebSplash = true;
             updateSystemBarColors();
@@ -827,6 +828,7 @@ public class MainActivity extends AppCompatActivity {
                         com.example.animelib.util.SiteUtils.setSavedRegionOther(this, isSelectedOther);
                         viewModel.saveSettings(site.getUrl());
                         databaseManager.saveSiteUrl(site.getUrl());
+                        showSiteSplashOverlay(site.getUrl());
                         loadUrl(site.getUrl(), true);
                     }
                 );
@@ -844,6 +846,21 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) {
             Log.e("MainActivity", "Error showing site selection bottom sheet", e);
         }
+    }
+
+    public void showSiteSplashOverlay(String url) {
+        if (isFinishing() || isDestroyed()) return;
+        runOnUiThread(() -> {
+            hasCompletedInitialWebSplash = false;
+            if (webViewController != null) {
+                webViewController.resetPageLoadedState();
+            }
+            int logoRes = com.example.animelib.util.SiteUtils.getSiteLogoRes(url);
+            if (webSplashController != null) {
+                webSplashController.showForSiteSwitch(logoRes);
+            }
+            updateSystemBarColors(url);
+        });
     }
 
     @Override

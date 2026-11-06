@@ -104,6 +104,23 @@ public class SiteUtils {
         }
     }
 
+    public static int getSiteLogoRes(String siteKeyOrUrl) {
+        String key = getSiteKey(siteKeyOrUrl);
+        switch (key.toLowerCase()) {
+            case "mangalib":
+                return com.example.animelib.R.drawable.ic_site_mangalib;
+            case "ranobelib":
+                return com.example.animelib.R.drawable.ic_site_ranobelib;
+            case "hentailib":
+                return com.example.animelib.R.drawable.ic_site_hentailib;
+            case "slashlib":
+                return com.example.animelib.R.drawable.ic_site_slashlib;
+            case "animelib":
+            default:
+                return com.example.animelib.R.drawable.ic_site_animelib;
+        }
+    }
+
     public static String getDomainHost(String url) {
         if (url == null) return "";
         String clean = url.replace("https://", "").replace("http://", "");

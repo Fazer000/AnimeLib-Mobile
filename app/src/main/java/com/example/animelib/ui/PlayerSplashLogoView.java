@@ -58,6 +58,36 @@ public class PlayerSplashLogoView extends View {
                     + "l-3.1,-8h-20.9l-3,8c-0.1,0.3 -0.3,0.7 -0.7,1.1 -0.4,0.4 -1,0.6 -1.9,0.6h-9.7Z"
                     + "M44.6,58.6h14.6l-7.3,-20.7 -7.3,20.7h0Z";
 
+    private static final String SVG_LETTER_M =
+            "M25.2,79.5c-0.9,0 -1.6,-0.7 -1.6,-1.6v-50c0,-0.9 0.7,-1.6 1.6,-1.6h9.5"
+                    + "c0.8,0 1.5,0.4 1.8,1.1l15.3,32.5 15.3,-32.5c0.3,-0.7 1,-1.1 1.8,-1.1h9.5"
+                    + "c0.9,0 1.6,0.7 1.6,1.6v50c0,0.9 -0.7,1.6 -1.6,1.6h-8.2"
+                    + "c-0.9,0 -1.6,-0.7 -1.6,-1.6v-34l-13.4,28.2c-0.4,0.8 -1.2,1.3 -2.1,1.3h-2.8"
+                    + "c-0.9,0 -1.7,-0.5 -2.1,-1.3l-13.4,-28.2v34c0,0.9 -0.7,1.6 -1.6,1.6h-8.2Z";
+
+    private static final String SVG_LETTER_R =
+            "M26,79.5c-0.9,0 -1.6,-0.7 -1.6,-1.6v-50c0,-0.9 0.7,-1.6 1.6,-1.6h24.5"
+                    + "c11.5,0 19,6.5 19,16.5 0,7.2 -4.2,12.8 -10.8,15.2l12.5,20"
+                    + "c0.4,0.6 0.3,1.5 -0.3,2 -0.3,0.3 -0.7,0.5 -1.2,0.5h-10.5"
+                    + "c-0.7,0 -1.4,-0.4 -1.8,-1l-11.8,-19.2h-10.8v18.6c0,0.9 -0.7,1.6 -1.6,1.6H26Z"
+                    + "M36.8,49.2h12.5c5.2,0 8.8,-2.8 8.8,-7.5 0,-4.7 -3.6,-7.5 -8.8,-7.5H36.8v15Z";
+
+    private static final String SVG_LETTER_H =
+            "M26,79.5c-0.9,0 -1.6,-0.7 -1.6,-1.6v-50c0,-0.9 0.7,-1.6 1.6,-1.6h8.2"
+                    + "c0.9,0 1.6,0.7 1.6,1.6v20h22.2v-20c0,-0.9 0.7,-1.6 1.6,-1.6h8.2"
+                    + "c0.9,0 1.6,0.7 1.6,1.6v50c0,0.9 -0.7,1.6 -1.6,1.6h-8.2"
+                    + "c-0.9,0 -1.6,-0.7 -1.6,-1.6v-20.2H37.4v20.2c0,0.9 -0.7,1.6 -1.6,1.6H26Z";
+
+    private static final String SVG_LETTER_S =
+            "M35.2,79.5c-6.8,0 -12,-4.8 -12,-11.5 0,-0.9 0.7,-1.6 1.6,-1.6h7.8"
+                    + "c0.8,0 1.5,0.6 1.6,1.4 0.4,3 2.8,4.7 5.8,4.7 3.2,0 5.6,-1.6 5.6,-3.9"
+                    + "c0,-2.1 -1.6,-3.3 -6.6,-4.4l-3.8,-0.8c-8.2,-1.8 -12.4,-5.6 -12.4,-12"
+                    + "0,-7.2 5.8,-12.2 13.8,-12.2 6.5,0 11.4,4.2 11.7,10.6 0.1,0.9 -0.6,1.6 -1.5,1.6h-7.6"
+                    + "c-0.8,0 -1.5,-0.6 -1.6,-1.4 -0.3,-2.6 -2.4,-4.1 -5.2,-4.1 -2.8,0 -5,1.5 -5,3.6"
+                    + "0,2 1.6,3.1 6.2,4.1l3.8,0.8c8.5,1.9 12.8,5.8 12.8,12.2 0,7.6 -6.1,12.9 -14.6,12.9Z";
+
+    private String currentSiteKey = "animelib";
+
     private Path rawBracketTL;
     private Path rawBracketBR;
     private Path rawLetterA;
@@ -182,7 +212,18 @@ public class PlayerSplashLogoView extends View {
     }
 
     private void refreshThemeColors(Context context) {
-        brandPurpleColor = ContextCompat.getColor(context, R.color.purple_primary);
+        if ("mangalib".equalsIgnoreCase(currentSiteKey)) {
+            brandPurpleColor = 0xFFFF9800;
+        } else if ("ranobelib".equalsIgnoreCase(currentSiteKey)) {
+            brandPurpleColor = 0xFF2196F3;
+        } else if ("hentailib".equalsIgnoreCase(currentSiteKey)) {
+            brandPurpleColor = 0xFFEC407A;
+        } else if ("slashlib".equalsIgnoreCase(currentSiteKey)) {
+            brandPurpleColor = 0xFFE53935;
+        } else {
+            brandPurpleColor = ContextCompat.getColor(context, R.color.purple_primary);
+        }
+
         letterAColor = ContextCompat.getColor(context, R.color.player_splash_logo_a);
         int uiMode = context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
         isNightMode = (uiMode == Configuration.UI_MODE_NIGHT_YES);
@@ -190,6 +231,57 @@ public class PlayerSplashLogoView extends View {
         letterAPaint.setColor(letterAColor);
         bracketBasePaint.setColor(brandPurpleColor);
         bracketPulsePaint.setColor(brandPurpleColor);
+    }
+
+    public void setSiteKey(String siteKey) {
+        if (siteKey == null) siteKey = "animelib";
+        this.currentSiteKey = siteKey.toLowerCase();
+
+        String pathData;
+        switch (currentSiteKey) {
+            case "mangalib":
+                pathData = SVG_LETTER_M;
+                break;
+            case "ranobelib":
+                pathData = SVG_LETTER_R;
+                break;
+            case "hentailib":
+                pathData = SVG_LETTER_H;
+                break;
+            case "slashlib":
+                pathData = SVG_LETTER_S;
+                break;
+            case "animelib":
+            default:
+                pathData = SVG_LETTER_A;
+                break;
+        }
+
+        rawLetterA = PathParser.createPathFromPathData(pathData);
+        if (rawLetterA != null) {
+            rawLetterA.setFillType(Path.FillType.EVEN_ODD);
+        }
+
+        refreshThemeColors(getContext());
+
+        if (getWidth() > 0 && getHeight() > 0) {
+            onSizeChanged(getWidth(), getHeight(), getWidth(), getHeight());
+        }
+        invalidate();
+    }
+
+    public void setSiteLogoRes(int logoRes) {
+        if (logoRes == R.drawable.ic_site_mangalib) {
+            setSiteKey("mangalib");
+        } else if (logoRes == R.drawable.ic_site_ranobelib) {
+            setSiteKey("ranobelib");
+        } else if (logoRes == R.drawable.ic_site_hentailib) {
+            setSiteKey("hentailib");
+        } else if (logoRes == R.drawable.ic_site_slashlib) {
+            setSiteKey("slashlib");
+        } else {
+            setSiteKey("animelib");
+        }
     }
 
     @Override

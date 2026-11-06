@@ -353,7 +353,14 @@ public class MainWebViewController {
                         url.contains("/player") || url.contains("iframe");
 
                 boolean domainChanged = newDomain != null && (currentDomain == null || !currentDomain.equalsIgnoreCase(newDomain));
-                if (!isInitialSplashShowing() && !isEmbedOrPlayer && (isFirstLoad || (currentDomain != null && domainChanged))) {
+                boolean isSiteDomain = newDomain != null && (newDomain.contains("animelib") || newDomain.contains("mangalib") || newDomain.contains("ranobelib") || newDomain.contains("hentailib") || newDomain.contains("slashlib") || newDomain.contains("anilib"));
+
+                if (domainChanged && isSiteDomain && !isEmbedOrPlayer) {
+                    hasNotifiedInitialPageLoaded = false;
+                    if (activity instanceof MainActivity) {
+                        ((MainActivity) activity).showSiteSplashOverlay(url);
+                    }
+                } else if (!isInitialSplashShowing() && !isEmbedOrPlayer && (isFirstLoad || (currentDomain != null && domainChanged))) {
                     showDomainChangeSpinner();
                 }
 
@@ -996,5 +1003,9 @@ public class MainWebViewController {
                 Log.w(TAG, "Error destroying WebView", e);
             }
         }
+    }
+
+    public void resetPageLoadedState() {
+        this.hasNotifiedInitialPageLoaded = false;
     }
 }
