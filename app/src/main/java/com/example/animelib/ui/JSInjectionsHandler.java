@@ -41,7 +41,8 @@ public class JSInjectionsHandler {
             "js/search-button-listener.js",
             "js/downloaded-button-listener.js",
             "js/carousel-fix.js",
-            "js/site-logo-long-press.js"
+            "js/site-logo-long-press.js",
+            "js/remove-slider-block.js"
     };
 
     private static final String[] FINISH_SCRIPTS = new String[] {
@@ -52,7 +53,8 @@ public class JSInjectionsHandler {
             "js/downloaded-button-listener.js",
             "js/carousel-fix.js",
             "js/auth-handler.js",
-            "js/site-logo-long-press.js"
+            "js/site-logo-long-press.js",
+            "js/remove-slider-block.js"
     };
 
     private final Context context;
