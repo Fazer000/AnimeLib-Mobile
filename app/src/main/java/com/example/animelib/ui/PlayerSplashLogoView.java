@@ -235,7 +235,9 @@ public class PlayerSplashLogoView extends View {
 
     public void setSiteKey(String siteKey) {
         if (siteKey == null) siteKey = "animelib";
-        this.currentSiteKey = siteKey.toLowerCase();
+        String newKey = siteKey.toLowerCase();
+        boolean keyChanged = !newKey.equalsIgnoreCase(this.currentSiteKey);
+        this.currentSiteKey = newKey;
 
         String pathData;
         switch (currentSiteKey) {
@@ -267,7 +269,11 @@ public class PlayerSplashLogoView extends View {
         if (getWidth() > 0 && getHeight() > 0) {
             onSizeChanged(getWidth(), getHeight(), getWidth(), getHeight());
         }
-        invalidate();
+        if (keyChanged) {
+            startAnimation(true);
+        } else {
+            invalidate();
+        }
     }
 
     public void setSiteLogoRes(int logoRes) {
@@ -360,14 +366,21 @@ public class PlayerSplashLogoView extends View {
     }
 
     public void startAnimation() {
+        startAnimation(false);
+    }
+
+    public void startAnimation(boolean forceReset) {
         refreshThemeColors(getContext());
         if (getWidth() > 0 && getHeight() > 0) {
             onSizeChanged(getWidth(), getHeight(), getWidth(), getHeight());
         }
-        startTimeUptimeMs = SystemClock.uptimeMillis();
-        exitStartUptimeMs = 0L;
-        isExiting = false;
-        frozenLoopBlendOnExit = 0f;
+        long now = SystemClock.uptimeMillis();
+        if (forceReset || !isRunning || isExiting || (now - startTimeUptimeMs > 2500L)) {
+            startTimeUptimeMs = now;
+            exitStartUptimeMs = 0L;
+            isExiting = false;
+            frozenLoopBlendOnExit = 0f;
+        }
         if (!isRunning) {
             isRunning = true;
             Choreographer.getInstance().removeFrameCallback(frameCallback);
@@ -463,7 +476,7 @@ public class PlayerSplashLogoView extends View {
             breathUnits = 2.1f * s * s * loopBlend;
         }
 
-        float entryOffsetUnits = (1f - easedEntry) * 8.6f;
+        float entryOffsetUnits = (1f - easedEntry) * 18.5f;
         float exitOffsetUnits = exitEased * 6.8f;
         float totalDiagPx = (entryOffsetUnits + breathUnits + exitOffsetUnits) * viewportScale;
 

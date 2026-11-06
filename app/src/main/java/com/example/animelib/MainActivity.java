@@ -126,6 +126,10 @@ public class MainActivity extends AppCompatActivity {
         if (hasCompletedInitialWebSplash) {
             webSplashController.dismissImmediately();
         } else {
+            String initialUrl = getFastKnownSiteUrl();
+            if (initialUrl != null && !initialUrl.isEmpty()) {
+                webSplashController.setSiteLogoRes(com.example.animelib.util.SiteUtils.getSiteLogoRes(initialUrl));
+            }
             webSplashController.showOnEntry();
             if (isUrlInputShowing) {
                 webSplashController.pauseTimers();

@@ -190,6 +190,10 @@
     <style name="Widget.AnimeLIB.MaterialSwitch" parent="Widget.Material3.CompoundButton.MaterialSwitch">
         <item name="trackTint">@color/switch_track_tint</item>
         <item name="thumbTint">@color/switch_thumb_tint</item>
+        <item name="showText">false</item>
+        <item name="android:showText">false</item>
+        <item name="android:textOn">""</item>
+        <item name="android:textOff">""</item>
     </style>
 
     <style name="SpinnerTextStyle" parent="Widget.AppCompat.Spinner">

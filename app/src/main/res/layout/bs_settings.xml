@@ -320,9 +320,13 @@
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/subtitlesSwitch"
                         android:layout_width="wrap_content"
-                        android:layout_height="30dp"
+                        android:layout_height="wrap_content"
                         app:trackTint="@color/switch_track_tint"
                         app:thumbTint="@color/switch_thumb_tint"
+                        app:showText="false"
+                        android:showText="false"
+                        android:textOn=""
+                        android:textOff=""
                         android:checked="true"/>
                 </LinearLayout>
 
@@ -360,9 +364,13 @@
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/ambientLightSwitch"
                         android:layout_width="wrap_content"
-                        android:layout_height="30dp"
+                        android:layout_height="wrap_content"
                         app:trackTint="@color/switch_track_tint"
                         app:thumbTint="@color/switch_thumb_tint"
+                        app:showText="false"
+                        android:showText="false"
+                        android:textOn=""
+                        android:textOff=""
                         android:checked="true"/>
                 </LinearLayout>
 
@@ -400,9 +408,13 @@
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/autoPlaySwitch"
                         android:layout_width="wrap_content"
-                        android:layout_height="30dp"
+                        android:layout_height="wrap_content"
                         app:trackTint="@color/switch_track_tint"
                         app:thumbTint="@color/switch_thumb_tint"
+                        app:showText="false"
+                        android:showText="false"
+                        android:textOn=""
+                        android:textOff=""
                         android:checked="true"/>
                 </LinearLayout>
 
@@ -474,9 +486,13 @@
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/surroundSoundSwitch"
                         android:layout_width="wrap_content"
-                        android:layout_height="30dp"
+                        android:layout_height="wrap_content"
                         app:trackTint="@color/switch_track_tint"
                         app:thumbTint="@color/switch_thumb_tint"
+                        app:showText="false"
+                        android:showText="false"
+                        android:textOn=""
+                        android:textOff=""
                         android:checked="false"/>
                 </LinearLayout>
 
@@ -514,9 +530,13 @@
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/fourKSwitch"
                         android:layout_width="wrap_content"
-                        android:layout_height="30dp"
+                        android:layout_height="wrap_content"
                         app:trackTint="@color/switch_track_tint"
                         app:thumbTint="@color/switch_thumb_tint"
+                        app:showText="false"
+                        android:showText="false"
+                        android:textOn=""
+                        android:textOff=""
                         android:checked="false"/>
                 </LinearLayout>
 
@@ -832,9 +852,13 @@
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/switchBetaUpdates"
                         android:layout_width="wrap_content"
-                        android:layout_height="30dp"
+                        android:layout_height="wrap_content"
                         app:trackTint="@color/switch_track_tint"
                         app:thumbTint="@color/switch_thumb_tint"
+                        app:showText="false"
+                        android:showText="false"
+                        android:textOn=""
+                        android:textOff=""
                         android:checked="false"/>
                 </LinearLayout>
             </LinearLayout>

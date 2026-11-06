@@ -183,7 +183,7 @@ public class PlayerSplashScreenController {
         }
 
         if (splashLogoView != null && splashLogoView.getVisibility() == View.VISIBLE) {
-            splashLogoView.startAnimation();
+            splashLogoView.startAnimation(true);
         }
 
         handler.removeCallbacks(slowNetworkHintRunnable);
