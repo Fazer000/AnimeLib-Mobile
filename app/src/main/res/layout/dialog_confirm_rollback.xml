@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="320dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:background="@drawable/card_bg_rounded">
+
+    <!-- Title Row with Icon, Title, and Close Button -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <FrameLayout
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_anime_info_accent_pill"
+            android:layout_marginEnd="12dp">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_restore"
+                app:tint="@color/purple_primary"
+                android:contentDescription="@null" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/tvRollbackDialogTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Откат до стабильной версии"
+            android:textColor="@color/primary_text_color"
+            android:textSize="17sp"
+            android:fontFamily="@font/open_sans_bold"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/btnCloseRollbackDialog"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_close"
+            app:tint="@color/accent_text_color"
+            android:contentDescription="Закрыть"
+            android:padding="4dp" />
+    </LinearLayout>
+
+    <!-- Message Text -->
+    <TextView
+        android:id="@+id/tvRollbackDialogMessage"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:layout_marginBottom="20dp"
+        android:text="Вы уверены, что хотите откатиться на стабильную версию?"
+        android:textColor="@color/primary_text_color"
+        android:textSize="14sp"
+        android:fontFamily="@font/open_sans"
+        android:lineSpacingExtra="3dp" />
+
+    <!-- Action Buttons Row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="end|center_vertical">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCancelRollback"
+            style="@style/Widget.AnimeLIB.Button.Outlined"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginEnd="10dp"
+            android:text="@string/btn_cancel"
+            android:textColor="@color/primary_text_color"
+            app:strokeColor="@color/bs_divider_color" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnConfirmRollback"
+            style="@style/Widget.AnimeLIB.Button"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:text="ОТКАТИТЬСЯ"
+            app:icon="@drawable/ic_restore"
+            app:iconTint="@color/white_color" />
+    </LinearLayout>
+
+</LinearLayout>

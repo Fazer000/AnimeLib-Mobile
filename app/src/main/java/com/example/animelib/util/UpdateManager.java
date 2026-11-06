@@ -178,7 +178,7 @@ public class UpdateManager {
                         targetUpdate = latestStable;
                     }
 
-                    if (targetUpdate != null) {
+                    if (targetUpdate != null && latestStable != null && targetUpdate != latestStable) {
                         targetUpdate.setStableUpdateInfo(latestStable);
                     }
 
@@ -237,7 +237,6 @@ public class UpdateManager {
 
                     if (updateInfo != null) {
                         cachedLatestStable = updateInfo;
-                        updateInfo.setStableUpdateInfo(updateInfo);
                         boolean hasUpdate = isUpdateAvailable(currentVersion, updateInfo.getTagName());
                         if (callback != null) {
                             callback.onUpdateCheckResult(hasUpdate, updateInfo, currentVersion);

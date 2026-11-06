@@ -3,6 +3,8 @@ package com.example.animelib.models;
 import java.io.Serializable;
 
 public class UpdateInfo implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private String tagName;
     private String releaseName;
     private String changelog;
@@ -11,7 +13,7 @@ public class UpdateInfo implements Serializable {
     private String apkUrl;
     private long apkSize;
     private boolean isBeta;
-    private UpdateInfo stableUpdateInfo;
+    private transient UpdateInfo stableUpdateInfo;
 
     public UpdateInfo() {}
 

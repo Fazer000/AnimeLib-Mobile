@@ -83,7 +83,7 @@ public class UpdateActivity extends AppCompatActivity {
             }
         }
         super.onCreate(savedInstanceState);
-        ThemeUtils.applyTheme(ThemeUtils.getSavedThemePreference(this));
+        ThemeUtils.applyThemeToActivity(this, ThemeUtils.getSavedThemePreference(this));
         setContentView(R.layout.activity_update);
 
         setupSystemBars();
@@ -278,13 +278,7 @@ public class UpdateActivity extends AppCompatActivity {
     private void confirmAndRollback() {
         UpdateInfo targetStable = stableInfo != null ? stableInfo : UpdateManager.getCachedLatestStable();
         if (targetStable != null && targetStable.getApkUrl() != null && !targetStable.getApkUrl().isEmpty()) {
-            String stableTag = targetStable.getTagName() != null ? targetStable.getTagName() : "стабильную версию";
-            new MaterialAlertDialogBuilder(this)
-                    .setTitle("Откат до стабильной версии")
-                    .setMessage("Вы уверены, что хотите откатиться на " + stableTag + "?\n\nТекущая тестовая бета-версия будет заменена.")
-                    .setPositiveButton("Откатиться", (dialog, which) -> checkInstallPermissionAndDownload(targetStable))
-                    .setNegativeButton("Отмена", null)
-                    .show();
+            showCustomRollbackDialog(targetStable);
         } else {
             CustomToast.showInfo(this, "Поиск последней стабильной версии...");
             UpdateManager.checkForUpdates(this, null, new UpdateManager.CheckUpdateCallback() {
@@ -296,7 +290,7 @@ public class UpdateActivity extends AppCompatActivity {
                                 : UpdateManager.getCachedLatestStable();
                         if (foundStable != null && foundStable.getApkUrl() != null && !foundStable.getApkUrl().isEmpty()) {
                             stableInfo = foundStable;
-                            confirmAndRollback();
+                            showCustomRollbackDialog(foundStable);
                         } else {
                             CustomToast.showWarning(UpdateActivity.this, "Стабильная версия на сервере не найдена");
                         }
@@ -309,6 +303,55 @@ public class UpdateActivity extends AppCompatActivity {
                 }
             });
         }
+    }
+
+    private void showCustomRollbackDialog(UpdateInfo targetStable) {
+        if (isFinishing() || isDestroyed()) return;
+
+        final android.app.Dialog dialog = new android.app.Dialog(this);
+        dialog.setContentView(R.layout.dialog_confirm_rollback);
+
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+            dialog.getWindow().setLayout(
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+            );
+        }
+
+        TextView tvTitle = dialog.findViewById(R.id.tvRollbackDialogTitle);
+        TextView tvMessage = dialog.findViewById(R.id.tvRollbackDialogMessage);
+        ImageButton btnClose = dialog.findViewById(R.id.btnCloseRollbackDialog);
+        MaterialButton btnCancel = dialog.findViewById(R.id.btnCancelRollback);
+        MaterialButton btnConfirm = dialog.findViewById(R.id.btnConfirmRollback);
+
+        String stableTag = targetStable.getTagName() != null ? targetStable.getTagName() : "стабильную версию";
+        String currentVer = UpdateManager.getCurrentVersion(this);
+
+        if (tvTitle != null) {
+            tvTitle.setText("Откат до версии " + stableTag);
+        }
+
+        if (tvMessage != null) {
+            tvMessage.setText("Вы уверены, что хотите откатиться на " + stableTag + "?\n\nТекущая бета-версия (" + currentVer + ") будет заменена.");
+        }
+
+        if (btnClose != null) {
+            btnClose.setOnClickListener(v -> dialog.dismiss());
+        }
+
+        if (btnCancel != null) {
+            btnCancel.setOnClickListener(v -> dialog.dismiss());
+        }
+
+        if (btnConfirm != null) {
+            btnConfirm.setOnClickListener(v -> {
+                dialog.dismiss();
+                checkInstallPermissionAndDownload(targetStable);
+            });
+        }
+
+        dialog.show();
     }
 
     private void checkInstallPermissionAndDownload(UpdateInfo infoToDownload) {
