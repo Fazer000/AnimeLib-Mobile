@@ -1884,8 +1884,36 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     private void updateAmbientPlayerTransform(float scale, float translationX, float translationY, boolean isCroppedToVideo) {
-        if (ambientLightManager != null) {
-            ambientLightManager.updateTransform(scale, translationX, translationY, isCroppedToVideo);
+        androidx.media3.ui.PlayerView ambientPlayerView = findViewById(R.id.ambientPlayerView);
+        if (ambientPlayerView != null) {
+            android.view.ViewGroup.LayoutParams lp = ambientPlayerView.getLayoutParams();
+            if (lp != null && (lp.width != android.view.ViewGroup.LayoutParams.MATCH_PARENT || lp.height != android.view.ViewGroup.LayoutParams.MATCH_PARENT)) {
+                lp.width = android.view.ViewGroup.LayoutParams.MATCH_PARENT;
+                lp.height = android.view.ViewGroup.LayoutParams.MATCH_PARENT;
+                if (lp instanceof FrameLayout.LayoutParams) {
+                    ((FrameLayout.LayoutParams) lp).gravity = Gravity.CENTER;
+                }
+                ambientPlayerView.setLayoutParams(lp);
+            }
+
+            int viewW = ambientPlayerView.getWidth();
+            int viewH = ambientPlayerView.getHeight();
+            if (viewW <= 0 || viewH <= 0) {
+                viewW = getResources().getDisplayMetrics().widthPixels;
+                viewH = getResources().getDisplayMetrics().heightPixels;
+            }
+
+            // Pivot at center of full screen
+            ambientPlayerView.setPivotX(viewW / 2f);
+            ambientPlayerView.setPivotY(viewH / 2f);
+
+            // Scale slightly larger than screen so blurred edges bleed offscreen cleanly
+            ambientPlayerView.setScaleX(1.08f);
+            ambientPlayerView.setScaleY(1.08f);
+            
+            // Subtle parallax following card if offset, otherwise centered
+            ambientPlayerView.setTranslationX(translationX * 0.15f);
+            ambientPlayerView.setTranslationY(translationY * 0.15f);
         }
     }
     

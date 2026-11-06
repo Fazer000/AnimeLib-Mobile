@@ -506,7 +506,7 @@ public class PlayerPanelsController {
             float videoRight = videoLeft + currentVideoW;
             float videoBottom = videoTop + currentVideoH;
 
-            ambientVignetteOverlay.setVideoBounds(videoLeft, videoTop, videoRight, videoBottom, currentAvailW);
+            ambientVignetteOverlay.setVideoBounds(videoLeft, videoTop, videoRight, videoBottom);
         }
         callback.updateAmbientPlayerTransform(currentScale, translationX, translationY, false);
     }
