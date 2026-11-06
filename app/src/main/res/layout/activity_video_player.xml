@@ -140,14 +140,14 @@
                     android:layout_height="18dp"
                     android:layout_marginEnd="8dp"
                     android:src="@drawable/ic_skip"
-                    app:tint="@color/purple_primary"
+                    app:tint="@color/white_color"
                     android:contentDescription="@null" />
 
                 <TextView
                     android:id="@+id/seekPreviewOffset"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="@color/purple_primary"
+                    android:textColor="@color/player_item_inactive_text"
                     android:textSize="15sp"
                     android:fontFamily="@font/open_sans_bold"
                     android:includeFontPadding="false"
@@ -200,7 +200,7 @@
                     android:layout_height="20dp"
                     android:layout_marginEnd="8dp"
                     android:src="@drawable/ic_skip"
-                    app:tint="@color/purple_primary"
+                    app:tint="@color/white_color"
                     android:contentDescription="@null" />
 
                 <TextView
