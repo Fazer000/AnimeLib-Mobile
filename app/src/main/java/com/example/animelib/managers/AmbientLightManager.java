@@ -113,8 +113,8 @@ public class AmbientLightManager {
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 try {
-                    // Мягкий широкий GPU-блюр
-                    RenderEffect blurEffect = RenderEffect.createBlurEffect(75f, 75f, Shader.TileMode.CLAMP);
+                    // Мягкий широкий GPU-блюр для бесшовного облачного рассеивания
+                    RenderEffect blurEffect = RenderEffect.createBlurEffect(110f, 110f, Shader.TileMode.CLAMP);
 
                     // Богатая насыщенность и легкий подъем контраста для сочной подсветки
                     ColorMatrix colorMatrix = new ColorMatrix();
@@ -563,17 +563,21 @@ public class AmbientLightManager {
                 lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
                 lp.height = targetH;
                 if (lp instanceof FrameLayout.LayoutParams) {
-                    ((FrameLayout.LayoutParams) lp).gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+                    ((FrameLayout.LayoutParams) lp).gravity = Gravity.TOP | Gravity.START;
                 }
                 ambientPlayerView.setLayoutParams(lp);
             }
 
-            ambientPlayerView.setPivotX(viewW / 2f);
-            ambientPlayerView.setPivotY(targetH / 2f);
-            ambientPlayerView.setScaleX(1.22f);
-            ambientPlayerView.setScaleY(1.22f);
-            ambientPlayerView.setTranslationX(0f);
-            ambientPlayerView.setTranslationY(0f);
+            float ambientScale = 1.15f;
+            float extraX = (viewW * (ambientScale - 1f)) / 2f;
+            float extraY = (targetH * (ambientScale - 1f)) / 2f;
+
+            ambientPlayerView.setPivotX(0f);
+            ambientPlayerView.setPivotY(0f);
+            ambientPlayerView.setScaleX(ambientScale);
+            ambientPlayerView.setScaleY(ambientScale);
+            ambientPlayerView.setTranslationX(-extraX);
+            ambientPlayerView.setTranslationY(-extraY);
         } else {
             // В ландшафтном режиме плеер занимает контейнер и следует за анимациями боковых панелей
             ViewGroup.LayoutParams lp = ambientPlayerView.getLayoutParams();
@@ -581,21 +585,25 @@ public class AmbientLightManager {
                 lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
                 lp.height = ViewGroup.LayoutParams.MATCH_PARENT;
                 if (lp instanceof FrameLayout.LayoutParams) {
-                    ((FrameLayout.LayoutParams) lp).gravity = Gravity.CENTER;
+                    ((FrameLayout.LayoutParams) lp).gravity = Gravity.TOP | Gravity.START;
                 }
                 ambientPlayerView.setLayoutParams(lp);
             }
 
-            ambientPlayerView.setPivotX(viewW / 2f);
-            ambientPlayerView.setPivotY(viewH / 2f);
+            // Масштаб с аккуратным выступом на 15% относительно основного плеера
+            float ambientScale = scale * 1.15f;
+            float extraX = (viewW * (ambientScale - scale)) / 2f;
+            float extraY = (viewH * (ambientScale - scale)) / 2f;
 
-            // Выступ на ~22% больше видео, чтобы края мягко рассеивались наружу
-            float ambientScale = scale * 1.22f;
+            // Точка привязки (0, 0) строго синхронизирована с playerContainer
+            ambientPlayerView.setPivotX(0f);
+            ambientPlayerView.setPivotY(0f);
             ambientPlayerView.setScaleX(ambientScale);
             ambientPlayerView.setScaleY(ambientScale);
 
-            ambientPlayerView.setTranslationX(translationX);
-            ambientPlayerView.setTranslationY(translationY);
+            // Смещение с компенсацией выступа: идеально ровно по центру под playerContainer
+            ambientPlayerView.setTranslationX(translationX - extraX);
+            ambientPlayerView.setTranslationY(translationY - extraY);
         }
     }
 
