@@ -49,9 +49,10 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:scaleType="fitXY"
+            android:visibility="gone"
             android:importantForAccessibility="no" />
 
-        <!-- Secondary Ambient Player View (blurred edge glow fallback) -->
+        <!-- Secondary Ambient Player View (edge glow with organic dispersion) -->
         <androidx.media3.ui.PlayerView
             android:id="@+id/ambientPlayerView"
             android:layout_width="match_parent"
@@ -59,7 +60,7 @@
             android:layout_gravity="center"
             app:use_controller="false"
             app:surface_type="texture_view"
-            app:resize_mode="zoom"
+            app:resize_mode="fit"
             app:show_buffering="never"
             app:shutter_background_color="@android:color/transparent" />
 
