@@ -8,6 +8,9 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.RenderEffect;
+import android.graphics.Shader;
+import android.os.Build;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.View;
@@ -17,8 +20,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 /**
- * Ультра-оптимизированный View подсветки (Ambilight).
- * - Нативная аппаратная билинейная интерполяция на GPU;
+ * Ультра-оптимизированный View фоновой подсветки (Ambilight).
+ * - Нативное аппаратное размытие (RenderEffect DECAL на Android 12+) и билинейная интерполяция;
  * - 0 непрерывных циклов перерисовки на UI-потоке (отрисовка строго по поступлению кадра);
  * - 0 аллокаций памяти в рантайме;
  * - Мгновенный 60-120 FPS скролл списков и табов без единого микрофриза.
@@ -29,7 +32,6 @@ public class AmbientLightView extends View {
     private final Paint drawPaint;
     private final Rect srcRect = new Rect();
     private final RectF dstRect = new RectF();
-    private final RectF glowRect = new RectF();
 
     private Bitmap displayBitmap;
     private int[] displayPixels;
@@ -38,6 +40,7 @@ public class AmbientLightView extends View {
     private ValueAnimator intensityAnimator;
 
     private RectF customVideoBounds = null;
+    private float videoAspectRatio = 16f / 9f;
 
     public AmbientLightView(Context context) {
         this(context, null);
@@ -52,10 +55,18 @@ public class AmbientLightView extends View {
 
         drawPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
         drawPaint.setDither(true);
-        drawPaint.setColorFilter(null);
 
         setBackgroundColor(Color.TRANSPARENT);
-        setLayerType(LAYER_TYPE_NONE, null);
+        setLayerType(LAYER_TYPE_HARDWARE, null);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                RenderEffect blurEffect = RenderEffect.createBlurEffect(48f, 48f, Shader.TileMode.CLAMP);
+                setRenderEffect(blurEffect);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to apply RenderEffect to AmbientLightView", e);
+            }
+        }
     }
 
     /**
@@ -84,6 +95,13 @@ public class AmbientLightView extends View {
             invalidate();
         } catch (Exception e) {
             Log.e(TAG, "Error updating sample pixels", e);
+        }
+    }
+
+    public void setVideoAspectRatio(float aspect) {
+        if (aspect > 0 && Math.abs(this.videoAspectRatio - aspect) > 0.01f) {
+            this.videoAspectRatio = aspect;
+            invalidate();
         }
     }
 
@@ -124,8 +142,8 @@ public class AmbientLightView extends View {
             if (bmpW <= 0 || bmpH <= 0) return;
 
             if (customVideoBounds != null && customVideoBounds.width() > 0 && customVideoBounds.height() > 0) {
-                float marginX = customVideoBounds.width() * 0.22f;
-                float marginY = customVideoBounds.height() * 0.22f;
+                float marginX = customVideoBounds.width() * 0.28f;
+                float marginY = customVideoBounds.height() * 0.28f;
                 srcRect.set(0, 0, bmpW, bmpH);
                 dstRect.set(
                         customVideoBounds.left - marginX,
@@ -134,15 +152,18 @@ public class AmbientLightView extends View {
                         customVideoBounds.bottom + marginY
                 );
             } else {
-                // CenterCrop заполнение всего экрана фоновым свечением
-                float scale = Math.max((float) screenWidth / bmpW, (float) screenHeight / bmpH);
-                float scaledW = bmpW * scale;
-                float scaledH = bmpH * scale;
-                float left = (screenWidth - scaledW) / 2f;
-                float top = (screenHeight - scaledH) / 2f;
+                float aspect = videoAspectRatio > 0 ? videoAspectRatio : 16f / 9f;
+                float fullVideoW = Math.min((float) screenWidth, (float) screenHeight * aspect);
+                float fullVideoH = Math.min((float) screenHeight, (float) screenWidth / aspect);
+                float left = (screenWidth - fullVideoW) * 0.5f;
+                float top = (screenHeight - fullVideoH) * 0.5f;
+                float right = left + fullVideoW;
+                float bottom = top + fullVideoH;
+                float marginX = fullVideoW * 0.28f;
+                float marginY = fullVideoH * 0.28f;
 
                 srcRect.set(0, 0, bmpW, bmpH);
-                dstRect.set(left, top, left + scaledW, top + scaledH);
+                dstRect.set(left - marginX, top - marginY, right + marginX, bottom + marginY);
             }
 
             drawPaint.setAlpha((int) (currentIntensity * 255));

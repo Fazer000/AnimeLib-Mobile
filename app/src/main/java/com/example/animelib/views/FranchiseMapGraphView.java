@@ -35,8 +35,10 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 
 /**
@@ -356,7 +358,7 @@ public class FranchiseMapGraphView extends ViewGroup {
         buildCanonicalLinks();
         nodeRelationsMap.putAll(FranchiseChronologyBottomSheet.buildRelationsMap(franchise));
 
-        calculateLeftToRightChronologyLayout();
+        calculateSpiderwebLayout();
 
         LayoutInflater inflater = LayoutInflater.from(getContext());
         for (FranchiseResponse.NodeItem node : franchise.getNodes()) {
@@ -483,17 +485,17 @@ public class FranchiseMapGraphView extends ViewGroup {
     }
 
     /**
-     * Горизонтальное распределение хронологии франшизы слева направо (Left-to-Right Timeline Graph Layout).
-     * - Хронологическое начало франшизы располагается слева.
-     * - Сиквелы, продолжения и развитие сюжета последовательно продвигаются слева направо.
-     * - Главная сюжетная линия (основные сезоны/сиквелы) формирует центральную горизонтальную ось (row = 0).
-     * - Ответвления (сайд-стори, спешлы, фильмы, спин-оффы) разветвляются выше (row < 0) и ниже (row > 0)
-     *   соответствующих сезонов, сохраняя прогресс времени слева направо.
+     * Динамическое паутинное распределение графа франшизы (Spiderweb Radial Network Layout).
+     * - Текущее аниме располагается в самом центре виртуального холста.
+     * - Все связанные тайтлы разворачиваются во все стороны (360°) вокруг центра на радиальных орбитах (паутина).
+     * - Итеративный алгоритм физической релаксации силового поля раздвигает карточки, гарантируя отсутствие перекрытий.
      */
-    private void calculateLeftToRightChronologyLayout() {
+    private void calculateSpiderwebLayout() {
         if (franchiseData == null || franchiseData.getNodes() == null || franchiseData.getNodes().isEmpty()) return;
 
         float density = getResources().getDisplayMetrics().density;
+        List<FranchiseResponse.NodeItem> allNodes = franchiseData.getNodes();
+
         List<FranchiseResponse.NodeItem> allSorted = FranchiseChronologyBottomSheet.sortNodesChronologically(franchiseData);
         if (allSorted.isEmpty()) return;
 
@@ -503,308 +505,186 @@ public class FranchiseMapGraphView extends ViewGroup {
             chronologicalStepMap.put(allSorted.get(i).getId(), i + 1);
         }
 
-        // 1. Определение фокальной ноды (текущее аниме)
+        // 1. Находим фокальный тайтл (текущее аниме)
         long focalId = franchiseData.getCurrentId();
         boolean focalExists = false;
-        for (FranchiseResponse.NodeItem n : allSorted) {
+        for (FranchiseResponse.NodeItem n : allNodes) {
             if (n.getId() == focalId) {
                 focalExists = true;
                 break;
             }
         }
         if (!focalExists) {
-            focalId = allSorted.get(0).getId();
+            focalId = allNodes.get(0).getId();
         }
         currentFocalId = focalId;
 
-        // 2. Построение ориентированного графа смежности (Earlier/Parent -> Later/Child)
-        Map<Long, List<Long>> forwardAdj = new HashMap<>();
-        Map<Long, List<Long>> backwardAdj = new HashMap<>();
+        // 2. Индексируем ноды и двунаправленные связи графа
         Map<Long, FranchiseResponse.NodeItem> nodeMap = new HashMap<>();
-
-        for (FranchiseResponse.NodeItem n : allSorted) {
-            forwardAdj.put(n.getId(), new ArrayList<>());
-            backwardAdj.put(n.getId(), new ArrayList<>());
+        Map<Long, List<Long>> adj = new HashMap<>();
+        for (FranchiseResponse.NodeItem n : allNodes) {
             nodeMap.put(n.getId(), n);
+            adj.put(n.getId(), new ArrayList<>());
         }
 
         for (MapLink link : canonicalLinks) {
             long s = link.getSourceId();
             long t = link.getTargetId();
-            if (forwardAdj.containsKey(s) && forwardAdj.containsKey(t)) {
-                if (!forwardAdj.get(s).contains(t)) forwardAdj.get(s).add(t);
-                if (!backwardAdj.get(t).contains(s)) backwardAdj.get(t).add(s);
+            if (adj.containsKey(s) && adj.containsKey(t)) {
+                if (!adj.get(s).contains(t)) adj.get(s).add(t);
+                if (!adj.get(t).contains(s)) adj.get(t).add(s);
             }
         }
 
-        // 3. Выделение главной сюжетной линии (Main Spine: TV сезоны / прямые сиквелы)
-        Set<Long> mainSpineNodes = new HashSet<>();
-        List<Long> mainSpineList = new ArrayList<>();
+        // 3. Вычисляем орбитальные слои (BFS глубину от текущего тайтла)
+        Map<Long, Integer> depthMap = new HashMap<>();
+        Map<Long, Long> parentMap = new HashMap<>();
+        Queue<Long> queue = new LinkedList<>();
 
-        // Находим корень главной линии: ноду с in-degree 0 в основных связях или первый элемент
-        Long mainRoot = null;
-        for (FranchiseResponse.NodeItem n : allSorted) {
-            List<Long> parents = backwardAdj.get(n.getId());
-            boolean hasMainParent = false;
-            if (parents != null) {
-                for (long p : parents) {
-                    for (MapLink link : canonicalLinks) {
-                        if (link.getSourceId() == p && link.getTargetId() == n.getId() && isMainRelation(link.getRelation())) {
-                            hasMainParent = true;
-                            break;
-                        }
-                    }
-                    if (hasMainParent) break;
-                }
-            }
-            if (!hasMainParent && isLikelyMainTitle(n)) {
-                mainRoot = n.getId();
-                break;
-            }
-        }
-        if (mainRoot == null) {
-            mainRoot = allSorted.get(0).getId();
-        }
+        depthMap.put(focalId, 0);
+        queue.add(focalId);
 
-        // Прослеживаем основную цепь от корня через сиквелы
-        Long curr = mainRoot;
-        while (curr != null && !mainSpineNodes.contains(curr)) {
-            mainSpineNodes.add(curr);
-            mainSpineList.add(curr);
-
-            List<Long> children = forwardAdj.get(curr);
-            Long nextMain = null;
-            if (children != null && !children.isEmpty()) {
-                for (long childId : children) {
-                    if (mainSpineNodes.contains(childId)) continue;
-                    for (MapLink link : canonicalLinks) {
-                        if (link.getSourceId() == curr && link.getTargetId() == childId && isMainRelation(link.getRelation())) {
-                            if (nextMain == null) {
-                                nextMain = childId;
-                            } else {
-                                FranchiseResponse.NodeItem prevCandidate = nodeMap.get(nextMain);
-                                FranchiseResponse.NodeItem currCandidate = nodeMap.get(childId);
-                                if (currCandidate != null && prevCandidate != null) {
-                                    if (isLikelyMainTitle(currCandidate) && !isLikelyMainTitle(prevCandidate)) {
-                                        nextMain = childId;
-                                    } else if (currCandidate.getYear() < prevCandidate.getYear() && currCandidate.getYear() > 0) {
-                                        nextMain = childId;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            curr = nextMain;
-        }
-
-        // 4. Расчет колонок (col, горизонтальный ранг, слева направо)
-        Map<Long, Integer> colMap = new HashMap<>();
-
-        // Ноды главной линии получают возрастающие колонки 0, 1, 2, 3...
-        for (int i = 0; i < mainSpineList.size(); i++) {
-            colMap.put(mainSpineList.get(i), i);
-        }
-
-        // Топологическое назначение колонок для всех остальных нод
-        boolean changed = true;
-        int maxPasses = allSorted.size() + 2;
-        int pass = 0;
-
-        // Инициализируем ноды без родителей
-        for (FranchiseResponse.NodeItem n : allSorted) {
-            long id = n.getId();
-            if (!colMap.containsKey(id)) {
-                List<Long> parents = backwardAdj.get(id);
-                if (parents == null || parents.isEmpty()) {
-                    int assignedCol = 0;
-                    if (n.getYear() > 0 && !mainSpineList.isEmpty()) {
-                        for (int i = 0; i < mainSpineList.size(); i++) {
-                            FranchiseResponse.NodeItem spineNode = nodeMap.get(mainSpineList.get(i));
-                            if (spineNode != null && spineNode.getYear() > 0 && n.getYear() >= spineNode.getYear()) {
-                                assignedCol = i;
-                            }
-                        }
-                    }
-                    colMap.put(id, assignedCol);
-                }
-            }
-        }
-
-        while (changed && pass < maxPasses) {
-            changed = false;
-            pass++;
-
-            for (FranchiseResponse.NodeItem n : allSorted) {
-                long id = n.getId();
-                List<Long> parents = backwardAdj.get(id);
-                if (parents != null && !parents.isEmpty()) {
-                    int maxParentCol = -1;
-                    for (long p : parents) {
-                        if (colMap.containsKey(p)) {
-                            int pCol = colMap.get(p);
-                            if (pCol > maxParentCol) {
-                                maxParentCol = pCol;
-                            }
-                        }
-                    }
-
-                    if (maxParentCol >= 0) {
-                        int targetCol = maxParentCol + 1;
-                        if (!colMap.containsKey(id) || colMap.get(id) < targetCol) {
-                            if (!mainSpineNodes.contains(id)) {
-                                colMap.put(id, targetCol);
-                                changed = true;
-                            }
-                        }
+        while (!queue.isEmpty()) {
+            long curr = queue.poll();
+            int currDepth = depthMap.get(curr);
+            List<Long> neighbors = adj.get(curr);
+            if (neighbors != null) {
+                for (long neighbor : neighbors) {
+                    if (!depthMap.containsKey(neighbor)) {
+                        depthMap.put(neighbor, currDepth + 1);
+                        parentMap.put(neighbor, curr);
+                        queue.add(neighbor);
                     }
                 }
             }
         }
 
-        // Для любых оставшихся изолированных нод
-        for (int i = 0; i < allSorted.size(); i++) {
-            long id = allSorted.get(i).getId();
-            if (!colMap.containsKey(id)) {
-                colMap.put(id, Math.min(i, 8));
+        for (FranchiseResponse.NodeItem n : allNodes) {
+            if (!depthMap.containsKey(n.getId())) {
+                depthMap.put(n.getId(), 1);
             }
         }
 
-        // 5. Расчет рядов (row, вертикальный ранг)
-        Map<Long, Integer> rowMap = new HashMap<>();
-
-        // Главная линия всегда строго по центру (row = 0)
-        for (long spineId : mainSpineNodes) {
-            rowMap.put(spineId, 0);
-        }
-
-        // Хранилище занятых ячеек сетки (колонка, ряд)
-        Map<String, Long> occupiedGrid = new HashMap<>();
-        for (long spineId : mainSpineNodes) {
-            int c = colMap.get(spineId);
-            occupiedGrid.put(c + "_0", spineId);
-        }
-
-        // Размещаем ответвления
-        for (FranchiseResponse.NodeItem n : allSorted) {
-            long id = n.getId();
-            if (mainSpineNodes.contains(id)) continue;
-
-            int c = colMap.get(id);
-            String rel = nodeRelationsMap.get(id);
-            if (rel == null) rel = "";
-            String r = rel.toLowerCase();
-
-            // Верхние ветки: сайд-стори, преквелы, альтернативный сеттинг, спешлы (-1, -2, ...)
-            // Нижние ветки: фильмы, спин-оффы, рекапы, альтернативные версии (+1, +2, ...)
-            boolean preferAbove = r.contains("сайд") || r.contains("side") ||
-                    r.contains("приквел") || r.contains("prequel") ||
-                    r.contains("альт. сеттинг") || r.contains("setting") ||
-                    "ova".equalsIgnoreCase(n.getKind()) || "special".equalsIgnoreCase(n.getKind());
-
-            int preferredRow = preferAbove ? -1 : 1;
-
-            // Если у ответвления есть родитель-ответвление, наследуем его ряд
-            List<Long> parents = backwardAdj.get(id);
-            if (parents != null && !parents.isEmpty()) {
-                for (long p : parents) {
-                    if (rowMap.containsKey(p) && rowMap.get(p) != 0) {
-                        preferredRow = rowMap.get(p);
-                        break;
-                    }
-                }
-            }
-
-            // Ищем ближайший свободный ряд в этой колонке
-            int assignedRow = preferredRow;
-            int offset = 0;
-            while (occupiedGrid.containsKey(c + "_" + assignedRow)) {
-                offset++;
-                if (preferAbove) {
-                    assignedRow = preferredRow - offset;
-                } else {
-                    assignedRow = preferredRow + offset;
-                }
-                // Если уходим слишком далеко по вертикали (более 3 рядов), сдвигаемся на следующую колонку
-                if (Math.abs(assignedRow) > 3) {
-                    c++;
-                    colMap.put(id, c);
-                    assignedRow = preferredRow;
-                    offset = 0;
-                }
-            }
-
-            rowMap.put(id, assignedRow);
-            occupiedGrid.put(c + "_" + assignedRow, id);
-        }
-
-        // 6. Перевод сетки (col, row) в пиксельные координаты (X, Y)
-        float minRow = 0;
-        float maxRow = 0;
-        int maxCol = 0;
-        for (int r : rowMap.values()) {
-            if (r < minRow) minRow = r;
-            if (r > maxRow) maxRow = r;
-        }
-        for (int c : colMap.values()) {
-            if (c > maxCol) maxCol = c;
-        }
-
-        float colStepPx = cardWidthPx + (90f * density);
-        float rowStepPx = cardHeightPx + (42f * density);
-
-        float originX = paddingX;
-        float originY = paddingY + (-minRow) * rowStepPx;
+        // Центр виртуального холста паутины
+        float centerX = 1600f * density;
+        float centerY = 1600f * density;
 
         nodePositionsMap.clear();
-        for (FranchiseResponse.NodeItem n : allSorted) {
-            long id = n.getId();
-            int c = colMap.containsKey(id) ? colMap.get(id) : 0;
-            int r = rowMap.containsKey(id) ? rowMap.get(id) : 0;
+        nodePositionsMap.put(focalId, new PointF(centerX - cardWidthPx / 2f, centerY - cardHeightPx / 2f));
 
-            float px = originX + c * colStepPx;
-            float py = originY + r * rowStepPx;
-            nodePositionsMap.put(id, new PointF(px, py));
+        // Группируем элементы по орбитальным слоям (слой 1, слой 2...)
+        Map<Integer, List<Long>> nodesByDepth = new HashMap<>();
+        for (Map.Entry<Long, Integer> entry : depthMap.entrySet()) {
+            int d = entry.getValue();
+            if (d == 0) continue;
+            if (!nodesByDepth.containsKey(d)) {
+                nodesByDepth.put(d, new ArrayList<>());
+            }
+            nodesByDepth.get(d).add(entry.getKey());
         }
 
-        // 7. Легкая релаксация перекрытий (Physics Collision Resolution)
-        float minGapX = cardWidthPx + (24f * density);
-        float minGapY = cardHeightPx + (16f * density);
+        List<Integer> sortedDepths = new ArrayList<>(nodesByDepth.keySet());
+        Collections.sort(sortedDepths);
 
-        for (int iter = 0; iter < 12; iter++) {
-            for (int i = 0; i < allSorted.size(); i++) {
-                long idA = allSorted.get(i).getId();
+        Map<Long, Float> nodeAngleMap = new HashMap<>();
+
+        // 4. Распределяем карточки по угловым секторам на орбитальных радиальных кольцах
+        for (int depth : sortedDepths) {
+            List<Long> layerNodes = nodesByDepth.get(depth);
+            if (layerNodes == null || layerNodes.isEmpty()) continue;
+
+            float baseRadius = (280f + (depth - 1) * 260f) * density;
+            int count = layerNodes.size();
+
+            for (int i = 0; i < count; i++) {
+                long nodeId = layerNodes.get(i);
+                FranchiseResponse.NodeItem node = nodeMap.get(nodeId);
+                String rel = nodeRelationsMap.get(nodeId);
+                if (rel == null) rel = "";
+                String relLower = rel.toLowerCase();
+
+                float angleRad;
+
+                if (depth == 1) {
+                    // Радиальное распределение первого кольца по логическим направлениям (360°)
+                    if (relLower.contains("приквел") || relLower.contains("prequel")) {
+                        angleRad = (float) Math.toRadians(210 + (i * 35)); // Северо-Запад
+                    } else if (relLower.contains("сиквел") || relLower.contains("sequel")) {
+                        angleRad = (float) Math.toRadians(-30 + (i * 35)); // Северо-Восток
+                    } else if (relLower.contains("сайд") || relLower.contains("side")) {
+                        angleRad = (float) Math.toRadians(120 + (i * 40)); // Юго-Запад
+                    } else if (relLower.contains("спин") || relLower.contains("spin")) {
+                        angleRad = (float) Math.toRadians(45 + (i * 40));  // Юго-Восток
+                    } else if ("ova".equalsIgnoreCase(node != null ? node.getKind() : "") || "special".equalsIgnoreCase(node != null ? node.getKind() : "")) {
+                        angleRad = (float) Math.toRadians(165 + (i * 35)); // Запад
+                    } else {
+                        float baseDeg = (360f / count) * i;
+                        angleRad = (float) Math.toRadians(baseDeg);
+                    }
+                } else {
+                    // Ноды следующих слоев наследуют радиальное направление своего родителя
+                    Long parentId = parentMap.get(nodeId);
+                    float parentAngle = (parentId != null && nodeAngleMap.containsKey(parentId)) ? nodeAngleMap.get(parentId) : 0f;
+                    float spreadOffset = (i - (count - 1) / 2f) * (float) Math.toRadians(32);
+                    angleRad = parentAngle + spreadOffset;
+                }
+
+                nodeAngleMap.put(nodeId, angleRad);
+
+                float px = centerX + (float) Math.cos(angleRad) * baseRadius - cardWidthPx / 2f;
+                float py = centerY + (float) Math.sin(angleRad) * baseRadius - cardHeightPx / 2f;
+                nodePositionsMap.put(nodeId, new PointF(px, py));
+            }
+        }
+
+        // 5. Двухмерная физическая релаксация коллизий (2D Repulsion Physics)
+        float minGapX = cardWidthPx + (36f * density);
+        float minGapY = cardHeightPx + (36f * density);
+        float minDist = (float) Math.hypot(minGapX, minGapY);
+
+        for (int iter = 0; iter < 24; iter++) {
+            for (int i = 0; i < allNodes.size(); i++) {
+                long idA = allNodes.get(i).getId();
+                if (idA == focalId) continue; // Центральный айтем зафиксирован в центре паутины
                 PointF posA = nodePositionsMap.get(idA);
                 if (posA == null) continue;
 
-                for (int j = i + 1; j < allSorted.size(); j++) {
-                    long idB = allSorted.get(j).getId();
+                for (int j = i + 1; j < allNodes.size(); j++) {
+                    long idB = allNodes.get(j).getId();
                     PointF posB = nodePositionsMap.get(idB);
                     if (posB == null) continue;
 
-                    float centerAx = posA.x + cardWidthPx / 2f;
-                    float centerAy = posA.y + cardHeightPx / 2f;
-                    float centerBx = posB.x + cardWidthPx / 2f;
-                    float centerBy = posB.y + cardHeightPx / 2f;
+                    float cAx = posA.x + cardWidthPx / 2f;
+                    float cAy = posA.y + cardHeightPx / 2f;
+                    float cBx = posB.x + cardWidthPx / 2f;
+                    float cBy = posB.y + cardHeightPx / 2f;
 
-                    float dx = centerBx - centerAx;
-                    float dy = centerBy - centerAy;
+                    float dx = cBx - cAx;
+                    float dy = cBy - cAy;
+                    float dist = (float) Math.hypot(dx, dy);
 
-                    if (Math.abs(dx) < minGapX && Math.abs(dy) < minGapY) {
-                        float overlapY = minGapY - Math.abs(dy);
-                        float signY = (dy >= 0) ? 1.0f : -1.0f;
+                    if (dist < minDist && dist > 0.001f) {
+                        float overlap = minDist - dist;
+                        float nx = dx / dist;
+                        float ny = dy / dist;
 
-                        // В лево-правой хронологии расталкиваем по вертикали, сохраняя временную ось X
-                        float pushY = signY * overlapY * 0.45f;
-                        posA.y -= pushY * 0.5f;
-                        posB.y += pushY * 0.5f;
+                        float pushX = nx * overlap * 0.45f;
+                        float pushY = ny * overlap * 0.45f;
+
+                        if (idA != focalId) {
+                            posA.x -= pushX * 0.5f;
+                            posA.y -= pushY * 0.5f;
+                        }
+                        if (idB != focalId) {
+                            posB.x += pushX * 0.5f;
+                            posB.y += pushY * 0.5f;
+                        }
                     }
                 }
             }
         }
 
-        // 8. Нормализация координат и установка виртуальных границ холста
+        // 6. Нормализация координат с отступами и установка границ холста
         float minX = Float.MAX_VALUE;
         float minY = Float.MAX_VALUE;
         for (PointF pt : nodePositionsMap.values()) {
@@ -830,8 +710,8 @@ public class FranchiseMapGraphView extends ViewGroup {
             nodeBoundsMap.put(nodeId, new RectF(pt.x, pt.y, pt.x + cardWidthPx, pt.y + cardHeightPx));
         }
 
-        contentWidth = Math.max((int) (1200 * density), (int) (maxX + paddingX));
-        contentHeight = Math.max((int) (800 * density), (int) (maxY + paddingY));
+        contentWidth = Math.max((int) (1400 * density), (int) (maxX + paddingX));
+        contentHeight = Math.max((int) (1000 * density), (int) (maxY + paddingY));
     }
 
     private boolean isLikelyMainTitle(FranchiseResponse.NodeItem item) {
