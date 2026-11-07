@@ -30,30 +30,31 @@ public class AmbientVignetteOverlayView extends View {
     private static final float SHADER_BASE_RADIUS = 1000f;
 
     // S-кривая плавного органического затухания в чистый черный (#000000)
-    // Завершает затухание в 100% черный ДО физических границ выступающего плеера подсветки,
-    // полностью исключая видимые прямые грани и обрезания.
     private static final int[] VIGNETTE_COLORS = new int[]{
-            0x00000000, // 0.00: 100% прозрачно в центре (под видео)
-            0x00000000, // 0.62: полностью прозрачно для выступающей подсветки
-            0x0A000000, // 0.72: мягчайший бархатный спад (~4% черного)
-            0x24000000, // 0.80: шелковистая полутень (~14% черного)
-            0x58000000, // 0.87: глубокое естественное рассеивание (~35% черного)
-            0x9E000000, // 0.93: растворение в темноту (~62% черного)
-            0xE2000000, // 0.97: предфинальный спад (~89% черного)
-            0xFF000000  // 1.00: 100% чистый абсолютный черный #000000
+            0x00000000, // 0.00: 100% прозрачно в центре
+            0x00000000, // 0.58: прозрачно в пределах видеокадра
+            0x0E000000, // 0.66: неощутимое начало рассеивания (~5% черного)
+            0x2E000000, // 0.74: мягкий полутеневой переход (~18% черного)
+            0x66000000, // 0.82: естественный спад (~40% черного)
+            0xAA000000, // 0.90: глубокое приглушение (~67% черного)
+            0xEB000000, // 0.96: предфинальное растворение (~92% черного)
+            0xFF000000  // 1.00: чистый 100% черный (#000000)
     };
 
     private static final float[] VIGNETTE_STOPS = new float[]{
-            0.00f, 0.62f, 0.72f, 0.80f, 0.87f, 0.93f, 0.97f, 1.00f
+            0.00f, 0.58f, 0.66f, 0.74f, 0.82f, 0.90f, 0.96f, 1.00f
     };
 
     private final Paint vignettePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+    private final Paint solidBlackPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint panelFadePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
 
     private final Matrix shaderMatrix = new Matrix();
     private final RectF currentVideoRect = new RectF();
     private final RectF customBounds = new RectF();
 
     private RadialGradient radialGradient;
+    private LinearGradient panelFadeGradient;
 
     private boolean hasCustomBounds = false;
     private float customAvailRight = -1f;
@@ -79,7 +80,11 @@ public class AmbientVignetteOverlayView extends View {
     private void init() {
         density = getResources().getDisplayMetrics().density;
 
+        solidBlackPaint.setColor(0xFF000000);
+        solidBlackPaint.setStyle(Paint.Style.FILL);
+
         vignettePaint.setStyle(Paint.Style.FILL);
+        panelFadePaint.setStyle(Paint.Style.FILL);
 
         // Базовый радиальный градиент с единичным радиусом 1000px, масштабируемый через матрицу в эллипс
         radialGradient = new RadialGradient(
@@ -164,10 +169,9 @@ public class AmbientVignetteOverlayView extends View {
         if (halfW <= 0f) halfW = w * 0.5f;
         if (halfH <= 0f) halfH = h * 0.5f;
 
-        // Радиальный размах эллипса: полностью и бесшовно гасит свет до 100% черного (#000000)
-        // ДО достижения внешних физических границ выступающего плеера подсветки (1.24x)
-        float spreadX = halfW * 1.18f + (14f * density);
-        float spreadY = halfH * 1.28f + (10f * density);
+        // Радиальный размах эллипса: органичное рассеивание за пределы видеокарты
+        float spreadX = halfW * 1.34f + (36f * density);
+        float spreadY = halfH * 1.48f + (24f * density);
 
         // Масштабируем единичный круг в точный эллипс вокруг центра видео
         shaderMatrix.reset();
@@ -176,6 +180,23 @@ public class AmbientVignetteOverlayView extends View {
 
         if (radialGradient != null) {
             radialGradient.setLocalMatrix(shaderMatrix);
+        }
+
+        // Плавный переходный градиент к шторке бокового окна
+        float availRight = (customAvailRight > 0f) ? Math.min((float) w, customAvailRight) : (float) w;
+        if (availRight < w) {
+            float fadeWidth = Math.max(28f * density, 48f);
+            float fadeStart = Math.max(0f, availRight - fadeWidth);
+            panelFadeGradient = new LinearGradient(
+                    fadeStart, 0f, availRight, 0f,
+                    new int[]{0x00000000, 0x88000000, 0xFF000000},
+                    new float[]{0f, 0.6f, 1f},
+                    Shader.TileMode.CLAMP
+            );
+            panelFadePaint.setShader(panelFadeGradient);
+        } else {
+            panelFadeGradient = null;
+            panelFadePaint.setShader(null);
         }
     }
 
@@ -187,7 +208,22 @@ public class AmbientVignetteOverlayView extends View {
         int h = getHeight();
         if (w <= 0 || h <= 0) return;
 
-        // Единый бесшовный симметричный эллиптический градиент вокруг центра активного видеокадра
+        // 1. Рисуем единый бесшовный эллиптический виньеточный градиент на весь экран
         canvas.drawRect(0, 0, w, h, vignettePaint);
+
+        // 2. Если открыто боковое окно — рисуем мягкий переходный градиент и заливаем область под окном
+        float availRight = (customAvailRight > 0f) ? Math.min((float) w, customAvailRight) : (float) w;
+        if (availRight < w) {
+            float fadeWidth = Math.max(28f * density, 48f);
+            float fadeStart = Math.max(0f, availRight - fadeWidth);
+
+            // Мягкое угасание света перед панелью без жесткой вертикальной линии
+            if (panelFadeGradient != null) {
+                canvas.drawRect(fadeStart, 0, availRight, h, panelFadePaint);
+            }
+
+            // Глубокий черный под самой боковой панелью
+            canvas.drawRect(availRight, 0, w, h, solidBlackPaint);
+        }
     }
 }
