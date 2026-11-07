@@ -1,6 +1,6 @@
 {
-  "summary":  "План полной переработки логики выбора, сохранения в БД и отображения качества видео в плеере: разделение сохраненного режима («Авто» / конкретное качество), локального источника и фактического разрешения потока, корректные бейджи на шестеренке и в меню настроек, а также бесшовное переключение между скачанным файлом и онлайн-качествами.",
-  "updatedAt":  "2026-10-31T09:48:50.683246344Z",
+  "summary":  "Implementation plan for completely rewriting the ambient light (Ambilight) system from scratch. Solves border lines with organic elliptical dispersion, eliminates secondary ExoPlayer freezing via adaptive pitch speed sync, and smoothly handles side panel transformations without clipping.",
+  "updatedAt":  "2026-11-07T09:53:49.803551255Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

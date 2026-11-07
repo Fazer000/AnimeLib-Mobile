@@ -43,7 +43,12 @@
         android:clipToPadding="false"
         android:visibility="gone">
 
-        <!-- Live Real-Time Texture View Sampler (Zero-lag Ambilight) -->
+        <!-- Live Real-Time Texture View Sampler (Zero-lag Ambilight View) -->
+        <com.example.animelib.ui.AmbientLightView
+            android:id="@+id/ambientLightView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
         <ImageView
             android:id="@+id/ambientImageView"
             android:layout_width="match_parent"
@@ -52,23 +57,22 @@
             android:visibility="gone"
             android:importantForAccessibility="no" />
 
-        <!-- Secondary Ambient Player View (edge glow with organic dispersion) -->
+        <!-- Stubs kept for backward compatibility with existing layout lookups -->
         <androidx.media3.ui.PlayerView
             android:id="@+id/ambientPlayerView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:layout_gravity="center"
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:visibility="gone"
             app:use_controller="false"
             app:surface_type="texture_view"
-            app:resize_mode="fit"
             app:show_buffering="never"
             app:shutter_background_color="@android:color/transparent" />
 
-        <!-- Organic Vignette & Falloff Overlay for Ambient Light -->
         <com.example.animelib.ui.AmbientVignetteOverlayView
             android:id="@+id/ambientVignetteOverlay"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:visibility="gone" />
 
     </FrameLayout>
 

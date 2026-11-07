@@ -123,15 +123,27 @@ public class AmbientLightView extends View {
 
             if (bmpW <= 0 || bmpH <= 0) return;
 
-            // CenterCrop заполнение всего экрана фоновым свечением
-            float scale = Math.max((float) screenWidth / bmpW, (float) screenHeight / bmpH);
-            float scaledW = bmpW * scale;
-            float scaledH = bmpH * scale;
-            float left = (screenWidth - scaledW) / 2f;
-            float top = (screenHeight - scaledH) / 2f;
+            if (customVideoBounds != null && customVideoBounds.width() > 0 && customVideoBounds.height() > 0) {
+                float marginX = customVideoBounds.width() * 0.22f;
+                float marginY = customVideoBounds.height() * 0.22f;
+                srcRect.set(0, 0, bmpW, bmpH);
+                dstRect.set(
+                        customVideoBounds.left - marginX,
+                        customVideoBounds.top - marginY,
+                        customVideoBounds.right + marginX,
+                        customVideoBounds.bottom + marginY
+                );
+            } else {
+                // CenterCrop заполнение всего экрана фоновым свечением
+                float scale = Math.max((float) screenWidth / bmpW, (float) screenHeight / bmpH);
+                float scaledW = bmpW * scale;
+                float scaledH = bmpH * scale;
+                float left = (screenWidth - scaledW) / 2f;
+                float top = (screenHeight - scaledH) / 2f;
 
-            srcRect.set(0, 0, bmpW, bmpH);
-            dstRect.set(left, top, left + scaledW, top + scaledH);
+                srcRect.set(0, 0, bmpW, bmpH);
+                dstRect.set(left, top, left + scaledW, top + scaledH);
+            }
 
             drawPaint.setAlpha((int) (currentIntensity * 255));
             canvas.drawBitmap(displayBitmap, srcRect, dstRect, drawPaint);

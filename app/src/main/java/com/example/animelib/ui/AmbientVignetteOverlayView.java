@@ -3,6 +3,7 @@ package com.example.animelib.ui;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.RadialGradient;
 import android.graphics.RectF;
@@ -14,51 +15,51 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 /**
- * Оверлей бесшовного органического рассеивания подсветки (Ambilight).
+ * Оверлей бесшовного органического рассеивания подсветки (Ambilight 2.0).
  *
  * Архитектурные принципы:
- * 1. 100% непрерывное затухание по плавной S-кривой без каких-либо видимых линий, стыков или ступеней.
- * 2. Хроматическая дисперсия: сине-фиолетовые короткие волны мягко затухают ближе к плееру,
- *    а теплые красные и оранжевые оттенки проникают дальше в темное пространство.
- * 3. К краям экрана и границе бокового окна свет плавно и незаметно растворяется в чистый глубокий черный цвет (#000000).
- * 4. Полная поддержка обычного ландшафта, интерактивного открытия боковых окон и портретного режима.
+ * 1. Единый непрерывный эллиптический градиент (Smooth Hermite S-Curve) без каких-либо
+ *    прямоугольных швов, прямых граней и ступеней затухания.
+ * 2. Центр и пропорции эллипса строго соответствуют активному видеокадру, естественно
+ *    растворяя свечение в глубокий черный цвет (#000000) к краям экрана.
+ * 3. При открытии боковых панелей свечение смещается вместе с плеером и мягко угасает
+ *    перед шторкой через плавный переходный градиент без резкого вертикального среза.
  */
 public class AmbientVignetteOverlayView extends View {
 
-    // Спектральная таблица плавного хроматического рассеивания:
-    // Сине-фиолетовый диапазон мягко поглощается в первой половине расстояния,
-    // в то время как теплый красный/оранжевый свет проникает дальше в темноту.
-    // На границе экрана достигается 100% чистый черный цвет (#000000) без каких-либо видимых линий или полос.
-    private static final int[] CHROMATIC_COLORS = new int[]{
-            0x00000000, // 0.00: 100% прозрачно у края видео (полная яркость подсветки)
-            0x05010308, // 0.15: Естественное начало мягкого рассеивания
-            0x1C030612, // 0.35: Мягкое поглощение коротких синих волн
-            0x4803060E, // 0.55: Сине-фиолетовый спектр приглушен, теплые тона продолжают светить
-            0x88000000, // 0.75: Зеленый и нейтральный свет плавно угасают, глубокий теплый ореол идет дальше
-            0xD5000000, // 0.90: Финальное мягкое растворение теплого спектра
-            0xFF000000  // 1.00: Чистый 100% черный цвет (#000000) у внешней границы
+    private static final float SHADER_BASE_RADIUS = 1000f;
+
+    // S-кривая плавного органического затухания в чистый черный (#000000)
+    private static final int[] VIGNETTE_COLORS = new int[]{
+            0x00000000, // 0.00: 100% прозрачно в центре
+            0x00000000, // 0.58: прозрачно в пределах видеокадра
+            0x0E000000, // 0.66: неощутимое начало рассеивания (~5% черного)
+            0x2E000000, // 0.74: мягкий полутеневой переход (~18% черного)
+            0x66000000, // 0.82: естественный спад (~40% черного)
+            0xAA000000, // 0.90: глубокое приглушение (~67% черного)
+            0xEB000000, // 0.96: предфинальное растворение (~92% черного)
+            0xFF000000  // 1.00: чистый 100% черный (#000000)
     };
 
-    private static final float[] CHROMATIC_STOPS = new float[]{
-            0.00f, 0.15f, 0.35f, 0.55f, 0.75f, 0.90f, 1.00f
+    private static final float[] VIGNETTE_STOPS = new float[]{
+            0.00f, 0.58f, 0.66f, 0.74f, 0.82f, 0.90f, 0.96f, 1.00f
     };
 
+    private final Paint vignettePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
     private final Paint solidBlackPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint leftPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-    private final Paint rightPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-    private final Paint topPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-    private final Paint bottomPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+    private final Paint panelFadePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
 
-    private final Paint cornerTopLeftPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-    private final Paint cornerTopRightPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-    private final Paint cornerBottomLeftPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-    private final Paint cornerBottomRightPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-
+    private final Matrix shaderMatrix = new Matrix();
     private final RectF currentVideoRect = new RectF();
     private final RectF customBounds = new RectF();
+
+    private RadialGradient radialGradient;
+    private LinearGradient panelFadeGradient;
+
     private boolean hasCustomBounds = false;
     private float customAvailRight = -1f;
     private float videoAspectRatio = 16f / 9f;
+    private float density = 1f;
 
     private int lastWidth = 0;
     private int lastHeight = 0;
@@ -73,8 +74,25 @@ public class AmbientVignetteOverlayView extends View {
 
     public AmbientVignetteOverlayView(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
+        init();
+    }
+
+    private void init() {
+        density = getResources().getDisplayMetrics().density;
+
         solidBlackPaint.setColor(0xFF000000);
         solidBlackPaint.setStyle(Paint.Style.FILL);
+
+        vignettePaint.setStyle(Paint.Style.FILL);
+        panelFadePaint.setStyle(Paint.Style.FILL);
+
+        // Базовый радиальный градиент с единичным радиусом 1000px, масштабируемый через матрицу в эллипс
+        radialGradient = new RadialGradient(
+                0f, 0f, SHADER_BASE_RADIUS,
+                VIGNETTE_COLORS, VIGNETTE_STOPS,
+                Shader.TileMode.CLAMP
+        );
+        vignettePaint.setShader(radialGradient);
     }
 
     /**
@@ -91,7 +109,7 @@ public class AmbientVignetteOverlayView extends View {
         hasCustomBounds = true;
         customBounds.set(left, top, right, bottom);
         this.customAvailRight = availRight;
-        rebuildShaders(getWidth(), getHeight());
+        updateShaderMatrix(getWidth(), getHeight());
         invalidate();
     }
 
@@ -101,7 +119,7 @@ public class AmbientVignetteOverlayView extends View {
     public void clearCustomVideoBounds() {
         hasCustomBounds = false;
         customAvailRight = -1f;
-        rebuildShaders(getWidth(), getHeight());
+        updateShaderMatrix(getWidth(), getHeight());
         invalidate();
     }
 
@@ -111,7 +129,7 @@ public class AmbientVignetteOverlayView extends View {
     public void setVideoAspectRatio(float aspect) {
         if (aspect > 0 && Math.abs(this.videoAspectRatio - aspect) > 0.01f) {
             this.videoAspectRatio = aspect;
-            rebuildShaders(getWidth(), getHeight());
+            updateShaderMatrix(getWidth(), getHeight());
             invalidate();
         }
     }
@@ -122,109 +140,63 @@ public class AmbientVignetteOverlayView extends View {
         if (w != lastWidth || h != lastHeight) {
             lastWidth = w;
             lastHeight = h;
-            rebuildShaders(w, h);
+            updateShaderMatrix(w, h);
         }
     }
 
     /**
-     * Перестраивает гладкие спектральные градиенты
+     * Обновляет матрицу эллиптического шейдера под геометрию видеокадра
      */
-    private void rebuildShaders(int w, int h) {
+    private void updateShaderMatrix(int w, int h) {
         if (w <= 0 || h <= 0) return;
 
-        // Вычисляем прямоугольник основного видео
         if (hasCustomBounds && customBounds.width() > 0 && customBounds.height() > 0) {
             currentVideoRect.set(customBounds);
         } else {
             float aspect = videoAspectRatio > 0 ? videoAspectRatio : 16f / 9f;
             float fullVideoW = Math.min((float) w, (float) h * aspect);
             float fullVideoH = Math.min((float) h, (float) w / aspect);
-            float left = (w - fullVideoW) / 2f;
-            float top = (h - fullVideoH) / 2f;
+            float left = (w - fullVideoW) * 0.5f;
+            float top = (h - fullVideoH) * 0.5f;
             currentVideoRect.set(left, top, left + fullVideoW, top + fullVideoH);
         }
 
-        float vLeft = Math.max(0f, currentVideoRect.left);
-        float vTop = Math.max(0f, currentVideoRect.top);
-        float vRight = Math.min((float) w, currentVideoRect.right);
-        float vBottom = Math.min((float) h, currentVideoRect.bottom);
+        float cx = currentVideoRect.centerX();
+        float cy = currentVideoRect.centerY();
+        float halfW = currentVideoRect.width() * 0.5f;
+        float halfH = currentVideoRect.height() * 0.5f;
 
-        float availLeft = 0f;
+        if (halfW <= 0f) halfW = w * 0.5f;
+        if (halfH <= 0f) halfH = h * 0.5f;
+
+        // Радиальный размах эллипса: органичное рассеивание за пределы видеокарты
+        float spreadX = halfW * 1.34f + (36f * density);
+        float spreadY = halfH * 1.48f + (24f * density);
+
+        // Масштабируем единичный круг в точный эллипс вокруг центра видео
+        shaderMatrix.reset();
+        shaderMatrix.setScale(spreadX / SHADER_BASE_RADIUS, spreadY / SHADER_BASE_RADIUS);
+        shaderMatrix.postTranslate(cx, cy);
+
+        if (radialGradient != null) {
+            radialGradient.setLocalMatrix(shaderMatrix);
+        }
+
+        // Плавный переходный градиент к шторке бокового окна
         float availRight = (customAvailRight > 0f) ? Math.min((float) w, customAvailRight) : (float) w;
-        float availTop = 0f;
-        float availBottom = (float) h;
-
-        // 1. Левая пустая область: плавный спектральный спад от края видео (0% черного) к левому краю экрана (100% черного)
-        if (vLeft > availLeft + 1f) {
-            leftPaint.setShader(new LinearGradient(
-                    vLeft, 0, availLeft, 0,
-                    CHROMATIC_COLORS, CHROMATIC_STOPS, Shader.TileMode.CLAMP
-            ));
-        }
-
-        // 2. Правая пустая область: спад от правого края видео к границе экрана или бокового окна
-        if (vRight < availRight - 1f) {
-            rightPaint.setShader(new LinearGradient(
-                    vRight, 0, availRight, 0,
-                    CHROMATIC_COLORS, CHROMATIC_STOPS, Shader.TileMode.CLAMP
-            ));
-        }
-
-        // 3. Верхняя пустая область: спад от верхнего края видео к верхнему краю экрана
-        if (vTop > availTop + 1f) {
-            topPaint.setShader(new LinearGradient(
-                    0, vTop, 0, availTop,
-                    CHROMATIC_COLORS, CHROMATIC_STOPS, Shader.TileMode.CLAMP
-            ));
-        }
-
-        // 4. Нижняя пустая область: спад от нижнего края видео к нижнему краю экрана
-        if (vBottom < availBottom - 1f) {
-            bottomPaint.setShader(new LinearGradient(
-                    0, vBottom, 0, availBottom,
-                    CHROMATIC_COLORS, CHROMATIC_STOPS, Shader.TileMode.CLAMP
-            ));
-        }
-
-        // 5. Углы: радиальные градиенты со спектральным спадом из 4 углов видеокарты
-        if (vLeft > availLeft + 1f && vTop > availTop + 1f) {
-            float rx = vLeft - availLeft;
-            float ry = vTop - availTop;
-            float radius = (float) Math.hypot(rx, ry);
-            cornerTopLeftPaint.setShader(new RadialGradient(
-                    vLeft, vTop, radius,
-                    CHROMATIC_COLORS, CHROMATIC_STOPS, Shader.TileMode.CLAMP
-            ));
-        }
-
-        if (vRight < availRight - 1f && vTop > availTop + 1f) {
-            float rx = availRight - vRight;
-            float ry = vTop - availTop;
-            float radius = (float) Math.hypot(rx, ry);
-            cornerTopRightPaint.setShader(new RadialGradient(
-                    vRight, vTop, radius,
-                    CHROMATIC_COLORS, CHROMATIC_STOPS, Shader.TileMode.CLAMP
-            ));
-        }
-
-        if (vLeft > availLeft + 1f && vBottom < availBottom - 1f) {
-            float rx = vLeft - availLeft;
-            float ry = availBottom - vBottom;
-            float radius = (float) Math.hypot(rx, ry);
-            cornerBottomLeftPaint.setShader(new RadialGradient(
-                    vLeft, vBottom, radius,
-                    CHROMATIC_COLORS, CHROMATIC_STOPS, Shader.TileMode.CLAMP
-            ));
-        }
-
-        if (vRight < availRight - 1f && vBottom < availBottom - 1f) {
-            float rx = availRight - vRight;
-            float ry = availBottom - vBottom;
-            float radius = (float) Math.hypot(rx, ry);
-            cornerBottomRightPaint.setShader(new RadialGradient(
-                    vRight, vBottom, radius,
-                    CHROMATIC_COLORS, CHROMATIC_STOPS, Shader.TileMode.CLAMP
-            ));
+        if (availRight < w) {
+            float fadeWidth = Math.max(28f * density, 48f);
+            float fadeStart = Math.max(0f, availRight - fadeWidth);
+            panelFadeGradient = new LinearGradient(
+                    fadeStart, 0f, availRight, 0f,
+                    new int[]{0x00000000, 0x88000000, 0xFF000000},
+                    new float[]{0f, 0.6f, 1f},
+                    Shader.TileMode.CLAMP
+            );
+            panelFadePaint.setShader(panelFadeGradient);
+        } else {
+            panelFadeGradient = null;
+            panelFadePaint.setShader(null);
         }
     }
 
@@ -236,53 +208,22 @@ public class AmbientVignetteOverlayView extends View {
         int h = getHeight();
         if (w <= 0 || h <= 0) return;
 
-        float vLeft = Math.max(0f, currentVideoRect.left);
-        float vTop = Math.max(0f, currentVideoRect.top);
-        float vRight = Math.min((float) w, currentVideoRect.right);
-        float vBottom = Math.min((float) h, currentVideoRect.bottom);
+        // 1. Рисуем единый бесшовный эллиптический виньеточный градиент на весь экран
+        canvas.drawRect(0, 0, w, h, vignettePaint);
 
-        float availLeft = 0f;
+        // 2. Если открыто боковое окно — рисуем мягкий переходный градиент и заливаем область под окном
         float availRight = (customAvailRight > 0f) ? Math.min((float) w, customAvailRight) : (float) w;
-        float availTop = 0f;
-        float availBottom = (float) h;
-
-        // Если открыто боковое окно справа: глушим область под окном сплошным черным
         if (availRight < w) {
+            float fadeWidth = Math.max(28f * density, 48f);
+            float fadeStart = Math.max(0f, availRight - fadeWidth);
+
+            // Мягкое угасание света перед панелью без жесткой вертикальной линии
+            if (panelFadeGradient != null) {
+                canvas.drawRect(fadeStart, 0, availRight, h, panelFadePaint);
+            }
+
+            // Глубокий черный под самой боковой панелью
             canvas.drawRect(availRight, 0, w, h, solidBlackPaint);
-        }
-
-        // 1. Левая область рассеивания
-        if (vLeft > availLeft + 1f) {
-            canvas.drawRect(availLeft, vTop, vLeft, vBottom, leftPaint);
-        }
-
-        // 2. Правая область рассеивания
-        if (vRight < availRight - 1f) {
-            canvas.drawRect(vRight, vTop, availRight, vBottom, rightPaint);
-        }
-
-        // 3. Верхняя область рассеивания
-        if (vTop > availTop + 1f) {
-            canvas.drawRect(vLeft, availTop, vRight, vTop, topPaint);
-        }
-
-        // 4. Нижняя область рассеивания
-        if (vBottom < availBottom - 1f) {
-            canvas.drawRect(vLeft, vBottom, vRight, availBottom, bottomPaint);
-        }
-
-        // 5. Угловые области (радиальное рассеивание из углов видеокарты)
-        if (vLeft > availLeft + 1f && vTop > availTop + 1f) {
-            canvas.drawRect(availLeft, availTop, vLeft, vTop, cornerTopLeftPaint);
-        }
-        if (vRight < availRight - 1f && vTop > availTop + 1f) {
-            canvas.drawRect(vRight, availTop, availRight, vTop, cornerTopRightPaint);
-        }
-        if (vLeft > availLeft + 1f && vBottom < availBottom - 1f) {
-            canvas.drawRect(availLeft, vBottom, vLeft, availBottom, cornerBottomLeftPaint);
-        }
-        if (vRight < availRight - 1f && vBottom < availBottom - 1f) {
-            canvas.drawRect(vRight, vBottom, availRight, availBottom, cornerBottomRightPaint);
         }
     }
 }

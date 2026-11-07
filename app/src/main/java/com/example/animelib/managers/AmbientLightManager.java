@@ -9,6 +9,7 @@ import android.graphics.Shader;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
@@ -35,17 +36,27 @@ import com.example.animelib.ui.AmbientVignetteOverlayView;
 import com.example.animelib.util.MediaCacheManager;
 
 /**
- * Высокопроизводительный менеджер фоновой подсветки (Ambilight) на базе второго плеера.
+ * Высокопроизводительный менеджер фоновой подсветки (Ambilight 2.0) на базе второго ExoPlayer.
  *
  * Архитектурные принципы:
- * 1. Второй легковесный ExoPlayer: декодирует видеопоток с отключенным аудио и субтитрами,
- *    с ограничением разрешения для максимальной плавности и экономии батареи.
- * 2. Идеальная суб-кадровая синхронизация (двухконтурный микро-контроль скорости без заиканий деселектора).
- * 3. Физический выступ за границы основного плеера (выступает на ~22% и плавно рассеивается).
- * 4. Аппаратный GPU-блюр RenderEffect с насыщенностью цвета +45% и контрастом.
+ * 1. Второй легковесный ExoPlayer:
+ *    - Полностью отключены аудио и субтитры.
+ *    - Принудительное ограничение разрешения до 360p/480p и битрейта до 800 kbps (минимальная нагрузка на CPU/GPU).
+ *    - Кэширующий DataSourceFactory для повторного использования уже загруженных сегментов.
+ * 2. Устранение зависаний (Zero-Freeze Dynamic Drift Pitch):
+ *    - Запрещены циклические вызовы seekTo во время воспроизведения.
+ *    - Плавная подстройка скорости воспроизведения (0.92x - 1.08x) незаметно выравнивает кадры без сброса буфера.
+ *    - Жесткий seekTo выполняется только при явной перемотке пользователем либо при длительном рассинхроне (>2200 мс) с дебаунсом в 3.5 сек.
+ * 3. Кинематографичный вид (RenderEffect DECAL):
+ *    - Мягкий GPU-блюр 65px без CLAMP-артефактов на краях.
+ *    - Сбалансированная насыщенность 1.22x без выжигания деталей.
+ * 4. Бесшовная адаптация к боковым панелям и портретному режиму.
  */
 public class AmbientLightManager {
     private static final String TAG = "AmbientLightManager";
+
+    private static final long SYNC_INTERVAL_MS = 160L;
+    private static final long SEEK_DEBOUNCE_MS = 3500L;
 
     private final Context context;
     private final PlayerView mainPlayerView;
@@ -69,6 +80,8 @@ public class AmbientLightManager {
 
     private Player.Listener mainPlayerListener;
     private Player.Listener ambientPlayerListener;
+
+    private long lastSeekTimeMs = 0L;
 
     private float currentScale = 1.0f;
     private float currentTranslationX = 0f;
@@ -97,7 +110,7 @@ public class AmbientLightManager {
     }
 
     /**
-     * Стилизация слоя подсветки (аппаратный GPU-блюр, контраст и насыщенность)
+     * Стилизация слоя подсветки (аппаратный GPU-блюр, контраст и кинематографичная насыщенность)
      */
     private void setupAmbientViewStyle() {
         if (ambientContainer != null) {
@@ -113,20 +126,20 @@ public class AmbientLightManager {
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 try {
-                    // Мягкий широкий GPU-блюр для бесшовного облачного рассеивания
-                    RenderEffect blurEffect = RenderEffect.createBlurEffect(110f, 110f, Shader.TileMode.CLAMP);
+                    // Мягкий GPU-блюр без зажима краев в полосы
+                    RenderEffect blurEffect = RenderEffect.createBlurEffect(65f, 65f, Shader.TileMode.DECAL);
 
-                    // Богатая насыщенность и легкий подъем контраста для сочной подсветки
+                    // Кинематографичная насыщенность 1.22x и подъем контраста 1.05x
                     ColorMatrix colorMatrix = new ColorMatrix();
-                    colorMatrix.setSaturation(1.45f);
+                    colorMatrix.setSaturation(1.22f);
 
-                    ColorMatrix scaleMatrix = new ColorMatrix(new float[]{
-                            1.15f, 0,     0,     0, 5f,
-                            0,     1.15f, 0,     0, 5f,
-                            0,     0,     1.15f, 0, 5f,
-                            0,     0,     0,     1, 0
+                    ColorMatrix contrastMatrix = new ColorMatrix(new float[]{
+                            1.05f, 0f,    0f,    0f, 0f,
+                            0f,    1.05f, 0f,    0f, 0f,
+                            0f,    0f,    1.05f, 0f, 0f,
+                            0f,    0f,    0f,    1f, 0f
                     });
-                    colorMatrix.postConcat(scaleMatrix);
+                    colorMatrix.postConcat(contrastMatrix);
 
                     RenderEffect colorEffect = RenderEffect.createColorFilterEffect(new ColorMatrixColorFilter(colorMatrix));
                     RenderEffect combinedEffect = RenderEffect.createChainEffect(blurEffect, colorEffect);
@@ -135,8 +148,12 @@ public class AmbientLightManager {
                     Log.e(TAG, "Failed to apply RenderEffect blur to ambientPlayerView", e);
                 }
             } else {
-                ambientPlayerView.setAlpha(0.92f);
+                ambientPlayerView.setAlpha(0.88f);
             }
+        }
+
+        if (ambientVignetteOverlay != null) {
+            ambientVignetteOverlay.setVisibility(View.VISIBLE);
         }
     }
 
@@ -159,14 +176,17 @@ public class AmbientLightManager {
         }
 
         this.mainPlayer = mainPlayer;
-        if (mediaItem != null) this.currentMediaItem = mediaItem;
-        if (videoUrl != null) this.currentVideoUrl = videoUrl;
-
-        this.isErrorState = false;
-        this.isPrepared = false;
+        if (mediaItem != null) {
+            this.currentMediaItem = mediaItem;
+        }
+        if (videoUrl != null && !videoUrl.isEmpty()) {
+            this.currentVideoUrl = videoUrl;
+        }
 
         if (mainPlayer == null) {
-            releaseAmbientPlayer();
+            pauseAmbientPlayer();
+            stopSyncLoop();
+            hideAmbientContainer(true);
             return;
         }
 
@@ -183,6 +203,7 @@ public class AmbientLightManager {
         this.isEnabled = enabled;
         mainHandler.post(() -> {
             if (enabled) {
+                isErrorState = false;
                 if (!isSuspended && !isFrozen) {
                     showAmbientContainer(true);
                     ensureAmbientPlayerInitialized();
@@ -190,7 +211,8 @@ public class AmbientLightManager {
                 }
             } else {
                 hideAmbientContainer(true);
-                releaseAmbientPlayer();
+                pauseAmbientPlayer();
+                stopSyncLoop();
             }
         });
     }
@@ -241,16 +263,21 @@ public class AmbientLightManager {
     }
 
     /**
-     * Создает и конфигурирует второй плеер подсветки
+     * Создает и конфигурирует второй легковесный плеер подсветки
      */
     private void ensureAmbientPlayerInitialized() {
         if (!isEnabled || mainPlayer == null || isErrorState || isSuspended || ambientPlayerView == null) return;
 
         if (ambientPlayer == null) {
             try {
-                // Быстрый легковесный LoadControl с малым буфером для отзывчивости
+                // Стабильный комфортный LoadControl с достаточным буфером для исключения голодания HLS
                 DefaultLoadControl ambientLoadControl = new DefaultLoadControl.Builder()
-                        .setBufferDurationsMs(1_000, 3_000, 250, 500)
+                        .setBufferDurationsMs(
+                                3_000,   // minBufferMs (удерживаем 3 сек)
+                                10_000,  // maxBufferMs (до 10 сек)
+                                500,     // bufferForPlaybackMs
+                                1_000    // bufferForPlaybackAfterRebufferMs
+                        )
                         .setPrioritizeTimeOverSizeThresholds(true)
                         .build();
 
@@ -266,12 +293,14 @@ public class AmbientLightManager {
 
                 // Отключаем звук, аудио-декодер и субтитры для нулевой нагрузки на аудиосистему
                 ambientPlayer.setVolume(0f);
+
+                // Принудительно выбираем 360p/480p с битрейтом до 800 kbps (идеально для размытого Ambilight)
                 TrackSelectionParameters parameters = ambientPlayer.getTrackSelectionParameters()
                         .buildUpon()
                         .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                        .setMaxVideoSize(960, 540) // Оптимально для размытой подсветки: четкие градиенты без лишней нагрузки
-                        .setMaxVideoBitrate(1_500_000)
+                        .setMaxVideoSize(640, 360)
+                        .setMaxVideoBitrate(800_000)
                         .build();
                 ambientPlayer.setTrackSelectionParameters(parameters);
 
@@ -304,6 +333,8 @@ public class AmbientLightManager {
                 ambientPlayer.prepare();
                 ambientPlayer.setPlaybackParameters(mainPlayer.getPlaybackParameters());
                 ambientPlayer.seekTo(mainPlayer.getCurrentPosition());
+                lastSeekTimeMs = SystemClock.uptimeMillis();
+
                 if (mainPlayer.isPlaying()) {
                     ambientPlayer.play();
                     startSyncLoop();
@@ -327,10 +358,11 @@ public class AmbientLightManager {
     }
 
     /**
-     * Высокоточный непрерывный синхронизатор плееров:
-     * - При рассинхроне < 20мс: попиксельная кадровая точность, стандартная скорость.
-     * - При рассинхроне 20-350мс: микро-подгонка скорости на +/-5% без прерываний и заиканий видеодекодера.
-     * - При рассинхроне > 350мс: мгновенный seek.
+     * Синхронизатор без зависаний (Zero-Freeze Dynamic Drift Pitch):
+     * - При рассинхроне < 30 мс: идеальное совпадение, стандартная скорость.
+     * - При рассинхроне 30-500 мс: микро-подгонка скорости на +/-5% без сброса буфера.
+     * - При рассинхроне 500-2000 мс: ускоренная подгонка на +/-12% без заиканий декодера.
+     * - При рассинхроне > 2200 мс: безопасный seek с дебаунсом не чаще 1 раза в 3.5 сек.
      */
     private final Runnable syncRunnable = new Runnable() {
         @Override
@@ -355,19 +387,29 @@ public class AmbientLightManager {
                 long ambPos = ambientPlayer.getCurrentPosition();
                 long driftMs = ambPos - mainPos; // >0 если подсветка опережает, <0 если отстает
                 float baseSpeed = mainPlayer.getPlaybackParameters().speed;
+                long now = SystemClock.uptimeMillis();
 
-                if (Math.abs(driftMs) > 350) {
-                    // Крупный сдвиг (прыжок по таймлайну): прямой seek
-                    ambientPlayer.seekTo(mainPos);
-                    ambientPlayer.setPlaybackSpeed(baseSpeed);
-                } else if (driftMs < -20) {
-                    // Подсветка чуть отстает: плавно ускоряем на +5% для незаметного нагона
+                if (Math.abs(driftMs) > 2200) {
+                    // Крупный рассинхрон: безопасный seek с ограничением частоты
+                    if (now - lastSeekTimeMs > SEEK_DEBOUNCE_MS) {
+                        ambientPlayer.seekTo(mainPos);
+                        ambientPlayer.setPlaybackSpeed(baseSpeed);
+                        lastSeekTimeMs = now;
+                    }
+                } else if (driftMs < -500) {
+                    // Подсветка ощутимо отстает: плавно нагоняем на +12%
+                    ambientPlayer.setPlaybackSpeed(baseSpeed * 1.12f);
+                } else if (driftMs < -30) {
+                    // Подсветка чуть отстает: плавно нагоняем на +5%
                     ambientPlayer.setPlaybackSpeed(baseSpeed * 1.05f);
-                } else if (driftMs > 20) {
+                } else if (driftMs > 500) {
+                    // Подсветка ощутимо опережает: плавно притормаживаем на -12%
+                    ambientPlayer.setPlaybackSpeed(baseSpeed * 0.88f);
+                } else if (driftMs > 30) {
                     // Подсветка чуть опережает: плавно притормаживаем на -5%
                     ambientPlayer.setPlaybackSpeed(baseSpeed * 0.95f);
                 } else {
-                    // Кадровая синхронизация идеальна (в пределах 20мс)
+                    // Синхронизация точна (в пределах 30 мс)
                     if (ambientPlayer.getPlaybackParameters().speed != baseSpeed) {
                         ambientPlayer.setPlaybackSpeed(baseSpeed);
                     }
@@ -377,7 +419,7 @@ public class AmbientLightManager {
             }
 
             if (isEnabled && !isSuspended && !isFrozen && mainPlayer != null && mainPlayer.isPlaying()) {
-                mainHandler.postDelayed(this, 140);
+                mainHandler.postDelayed(this, SYNC_INTERVAL_MS);
             }
         }
     };
@@ -396,15 +438,20 @@ public class AmbientLightManager {
                     if (isPlaying) {
                         long mainPos = mainPlayer.getCurrentPosition();
                         long ambPos = ambientPlayer.getCurrentPosition();
-                        if (Math.abs(mainPos - ambPos) > 40) {
+                        if (Math.abs(mainPos - ambPos) > 300) {
                             ambientPlayer.seekTo(mainPos);
+                            lastSeekTimeMs = SystemClock.uptimeMillis();
                         }
                         ambientPlayer.setPlaybackSpeed(mainPlayer.getPlaybackParameters().speed);
                         ambientPlayer.play();
                         startSyncLoop();
                     } else {
                         ambientPlayer.pause();
-                        ambientPlayer.seekTo(mainPlayer.getCurrentPosition());
+                        long mainPos = mainPlayer.getCurrentPosition();
+                        long ambPos = ambientPlayer.getCurrentPosition();
+                        if (Math.abs(mainPos - ambPos) > 80) {
+                            ambientPlayer.seekTo(mainPos);
+                        }
                         stopSyncLoop();
                     }
                 }
@@ -420,8 +467,9 @@ public class AmbientLightManager {
                         if (mainPlayer.getPlayWhenReady()) {
                             long mainPos = mainPlayer.getCurrentPosition();
                             long ambPos = ambientPlayer.getCurrentPosition();
-                            if (Math.abs(mainPos - ambPos) > 40) {
+                            if (Math.abs(mainPos - ambPos) > 300) {
                                 ambientPlayer.seekTo(mainPos);
+                                lastSeekTimeMs = SystemClock.uptimeMillis();
                             }
                             ambientPlayer.setPlaybackSpeed(mainPlayer.getPlaybackParameters().speed);
                             ambientPlayer.play();
@@ -447,6 +495,7 @@ public class AmbientLightManager {
                 if (!isEnabled || isSuspended || isFrozen) return;
                 if (ambientPlayer != null && mainPlayer != null) {
                     ambientPlayer.seekTo(mainPlayer.getCurrentPosition());
+                    lastSeekTimeMs = SystemClock.uptimeMillis();
                     if (mainPlayer.isPlaying()) {
                         ambientPlayer.play();
                         startSyncLoop();
@@ -459,8 +508,11 @@ public class AmbientLightManager {
             public void onPositionDiscontinuity(@NonNull Player.PositionInfo oldPosition, @NonNull Player.PositionInfo newPosition, int reason) {
                 if (!isEnabled || isSuspended || isFrozen) return;
                 if (ambientPlayer != null) {
-                    ambientPlayer.seekTo(newPosition.positionMs);
-                    ambientPlayer.setPlaybackSpeed(mainPlayer.getPlaybackParameters().speed);
+                    if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                        ambientPlayer.seekTo(newPosition.positionMs);
+                        ambientPlayer.setPlaybackSpeed(mainPlayer.getPlaybackParameters().speed);
+                        lastSeekTimeMs = SystemClock.uptimeMillis();
+                    }
                 }
             }
 
@@ -484,11 +536,19 @@ public class AmbientLightManager {
 
         ambientPlayerListener = new Player.Listener() {
             @Override
-            public void onPlayerError(PlaybackException error) {
+            public void onPlayerError(@NonNull PlaybackException error) {
                 Log.w(TAG, "Secondary ambient player error: " + error.getMessage());
                 isErrorState = true;
                 pauseAmbientPlayer();
                 stopSyncLoop();
+
+                // Мягкое восстановление фонового плеера через 2.5 сек, если основной плеер продолжает играть
+                mainHandler.postDelayed(() -> {
+                    if (isEnabled && !isSuspended && !isFrozen && mainPlayer != null && mainPlayer.isPlaying()) {
+                        isErrorState = false;
+                        prepareAmbientMedia();
+                    }
+                }, 2500);
             }
         };
 
@@ -520,8 +580,8 @@ public class AmbientLightManager {
             if (!isPortrait) {
                 float fullVideoW = Math.min((float) sw, (float) sh * aspect);
                 float fullVideoH = Math.min((float) sh, (float) sw / aspect);
-                float left = (sw - fullVideoW) / 2f;
-                float top = (sh - fullVideoH) / 2f;
+                float left = (sw - fullVideoW) * 0.5f;
+                float top = (sh - fullVideoH) * 0.5f;
                 ambientVignetteOverlay.setVideoBounds(left, top, left + fullVideoW, top + fullVideoH);
             }
         }
@@ -531,7 +591,7 @@ public class AmbientLightManager {
 
     /**
      * Обновляет трансформацию плеера подсветки:
-     * Выступает на 22% за границы основного видео и точно следует за карточкой плеера
+     * Выступает на 18% за границы основного видео и строго следует за карточкой плеера
      */
     public void updateTransform(float scale, float translationX, float translationY, boolean isCropped) {
         this.currentScale = scale;
@@ -554,7 +614,7 @@ public class AmbientLightManager {
             // В портретном режиме видеоплеер расположен вверху экрана
             int targetH = viewW * 9 / 16;
             if (mainPlayer != null && mainPlayer.getVideoSize().height > 0) {
-                float aspect = (float) mainPlayer.getVideoSize().width / mainPlayer.getVideoSize().height;
+                float aspect = (float) mainPlayer.getVideoSize().width / (float) mainPlayer.getVideoSize().height;
                 targetH = (int) (viewW / aspect);
             }
 
@@ -569,8 +629,8 @@ public class AmbientLightManager {
             }
 
             float ambientScale = 1.15f;
-            float extraX = (viewW * (ambientScale - 1f)) / 2f;
-            float extraY = (targetH * (ambientScale - 1f)) / 2f;
+            float extraX = (viewW * (ambientScale - 1f)) * 0.5f;
+            float extraY = (targetH * (ambientScale - 1f)) * 0.5f;
 
             ambientPlayerView.setPivotX(0f);
             ambientPlayerView.setPivotY(0f);
@@ -579,7 +639,7 @@ public class AmbientLightManager {
             ambientPlayerView.setTranslationX(-extraX);
             ambientPlayerView.setTranslationY(-extraY);
         } else {
-            // В ландшафтном режиме плеер занимает контейнер и следует за анимациями боковых панелей
+            // В ландшафтном режиме плеер следует за анимациями боковых панелей
             ViewGroup.LayoutParams lp = ambientPlayerView.getLayoutParams();
             if (lp != null && (lp.width != ViewGroup.LayoutParams.MATCH_PARENT || lp.height != ViewGroup.LayoutParams.MATCH_PARENT)) {
                 lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
@@ -590,18 +650,17 @@ public class AmbientLightManager {
                 ambientPlayerView.setLayoutParams(lp);
             }
 
-            // Масштаб с аккуратным выступом на 15% относительно основного плеера
-            float ambientScale = scale * 1.15f;
-            float extraX = (viewW * (ambientScale - scale)) / 2f;
-            float extraY = (viewH * (ambientScale - scale)) / 2f;
+            // Масштаб с органичным выступом на 18% относительно основного плеера
+            float ambientScale = scale * 1.18f;
+            float extraX = (viewW * (ambientScale - scale)) * 0.5f;
+            float extraY = (viewH * (ambientScale - scale)) * 0.5f;
 
-            // Точка привязки (0, 0) строго синхронизирована с playerContainer
             ambientPlayerView.setPivotX(0f);
             ambientPlayerView.setPivotY(0f);
             ambientPlayerView.setScaleX(ambientScale);
             ambientPlayerView.setScaleY(ambientScale);
 
-            // Смещение с компенсацией выступа: идеально ровно по центру под playerContainer
+            // Идеальное центрирование под playerContainer
             ambientPlayerView.setTranslationX(translationX - extraX);
             ambientPlayerView.setTranslationY(translationY - extraY);
         }
@@ -626,7 +685,7 @@ public class AmbientLightManager {
         if (animate) {
             ambientContainer.animate()
                     .alpha(1.0f)
-                    .setDuration(250)
+                    .setDuration(280)
                     .start();
         } else {
             ambientContainer.setAlpha(1.0f);
@@ -638,7 +697,7 @@ public class AmbientLightManager {
         if (animate) {
             ambientContainer.animate()
                     .alpha(0f)
-                    .setDuration(200)
+                    .setDuration(220)
                     .withEndAction(() -> ambientContainer.setVisibility(View.GONE))
                     .start();
         } else {
@@ -672,13 +731,15 @@ public class AmbientLightManager {
                 }
                 ambientPlayer.stop();
                 ambientPlayer.release();
-            } catch (Exception e) {
-                Log.e(TAG, "Error releasing ambientPlayer", e);
+            } catch (Exception ignored) {
             }
             ambientPlayer = null;
         }
+
+        if (ambientPlayerView != null) {
+            ambientPlayerView.setPlayer(null);
+        }
         isPrepared = false;
-        isErrorState = false;
     }
 
     public void cleanup() {
