@@ -639,30 +639,51 @@ public class AmbientLightManager {
             ambientPlayerView.setTranslationX(-extraX);
             ambientPlayerView.setTranslationY(-extraY);
         } else {
-            // В ландшафтном режиме плеер следует за анимациями боковых панелей
+            // В ландшафтном режиме задаем размеры плеера подсветки равными точным размерам видеокадра
+            float aspect = 16f / 9f;
+            if (mainPlayer != null && mainPlayer.getVideoSize().width > 0 && mainPlayer.getVideoSize().height > 0) {
+                aspect = (float) mainPlayer.getVideoSize().width / (float) mainPlayer.getVideoSize().height;
+            }
+
+            int sw = mainPlayerView.getWidth();
+            int sh = mainPlayerView.getHeight();
+            if (sw <= 0 || sh <= 0) {
+                sw = context.getResources().getDisplayMetrics().widthPixels;
+                sh = context.getResources().getDisplayMetrics().heightPixels;
+            }
+
+            float fullVideoW = Math.min((float) sw, (float) sh * aspect);
+            float fullVideoH = Math.min((float) sh, (float) sw / aspect);
+
+            int targetW = Math.max(1, Math.round(fullVideoW));
+            int targetH = Math.max(1, Math.round(fullVideoH));
+
             ViewGroup.LayoutParams lp = ambientPlayerView.getLayoutParams();
-            if (lp != null && (lp.width != ViewGroup.LayoutParams.MATCH_PARENT || lp.height != ViewGroup.LayoutParams.MATCH_PARENT)) {
-                lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
-                lp.height = ViewGroup.LayoutParams.MATCH_PARENT;
+            if (lp != null && (lp.width != targetW || lp.height != targetH)) {
+                lp.width = targetW;
+                lp.height = targetH;
                 if (lp instanceof FrameLayout.LayoutParams) {
                     ((FrameLayout.LayoutParams) lp).gravity = Gravity.TOP | Gravity.START;
                 }
                 ambientPlayerView.setLayoutParams(lp);
             }
 
-            // Масштаб с органичным выступом на 18% относительно основного плеера
-            float ambientScale = scale * 1.18f;
-            float extraX = (viewW * (ambientScale - scale)) * 0.5f;
-            float extraY = (viewH * (ambientScale - scale)) * 0.5f;
+            float videoLeft = (sw - fullVideoW) * 0.5f;
+            float videoTop = (sh - fullVideoH) * 0.5f;
+
+            // Масштаб с ровным выступом на +20% относительно основного видео
+            float ambientScale = scale * 1.20f;
+            float extraX = (targetW * (ambientScale - scale)) * 0.5f;
+            float extraY = (targetH * (ambientScale - scale)) * 0.5f;
 
             ambientPlayerView.setPivotX(0f);
             ambientPlayerView.setPivotY(0f);
             ambientPlayerView.setScaleX(ambientScale);
             ambientPlayerView.setScaleY(ambientScale);
 
-            // Идеальное центрирование под playerContainer
-            ambientPlayerView.setTranslationX(translationX - extraX);
-            ambientPlayerView.setTranslationY(translationY - extraY);
+            // Точное центрирование плеера подсветки строго под карточкой видео
+            ambientPlayerView.setTranslationX(translationX + videoLeft * scale - extraX);
+            ambientPlayerView.setTranslationY(translationY + videoTop * scale - extraY);
         }
     }
 
