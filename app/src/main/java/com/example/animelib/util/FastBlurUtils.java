@@ -55,16 +55,17 @@ public class FastBlurUtils {
 
         this.stack = new int[div][3];
 
-        // Усиленное полупрозрачное затемнение боковых краев (1.0 в центре до 0.10 у внешнего края)
+        // Глубокое плавное затемнение боковых краев (1.0 около видеокадра до 0.0 у внешних границ экрана)
         this.edgeAlphaTable = new float[wh];
-        float fadeMarginX = Math.max(1f, width * 0.30f);
+        float fadeMarginX = Math.max(1f, width * 0.38f);
 
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 float distX = Math.min(x, width - 1 - x) / fadeMarginX;
                 distX = Math.max(0.0f, Math.min(1.0f, distX));
 
-                float alphaFactor = 0.10f + 0.90f * (float) Math.sin(distX * Math.PI * 0.5);
+                float sinVal = (float) Math.sin(distX * Math.PI * 0.5);
+                float alphaFactor = sinVal * sinVal;
                 this.edgeAlphaTable[y * width + x] = Math.max(0.0f, Math.min(1.0f, alphaFactor));
             }
         }
