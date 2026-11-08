@@ -2448,6 +2448,55 @@ public class ApiService {
     }
 
     /**
+     * Результат синхронной загрузки страницы закладок
+     */
+    public static class BookmarksPageSyncResult {
+        public final boolean success;
+        public final boolean rateLimited;
+        public final int httpCode;
+        public final BookmarksListResponse response;
+        public final String message;
+
+        public BookmarksPageSyncResult(boolean success, boolean rateLimited, int httpCode, BookmarksListResponse response, String message) {
+            this.success = success;
+            this.rateLimited = rateLimited;
+            this.httpCode = httpCode;
+            this.response = response;
+            this.message = message;
+        }
+    }
+
+    /**
+     * Синхронная загрузка страницы закладок со статусом 24 для проверки уже добавленных тайтлов
+     */
+    public BookmarksPageSyncResult fetchBookmarksPageSync(int page, int status, String userId) {
+        try {
+            String apiUrl = "https://hapi.hentaicdn.org/api/bookmarks?status=" + status
+                    + "&user_id=" + (userId != null ? userId.trim() : "")
+                    + "&sort_by=name&sort_type=desc&type_id=&genres_soft_search=0&tags_soft_search=0&page=" + page;
+
+            Request request = buildApiRequest(apiUrl).build();
+
+            try (Response response = httpClient.newCall(request).execute()) {
+                int code = response.code();
+                String body = response.body() != null ? response.body().string() : "";
+                if (response.isSuccessful()) {
+                    BookmarksListResponse listResponse = gson.fromJson(body, BookmarksListResponse.class);
+                    return new BookmarksPageSyncResult(true, false, code, listResponse, null);
+                } else if (code == 429) {
+                    return new BookmarksPageSyncResult(false, true, 429, null, "Слишком много запросов (429 Rate Limit)");
+                } else {
+                    return new BookmarksPageSyncResult(false, false, code, null, "HTTP " + code);
+                }
+            }
+        } catch (IOException e) {
+            return new BookmarksPageSyncResult(false, false, 0, null, "Ошибка сети: " + e.getMessage());
+        } catch (Exception e) {
+            return new BookmarksPageSyncResult(false, false, 0, null, "Ошибка: " + e.getMessage());
+        }
+    }
+
+    /**
      * Создает JSON объект для запроса добавления закладки
      */
     private com.google.gson.JsonObject createBookmarkRequestBody(String mediaSlug, int episodeId, int teamId, 

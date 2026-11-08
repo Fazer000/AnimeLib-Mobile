@@ -51,6 +51,7 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
     private LinearLayout btnSelectFile;
     private LinearLayout layoutImportStats;
     private TextView tvStatSuccess;
+    private TextView tvStatSkipped;
     private TextView tvStatNotFound;
     private TextView tvStatErrors;
     private TextView tvImportProgressFraction;
@@ -60,6 +61,7 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
 
     private List<AnixartParser.AnixartEntry> pendingEntries = new ArrayList<>();
     private int currentSuccess = 0;
+    private int currentSkipped = 0;
     private int currentNotFound = 0;
     private int currentErrors = 0;
 
@@ -96,6 +98,7 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
 
         layoutImportStats = view.findViewById(R.id.layoutImportStats);
         tvStatSuccess = view.findViewById(R.id.tvStatSuccess);
+        tvStatSkipped = view.findViewById(R.id.tvStatSkipped);
         tvStatNotFound = view.findViewById(R.id.tvStatNotFound);
         tvStatErrors = view.findViewById(R.id.tvStatErrors);
         tvImportProgressFraction = view.findViewById(R.id.tvImportProgressFraction);
@@ -201,6 +204,7 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
         }
 
         currentSuccess = 0;
+        currentSkipped = 0;
         currentNotFound = 0;
         currentErrors = 0;
 
@@ -226,6 +230,8 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
                 }
                 if (item.status == AnixartImportManager.ItemResultStatus.SUCCESS) {
                     currentSuccess++;
+                } else if (item.status == AnixartImportManager.ItemResultStatus.ALREADY_EXISTS) {
+                    currentSkipped++;
                 } else if (item.status == AnixartImportManager.ItemResultStatus.NOT_FOUND) {
                     currentNotFound++;
                 } else if (item.status == AnixartImportManager.ItemResultStatus.ERROR) {
@@ -242,7 +248,7 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
             }
 
             @Override
-            public void onFinished(int successCount, int notFoundCount, int errorCount, boolean cancelled) {
+            public void onFinished(int successCount, int alreadyExistsCount, int notFoundCount, int errorCount, boolean cancelled) {
                 setCancelable(true);
                 setCanceledOnTouchOutside(true);
 
@@ -251,14 +257,14 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
 
                 if (cancelled) {
                     if (tvImportStatusLog != null) {
-                        tvImportStatusLog.setText("Импорт остановлен пользователем. Добавлено: " + successCount);
+                        tvImportStatusLog.setText("Импорт остановлен пользователем. Добавлено: " + successCount + ", уже в списке: " + alreadyExistsCount);
                     }
                     CustomToast.showWarning(getContext(), "Импорт остановлен");
                 } else {
                     if (tvImportStatusLog != null) {
-                        tvImportStatusLog.setText("Импорт завершен! Успешно: " + successCount + ", не найдено: " + notFoundCount + ", ошибок: " + errorCount);
+                        tvImportStatusLog.setText("Импорт завершен! Добавлено: " + successCount + ", уже в списке: " + alreadyExistsCount + ", не найдено: " + notFoundCount + ", ошибок: " + errorCount);
                     }
-                    CustomToast.showSuccess(getContext(), "Импорт завершен: " + successCount + " тайтлов добавлено");
+                    CustomToast.showSuccess(getContext(), "Импорт завершен: " + successCount + " добавлено, " + alreadyExistsCount + " пропущено");
                 }
             }
         });
@@ -298,7 +304,8 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
     }
 
     private void updateStatsViews(int current, int total) {
-        if (tvStatSuccess != null) tvStatSuccess.setText("Успешно: " + currentSuccess);
+        if (tvStatSuccess != null) tvStatSuccess.setText("Добавлено: " + currentSuccess);
+        if (tvStatSkipped != null) tvStatSkipped.setText("Уже в списке: " + currentSkipped);
         if (tvStatNotFound != null) tvStatNotFound.setText("Не найдено: " + currentNotFound);
         if (tvStatErrors != null) tvStatErrors.setText("Ошибки: " + currentErrors);
         if (tvImportProgressFraction != null) {

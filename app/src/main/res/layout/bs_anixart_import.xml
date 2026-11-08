@@ -217,8 +217,18 @@
                         android:id="@+id/tvStatSuccess"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Успешно: 0"
+                        android:text="Добавлено: 0"
                         android:textColor="#3cce7b"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans_semibold" />
+
+                    <TextView
+                        android:id="@+id/tvStatSkipped"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:text="Уже в списке: 0"
+                        android:textColor="#2196f3"
                         android:textSize="12.5sp"
                         android:fontFamily="@font/open_sans_semibold" />
 
@@ -226,7 +236,7 @@
                         android:id="@+id/tvStatNotFound"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="12dp"
+                        android:layout_marginStart="10dp"
                         android:text="Не найдено: 0"
                         android:textColor="#ff9b40"
                         android:textSize="12.5sp"
@@ -236,7 +246,7 @@
                         android:id="@+id/tvStatErrors"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="12dp"
+                        android:layout_marginStart="10dp"
                         android:text="Ошибки: 0"
                         android:textColor="#f3382a"
                         android:textSize="12.5sp"

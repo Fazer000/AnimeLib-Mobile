@@ -8,11 +8,15 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 import com.example.animelib.api.ApiService;
+import com.example.animelib.models.BookmarksListResponse;
 import com.example.animelib.models.SearchResponse;
 import com.example.animelib.util.AnixartParser;
 
-import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -20,10 +24,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Менеджер очередей для импорта списка просмотренного из Anixart в AnimeLib (ID статуса 24).
  * Имеет встроенную защиту от 429 Too Many Requests:
- * - Базовая пауза между запросами (по умолчанию 900 мс)
+ * - Загрузка всех существующих закладок со статусом 24 для исключения уже добавленных по полю name
+ * - Базовая пауза между запросами (900 мс)
  * - Экспоненциальный откат (backoff) при 429: пауза 5с, 10с, 20с с авто-повтором
  * - Возможность отмены / паузы
- * - Оповещение UI о прогрессе (успешно, пропущено, не найдено, ошибка)
+ * - Оповещение UI о прогрессе (добавлено, пропущено/уже в списке, не найдено, ошибка)
  */
 public class AnixartImportManager {
 
@@ -37,6 +42,7 @@ public class AnixartImportManager {
         PENDING,
         PROCESSING,
         SUCCESS,
+        ALREADY_EXISTS,
         NOT_FOUND,
         ERROR,
         SKIPPED
@@ -57,7 +63,7 @@ public class AnixartImportManager {
     public interface ImportListener {
         void onProgress(int current, int total, ImportItemProgress item);
         void onLog(String message);
-        void onFinished(int successCount, int notFoundCount, int errorCount, boolean cancelled);
+        void onFinished(int successCount, int alreadyExistsCount, int notFoundCount, int errorCount, boolean cancelled);
     }
 
     private final ApiService apiService;
@@ -82,9 +88,21 @@ public class AnixartImportManager {
         }
     }
 
+    /**
+     * Нормализует название тайтла для надежного сравнения (удаляет знаки пунктуации, лишние пробелы, приводит к нижнему регистру)
+     */
+    public static String normalizeTitle(String title) {
+        if (title == null) return "";
+        return title.trim()
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[\"«»'’“”.,:;!?_\\-—/\\\\]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
     public void startImport(List<AnixartParser.AnixartEntry> entries, @NonNull ImportListener listener) {
         if (entries == null || entries.isEmpty()) {
-            listener.onFinished(0, 0, 0, false);
+            listener.onFinished(0, 0, 0, 0, false);
             return;
         }
 
@@ -98,12 +116,22 @@ public class AnixartImportManager {
         executor.execute(() -> {
             int total = entries.size();
             int successCount = 0;
+            int alreadyExistsCount = 0;
             int notFoundCount = 0;
             int errorCount = 0;
 
             postLog(listener, "Запуск импорта " + total + " тайтлов...");
 
             try {
+                // 1. Предварительная загрузка всех уже существующих закладок пользователя со статусом 24
+                Set<String> existingTitleNames = fetchAllExistingWatchedTitles(listener);
+                if (isCancelled.get()) {
+                    postLog(listener, "Импорт прерван пользователем.");
+                    return;
+                }
+
+                postLog(listener, "Загружено уже просмотренных тайтлов: " + existingTitleNames.size() + ". Начинаем проверку...");
+
                 for (int i = 0; i < total; i++) {
                     if (isCancelled.get()) {
                         postLog(listener, "Импорт прерван пользователем.");
@@ -116,9 +144,25 @@ public class AnixartImportManager {
                     postProgress(listener, i + 1, total, itemProgress);
 
                     String query = entry.getEffectiveTitle();
-                    postLog(listener, "[" + (i + 1) + "/" + total + "] Поиск: \"" + query + "\"");
+                    postLog(listener, "[" + (i + 1) + "/" + total + "] Проверка: \"" + query + "\"");
 
-                    // 1. Поиск аниме с защитой от 429
+                    // Быстрая проверка до сетевого запроса: вдруг в списке уже есть точно такое же название
+                    String normalizedEffective = normalizeTitle(entry.getEffectiveTitle());
+                    String normalizedPrimary = normalizeTitle(entry.getPrimaryTitle());
+                    String normalizedSearch = normalizeTitle(entry.getSearchTitle());
+
+                    if ((!normalizedEffective.isEmpty() && existingTitleNames.contains(normalizedEffective))
+                            || (!normalizedPrimary.isEmpty() && existingTitleNames.contains(normalizedPrimary))
+                            || (!normalizedSearch.isEmpty() && existingTitleNames.contains(normalizedSearch))) {
+                        itemProgress.status = ItemResultStatus.ALREADY_EXISTS;
+                        itemProgress.foundTitle = entry.getEffectiveTitle();
+                        alreadyExistsCount++;
+                        postProgress(listener, i + 1, total, itemProgress);
+                        postLog(listener, "ℹ️ Уже в списке «Просмотрено», пропускаем");
+                        continue;
+                    }
+
+                    // 2. Поиск аниме в AnimeLib API с защитой от 429
                     ApiService.SearchSyncResult searchResult = performSearchWithBackoff(query, listener);
                     if (isCancelled.get()) break;
 
@@ -158,26 +202,39 @@ public class AnixartImportManager {
                     // Берем первый результат
                     SearchResponse.AnimeSearchItem firstItem = searchItems.get(0);
                     String slug = firstItem.getSlug();
-                    String titleFound = firstItem.getRusName() != null && !firstItem.getRusName().isEmpty()
-                            ? firstItem.getRusName()
-                            : firstItem.getName();
+                    String titleName = firstItem.getName();
+                    String titleRus = firstItem.getRusName();
+                    String titleEng = firstItem.getEngName();
 
+                    String displayTitle = (titleRus != null && !titleRus.isEmpty()) ? titleRus : titleName;
                     itemProgress.foundSlug = slug;
-                    itemProgress.foundTitle = titleFound;
+                    itemProgress.foundTitle = displayTitle;
 
-                    postLog(listener, "Найдено: \"" + titleFound + "\" (" + slug + "). Добавление статуса Просмотрено (24)...");
+                    // 3. Проверка по полю name и другим полям найденного тайтла в уже имеющихся закладках
+                    if (isAlreadyInBookmarks(firstItem, existingTitleNames)) {
+                        itemProgress.status = ItemResultStatus.ALREADY_EXISTS;
+                        alreadyExistsCount++;
+                        postProgress(listener, i + 1, total, itemProgress);
+                        postLog(listener, "ℹ️ Тайтл \"" + displayTitle + "\" уже есть в списке просмотренного (name=" + titleName + "), пропускаем");
+                        sleepSafe(400);
+                        continue;
+                    }
+
+                    postLog(listener, "Найдено: \"" + displayTitle + "\" (" + slug + "). Добавление статуса Просмотрено (24)...");
 
                     // Пауза перед установкой статуса
                     sleepSafe(BASE_DELAY_MS);
                     if (isCancelled.get()) break;
 
-                    // 2. Отправка статуса 24 в закладки с защитой от 429
+                    // 4. Отправка статуса 24 в закладки с защитой от 429
                     ApiService.WatchStatusSyncResult statusResult = performStatusUpdateWithBackoff(slug, WATCHED_STATUS_ID, listener);
                     if (isCancelled.get()) break;
 
                     if (statusResult.success) {
                         itemProgress.status = ItemResultStatus.SUCCESS;
                         successCount++;
+                        // Добавляем тайтл в локальный сет, чтобы не дублировать, если в списке встретится повтор
+                        addTitleToExistingSet(existingTitleNames, titleName, titleRus, titleEng, slug);
                         postProgress(listener, i + 1, total, itemProgress);
                         postLog(listener, "✅ Успешно добавлен в «Просмотрено»");
                     } else {
@@ -198,11 +255,121 @@ public class AnixartImportManager {
                 boolean cancelled = isCancelled.get();
                 isRunning.set(false);
                 int finalSuccess = successCount;
+                int finalAlreadyExists = alreadyExistsCount;
                 int finalNotFound = notFoundCount;
                 int finalError = errorCount;
-                postFinished(listener, finalSuccess, finalNotFound, finalError, cancelled);
+                postFinished(listener, finalSuccess, finalAlreadyExists, finalNotFound, finalError, cancelled);
             }
         });
+    }
+
+    /**
+     * Проверяет, содержится ли найденный тайтл среди существующих закладок пользователя по полю name и другим идентификаторам
+     */
+    private boolean isAlreadyInBookmarks(SearchResponse.AnimeSearchItem item, Set<String> existingTitleNames) {
+        if (item == null || existingTitleNames == null || existingTitleNames.isEmpty()) return false;
+
+        if (item.getName() != null) {
+            String norm = normalizeTitle(item.getName());
+            if (!norm.isEmpty() && existingTitleNames.contains(norm)) return true;
+        }
+        if (item.getRusName() != null) {
+            String norm = normalizeTitle(item.getRusName());
+            if (!norm.isEmpty() && existingTitleNames.contains(norm)) return true;
+        }
+        if (item.getEngName() != null) {
+            String norm = normalizeTitle(item.getEngName());
+            if (!norm.isEmpty() && existingTitleNames.contains(norm)) return true;
+        }
+        if (item.getSlug() != null) {
+            String norm = normalizeTitle(item.getSlug());
+            if (!norm.isEmpty() && existingTitleNames.contains(norm)) return true;
+        }
+        return false;
+    }
+
+    private void addTitleToExistingSet(Set<String> set, String name, String rus, String eng, String slug) {
+        if (set == null) return;
+        if (name != null) set.add(normalizeTitle(name));
+        if (rus != null) set.add(normalizeTitle(rus));
+        if (eng != null) set.add(normalizeTitle(eng));
+        if (slug != null) set.add(normalizeTitle(slug));
+    }
+
+    /**
+     * Постранично загружает весь список закладок со статусом 24 (Просмотрено)
+     * Запрос: https://hapi.hentaicdn.org/api/bookmarks?status=24&user_id=<ID>&sort_by=name&sort_type=desc&type_id=&genres_soft_search=0&tags_soft_search=0&page=X
+     */
+    private Set<String> fetchAllExistingWatchedTitles(ImportListener listener) {
+        Set<String> titles = Collections.synchronizedSet(new HashSet<>());
+        String userId = apiService.getCurrentUserId();
+        if (userId == null || userId.trim().isEmpty()) {
+            postLog(listener, "Пользователь не авторизован или userId не найден. Проверка существующих закладок пропущена.");
+            return titles;
+        }
+
+        postLog(listener, "Получение существующих закладок со статусом «Просмотрено» (24)...");
+        int currentPage = 1;
+
+        while (!isCancelled.get()) {
+            ApiService.BookmarksPageSyncResult pageResult = fetchBookmarksPageWithBackoff(currentPage, WATCHED_STATUS_ID, userId, listener);
+            if (isCancelled.get()) break;
+
+            if (!pageResult.success || pageResult.response == null) {
+                postLog(listener, "⚠️ Не удалось загрузить страницу " + currentPage + " закладок: " + pageResult.message);
+                break;
+            }
+
+            BookmarksListResponse response = pageResult.response;
+            List<BookmarksListResponse.BookmarkItem> data = response.getData();
+            if (data == null || data.isEmpty()) {
+                break;
+            }
+
+            for (BookmarksListResponse.BookmarkItem item : data) {
+                if (item != null && item.getMedia() != null) {
+                    BookmarksListResponse.MediaData media = item.getMedia();
+                    addTitleToExistingSet(titles, media.getName(), media.getRusName(), media.getEngName(), media.getSlug());
+                }
+            }
+
+            postLog(listener, "Загружена страница " + currentPage + " закладок (всего в базе " + titles.size() + ")");
+
+            // Проверяем, есть ли следующая страница
+            boolean hasNext = false;
+            if (response.getLinks() != null && response.getLinks().getNext() != null && !response.getLinks().getNext().trim().isEmpty()) {
+                hasNext = true;
+            } else if (response.getMeta() != null && response.getMeta().isNextPageUrl()) {
+                hasNext = true;
+            }
+
+            if (!hasNext) {
+                break;
+            }
+
+            currentPage++;
+            sleepSafe(500); // Небольшая пауза между страницами
+        }
+
+        return titles;
+    }
+
+    private ApiService.BookmarksPageSyncResult fetchBookmarksPageWithBackoff(int page, int status, String userId, ImportListener listener) {
+        long currentBackoff = 4000L;
+        for (int attempt = 0; attempt < MAX_429_RETRIES; attempt++) {
+            if (isCancelled.get()) {
+                return new ApiService.BookmarksPageSyncResult(false, false, 0, null, "Отменено");
+            }
+            ApiService.BookmarksPageSyncResult res = apiService.fetchBookmarksPageSync(page, status, userId);
+            if (res.rateLimited) {
+                postLog(listener, "⏳ Лимит запросов (429) при загрузке закладок. Пауза " + (currentBackoff / 1000) + " сек...");
+                sleepSafe(currentBackoff);
+                currentBackoff = Math.min(currentBackoff * 2, 25000L);
+                continue;
+            }
+            return res;
+        }
+        return new ApiService.BookmarksPageSyncResult(false, true, 429, null, "Превышен лимит запросов (429)");
     }
 
     private ApiService.SearchSyncResult performSearchWithBackoff(String query, ImportListener listener) {
@@ -260,7 +427,7 @@ public class AnixartImportManager {
         mainHandler.post(() -> listener.onLog(message));
     }
 
-    private void postFinished(ImportListener listener, int success, int notFound, int error, boolean cancelled) {
-        mainHandler.post(() -> listener.onFinished(success, notFound, error, cancelled));
+    private void postFinished(ImportListener listener, int success, int alreadyExists, int notFound, int error, boolean cancelled) {
+        mainHandler.post(() -> listener.onFinished(success, alreadyExists, notFound, error, cancelled));
     }
 }
