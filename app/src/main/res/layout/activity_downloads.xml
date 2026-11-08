@@ -100,6 +100,35 @@
                 android:fontFamily="@font/open_sans" />
         </LinearLayout>
 
+        <LinearLayout
+            android:id="@+id/btnImportAnixart"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginStart="6dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="6dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?attr/selectableItemBackgroundBorderless">
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:src="@drawable/ic_file_upload"
+                app:tint="@color/primary_text_color"
+                android:contentDescription="Импорт из Anixart" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:text="Импорт"
+                android:textColor="@color/primary_text_color"
+                android:textSize="14sp"
+                android:fontFamily="@font/open_sans" />
+        </LinearLayout>
+
     </LinearLayout>
 
     <!-- Search Bar (Collapsible) -->

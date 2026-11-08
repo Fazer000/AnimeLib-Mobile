@@ -43,6 +43,7 @@ public class SearchFragment extends Fragment {
     private EditText searchInput;
     private ImageButton clearButton;
     private ImageButton closeButton;
+    private ImageButton btnImportAnixart;
     private TabLayout searchTabLayout;
     private RecyclerView searchResults;
     private LinearLayout emptyState;
@@ -56,6 +57,53 @@ public class SearchFragment extends Fragment {
     private Handler searchHandler;
     private Runnable searchRunnable;
     private String currentQuery = "";
+
+    private com.example.animelib.ui.AnixartImportBottomSheet anixartImportBottomSheet;
+
+    private final androidx.activity.result.ActivityResultLauncher<String> filePickerLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.GetContent(), uri -> {
+                if (uri != null && anixartImportBottomSheet != null) {
+                    String fileName = getFileNameFromUri(uri);
+                    anixartImportBottomSheet.onFileSelected(uri, fileName);
+                }
+            });
+
+    private String getFileNameFromUri(android.net.Uri uri) {
+        String name = "anixart_list.txt";
+        if (uri == null || getContext() == null) return name;
+        if ("content".equals(uri.getScheme())) {
+            try (android.database.Cursor cursor = requireContext().getContentResolver().query(uri, null, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int nameIdx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                    if (nameIdx >= 0) {
+                        name = cursor.getString(nameIdx);
+                    }
+                }
+            } catch (Exception ignored) {}
+        } else if ("file".equals(uri.getScheme())) {
+            name = uri.getLastPathSegment();
+        }
+        return name;
+    }
+
+    private void showAnixartImportBottomSheet() {
+        if (!isAdded() || getContext() == null) return;
+        if (anixartImportBottomSheet == null || !anixartImportBottomSheet.isShowing()) {
+            anixartImportBottomSheet = new com.example.animelib.ui.AnixartImportBottomSheet(requireContext());
+            anixartImportBottomSheet.setFilePickerRequester(() -> {
+                try {
+                    filePickerLauncher.launch("text/*");
+                } catch (Exception e) {
+                    try {
+                        filePickerLauncher.launch("*/*");
+                    } catch (Exception ex) {
+                        com.example.animelib.util.CustomToast.showWarning(getContext(), "Не удалось открыть выбор файла");
+                    }
+                }
+            });
+            anixartImportBottomSheet.show();
+        }
+    }
     
     @Nullable
     @Override
@@ -161,6 +209,7 @@ public class SearchFragment extends Fragment {
         searchInput = view.findViewById(R.id.searchInput);
         clearButton = view.findViewById(R.id.clearButton);
         closeButton = view.findViewById(R.id.closeButton);
+        btnImportAnixart = view.findViewById(R.id.btnImportAnixart);
         searchTabLayout = view.findViewById(R.id.searchTabLayout);
         searchResults = view.findViewById(R.id.searchResults);
         emptyState = view.findViewById(R.id.emptyState);
@@ -229,6 +278,10 @@ public class SearchFragment extends Fragment {
         
         // Close button inside alert
         closeButton.setOnClickListener(v -> dismissSearch());
+
+        if (btnImportAnixart != null) {
+            btnImportAnixart.setOnClickListener(v -> showAnixartImportBottomSheet());
+        }
         
         // Clear button
         clearButton.setOnClickListener(v -> {

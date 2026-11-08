@@ -87,4 +87,11 @@
     <string name="btn_reset">Сбросить</string>
     <string name="player_skip_opening">Пропуск опенинга</string>
     <string name="web_splash_loading_hint">Загрузка сайта…</string>
+    <string name="anixart_import_title">Импорт из Anixart</string>
+    <string name="anixart_import_subtitle">Импорт просмотренных тайтлов из txt файла</string>
+    <string name="anixart_import_select_file">Выбрать .txt файл</string>
+    <string name="anixart_import_start">Начать импорт</string>
+    <string name="anixart_import_stop">Остановить</string>
+    <string name="anixart_import_status_ready">Выберите текстовый файл со списком Anixart</string>
+    <string name="anixart_import_status_auth_required">Для импорта в закладки требуется авторизация</string>
 </resources>

@@ -2324,6 +2324,130 @@ public class ApiService {
     }
 
     /**
+     * Результат синхронного обновления статуса аниме в закладках
+     */
+    public static class WatchStatusSyncResult {
+        public final boolean success;
+        public final boolean rateLimited; // true если HTTP 429
+        public final int httpCode;
+        public final String message;
+
+        public WatchStatusSyncResult(boolean success, boolean rateLimited, int httpCode, String message) {
+            this.success = success;
+            this.rateLimited = rateLimited;
+            this.httpCode = httpCode;
+            this.message = message;
+        }
+    }
+
+    /**
+     * Результат синхронного поиска аниме
+     */
+    public static class SearchSyncResult {
+        public final boolean success;
+        public final boolean rateLimited;
+        public final int httpCode;
+        public final SearchResponse response;
+        public final String message;
+
+        public SearchSyncResult(boolean success, boolean rateLimited, int httpCode, SearchResponse response, String message) {
+            this.success = success;
+            this.rateLimited = rateLimited;
+            this.httpCode = httpCode;
+            this.response = response;
+            this.message = message;
+        }
+    }
+
+    /**
+     * Синхронный поиск аниме (для фоновых очередей импорта и батч-обработки)
+     */
+    public SearchSyncResult searchAnimeSync(String query) {
+        if (query == null || query.trim().isEmpty()) {
+            return new SearchSyncResult(false, false, 0, null, "Пустой поисковый запрос");
+        }
+        try {
+            String encodedQuery = java.net.URLEncoder.encode(query.trim(), "UTF-8");
+            String apiUrl = "https://api.cdnlibs.org/api/anime?fields[]=rate_avg&fields[]=rate&fields[]=releaseDate&q=" + encodedQuery;
+            Request request = buildSearchApiRequest(apiUrl).build();
+
+            try (Response response = httpClient.newCall(request).execute()) {
+                int code = response.code();
+                String body = response.body() != null ? response.body().string() : "";
+                if (response.isSuccessful()) {
+                    SearchResponse searchResponse = gson.fromJson(body, SearchResponse.class);
+                    return new SearchSyncResult(true, false, code, searchResponse, null);
+                } else if (code == 429) {
+                    return new SearchSyncResult(false, true, 429, null, "Слишком много запросов (429 Rate Limit)");
+                } else {
+                    return new SearchSyncResult(false, false, code, null, "HTTP " + code);
+                }
+            }
+        } catch (IOException e) {
+            return new SearchSyncResult(false, false, 0, null, "Ошибка сети: " + e.getMessage());
+        } catch (Exception e) {
+            return new SearchSyncResult(false, false, 0, null, "Ошибка: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Синхронное обновление статуса просмотра (для фоновых очередей)
+     */
+    public WatchStatusSyncResult updateWatchStatusSync(String mediaSlug, Object statusId) {
+        if (mediaSlug == null || mediaSlug.trim().isEmpty()) {
+            return new WatchStatusSyncResult(false, false, 0, "Слаг аниме не определен");
+        }
+        try {
+            com.google.gson.JsonObject requestBody = new com.google.gson.JsonObject();
+            requestBody.addProperty("media_type", "anime");
+            requestBody.addProperty("media_slug", mediaSlug.trim());
+
+            com.google.gson.JsonObject bookmark = new com.google.gson.JsonObject();
+            int statusVal = 21;
+            if (statusId instanceof Number) {
+                int parsed = ((Number) statusId).intValue();
+                if (parsed > 0) statusVal = parsed;
+            } else if (statusId instanceof String) {
+                try {
+                    int parsed = Integer.parseInt((String) statusId);
+                    if (parsed > 0) statusVal = parsed;
+                } catch (NumberFormatException ignored) {}
+            }
+            bookmark.addProperty("status", statusVal);
+            requestBody.add("bookmark", bookmark);
+            requestBody.add("meta", new com.google.gson.JsonObject());
+
+            String jsonString = gson.toJson(requestBody);
+            okhttp3.RequestBody body = okhttp3.RequestBody.create(
+                    jsonString,
+                    okhttp3.MediaType.get("application/json; charset=utf-8")
+            );
+
+            Request request = buildApiRequest("https://api.cdnlibs.org/api/bookmarks")
+                    .post(body)
+                    .build();
+
+            try (Response response = httpClient.newCall(request).execute()) {
+                int code = response.code();
+                String responseBody = response.body() != null ? response.body().string() : "";
+                if (response.isSuccessful()) {
+                    invalidateAnimeBookmarkCache(mediaSlug);
+                    return new WatchStatusSyncResult(true, false, code, "Статус обновлен");
+                } else if (code == 429) {
+                    return new WatchStatusSyncResult(false, true, 429, "Слишком много запросов (429 Rate Limit)");
+                } else {
+                    String serverMsg = extractServerErrorMessage(responseBody, code);
+                    return new WatchStatusSyncResult(false, false, code, serverMsg);
+                }
+            }
+        } catch (IOException e) {
+            return new WatchStatusSyncResult(false, false, 0, "Ошибка сети: " + e.getMessage());
+        } catch (Exception e) {
+            return new WatchStatusSyncResult(false, false, 0, "Ошибка: " + e.getMessage());
+        }
+    }
+
+    /**
      * Создает JSON объект для запроса добавления закладки
      */
     private com.google.gson.JsonObject createBookmarkRequestBody(String mediaSlug, int episodeId, int teamId, 

@@ -101,6 +101,52 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
     private final Map<String, Integer> animeEpisodeCountsMap = new ConcurrentHashMap<>();
 
     private String currentSortType = "date"; // "date", "name", "size"
+    private AnixartImportBottomSheet anixartImportBottomSheet;
+
+    private final androidx.activity.result.ActivityResultLauncher<String> filePickerLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.GetContent(), uri -> {
+                if (uri != null && anixartImportBottomSheet != null) {
+                    String fileName = getFileNameFromUri(uri);
+                    anixartImportBottomSheet.onFileSelected(uri, fileName);
+                }
+            });
+
+    private String getFileNameFromUri(android.net.Uri uri) {
+        String name = "anixart_list.txt";
+        if (uri == null) return name;
+        if ("content".equals(uri.getScheme())) {
+            try (android.database.Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int nameIdx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                    if (nameIdx >= 0) {
+                        name = cursor.getString(nameIdx);
+                    }
+                }
+            } catch (Exception ignored) {}
+        } else if ("file".equals(uri.getScheme())) {
+            name = uri.getLastPathSegment();
+        }
+        return name;
+    }
+
+    private void showAnixartImportBottomSheet() {
+        if (isFinishing() || isDestroyed()) return;
+        if (anixartImportBottomSheet == null || !anixartImportBottomSheet.isShowing()) {
+            anixartImportBottomSheet = new AnixartImportBottomSheet(this);
+            anixartImportBottomSheet.setFilePickerRequester(() -> {
+                try {
+                    filePickerLauncher.launch("text/*");
+                } catch (Exception e) {
+                    try {
+                        filePickerLauncher.launch("*/*");
+                    } catch (Exception ex) {
+                        CustomToast.showWarning(this, "Не удалось открыть выбор файла");
+                    }
+                }
+            });
+            anixartImportBottomSheet.show();
+        }
+    }
 
     public static void start(Context context) {
         Intent intent = new Intent(context, DownloadsActivity.class);
@@ -180,6 +226,12 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
         View btnSort = findViewById(R.id.btnSortDownloads);
         if (btnSort != null) {
             btnSort.setOnClickListener(v -> showSortOptionsPopup(btnSort));
+        }
+
+        // Anixart Import control
+        View btnImport = findViewById(R.id.btnImportAnixart);
+        if (btnImport != null) {
+            btnImport.setOnClickListener(v -> showAnixartImportBottomSheet());
         }
 
         // Initialize Queue section views
