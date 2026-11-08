@@ -1,16 +1,26 @@
 /**
  * Инъекция кнопки "Импорт из Anixart" ниже кнопки "Скачанное" в меню сайта.
+ * Сохраняет оригинальную структуру пункта меню и иконку слева, аналогично пункту "Скачанное".
  */
 (function() {
     function injectAnixartImportMenuItem() {
-        if (document.getElementById('app-anixart-import-item')) {
-            return;
+        var existing = document.getElementById('app-anixart-import-item');
+        if (existing) {
+            // Если иконка присутствует, повторно не создаем
+            var hasIcon = existing.querySelector('svg, img, i, [class*="icon"]');
+            if (hasIcon) {
+                return;
+            }
+            // Если иконки нет (старая версия), удаляем для пересоздания в правильном виде
+            if (existing.parentNode) {
+                existing.parentNode.removeChild(existing);
+            }
         }
 
         var downloadedEl = document.getElementById('app-downloaded-anime-item');
-        var anchorEl = downloadedEl;
+        var targetToClone = downloadedEl;
 
-        if (!anchorEl) {
+        if (!targetToClone) {
             var menuItems = document.querySelectorAll('.menu-item');
             for (var i = 0; i < menuItems.length; i++) {
                 var item = menuItems[i];
@@ -18,31 +28,45 @@
                 var text = (item.textContent || '').trim();
 
                 if (href.indexOf('/downloads') !== -1 || text.indexOf('Загрузки') !== -1 || text.indexOf('Скачанное') !== -1) {
-                    anchorEl = item;
+                    targetToClone = item;
                     break;
                 }
             }
         }
 
-        if (!anchorEl) {
+        if (!targetToClone) {
             return;
         }
 
-        var importItem = anchorEl.cloneNode(true);
+        // Клонируем в точности так же, как пункт "Скачанное", полностью сохраняя иконку слева
+        var importItem = targetToClone.cloneNode(true);
         importItem.id = 'app-anixart-import-item';
         importItem.setAttribute('href', 'javascript:void(0);');
 
+        // Меняем только текст, не затрагивая элементы иконки
         var textEl = importItem.querySelector('.menu-item__text');
         if (textEl) {
             textEl.textContent = 'Импорт из Anixart';
         } else {
-            importItem.textContent = 'Импорт из Anixart';
-        }
-
-        // Заменим иконку если внутри SVG
-        var svgEl = importItem.querySelector('svg');
-        if (svgEl) {
-            svgEl.innerHTML = '<path fill="currentColor" d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"/>';
+            var replaced = false;
+            for (var k = 0; k < importItem.childNodes.length; k++) {
+                var node = importItem.childNodes[k];
+                if (node.nodeType === 3 && node.textContent.trim().length > 0) {
+                    node.textContent = ' Импорт из Anixart';
+                    replaced = true;
+                    break;
+                }
+            }
+            if (!replaced) {
+                var spans = importItem.querySelectorAll('span');
+                for (var s = spans.length - 1; s >= 0; s--) {
+                    if (spans[s].children.length === 0 && spans[s].textContent.trim().length > 0) {
+                        spans[s].textContent = 'Импорт из Anixart';
+                        replaced = true;
+                        break;
+                    }
+                }
+            }
         }
 
         importItem.addEventListener('click', function(e) {
@@ -59,9 +83,10 @@
             }
         }, true);
 
-        if (anchorEl.parentNode) {
-            anchorEl.parentNode.insertBefore(importItem, anchorEl.nextSibling);
-            console.log('[AnimeLIB] Successfully injected "Импорт из Anixart" menu item below "Скачанное"');
+        var insertAfter = downloadedEl || targetToClone;
+        if (insertAfter.parentNode) {
+            insertAfter.parentNode.insertBefore(importItem, insertAfter.nextSibling);
+            console.log('[AnimeLIB] Successfully injected "Импорт из Anixart" menu item with icon in the same style as "Скачанное"');
         }
     }
 
@@ -72,7 +97,11 @@
 
         var rafPending = false;
         var scheduleInject = function() {
-            if (rafPending || document.getElementById('app-anixart-import-item')) return;
+            if (rafPending) return;
+            var cur = document.getElementById('app-anixart-import-item');
+            if (cur && cur.querySelector('svg, img, i, [class*="icon"]')) {
+                return;
+            }
             rafPending = true;
             requestAnimationFrame(function() {
                 rafPending = false;
@@ -81,7 +110,10 @@
         };
 
         var observer = new MutationObserver(function(mutations) {
-            if (document.getElementById('app-anixart-import-item')) return;
+            var cur = document.getElementById('app-anixart-import-item');
+            if (cur && cur.querySelector('svg, img, i, [class*="icon"]')) {
+                return;
+            }
             for (var i = 0; i < mutations.length; i++) {
                 var added = mutations[i].addedNodes;
                 for (var j = 0; j < added.length; j++) {
