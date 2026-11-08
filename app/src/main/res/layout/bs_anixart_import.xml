@@ -1,235 +1,298 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:background="@drawable/bs_background"
-    android:paddingStart="20dp"
-    android:paddingEnd="20dp"
-    android:paddingTop="12dp"
-    android:paddingBottom="24dp">
+    android:overScrollMode="never"
+    android:fillViewport="true"
+    android:background="@android:color/transparent">
 
-    <!-- Bottom sheet handle -->
-    <View
-        android:layout_width="36dp"
-        android:layout_height="4dp"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginBottom="14dp"
-        android:background="@drawable/bottom_sheet_handle" />
-
-    <!-- Header: Title and Close -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:layout_marginBottom="12dp">
+        android:orientation="vertical"
+        android:paddingBottom="20dp">
 
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/tvImportTitle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/anixart_import_title"
-                android:textColor="@color/dialog_text_title"
-                android:textSize="18sp"
-                android:fontFamily="@font/open_sans_bold"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/tvImportSubtitle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="@string/anixart_import_subtitle"
-                android:textColor="@color/dialog_text_muted"
-                android:textSize="12sp"
-                android:fontFamily="@font/open_sans" />
-        </LinearLayout>
-
-        <ImageButton
-            android:id="@+id/btnCloseImport"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_close"
-            app:tint="@color/dialog_icon_close"
-            android:contentDescription="Закрыть"
-            android:padding="4dp" />
-    </LinearLayout>
-
-    <!-- File Selection Box -->
-    <LinearLayout
-        android:id="@+id/btnSelectFile"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="@drawable/bg_search_input_box"
-        android:padding="14dp"
-        android:clickable="true"
-        android:focusable="true">
-
-        <ImageView
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:src="@drawable/ic_file_upload"
-            app:tint="@color/purple_primary"
-            android:contentDescription="Файл" />
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="12dp"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/tvSelectedFileName"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/anixart_import_select_file"
-                android:textColor="@color/dialog_text_title"
-                android:textSize="14sp"
-                android:fontFamily="@font/open_sans_semibold"
-                android:singleLine="true"
-                android:ellipsize="middle" />
-
-            <TextView
-                android:id="@+id/tvSelectedFileInfo"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="@string/anixart_import_status_ready"
-                android:textColor="@color/dialog_text_muted"
-                android:textSize="12sp"
-                android:fontFamily="@font/open_sans" />
-        </LinearLayout>
-
-        <ImageView
-            android:layout_width="18dp"
-            android:layout_height="18dp"
-            android:src="@drawable/ic_chevron_right"
-            app:tint="@color/dialog_text_muted"
-            android:contentDescription="Выбрать" />
-    </LinearLayout>
-
-    <!-- Status / Stats Counter Bar -->
-    <LinearLayout
-        android:id="@+id/layoutImportStats"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="12dp"
-        android:gravity="center_vertical"
-        android:visibility="gone">
-
-        <TextView
-            android:id="@+id/tvStatSuccess"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Успешно: 0"
-            android:textColor="#3cce7b"
-            android:textSize="13sp"
-            android:fontFamily="@font/open_sans_semibold" />
-
-        <TextView
-            android:id="@+id/tvStatNotFound"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="14dp"
-            android:text="Не найдено: 0"
-            android:textColor="#ff9b40"
-            android:textSize="13sp"
-            android:fontFamily="@font/open_sans_semibold" />
-
-        <TextView
-            android:id="@+id/tvStatErrors"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="14dp"
-            android:text="Ошибки: 0"
-            android:textColor="#f3382a"
-            android:textSize="13sp"
-            android:fontFamily="@font/open_sans_semibold" />
-
+        <!-- Bottom sheet drag handle -->
         <View
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_weight="1" />
+            android:layout_width="36dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center"
+            android:background="@drawable/bottom_sheet_handle"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp" />
 
-        <TextView
-            android:id="@+id/tvImportProgressFraction"
-            android:layout_width="wrap_content"
+        <!-- Top header row -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="0 / 0"
-            android:textColor="@color/dialog_text_muted"
-            android:textSize="13sp"
-            android:fontFamily="@font/open_sans_bold" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="4dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvImportTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/anixart_import_title"
+                    android:textSize="@dimen/bs_title_text_size"
+                    android:textStyle="bold"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:textColor="@color/primary_text_color" />
+
+                <TextView
+                    android:id="@+id/tvImportSubtitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/anixart_import_subtitle"
+                    android:textSize="12sp"
+                    android:textColor="@color/accent_text_color"
+                    android:layout_marginTop="1dp" />
+
+            </LinearLayout>
+
+            <ImageButton
+                android:id="@+id/btnCloseImport"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:background="@drawable/button_close_background"
+                android:padding="6dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_close"
+                app:tint="@color/accent_text_color"
+                android:contentDescription="Close" />
+
+        </LinearLayout>
+
+        <!-- Divider line matching design -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0.5dp"
+            android:background="@color/bs_divider_color"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="12dp" />
+
+        <!-- Main Content Container with Horizontal Margins -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp">
+
+            <!-- 1. File Selection Section Header -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Файл списка"
+                android:textColor="@color/primary_text_color"
+                android:textSize="14sp"
+                android:fontFamily="@font/open_sans_bold"
+                android:layout_marginBottom="8dp"
+                android:layout_marginStart="4dp" />
+
+            <!-- File Selection Card -->
+            <LinearLayout
+                android:id="@+id/btnSelectFile"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="54dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/chip_unselected"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp">
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:src="@drawable/ic_file_upload"
+                    app:tint="@color/purple_primary"
+                    android:layout_marginEnd="12dp" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvSelectedFileName"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/anixart_import_select_file"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="15sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:singleLine="true"
+                        android:ellipsize="middle" />
+
+                    <TextView
+                        android:id="@+id/tvSelectedFileInfo"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/anixart_import_status_ready"
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="12sp"
+                        android:fontFamily="@font/open_sans" />
+                </LinearLayout>
+
+                <ImageView
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:src="@drawable/ic_chevron_right"
+                    app:tint="@color/accent_text_color"
+                    android:layout_marginStart="8dp" />
+            </LinearLayout>
+
+            <!-- 2. Import Progress Section -->
+            <LinearLayout
+                android:id="@+id/layoutImportStats"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/chip_unselected"
+                android:padding="14dp"
+                android:layout_marginTop="12dp"
+                android:visibility="gone">
+
+                <!-- Overall Progress Row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/tvOverallText"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Прогресс импорта"
+                        android:textSize="13sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:textColor="@color/primary_text_color" />
+
+                    <TextView
+                        android:id="@+id/tvImportProgressFraction"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0 / 0"
+                        android:textSize="13sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:textColor="@color/secondary_text_color" />
+                </LinearLayout>
+
+                <!-- Progress Bar -->
+                <ProgressBar
+                    android:id="@+id/pbImportProgress"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="6dp"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginBottom="10dp"
+                    android:max="100"
+                    android:progress="0"
+                    android:progressDrawable="@drawable/progress_bar_background" />
+
+                <!-- Counters Row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/tvStatSuccess"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Успешно: 0"
+                        android:textColor="#3cce7b"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans_semibold" />
+
+                    <TextView
+                        android:id="@+id/tvStatNotFound"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:text="Не найдено: 0"
+                        android:textColor="#ff9b40"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans_semibold" />
+
+                    <TextView
+                        android:id="@+id/tvStatErrors"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:text="Ошибки: 0"
+                        android:textColor="#f3382a"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans_semibold" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- 3. Status Log Box -->
+            <TextView
+                android:id="@+id/tvImportStatusLog"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/chip_unselected"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp"
+                android:text="Готов к импорту. Формат строк: 1 / &quot;Название&quot; / &quot;Англ Название&quot;"
+                android:textColor="@color/secondary_text_color"
+                android:textSize="12sp"
+                android:fontFamily="@font/open_sans"
+                android:lineSpacingExtra="2dp"
+                android:maxLines="3"
+                android:ellipsize="end" />
+
+            <!-- 4. Action Buttons -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="16dp"
+                android:gravity="end">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCancelOrStop"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_marginEnd="10dp"
+                    android:text="@string/btn_close"
+                    android:textColor="@color/secondary_text_color"
+                    android:fontFamily="@font/open_sans_semibold"
+                    app:cornerRadius="12dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnStartImport"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:text="@string/anixart_import_start"
+                    android:textColor="@color/white_color"
+                    android:backgroundTint="@color/purple_primary"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:enabled="false"
+                    app:cornerRadius="12dp" />
+            </LinearLayout>
+
+        </LinearLayout>
+
     </LinearLayout>
 
-    <!-- Progress bar -->
-    <ProgressBar
-        android:id="@+id/pbImportProgress"
-        style="?android:attr/progressBarStyleHorizontal"
-        android:layout_width="match_parent"
-        android:layout_height="6dp"
-        android:layout_marginTop="8dp"
-        android:progressDrawable="@drawable/bg_gesture_progress_bar"
-        android:visibility="gone"
-        android:max="100"
-        android:progress="0" />
-
-    <!-- Live Status / Log box -->
-    <TextView
-        android:id="@+id/tvImportStatusLog"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:background="@drawable/bg_search_empty_icon_bg"
-        android:padding="10dp"
-        android:text="Готов к импорту. Формат строк: 1 / &quot;Название&quot; / &quot;Англ Название&quot;"
-        android:textColor="@color/dialog_text_body"
-        android:textSize="12sp"
-        android:fontFamily="@font/open_sans"
-        android:maxLines="3"
-        android:ellipsize="end" />
-
-    <!-- Action Buttons -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="16dp"
-        android:gravity="end">
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnCancelOrStop"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="wrap_content"
-            android:layout_height="44dp"
-            android:layout_marginEnd="8dp"
-            android:text="@string/btn_close"
-            android:textColor="@color/dialog_cancel_text"
-            android:fontFamily="@font/open_sans_semibold"
-            app:cornerRadius="12dp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnStartImport"
-            android:layout_width="wrap_content"
-            android:layout_height="44dp"
-            android:text="@string/anixart_import_start"
-            android:textColor="@color/white_color"
-            android:backgroundTint="@color/purple_primary"
-            android:fontFamily="@font/open_sans_bold"
-            android:enabled="false"
-            app:cornerRadius="12dp" />
-    </LinearLayout>
-
-</LinearLayout>
+</androidx.core.widget.NestedScrollView>

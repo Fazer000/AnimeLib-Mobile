@@ -40,6 +40,7 @@ public class JSInjectionsHandler {
             "js/auth-handler.js",
             "js/search-button-listener.js",
             "js/downloaded-button-listener.js",
+            "js/anixart-import-button-listener.js",
             "js/carousel-fix.js",
             "js/site-logo-long-press.js",
             "js/remove-slider-block.js"
@@ -51,6 +52,7 @@ public class JSInjectionsHandler {
             "js/theme-button-listener.js",
             "js/search-button-listener.js",
             "js/downloaded-button-listener.js",
+            "js/anixart-import-button-listener.js",
             "js/carousel-fix.js",
             "js/auth-handler.js",
             "js/site-logo-long-press.js",
@@ -495,6 +497,21 @@ public class JSInjectionsHandler {
                 });
             } else {
                 Log.e(TAG, "Context is not an Activity, cannot open DownloadsActivity");
+            }
+        }
+
+        @JavascriptInterface
+        public void onAnixartImportButtonClicked() {
+            android.app.Activity activity = getActivityFromContext(context);
+            if (activity != null) {
+                activity.runOnUiThread(() -> {
+                    Log.d("PlayerHandler", "Anixart import button clicked from WebView");
+                    if (activity instanceof com.example.animelib.MainActivity) {
+                        ((com.example.animelib.MainActivity) activity).showAnixartImportBottomSheet();
+                    }
+                });
+            } else {
+                Log.e(TAG, "Context is not an Activity, cannot open AnixartImportBottomSheet");
             }
         }
 
