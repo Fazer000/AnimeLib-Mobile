@@ -164,8 +164,8 @@ public class FranchiseMapGraphView extends ViewGroup {
         float density = context.getResources().getDisplayMetrics().density;
         cardWidthPx = (int) (260 * density);
         cardHeightPx = (int) (105 * density);
-        paddingX = (int) (80 * density);
-        paddingY = (int) (80 * density);
+        paddingX = (int) (220 * density);
+        paddingY = (int) (220 * density);
 
         initPaints(context, density);
 
@@ -485,10 +485,12 @@ public class FranchiseMapGraphView extends ViewGroup {
     }
 
     /**
-     * Динамическое паутинное распределение графа франшизы (Spiderweb Radial Network Layout).
-     * - Текущее аниме располагается в самом центре виртуального холста.
-     * - Все связанные тайтлы разворачиваются во все стороны (360°) вокруг центра на радиальных орбитах (паутина).
-     * - Итеративный алгоритм физической релаксации силового поля раздвигает карточки, гарантируя отсутствие перекрытий.
+     * Оптимизированное радиальное распределение графа франшизы (Clean Spiderweb Radial Layout).
+     * - Транзитивная редукция прямых переходов для устранения путаницы дублирующих линий.
+     * - Четкое зонирование секторов (хронологическая ось сиквелов вправо, предыстория влево, спин-оффы и адаптации по вертикали).
+     * - Существенно увеличенные радиальные орбиты и безопасные дистанции между карточками.
+     * - Итеративная 2D релаксация коллизий с увеличенными зазорами.
+     * - Просторные внешние отступы холста (paddingX/paddingY = 220dp).
      */
     private void calculateSpiderwebLayout() {
         if (franchiseData == null || franchiseData.getNodes() == null || franchiseData.getNodes().isEmpty()) return;
@@ -518,6 +520,11 @@ public class FranchiseMapGraphView extends ViewGroup {
             focalId = allNodes.get(0).getId();
         }
         currentFocalId = focalId;
+
+        // Транзитивная редукция избыточных длинных связей для минимизации путаницы линий:
+        // Если между A и B есть альтернативный путь через другие ноды (например A->C->B),
+        // убираем прямую диагональную хорду A->B, чтобы линии не пересекались и не путались.
+        simplifyCanonicalLinksTransitive();
 
         // 2. Индексируем ноды и двунаправленные связи графа
         Map<Long, FranchiseResponse.NodeItem> nodeMap = new HashMap<>();
@@ -565,9 +572,9 @@ public class FranchiseMapGraphView extends ViewGroup {
             }
         }
 
-        // Центр виртуального холста паутины
-        float centerX = 1600f * density;
-        float centerY = 1600f * density;
+        // Центр виртуального холста паутины с большим запасом свободного пространства
+        float centerX = 2400f * density;
+        float centerY = 2400f * density;
 
         nodePositionsMap.clear();
         nodePositionsMap.put(focalId, new PointF(centerX - cardWidthPx / 2f, centerY - cardHeightPx / 2f));
@@ -588,64 +595,97 @@ public class FranchiseMapGraphView extends ViewGroup {
 
         Map<Long, Float> nodeAngleMap = new HashMap<>();
 
-        // 4. Распределяем карточки по угловым секторам на орбитальных радиальных кольцах
+        // 4. Распределяем карточки по угловым секторам на просторных радиальных кольцах
         for (int depth : sortedDepths) {
             List<Long> layerNodes = nodesByDepth.get(depth);
             if (layerNodes == null || layerNodes.isEmpty()) continue;
 
-            float baseRadius = (280f + (depth - 1) * 260f) * density;
+            // Увеличенный радиус орбит для создания простора между слоями: 380dp + шаг 340dp
+            float baseRadius = (380f + (depth - 1) * 340f) * density;
             int count = layerNodes.size();
 
-            for (int i = 0; i < count; i++) {
-                long nodeId = layerNodes.get(i);
-                FranchiseResponse.NodeItem node = nodeMap.get(nodeId);
-                String rel = nodeRelationsMap.get(nodeId);
+            // Категоризация нод слоя по смысловым секторам для минимизации пересечений
+            List<Long> sequels = new ArrayList<>();
+            List<Long> prequels = new ArrayList<>();
+            List<Long> sideStories = new ArrayList<>();
+            List<Long> spinOffs = new ArrayList<>();
+            List<Long> others = new ArrayList<>();
+
+            for (long nId : layerNodes) {
+                String rel = nodeRelationsMap.get(nId);
                 if (rel == null) rel = "";
                 String relLower = rel.toLowerCase();
+                FranchiseResponse.NodeItem node = nodeMap.get(nId);
+                String kind = node != null && node.getKind() != null ? node.getKind().toLowerCase() : "";
 
-                float angleRad;
-
-                if (depth == 1) {
-                    // Радиальное распределение первого кольца по логическим направлениям (360°)
-                    if (relLower.contains("приквел") || relLower.contains("prequel")) {
-                        angleRad = (float) Math.toRadians(210 + (i * 35)); // Северо-Запад
-                    } else if (relLower.contains("сиквел") || relLower.contains("sequel")) {
-                        angleRad = (float) Math.toRadians(-30 + (i * 35)); // Северо-Восток
-                    } else if (relLower.contains("сайд") || relLower.contains("side")) {
-                        angleRad = (float) Math.toRadians(120 + (i * 40)); // Юго-Запад
-                    } else if (relLower.contains("спин") || relLower.contains("spin")) {
-                        angleRad = (float) Math.toRadians(45 + (i * 40));  // Юго-Восток
-                    } else if ("ova".equalsIgnoreCase(node != null ? node.getKind() : "") || "special".equalsIgnoreCase(node != null ? node.getKind() : "")) {
-                        angleRad = (float) Math.toRadians(165 + (i * 35)); // Запад
-                    } else {
-                        float baseDeg = (360f / count) * i;
-                        angleRad = (float) Math.toRadians(baseDeg);
-                    }
+                if (relLower.contains("сиквел") || relLower.contains("sequel")) {
+                    sequels.add(nId);
+                } else if (relLower.contains("приквел") || relLower.contains("prequel") || relLower.contains("parent")) {
+                    prequels.add(nId);
+                } else if (relLower.contains("сайд") || relLower.contains("side")) {
+                    sideStories.add(nId);
+                } else if (relLower.contains("спин") || relLower.contains("spin") || relLower.contains("alternat")) {
+                    spinOffs.add(nId);
+                } else if (kind.contains("movie") || kind.contains("ova") || kind.contains("special")) {
+                    sideStories.add(nId);
                 } else {
-                    // Ноды следующих слоев наследуют радиальное направление своего родителя
-                    Long parentId = parentMap.get(nodeId);
-                    float parentAngle = (parentId != null && nodeAngleMap.containsKey(parentId)) ? nodeAngleMap.get(parentId) : 0f;
-                    float spreadOffset = (i - (count - 1) / 2f) * (float) Math.toRadians(32);
-                    angleRad = parentAngle + spreadOffset;
+                    others.add(nId);
+                }
+            }
+
+            if (depth == 1) {
+                // Первый слой: строгое разделение по 4 четвертям компаса без наложения веток
+                assignAnglesToSubgroup(sequels, -25f, 25f, nodeAngleMap);      // Восток: сиквелы
+                assignAnglesToSubgroup(prequels, 155f, 205f, nodeAngleMap);    // Запад: приквелы
+                assignAnglesToSubgroup(sideStories, 65f, 115f, nodeAngleMap);  // Юг: сайд-стори / фильмы
+                assignAnglesToSubgroup(spinOffs, -115f, -65f, nodeAngleMap);   // Север: спин-оффы / альтернативы
+                assignAnglesToSubgroup(others, 215f, 325f, nodeAngleMap);      // Диагонали: прочие части
+            } else {
+                // Ноды следующих слоев наследуют угол родителя с веерным разнесением, не перехлестываясь
+                Map<Long, List<Long>> childrenByParent = new HashMap<>();
+                for (long nId : layerNodes) {
+                    Long pId = parentMap.get(nId);
+                    if (pId == null) pId = focalId;
+                    if (!childrenByParent.containsKey(pId)) {
+                        childrenByParent.put(pId, new ArrayList<>());
+                    }
+                    childrenByParent.get(pId).add(nId);
                 }
 
-                nodeAngleMap.put(nodeId, angleRad);
+                for (Map.Entry<Long, List<Long>> entry : childrenByParent.entrySet()) {
+                    long pId = entry.getKey();
+                    List<Long> siblings = entry.getValue();
+                    float parentAngle = nodeAngleMap.containsKey(pId) ? nodeAngleMap.get(pId) : 0f;
+                    int sibCount = siblings.size();
+                    float angularSpread = Math.min(60f, Math.max(24f, sibCount * 18f));
+                    float startAngle = parentAngle - (float) Math.toRadians(angularSpread / 2f);
+                    float step = sibCount > 1 ? (float) Math.toRadians(angularSpread / (sibCount - 1)) : 0f;
 
+                    for (int s = 0; s < sibCount; s++) {
+                        float angleRad = sibCount == 1 ? parentAngle : (startAngle + s * step);
+                        nodeAngleMap.put(siblings.get(s), angleRad);
+                    }
+                }
+            }
+
+            for (long nodeId : layerNodes) {
+                float angleRad = nodeAngleMap.containsKey(nodeId) ? nodeAngleMap.get(nodeId) : 0f;
                 float px = centerX + (float) Math.cos(angleRad) * baseRadius - cardWidthPx / 2f;
                 float py = centerY + (float) Math.sin(angleRad) * baseRadius - cardHeightPx / 2f;
                 nodePositionsMap.put(nodeId, new PointF(px, py));
             }
         }
 
-        // 5. Двухмерная физическая релаксация коллизий (2D Repulsion Physics)
-        float minGapX = cardWidthPx + (36f * density);
-        float minGapY = cardHeightPx + (36f * density);
+        // 5. Двухмерная физическая релаксация коллизий с увеличенными безопасными зазорами
+        // Зазор между карточками увеличен до 70dp по горизонтали и 55dp по вертикали
+        float minGapX = cardWidthPx + (70f * density);
+        float minGapY = cardHeightPx + (55f * density);
         float minDist = (float) Math.hypot(minGapX, minGapY);
 
-        for (int iter = 0; iter < 24; iter++) {
+        for (int iter = 0; iter < 32; iter++) {
             for (int i = 0; i < allNodes.size(); i++) {
                 long idA = allNodes.get(i).getId();
-                if (idA == focalId) continue; // Центральный айтем зафиксирован в центре паутины
+                if (idA == focalId) continue; // Центральный айтем зафиксирован в центре
                 PointF posA = nodePositionsMap.get(idA);
                 if (posA == null) continue;
 
@@ -684,7 +724,7 @@ public class FranchiseMapGraphView extends ViewGroup {
             }
         }
 
-        // 6. Нормализация координат с отступами и установка границ холста
+        // 6. Нормализация координат с большими отступами (paddingX/paddingY = 220dp)
         float minX = Float.MAX_VALUE;
         float minY = Float.MAX_VALUE;
         for (PointF pt : nodePositionsMap.values()) {
@@ -710,8 +750,76 @@ public class FranchiseMapGraphView extends ViewGroup {
             nodeBoundsMap.put(nodeId, new RectF(pt.x, pt.y, pt.x + cardWidthPx, pt.y + cardHeightPx));
         }
 
-        contentWidth = Math.max((int) (1400 * density), (int) (maxX + paddingX));
-        contentHeight = Math.max((int) (1000 * density), (int) (maxY + paddingY));
+        // Холст гарантированно имеет избыточное свободное пространство вокруг со всех сторон
+        contentWidth = Math.max((int) (2200 * density), (int) (maxX + paddingX * 1.5f));
+        contentHeight = Math.max((int) (1800 * density), (int) (maxY + paddingY * 1.5f));
+    }
+
+    private void assignAnglesToSubgroup(List<Long> nodes, float startDeg, float endDeg, Map<Long, Float> targetMap) {
+        if (nodes == null || nodes.isEmpty()) return;
+        int count = nodes.size();
+        if (count == 1) {
+            float midDeg = (startDeg + endDeg) / 2f;
+            targetMap.put(nodes.get(0), (float) Math.toRadians(midDeg));
+        } else {
+            float step = (endDeg - startDeg) / (count - 1);
+            for (int i = 0; i < count; i++) {
+                float deg = startDeg + i * step;
+                targetMap.put(nodes.get(i), (float) Math.toRadians(deg));
+            }
+        }
+    }
+
+    /**
+     * Устраняет транзитивные избыточные связи (например, если есть A->B и B->C, а также A->C,
+     * то длинная диагональная связь A->C удаляется, чтобы не перечеркивать граф).
+     */
+    private void simplifyCanonicalLinksTransitive() {
+        if (canonicalLinks.size() <= 2) return;
+
+        Map<Long, Set<Long>> directNeighbors = new HashMap<>();
+        for (MapLink l : canonicalLinks) {
+            long s = l.getSourceId();
+            long t = l.getTargetId();
+            if (!directNeighbors.containsKey(s)) directNeighbors.put(s, new HashSet<>());
+            if (!directNeighbors.containsKey(t)) directNeighbors.put(t, new HashSet<>());
+            directNeighbors.get(s).add(t);
+            directNeighbors.get(t).add(s);
+        }
+
+        List<MapLink> filtered = new ArrayList<>();
+        for (MapLink candidate : canonicalLinks) {
+            long s = candidate.getSourceId();
+            long t = candidate.getTargetId();
+
+            // Проверяем: есть ли альтернативный короткий путь длины 2 (s -> k -> t),
+            // где k соединен с обоими узлами
+            boolean hasBridge = false;
+            Set<Long> sNeighbors = directNeighbors.get(s);
+            Set<Long> tNeighbors = directNeighbors.get(t);
+            if (sNeighbors != null && tNeighbors != null) {
+                for (long bridge : sNeighbors) {
+                    if (bridge != t && tNeighbors.contains(bridge)) {
+                        // Исключаем удаление связи, если обе ноды являются прямыми сиквелами в цепочке
+                        int candPriority = getRelationPriority(candidate.getRelation());
+                        if (candPriority > 1) {
+                            hasBridge = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!hasBridge) {
+                filtered.add(candidate);
+            }
+        }
+
+        // Если редукция не оставила оторванных островов, сохраняем очищенный набор
+        if (filtered.size() >= canonicalLinks.size() / 2) {
+            canonicalLinks.clear();
+            canonicalLinks.addAll(filtered);
+        }
     }
 
     private boolean isLikelyMainTitle(FranchiseResponse.NodeItem item) {
@@ -881,8 +989,9 @@ public class FranchiseMapGraphView extends ViewGroup {
     }
 
     /**
-     * Прямая плавная кривая Безье между карточками в направлении слева направо.
-     * Соединение автоматически выбирает наиболее естественную сторону выхода (справа) и входа (слева).
+     * Плавная кривая Безье между карточками с интеллектуальным выбором естественных точек привязки.
+     * Выбирает ближайшие грани карточек (право->лево, низ->верх и т.д.), исключая прохождение линий
+     * сквозь тела карточек и создавая эстетичные направляющие усики без петель и заломов.
      */
     private CurvePoints calculateCurvePoints(MapLink link, float density) {
         RectF sourceRect = nodeBoundsMap.get(link.getSourceId());
@@ -899,46 +1008,49 @@ public class FranchiseMapGraphView extends ViewGroup {
 
         CurvePoints pts = new CurvePoints();
 
-        // Если карточка справа (хронологическое развитие слева направо)
-        if (targetRect.left >= sourceRect.right - (14f * density)) {
+        // 1. Горизонтальное доминирование: когда карточки разнесены по X дальше, чем перекрытие
+        if (dx > cardWidthPx * 0.45f) {
+            // Целевая карточка справа (хронологическое развитие вперед)
             pts.startX = sourceRect.right;
             pts.startY = scy;
             pts.endX = targetRect.left;
             pts.endY = tcy;
-            float lead = Math.max(35f * density, Math.abs(pts.endX - pts.startX) * 0.48f);
+            float lead = Math.max(45f * density, (pts.endX - pts.startX) * 0.48f);
             pts.c1x = pts.startX + lead;
             pts.c1y = pts.startY;
             pts.c2x = pts.endX - lead;
             pts.c2y = pts.endY;
-        } else if (sourceRect.left >= targetRect.right - (14f * density)) {
-            // Реверсивный случай (если карточка перетянута влево)
+        } else if (dx < -cardWidthPx * 0.45f) {
+            // Целевая карточка слева (приквел / возврат к началу)
             pts.startX = sourceRect.left;
             pts.startY = scy;
             pts.endX = targetRect.right;
             pts.endY = tcy;
-            float lead = Math.max(35f * density, Math.abs(pts.startX - pts.endX) * 0.48f);
+            float lead = Math.max(45f * density, (pts.startX - pts.endX) * 0.48f);
             pts.c1x = pts.startX - lead;
             pts.c1y = pts.startY;
             pts.c2x = pts.endX + lead;
             pts.c2y = pts.endY;
         } else {
-            // Вертикально-доминантное соединение для карточек в одной колонке
+            // 2. Вертикальное доминирование: когда карточки одна над другой (спин-оффы, спешлы, фильмы)
             if (dy >= 0) {
+                // Целевая карточка снизу
                 pts.startX = scx;
                 pts.startY = sourceRect.bottom;
                 pts.endX = tcx;
                 pts.endY = targetRect.top;
-                float lead = Math.max(30f * density, Math.abs(pts.endY - pts.startY) * 0.44f);
+                float lead = Math.max(38f * density, (pts.endY - pts.startY) * 0.45f);
                 pts.c1x = pts.startX;
                 pts.c1y = pts.startY + lead;
                 pts.c2x = pts.endX;
                 pts.c2y = pts.endY - lead;
             } else {
+                // Целевая карточка сверху
                 pts.startX = scx;
                 pts.startY = sourceRect.top;
                 pts.endX = tcx;
                 pts.endY = targetRect.bottom;
-                float lead = Math.max(30f * density, Math.abs(pts.startY - pts.endY) * 0.44f);
+                float lead = Math.max(38f * density, (pts.startY - pts.endY) * 0.45f);
                 pts.c1x = pts.startX;
                 pts.c1y = pts.startY - lead;
                 pts.c2x = pts.endX;

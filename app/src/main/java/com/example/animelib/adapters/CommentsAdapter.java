@@ -1258,14 +1258,24 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             holder.threadGuideLine.setVisibility(di.level > 0 ? View.VISIBLE : View.GONE);
         }
 
+        boolean isSticky = item.isSticky();
+        if (holder.stickyBadgeContainer != null) {
+            holder.stickyBadgeContainer.setVisibility(isSticky ? View.VISIBLE : View.GONE);
+        }
+
         int baseH = portraitViewportMode ? 0 : padBaseH;
-        int leftPad = baseH + (di.level > 0 ? padReplyIndent : 0);
-        int rightPad = baseH;
+        int stickyPadH = (int) (14 * cachedDensity);
+        int stickyPadV = (int) (10 * cachedDensity);
+        int leftPad = (isSticky ? stickyPadH : baseH) + (di.level > 0 ? padReplyIndent : 0);
+        int rightPad = isSticky ? stickyPadH : baseH;
+        int topPad = isSticky ? stickyPadV : padBaseV;
+        int bottomPad = isSticky ? stickyPadV : padBaseV;
+
         if (holder.itemView.getPaddingLeft() != leftPad
-                || holder.itemView.getPaddingTop() != padBaseV
+                || holder.itemView.getPaddingTop() != topPad
                 || holder.itemView.getPaddingRight() != rightPad
-                || holder.itemView.getPaddingBottom() != padBaseV) {
-            holder.itemView.setPadding(leftPad, padBaseV, rightPad, padBaseV);
+                || holder.itemView.getPaddingBottom() != bottomPad) {
+            holder.itemView.setPadding(leftPad, topPad, rightPad, bottomPad);
         }
 
         String avatarUrl = null;
@@ -1274,16 +1284,12 @@ public class CommentsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         }
         ImageLoader.getInstance().loadAvatarInto(holder.avatarView, avatarUrl, R.drawable.ic_avatar_placeholder, avatarTargetPx);
 
-        boolean isSticky = item.isSticky();
-        if (holder.stickyBadgeContainer != null) {
-            holder.stickyBadgeContainer.setVisibility(isSticky ? View.VISIBLE : View.GONE);
-        }
         ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) holder.itemView.getLayoutParams();
         if (isSticky) {
             holder.itemView.setBackgroundResource(R.drawable.bg_sticky_comment);
-            if (lp != null && (lp.leftMargin != stickyMarginPx || lp.topMargin != stickyMarginPx
-                    || lp.rightMargin != stickyMarginPx || lp.bottomMargin != stickyMarginPx)) {
-                lp.setMargins(stickyMarginPx, stickyMarginPx, stickyMarginPx, stickyMarginPx);
+            if (lp != null && (lp.leftMargin != 0 || lp.topMargin != stickyMarginPx
+                    || lp.rightMargin != 0 || lp.bottomMargin != stickyMarginPx)) {
+                lp.setMargins(0, stickyMarginPx, 0, stickyMarginPx);
                 holder.itemView.setLayoutParams(lp);
             }
         } else {
