@@ -1,8 +1,6 @@
 package com.example.animelib.ui;
 
-import android.app.Activity;
 import android.content.Context;
-import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
@@ -10,10 +8,10 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 
 import com.example.animelib.R;
 import com.example.animelib.api.ApiService;
@@ -33,6 +31,8 @@ import java.util.List;
 
 /**
  * BottomSheet диалог для импорта тайтлов из txt файла Anixart
+ * - С единой кнопкой действия на всю ширину (Запуск / Остановить)
+ * - M3LinearProgressIndicator в стиле activity_update
  */
 public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
 
@@ -54,10 +54,9 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
     private TextView tvStatNotFound;
     private TextView tvStatErrors;
     private TextView tvImportProgressFraction;
-    private ProgressBar pbImportProgress;
+    private M3LinearProgressIndicator m3ProgressIndicator;
     private TextView tvImportStatusLog;
-    private MaterialButton btnCancelOrStop;
-    private MaterialButton btnStartImport;
+    private MaterialButton btnActionImport;
 
     private List<AnixartParser.AnixartEntry> pendingEntries = new ArrayList<>();
     private int currentSuccess = 0;
@@ -88,7 +87,7 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
     private void initViews(View view) {
         ImageButton btnClose = view.findViewById(R.id.btnCloseImport);
         if (btnClose != null) {
-            btnClose.setOnClickListener(v -> handleCloseOrCancel());
+            btnClose.setOnClickListener(v -> handleHeaderClose());
         }
 
         tvSelectedFileName = view.findViewById(R.id.tvSelectedFileName);
@@ -100,11 +99,10 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
         tvStatNotFound = view.findViewById(R.id.tvStatNotFound);
         tvStatErrors = view.findViewById(R.id.tvStatErrors);
         tvImportProgressFraction = view.findViewById(R.id.tvImportProgressFraction);
-        pbImportProgress = view.findViewById(R.id.pbImportProgress);
+        m3ProgressIndicator = view.findViewById(R.id.m3ProgressIndicator);
         tvImportStatusLog = view.findViewById(R.id.tvImportStatusLog);
 
-        btnCancelOrStop = view.findViewById(R.id.btnCancelOrStop);
-        btnStartImport = view.findViewById(R.id.btnStartImport);
+        btnActionImport = view.findViewById(R.id.btnActionImport);
 
         if (btnSelectFile != null) {
             btnSelectFile.setOnClickListener(v -> {
@@ -118,13 +116,19 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
             });
         }
 
-        if (btnCancelOrStop != null) {
-            btnCancelOrStop.setOnClickListener(v -> handleCloseOrCancel());
+        if (btnActionImport != null) {
+            btnActionImport.setOnClickListener(v -> {
+                if (importManager.isRunning()) {
+                    // Пользователь нажал "Остановить"
+                    stopImportProcess();
+                } else {
+                    // Пользователь нажал "Начать импорт"
+                    startImportProcess();
+                }
+            });
         }
 
-        if (btnStartImport != null) {
-            btnStartImport.setOnClickListener(v -> startImportProcess());
-        }
+        updateActionButtonState(false);
     }
 
     private void checkAuthorization() {
@@ -164,8 +168,8 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
                 if (tvSelectedFileInfo != null) {
                     tvSelectedFileInfo.setText("Записей не обнаружено");
                 }
-                if (btnStartImport != null) {
-                    btnStartImport.setEnabled(false);
+                if (btnActionImport != null) {
+                    btnActionImport.setEnabled(false);
                 }
                 return;
             }
@@ -180,8 +184,8 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
             if (tvImportStatusLog != null) {
                 tvImportStatusLog.setText("Готов к импорту " + entries.size() + " тайтлов. Нажмите «Начать импорт».");
             }
-            if (btnStartImport != null) {
-                btnStartImport.setEnabled(true);
+            if (btnActionImport != null) {
+                btnActionImport.setEnabled(true);
             }
 
         } catch (Exception e) {
@@ -201,20 +205,15 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
         currentErrors = 0;
 
         if (layoutImportStats != null) layoutImportStats.setVisibility(View.VISIBLE);
-        if (pbImportProgress != null) {
-            pbImportProgress.setVisibility(View.VISIBLE);
-            pbImportProgress.setMax(pendingEntries.size());
-            pbImportProgress.setProgress(0);
+        if (m3ProgressIndicator != null) {
+            m3ProgressIndicator.setMax(pendingEntries.size());
+            m3ProgressIndicator.setProgress(0, false);
         }
 
         updateStatsViews(0, pendingEntries.size());
 
-        if (btnStartImport != null) btnStartImport.setEnabled(false);
         if (btnSelectFile != null) btnSelectFile.setEnabled(false);
-        if (btnCancelOrStop != null) {
-            btnCancelOrStop.setText(R.string.anixart_import_stop);
-            btnCancelOrStop.setTextColor(getContext().getColor(R.color.dialog_danger_text));
-        }
+        updateActionButtonState(true);
 
         setCancelable(false);
         setCanceledOnTouchOutside(false);
@@ -222,8 +221,8 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
         importManager.startImport(pendingEntries, new AnixartImportManager.ImportListener() {
             @Override
             public void onProgress(int current, int total, AnixartImportManager.ImportItemProgress item) {
-                if (pbImportProgress != null) {
-                    pbImportProgress.setProgress(current);
+                if (m3ProgressIndicator != null) {
+                    m3ProgressIndicator.setProgress(current, true);
                 }
                 if (item.status == AnixartImportManager.ItemResultStatus.SUCCESS) {
                     currentSuccess++;
@@ -247,12 +246,8 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
                 setCancelable(true);
                 setCanceledOnTouchOutside(true);
 
-                if (btnStartImport != null) btnStartImport.setEnabled(true);
                 if (btnSelectFile != null) btnSelectFile.setEnabled(true);
-                if (btnCancelOrStop != null) {
-                    btnCancelOrStop.setText(R.string.btn_close);
-                    btnCancelOrStop.setTextColor(getContext().getColor(R.color.dialog_cancel_text));
-                }
+                updateActionButtonState(false);
 
                 if (cancelled) {
                     if (tvImportStatusLog != null) {
@@ -269,6 +264,39 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
         });
     }
 
+    private void stopImportProcess() {
+        if (importManager.isRunning()) {
+            importManager.cancel();
+            if (tvImportStatusLog != null) {
+                tvImportStatusLog.setText("Остановка импорта...");
+            }
+            if (btnActionImport != null) {
+                btnActionImport.setEnabled(false);
+            }
+        }
+    }
+
+    private void updateActionButtonState(boolean isRunning) {
+        if (btnActionImport == null) return;
+        btnActionImport.setEnabled(true);
+        if (isRunning) {
+            btnActionImport.setText(R.string.anixart_import_stop);
+            btnActionImport.setIcon(ContextCompat.getDrawable(getContext(), R.drawable.ic_pause));
+            btnActionImport.setBackgroundTintList(ContextCompat.getColorStateList(getContext(), R.color.dialog_danger_bg));
+            btnActionImport.setTextColor(ContextCompat.getColor(getContext(), R.color.dialog_danger_text));
+            btnActionImport.setIconTint(ContextCompat.getColorStateList(getContext(), R.color.dialog_danger_text));
+        } else {
+            btnActionImport.setText(R.string.anixart_import_start);
+            btnActionImport.setIcon(ContextCompat.getDrawable(getContext(), R.drawable.ic_file_upload));
+            btnActionImport.setBackgroundTintList(ContextCompat.getColorStateList(getContext(), R.color.purple_primary));
+            btnActionImport.setTextColor(ContextCompat.getColor(getContext(), R.color.white_color));
+            btnActionImport.setIconTint(ContextCompat.getColorStateList(getContext(), R.color.white_color));
+            if (pendingEntries.isEmpty()) {
+                btnActionImport.setEnabled(false);
+            }
+        }
+    }
+
     private void updateStatsViews(int current, int total) {
         if (tvStatSuccess != null) tvStatSuccess.setText("Успешно: " + currentSuccess);
         if (tvStatNotFound != null) tvStatNotFound.setText("Не найдено: " + currentNotFound);
@@ -278,7 +306,7 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
         }
     }
 
-    private void handleCloseOrCancel() {
+    private void handleHeaderClose() {
         if (importManager.isRunning()) {
             importManager.cancel();
             if (tvImportStatusLog != null) {

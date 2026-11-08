@@ -192,17 +192,19 @@
                         android:textColor="@color/secondary_text_color" />
                 </LinearLayout>
 
-                <!-- Progress Bar -->
-                <ProgressBar
-                    android:id="@+id/pbImportProgress"
-                    style="?android:attr/progressBarStyleHorizontal"
+                <!-- M3 Linear Progress Indicator (как в activity_update) -->
+                <com.example.animelib.ui.M3LinearProgressIndicator
+                    android:id="@+id/m3ProgressIndicator"
                     android:layout_width="match_parent"
-                    android:layout_height="6dp"
-                    android:layout_marginTop="8dp"
+                    android:layout_height="14dp"
+                    android:layout_marginTop="10dp"
                     android:layout_marginBottom="10dp"
                     android:max="100"
                     android:progress="0"
-                    android:progressDrawable="@drawable/progress_bar_background" />
+                    app:m3TrackHeight="8dp"
+                    app:m3GapSize="4dp"
+                    app:m3StopDotSize="4dp"
+                    app:m3ShowStopDot="true" />
 
                 <!-- Counters Row -->
                 <LinearLayout
@@ -260,36 +262,21 @@
                 android:maxLines="3"
                 android:ellipsize="end" />
 
-            <!-- 4. Action Buttons -->
-            <LinearLayout
+            <!-- 4. Single Full-Width Action Button (Start / Stop) -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnActionImport"
+                style="@style/Widget.AnimeLIB.Button"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
+                android:layout_height="@dimen/button_height_large"
                 android:layout_marginTop="16dp"
-                android:gravity="end">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnCancelOrStop"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="44dp"
-                    android:layout_marginEnd="10dp"
-                    android:text="@string/btn_close"
-                    android:textColor="@color/secondary_text_color"
-                    android:fontFamily="@font/open_sans_semibold"
-                    app:cornerRadius="12dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnStartImport"
-                    android:layout_width="wrap_content"
-                    android:layout_height="44dp"
-                    android:text="@string/anixart_import_start"
-                    android:textColor="@color/white_color"
-                    android:backgroundTint="@color/purple_primary"
-                    android:fontFamily="@font/open_sans_bold"
-                    android:enabled="false"
-                    app:cornerRadius="12dp" />
-            </LinearLayout>
+                android:text="@string/anixart_import_start"
+                android:textColor="@color/white_color"
+                app:icon="@drawable/ic_file_upload"
+                app:iconGravity="textStart"
+                app:iconTint="@color/white_color"
+                android:fontFamily="@font/open_sans_bold"
+                android:enabled="false"
+                app:cornerRadius="12dp" />
 
         </LinearLayout>
 
