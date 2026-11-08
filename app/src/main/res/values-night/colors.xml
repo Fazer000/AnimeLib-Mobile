@@ -14,8 +14,8 @@
     <color name="resize_card_unselected_stroke">#33333C</color>
     <color name="resize_preview_inner_bg">#2A323D</color>
 
-    <color name="switch_track_unchecked">#2D2D36</color>
-    <color name="switch_thumb_unchecked">#7E8FA6</color>
+    <color name="switch_track_unchecked">#3E3E4E</color>
+    <color name="switch_thumb_unchecked">#94A3B8</color>
     <color name="toolbar_header_bg">@color/dt_header_color</color>
     <color name="bs_bg_color">#131316</color>
     <color name="bs_divider_color">#2D2D36</color>

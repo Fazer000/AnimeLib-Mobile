@@ -190,6 +190,8 @@
     <style name="Widget.AnimeLIB.MaterialSwitch" parent="Widget.Material3.CompoundButton.MaterialSwitch">
         <item name="trackTint">@color/switch_track_tint</item>
         <item name="thumbTint">@color/switch_thumb_tint</item>
+        <item name="trackDecorationTint">@null</item>
+        <item name="thumbIconTint">@null</item>
         <item name="showText">false</item>
         <item name="android:showText">false</item>
         <item name="android:textOn">""</item>

@@ -154,6 +154,16 @@ public class UpdateActivity extends AppCompatActivity {
         btnBack.setOnClickListener(v -> finish());
 
         if (switchBetaUpdates != null) {
+            // Guarantee tinting resolves cleanly on both light and dark themes
+            try {
+                android.content.res.ColorStateList trackTint = androidx.core.content.ContextCompat.getColorStateList(this, R.color.switch_track_tint);
+                android.content.res.ColorStateList thumbTint = androidx.core.content.ContextCompat.getColorStateList(this, R.color.switch_thumb_tint);
+                if (trackTint != null) switchBetaUpdates.setTrackTintList(trackTint);
+                if (thumbTint != null) switchBetaUpdates.setThumbTintList(thumbTint);
+                switchBetaUpdates.setTrackDecorationTintList(null);
+                switchBetaUpdates.setThumbIconTintList(null);
+            } catch (Exception ignored) {}
+
             boolean isBetaEnabled = UpdateManager.isBetaUpdatesEnabled(this);
             switchBetaUpdates.setChecked(isBetaEnabled);
             switchBetaUpdates.setOnCheckedChangeListener((buttonView, isChecked) -> {
@@ -234,10 +244,18 @@ public class UpdateActivity extends AppCompatActivity {
             btnDownload.setText("ОБНОВЛЕНИЙ НЕТ");
         }
 
-        // Configure rollback section if current version is beta
+        // Configure rollback section if current version is beta and update M3 group backgrounds
         if (layoutRollbackSection != null) {
             if (isCurrentBeta) {
                 layoutRollbackSection.setVisibility(View.VISIBLE);
+                if (betaUpdatesCard != null) {
+                    betaUpdatesCard.setBackgroundResource(R.drawable.bg_m3_item_top);
+                    if (betaUpdatesCard.getLayoutParams() instanceof android.view.ViewGroup.MarginLayoutParams) {
+                        android.view.ViewGroup.MarginLayoutParams lp = (android.view.ViewGroup.MarginLayoutParams) betaUpdatesCard.getLayoutParams();
+                        lp.bottomMargin = (int) (3 * getResources().getDisplayMetrics().density);
+                        betaUpdatesCard.setLayoutParams(lp);
+                    }
+                }
                 String stableTag = stableInfo != null && stableInfo.getTagName() != null ? stableInfo.getTagName() : "";
                 if (!stableTag.isEmpty()) {
                     btnRollbackToStable.setText("ОТКАТИТЬСЯ ДО " + stableTag);
@@ -248,6 +266,14 @@ public class UpdateActivity extends AppCompatActivity {
                 }
             } else {
                 layoutRollbackSection.setVisibility(View.GONE);
+                if (betaUpdatesCard != null) {
+                    betaUpdatesCard.setBackgroundResource(R.drawable.bg_m3_item_single);
+                    if (betaUpdatesCard.getLayoutParams() instanceof android.view.ViewGroup.MarginLayoutParams) {
+                        android.view.ViewGroup.MarginLayoutParams lp = (android.view.ViewGroup.MarginLayoutParams) betaUpdatesCard.getLayoutParams();
+                        lp.bottomMargin = 0;
+                        betaUpdatesCard.setLayoutParams(lp);
+                    }
+                }
             }
         }
     }

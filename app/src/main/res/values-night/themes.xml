@@ -50,6 +50,9 @@
         <item name="android:textColor">@color/dt_primary_text_color</item>
 
         <item name="logoDrawable">@drawable/ic_logo_non_back_night</item>
+        <item name="materialSwitchStyle">@style/Widget.AnimeLIB.MaterialSwitch</item>
+        <item name="sliderStyle">@style/Widget.AnimeLIB.Slider</item>
+        <item name="bottomSheetDialogTheme">@style/ThemeOverlay.AnimeLIB.BottomSheetDialog</item>
 
 <!--        <item name="android:fitsSystemWindows">true</item>-->
     </style>
