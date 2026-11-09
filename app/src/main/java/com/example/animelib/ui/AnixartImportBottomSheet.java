@@ -1,6 +1,7 @@
 package com.example.animelib.ui;
 
 import android.content.Context;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
@@ -31,8 +32,8 @@ import java.util.List;
 
 /**
  * BottomSheet диалог для импорта тайтлов из txt файла Anixart
- * - С единой кнопкой действия на всю ширину (Запуск / Остановить)
- * - M3LinearProgressIndicator в стиле activity_update
+ * - С графическим UI прогресса и текущего тайтла без необработанных логов
+ * - Наглядной итоговой статистикой и карточками ненайденных/проблемных тайтлов
  */
 public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
 
@@ -49,6 +50,7 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
     private TextView tvSelectedFileName;
     private TextView tvSelectedFileInfo;
     private LinearLayout btnSelectFile;
+
     private LinearLayout layoutImportStats;
     private TextView tvStatSuccess;
     private TextView tvStatSkipped;
@@ -56,7 +58,20 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
     private TextView tvStatErrors;
     private TextView tvImportProgressFraction;
     private M3LinearProgressIndicator m3ProgressIndicator;
-    private TextView tvImportStatusLog;
+
+    // Card current live status
+    private LinearLayout cardCurrentStatus;
+    private TextView tvCurrentStateBadge;
+    private TextView tvCurrentTitleName;
+    private TextView tvCurrentStatusDetail;
+
+    // Final Results Section
+    private LinearLayout layoutResultsSection;
+    private LinearLayout cardAllSuccess;
+    private LinearLayout layoutProblemItemsSection;
+    private TextView tvProblemItemsHeader;
+    private LinearLayout layoutProblemItemsContainer;
+
     private MaterialButton btnActionImport;
 
     private List<AnixartParser.AnixartEntry> pendingEntries = new ArrayList<>();
@@ -103,7 +118,17 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
         tvStatErrors = view.findViewById(R.id.tvStatErrors);
         tvImportProgressFraction = view.findViewById(R.id.tvImportProgressFraction);
         m3ProgressIndicator = view.findViewById(R.id.m3ProgressIndicator);
-        tvImportStatusLog = view.findViewById(R.id.tvImportStatusLog);
+
+        cardCurrentStatus = view.findViewById(R.id.cardCurrentStatus);
+        tvCurrentStateBadge = view.findViewById(R.id.tvCurrentStateBadge);
+        tvCurrentTitleName = view.findViewById(R.id.tvCurrentTitleName);
+        tvCurrentStatusDetail = view.findViewById(R.id.tvCurrentStatusDetail);
+
+        layoutResultsSection = view.findViewById(R.id.layoutResultsSection);
+        cardAllSuccess = view.findViewById(R.id.cardAllSuccess);
+        layoutProblemItemsSection = view.findViewById(R.id.layoutProblemItemsSection);
+        tvProblemItemsHeader = view.findViewById(R.id.tvProblemItemsHeader);
+        layoutProblemItemsContainer = view.findViewById(R.id.layoutProblemItemsContainer);
 
         btnActionImport = view.findViewById(R.id.btnActionImport);
 
@@ -136,9 +161,7 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
 
     private void checkAuthorization() {
         if (!apiService.isAuthorized()) {
-            if (tvImportStatusLog != null) {
-                tvImportStatusLog.setText("Внимание: Вы не авторизованы на сайте! Закладки могут не сохраниться.");
-            }
+            CustomToast.showWarning(getContext(), "Вы не авторизованы на сайте!");
         }
     }
 
@@ -184,9 +207,12 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
             if (tvSelectedFileInfo != null) {
                 tvSelectedFileInfo.setText("Найдено тайтлов для импорта: " + entries.size());
             }
-            if (tvImportStatusLog != null) {
-                tvImportStatusLog.setText("Готов к импорту " + entries.size() + " тайтлов. Нажмите «Начать импорт».");
-            }
+
+            // Сбрасываем отображение предыдущих результатов при выборе нового файла
+            if (layoutResultsSection != null) layoutResultsSection.setVisibility(View.GONE);
+            if (cardCurrentStatus != null) cardCurrentStatus.setVisibility(View.GONE);
+            if (layoutImportStats != null) layoutImportStats.setVisibility(View.GONE);
+
             if (btnActionImport != null) {
                 btnActionImport.setEnabled(true);
             }
@@ -209,6 +235,9 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
         currentErrors = 0;
 
         if (layoutImportStats != null) layoutImportStats.setVisibility(View.VISIBLE);
+        if (cardCurrentStatus != null) cardCurrentStatus.setVisibility(View.VISIBLE);
+        if (layoutResultsSection != null) layoutResultsSection.setVisibility(View.GONE);
+
         if (m3ProgressIndicator != null) {
             m3ProgressIndicator.setMax(pendingEntries.size());
             m3ProgressIndicator.setProgress(0, false);
@@ -238,43 +267,162 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
                     currentErrors++;
                 }
                 updateStatsViews(current, total);
+                updateCurrentItemCard(item);
             }
 
             @Override
             public void onLog(String message) {
-                if (tvImportStatusLog != null) {
-                    tvImportStatusLog.setText(message);
+                if (tvCurrentStatusDetail != null && message != null) {
+                    if (message.contains("429") || message.contains("Лимит")) {
+                        if (tvCurrentStateBadge != null) {
+                            tvCurrentStateBadge.setText("ПАУЗА 429");
+                            tvCurrentStateBadge.setBackgroundResource(R.drawable.badge_not_found);
+                            tvCurrentStateBadge.setTextColor(Color.parseColor("#FFB74D"));
+                        }
+                    }
+                    tvCurrentStatusDetail.setText(message);
                 }
             }
 
             @Override
-            public void onFinished(int successCount, int alreadyExistsCount, int notFoundCount, int errorCount, boolean cancelled) {
+            public void onFinished(int successCount, int alreadyExistsCount, int notFoundCount, int errorCount, boolean cancelled, List<AnixartImportManager.ImportItemProgress> problemItems) {
                 setCancelable(true);
                 setCanceledOnTouchOutside(true);
 
                 if (btnSelectFile != null) btnSelectFile.setEnabled(true);
                 updateActionButtonState(false);
 
+                if (cardCurrentStatus != null) cardCurrentStatus.setVisibility(View.GONE);
+                showResultsUI(successCount, alreadyExistsCount, notFoundCount, errorCount, cancelled, problemItems);
+
                 if (cancelled) {
-                    if (tvImportStatusLog != null) {
-                        tvImportStatusLog.setText("Импорт остановлен пользователем. Добавлено: " + successCount + ", уже в списке: " + alreadyExistsCount);
-                    }
                     CustomToast.showWarning(getContext(), "Импорт остановлен");
                 } else {
-                    if (tvImportStatusLog != null) {
-                        tvImportStatusLog.setText("Импорт завершен! Добавлено: " + successCount + ", уже в списке: " + alreadyExistsCount + ", не найдено: " + notFoundCount + ", ошибок: " + errorCount);
-                    }
                     CustomToast.showSuccess(getContext(), "Импорт завершен: " + successCount + " добавлено, " + alreadyExistsCount + " пропущено");
                 }
             }
         });
     }
 
+    private void updateCurrentItemCard(AnixartImportManager.ImportItemProgress item) {
+        if (item == null) return;
+
+        String title = item.entry != null ? item.entry.getEffectiveTitle() : "";
+        if (tvCurrentTitleName != null) {
+            tvCurrentTitleName.setText(title);
+        }
+
+        if (tvCurrentStateBadge == null || tvCurrentStatusDetail == null) return;
+
+        switch (item.status) {
+            case PROCESSING:
+                tvCurrentStateBadge.setText("ПОИСК");
+                tvCurrentStateBadge.setBackgroundResource(R.drawable.badge_success);
+                tvCurrentStateBadge.setTextColor(Color.parseColor("#FFFFFF"));
+                tvCurrentStatusDetail.setText("Поиск аниме в базе AnimeLib...");
+                break;
+            case ALREADY_EXISTS:
+                tvCurrentStateBadge.setText("В СПИСКЕ");
+                tvCurrentStateBadge.setBackgroundResource(R.drawable.badge_success);
+                tvCurrentStateBadge.setTextColor(Color.parseColor("#FFFFFF"));
+                tvCurrentStatusDetail.setText("Уже присутствует в списке «Просмотрено»");
+                break;
+            case SUCCESS:
+                tvCurrentStateBadge.setText("ДОБАВЛЕНО");
+                tvCurrentStateBadge.setBackgroundResource(R.drawable.badge_success);
+                tvCurrentStateBadge.setTextColor(Color.parseColor("#FFFFFF"));
+                tvCurrentStatusDetail.setText("Успешно добавлено в закладки!");
+                break;
+            case NOT_FOUND:
+                tvCurrentStateBadge.setText("НЕ НАЙДЕНО");
+                tvCurrentStateBadge.setBackgroundResource(R.drawable.badge_not_found);
+                tvCurrentStateBadge.setTextColor(Color.parseColor("#FFB74D"));
+                tvCurrentStatusDetail.setText("Не найдено в базе AnimeLib");
+                break;
+            case ERROR:
+                tvCurrentStateBadge.setText("ОШИБКА");
+                tvCurrentStateBadge.setBackgroundResource(R.drawable.badge_error);
+                tvCurrentStateBadge.setTextColor(Color.parseColor("#FCA5A5"));
+                tvCurrentStatusDetail.setText(item.errorMessage != null ? item.errorMessage : "Ошибка сохранения");
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void showResultsUI(int successCount, int alreadyExistsCount, int notFoundCount, int errorCount, boolean cancelled, List<AnixartImportManager.ImportItemProgress> problemItems) {
+        if (layoutResultsSection == null) return;
+        layoutResultsSection.setVisibility(View.VISIBLE);
+
+        if (problemItems == null || problemItems.isEmpty()) {
+            if (cardAllSuccess != null) cardAllSuccess.setVisibility(View.VISIBLE);
+            if (layoutProblemItemsSection != null) layoutProblemItemsSection.setVisibility(View.GONE);
+        } else {
+            if (cardAllSuccess != null) cardAllSuccess.setVisibility(View.GONE);
+            if (layoutProblemItemsSection != null) layoutProblemItemsSection.setVisibility(View.VISIBLE);
+
+            if (tvProblemItemsHeader != null) {
+                tvProblemItemsHeader.setText("Не удалось импортировать (" + problemItems.size() + "):");
+            }
+
+            if (layoutProblemItemsContainer != null) {
+                layoutProblemItemsContainer.removeAllViews();
+                LayoutInflater inflater = LayoutInflater.from(getContext());
+
+                for (AnixartImportManager.ImportItemProgress pItem : problemItems) {
+                    View itemView = inflater.inflate(R.layout.item_anixart_import_problem, layoutProblemItemsContainer, false);
+
+                    TextView tvTitle = itemView.findViewById(R.id.tvProblemTitleName);
+                    TextView tvBadge = itemView.findViewById(R.id.tvProblemBadge);
+                    TextView tvSearch = itemView.findViewById(R.id.tvProblemSearchQuery);
+                    TextView tvReason = itemView.findViewById(R.id.tvProblemReason);
+
+                    String mainTitle = pItem.entry != null && !pItem.entry.getPrimaryTitle().isEmpty()
+                            ? pItem.entry.getPrimaryTitle()
+                            : (pItem.entry != null ? pItem.entry.getEffectiveTitle() : "");
+
+                    if (tvTitle != null) tvTitle.setText(mainTitle);
+
+                    if (pItem.entry != null && !pItem.entry.getSearchTitle().isEmpty() && !pItem.entry.getSearchTitle().equalsIgnoreCase(mainTitle)) {
+                        if (tvSearch != null) {
+                            tvSearch.setVisibility(View.VISIBLE);
+                            tvSearch.setText("Поиск: " + pItem.entry.getSearchTitle());
+                        }
+                    } else if (tvSearch != null) {
+                        tvSearch.setVisibility(View.GONE);
+                    }
+
+                    if (pItem.status == AnixartImportManager.ItemResultStatus.NOT_FOUND) {
+                        if (tvBadge != null) {
+                            tvBadge.setText("НЕ НАЙДЕНО");
+                            tvBadge.setBackgroundResource(R.drawable.badge_not_found);
+                            tvBadge.setTextColor(Color.parseColor("#FFB74D"));
+                        }
+                        if (tvReason != null) {
+                            tvReason.setText("Тайтл не найден в каталоге AnimeLib");
+                        }
+                    } else {
+                        if (tvBadge != null) {
+                            tvBadge.setText("ОШИБКА");
+                            tvBadge.setBackgroundResource(R.drawable.badge_error);
+                            tvBadge.setTextColor(Color.parseColor("#FCA5A5"));
+                        }
+                        if (tvReason != null) {
+                            tvReason.setText(pItem.errorMessage != null ? pItem.errorMessage : "Ошибка сохранения статуса");
+                        }
+                    }
+
+                    layoutProblemItemsContainer.addView(itemView);
+                }
+            }
+        }
+    }
+
     private void stopImportProcess() {
         if (importManager.isRunning()) {
             importManager.cancel();
-            if (tvImportStatusLog != null) {
-                tvImportStatusLog.setText("Остановка импорта...");
+            if (tvCurrentStatusDetail != null) {
+                tvCurrentStatusDetail.setText("Остановка импорта...");
             }
             if (btnActionImport != null) {
                 btnActionImport.setEnabled(false);
@@ -316,8 +464,8 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
     private void handleHeaderClose() {
         if (importManager.isRunning()) {
             importManager.cancel();
-            if (tvImportStatusLog != null) {
-                tvImportStatusLog.setText("Остановка импорта...");
+            if (tvCurrentStatusDetail != null) {
+                tvCurrentStatusDetail.setText("Остановка импорта...");
             }
         } else {
             dismiss();

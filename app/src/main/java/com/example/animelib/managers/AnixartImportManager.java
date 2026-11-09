@@ -12,6 +12,7 @@ import com.example.animelib.models.BookmarksListResponse;
 import com.example.animelib.models.SearchResponse;
 import com.example.animelib.util.AnixartParser;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -63,7 +64,7 @@ public class AnixartImportManager {
     public interface ImportListener {
         void onProgress(int current, int total, ImportItemProgress item);
         void onLog(String message);
-        void onFinished(int successCount, int alreadyExistsCount, int notFoundCount, int errorCount, boolean cancelled);
+        void onFinished(int successCount, int alreadyExistsCount, int notFoundCount, int errorCount, boolean cancelled, List<ImportItemProgress> problemItems);
     }
 
     private final ApiService apiService;
@@ -102,7 +103,7 @@ public class AnixartImportManager {
 
     public void startImport(List<AnixartParser.AnixartEntry> entries, @NonNull ImportListener listener) {
         if (entries == null || entries.isEmpty()) {
-            listener.onFinished(0, 0, 0, 0, false);
+            listener.onFinished(0, 0, 0, 0, false, Collections.emptyList());
             return;
         }
 
@@ -119,6 +120,7 @@ public class AnixartImportManager {
             int alreadyExistsCount = 0;
             int notFoundCount = 0;
             int errorCount = 0;
+            List<ImportItemProgress> problemItems = new ArrayList<>();
 
             postLog(listener, "Запуск импорта " + total + " тайтлов...");
 
@@ -170,6 +172,7 @@ public class AnixartImportManager {
                         itemProgress.status = ItemResultStatus.ERROR;
                         itemProgress.errorMessage = searchResult.message != null ? searchResult.message : "Ошибка поиска";
                         errorCount++;
+                        problemItems.add(itemProgress);
                         postProgress(listener, i + 1, total, itemProgress);
                         postLog(listener, "❌ Ошибка поиска: " + itemProgress.errorMessage);
                         sleepSafe(BASE_DELAY_MS);
@@ -193,6 +196,7 @@ public class AnixartImportManager {
                         itemProgress.status = ItemResultStatus.NOT_FOUND;
                         itemProgress.errorMessage = "Не найдено в базе AnimeLib";
                         notFoundCount++;
+                        problemItems.add(itemProgress);
                         postProgress(listener, i + 1, total, itemProgress);
                         postLog(listener, "⚠️ Не найдено в базе AnimeLib");
                         sleepSafe(BASE_DELAY_MS);
@@ -241,6 +245,7 @@ public class AnixartImportManager {
                         itemProgress.status = ItemResultStatus.ERROR;
                         itemProgress.errorMessage = statusResult.message != null ? statusResult.message : "Ошибка добавления в закладки";
                         errorCount++;
+                        problemItems.add(itemProgress);
                         postProgress(listener, i + 1, total, itemProgress);
                         postLog(listener, "❌ Ошибка сохранения: " + itemProgress.errorMessage);
                     }
@@ -258,7 +263,7 @@ public class AnixartImportManager {
                 int finalAlreadyExists = alreadyExistsCount;
                 int finalNotFound = notFoundCount;
                 int finalError = errorCount;
-                postFinished(listener, finalSuccess, finalAlreadyExists, finalNotFound, finalError, cancelled);
+                postFinished(listener, finalSuccess, finalAlreadyExists, finalNotFound, finalError, cancelled, problemItems);
             }
         });
     }
@@ -427,7 +432,7 @@ public class AnixartImportManager {
         mainHandler.post(() -> listener.onLog(message));
     }
 
-    private void postFinished(ImportListener listener, int success, int alreadyExists, int notFound, int error, boolean cancelled) {
-        mainHandler.post(() -> listener.onFinished(success, alreadyExists, notFound, error, cancelled));
+    private void postFinished(ImportListener listener, int success, int alreadyExists, int notFound, int error, boolean cancelled, List<ImportItemProgress> problemItems) {
+        mainHandler.post(() -> listener.onFinished(success, alreadyExists, notFound, error, cancelled, problemItems));
     }
 }

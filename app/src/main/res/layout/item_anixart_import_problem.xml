@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/chip_unselected"
+    android:padding="12dp"
+    android:layout_marginBottom="8dp">
+
+    <!-- Top Row: Title name and Status Badge -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/tvProblemTitleName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Название тайтла"
+            android:textColor="@color/primary_text_color"
+            android:textSize="13.5sp"
+            android:fontFamily="@font/open_sans_bold"
+            android:maxLines="2"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/tvProblemBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="3dp"
+            android:text="НЕ НАЙДЕНО"
+            android:textSize="10sp"
+            android:fontFamily="@font/open_sans_bold"
+            android:textColor="#FFB74D"
+            android:background="@drawable/badge_not_found" />
+
+    </LinearLayout>
+
+    <!-- Subtitle: Search query if different -->
+    <TextView
+        android:id="@+id/tvProblemSearchQuery"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:text="Поиск по: Kimi no koto ga..."
+        android:textColor="@color/accent_text_color"
+        android:textSize="11.5sp"
+        android:fontFamily="@font/open_sans"
+        android:visibility="gone" />
+
+    <!-- Error Reason -->
+    <TextView
+        android:id="@+id/tvProblemReason"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="Не найдено в базе AnimeLib"
+        android:textColor="@color/secondary_text_color"
+        android:textSize="12sp"
+        android:fontFamily="@font/open_sans" />
+
+</LinearLayout>

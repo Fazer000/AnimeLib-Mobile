@@ -192,7 +192,7 @@
                         android:textColor="@color/secondary_text_color" />
                 </LinearLayout>
 
-                <!-- M3 Linear Progress Indicator (как в activity_update) -->
+                <!-- M3 Linear Progress Indicator -->
                 <com.example.animelib.ui.M3LinearProgressIndicator
                     android:id="@+id/m3ProgressIndicator"
                     android:layout_width="match_parent"
@@ -255,24 +255,164 @@
 
             </LinearLayout>
 
-            <!-- 3. Status Log Box -->
-            <TextView
-                android:id="@+id/tvImportStatusLog"
+            <!-- 3. Current Live Status Card (Visible during processing) -->
+            <LinearLayout
+                android:id="@+id/cardCurrentStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:orientation="vertical"
                 android:background="@drawable/chip_unselected"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="10dp"
-                android:text="Готов к импорту. Формат строк: 1 / &quot;Название&quot; / &quot;Англ Название&quot;"
-                android:textColor="@color/secondary_text_color"
-                android:textSize="12sp"
-                android:fontFamily="@font/open_sans"
-                android:lineSpacingExtra="2dp"
-                android:maxLines="3"
-                android:ellipsize="end" />
+                android:padding="14dp"
+                android:layout_marginTop="10dp"
+                android:visibility="gone">
 
-            <!-- 4. Single Full-Width Action Button (Start / Stop) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Обработка тайтла"
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="12sp"
+                        android:fontFamily="@font/open_sans_semibold" />
+
+                    <TextView
+                        android:id="@+id/tvCurrentStateBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="8dp"
+                        android:paddingVertical="3dp"
+                        android:text="ПОИСК"
+                        android:textSize="10sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:textColor="#FFFFFF"
+                        android:background="@drawable/badge_success" />
+
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvCurrentTitleName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Название тайтла..."
+                    android:textColor="@color/primary_text_color"
+                    android:textSize="14sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:maxLines="2"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:id="@+id/tvCurrentStatusDetail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="Поиск в базе AnimeLib..."
+                    android:textColor="@color/secondary_text_color"
+                    android:textSize="12sp"
+                    android:fontFamily="@font/open_sans" />
+
+            </LinearLayout>
+
+            <!-- 4. Final Results Section (Visible after import finishes/stops) -->
+            <LinearLayout
+                android:id="@+id/layoutResultsSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="14dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Результаты импорта"
+                    android:textColor="@color/primary_text_color"
+                    android:textSize="14sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:layout_marginBottom="8dp"
+                    android:layout_marginStart="4dp" />
+
+                <!-- All Success Card -->
+                <LinearLayout
+                    android:id="@+id/cardAllSuccess"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/chip_unselected"
+                    android:padding="14dp"
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:layout_width="28dp"
+                        android:layout_height="28dp"
+                        android:src="@drawable/ic_check"
+                        app:tint="#3CCE7B"
+                        android:layout_marginEnd="12dp" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Все тайтлы обработаны"
+                            android:textColor="@color/primary_text_color"
+                            android:textSize="14sp"
+                            android:fontFamily="@font/open_sans_bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Все записи успешно добавлены в закладки или уже находились в вашем списке."
+                            android:textColor="@color/secondary_text_color"
+                            android:textSize="12sp"
+                            android:fontFamily="@font/open_sans" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+                <!-- Problem Items List Container -->
+                <LinearLayout
+                    android:id="@+id/layoutProblemItemsSection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/tvProblemItemsHeader"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Не удалось импортировать (0):"
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans_semibold"
+                        android:layout_marginBottom="8dp"
+                        android:layout_marginStart="4dp" />
+
+                    <LinearLayout
+                        android:id="@+id/layoutProblemItemsContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- 5. Single Full-Width Action Button (Start / Stop / Re-select) -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnActionImport"
                 style="@style/Widget.AnimeLIB.Button"
