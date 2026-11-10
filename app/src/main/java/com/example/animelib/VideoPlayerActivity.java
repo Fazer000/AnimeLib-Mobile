@@ -6432,7 +6432,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
             btnPlayerPlayPause.setOnClickListener(v -> {
                 Log.d("PlayerControls", "Play/Pause morphing button clicked!");
                 if (player != null) {
-                    if (player.isPlaying()) {
+                    if (player.getPlaybackState() == Player.STATE_ENDED) {
+                        player.seekTo(0);
+                        player.play();
+                    } else if (player.isPlaying() || player.getPlayWhenReady()) {
                         player.pause();
                     } else {
                         player.play();
@@ -6549,7 +6552,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             int targetState;
             if (showBuffering) {
                 targetState = 2; // LOADING
-            } else if (realIsPlaying || (isPlayWhenReady && playbackState == Player.STATE_READY)) {
+            } else if (!isEnded && (realIsPlaying || (isPlayWhenReady && playbackState == Player.STATE_READY))) {
                 targetState = 1; // PAUSE
             } else {
                 targetState = 0; // PLAY

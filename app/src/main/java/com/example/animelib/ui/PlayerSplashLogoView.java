@@ -8,9 +8,6 @@ import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PathMeasure;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffXfermode;
-import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.os.SystemClock;
@@ -26,8 +23,10 @@ import androidx.core.graphics.PathParser;
 import com.example.animelib.R;
 
 /**
- * Кастомный векторный логотип сплешскрина плеера с раздельной хореографией элементов:
- * верхней левой скобки (┏), нижней правой скобки (┛) и центральной литеры «A».
+ * Кастомный векторный логотип сплешскрина с плавным аппаратным переливанием света:
+ * - Скобочки всегда сохраняют 100% сочный брендовый цвет (не обесцвечиваются).
+ * - Безупречно плавный, непрерывный перелив световой волны (без лагов, без микро-фризов, без saveLayer).
+ * - Гармоничный отклик блика на центральной литере «A».
  */
 public class PlayerSplashLogoView extends View {
 
@@ -35,9 +34,9 @@ public class PlayerSplashLogoView extends View {
     private static final float VIEWPORT_H = 104.2f;
 
     private static final long ENTRY_DURATION_MS = 380L;
-    private static final long LOOP_BLEND_START_MS = 300L;
-    private static final long LOOP_BLEND_DURATION_MS = 300L;
-    private static final long CYCLE_DURATION_MS = 1460L;
+    private static final long LOOP_BLEND_START_MS = 280L;
+    private static final long LOOP_BLEND_DURATION_MS = 260L;
+    private static final long CYCLE_DURATION_MS = 1400L;
     private static final long EXIT_DURATION_MS = 240L;
 
     private static final String SVG_BRACKET_TL =
@@ -108,12 +107,9 @@ public class PlayerSplashLogoView extends View {
     private float traceLengthTL = 0f;
     private float traceLengthBR = 0f;
 
-    private final RectF bracketTLBounds = new RectF();
-    private final RectF bracketBRBounds = new RectF();
     private final RectF letterABounds = new RectF();
 
     private final Matrix transformMatrix = new Matrix();
-    private final Matrix crestMatrix = new Matrix();
     private final Matrix sheenMatrix = new Matrix();
 
     private final float[] headPos = new float[2];
@@ -121,14 +117,14 @@ public class PlayerSplashLogoView extends View {
     private final Paint letterAPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint letterASheenPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint bracketBasePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint bracketPulsePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint bracketCrestPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint layerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint bracketPulseGlowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint bracketPulseCorePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint bracketSparkPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-    private RadialGradient bracketCrestShader;
     private LinearGradient letterASheenShader;
 
     private int brandPurpleColor;
+    private int brandGlowColor;
     private int letterAColor;
     private boolean isNightMode;
 
@@ -177,7 +173,7 @@ public class PlayerSplashLogoView extends View {
             rawLetterA.setFillType(Path.FillType.EVEN_ODD);
         }
 
-        // Осевые траектории вдоль скобок для плавного пробега светового импульса
+        // Осевые траектории вдоль скобок для естественного пробега светового импульса
         rawTraceTL = new Path();
         rawTraceTL.moveTo(6.4f, 43.2f);
         rawTraceTL.lineTo(6.4f, 9.4f);
@@ -190,38 +186,40 @@ public class PlayerSplashLogoView extends View {
         rawTraceBR.quadTo(97.4f, 97.75f, 94.4f, 97.75f);
         rawTraceBR.lineTo(60.6f, 97.75f);
 
-        PorterDuffXfermode srcAtop = new PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP);
-
         letterAPaint.setStyle(Paint.Style.FILL);
         letterASheenPaint.setStyle(Paint.Style.FILL);
-        letterASheenPaint.setXfermode(srcAtop);
 
         bracketBasePaint.setStyle(Paint.Style.FILL);
 
-        bracketPulsePaint.setStyle(Paint.Style.STROKE);
-        bracketPulsePaint.setStrokeCap(Paint.Cap.ROUND);
-        bracketPulsePaint.setStrokeJoin(Paint.Join.ROUND);
-        bracketPulsePaint.setXfermode(srcAtop);
+        bracketPulseGlowPaint.setStyle(Paint.Style.STROKE);
+        bracketPulseGlowPaint.setStrokeCap(Paint.Cap.ROUND);
+        bracketPulseGlowPaint.setStrokeJoin(Paint.Join.ROUND);
 
-        bracketCrestPaint.setStyle(Paint.Style.STROKE);
-        bracketCrestPaint.setStrokeCap(Paint.Cap.ROUND);
-        bracketCrestPaint.setStrokeJoin(Paint.Join.ROUND);
-        bracketCrestPaint.setXfermode(srcAtop);
+        bracketPulseCorePaint.setStyle(Paint.Style.STROKE);
+        bracketPulseCorePaint.setStrokeCap(Paint.Cap.ROUND);
+        bracketPulseCorePaint.setStrokeJoin(Paint.Join.ROUND);
+
+        bracketSparkPaint.setStyle(Paint.Style.FILL);
 
         refreshThemeColors(context);
     }
 
     private void refreshThemeColors(Context context) {
         if ("mangalib".equalsIgnoreCase(currentSiteKey)) {
-            brandPurpleColor = 0xFFFF9800;
+            brandPurpleColor = 0xFFFF9800; // Orange
+            brandGlowColor = 0xFFFFE082;   // Light amber
         } else if ("ranobelib".equalsIgnoreCase(currentSiteKey)) {
-            brandPurpleColor = 0xFF2196F3;
+            brandPurpleColor = 0xFF2196F3; // Blue
+            brandGlowColor = 0xFF80D8FF;   // Light blue
         } else if ("hentailib".equalsIgnoreCase(currentSiteKey)) {
-            brandPurpleColor = 0xFFEC407A;
+            brandPurpleColor = 0xFFEC407A; // Pink
+            brandGlowColor = 0xFFFF80AB;   // Light pink
         } else if ("slashlib".equalsIgnoreCase(currentSiteKey)) {
-            brandPurpleColor = 0xFFE53935;
+            brandPurpleColor = 0xFFE53935; // Red
+            brandGlowColor = 0xFFFF8A80;   // Light red
         } else {
             brandPurpleColor = ContextCompat.getColor(context, R.color.purple_primary);
+            brandGlowColor = 0xFFD1C4E9;   // Soft luminous lavender
         }
 
         letterAColor = ContextCompat.getColor(context, R.color.player_splash_logo_a);
@@ -230,7 +228,9 @@ public class PlayerSplashLogoView extends View {
 
         letterAPaint.setColor(letterAColor);
         bracketBasePaint.setColor(brandPurpleColor);
-        bracketPulsePaint.setColor(brandPurpleColor);
+        bracketPulseGlowPaint.setColor(brandGlowColor);
+        bracketPulseCorePaint.setColor(0xFFFFFFFF);
+        bracketSparkPaint.setColor(0xFFFFFFFF);
     }
 
     public void setSiteKey(String siteKey) {
@@ -298,7 +298,6 @@ public class PlayerSplashLogoView extends View {
         refreshThemeColors(getContext());
 
         float minDim = Math.min(w, h);
-        // Оставляем запас по краям под диагональное схождение/дыхание скобок без обрезки
         float inset = minDim * 0.145f;
         float availW = Math.max(1f, w - 2f * inset);
         float availH = Math.max(1f, h - 2f * inset);
@@ -315,13 +314,9 @@ public class PlayerSplashLogoView extends View {
 
         if (rawBracketTL != null) {
             rawBracketTL.transform(transformMatrix, scaledBracketTL);
-            scaledBracketTL.computeBounds(bracketTLBounds, true);
-            bracketTLBounds.inset(-4f, -4f);
         }
         if (rawBracketBR != null) {
             rawBracketBR.transform(transformMatrix, scaledBracketBR);
-            scaledBracketBR.computeBounds(bracketBRBounds, true);
-            bracketBRBounds.inset(-4f, -4f);
         }
         if (rawLetterA != null) {
             rawLetterA.transform(transformMatrix, scaledLetterA);
@@ -340,21 +335,12 @@ public class PlayerSplashLogoView extends View {
             traceLengthBR = pathMeasureBR.getLength();
         }
 
-        float strokePx = Math.max(4f, 17.5f * viewportScale);
-        bracketPulsePaint.setStrokeWidth(strokePx);
-        bracketCrestPaint.setStrokeWidth(strokePx);
+        float strokePx = Math.max(4f, 15f * viewportScale);
+        bracketPulseGlowPaint.setStrokeWidth(strokePx * 1.35f);
+        bracketPulseCorePaint.setStrokeWidth(strokePx * 0.70f);
 
-        float crestRadius = Math.max(14f, 26f * viewportScale);
-        int crestPeak = isNightMode ? 0x99D2B8FF : 0x80B794F6;
-        bracketCrestShader = new RadialGradient(
-                0f, 0f, crestRadius,
-                crestPeak, 0x00B794F6,
-                Shader.TileMode.CLAMP
-        );
-        bracketCrestPaint.setShader(bracketCrestShader);
-
-        sheenHalfBand = Math.max(12f, letterABounds.width() * 0.36f);
-        int sheenPeak = isNightMode ? 0x4AD8B4FE : 0x529F67FF;
+        sheenHalfBand = Math.max(12f, letterABounds.width() * 0.40f);
+        int sheenPeak = isNightMode ? 0x90FFFFFF : 0x75FFFFFF;
         letterASheenShader = new LinearGradient(
                 -sheenHalfBand, -sheenHalfBand * 0.42f,
                 sheenHalfBand, sheenHalfBand * 0.42f,
@@ -441,12 +427,12 @@ public class PlayerSplashLogoView extends View {
         long now = isRunning ? SystemClock.uptimeMillis() : (startTimeUptimeMs + ENTRY_DURATION_MS);
         long elapsed = Math.max(0L, now - startTimeUptimeMs);
 
-        // 1. Вход: схождение скобок к центру и проявление литеры «A»
+        // 1. Вход: плавное проявление и схождение скобок к центру
         float rawEntry = clamp01(elapsed / (float) ENTRY_DURATION_MS);
         float easedEntry = easeOutQuint(rawEntry);
-        float masterAlpha = clamp01(elapsed / 170f);
+        float masterAlpha = clamp01(elapsed / 160f);
 
-        // 2. Переход в режим живого индикатора на скобках
+        // 2. Плавное включение живой анимации без скачков
         float loopBlend;
         float exitEased = 0f;
         if (isExiting) {
@@ -461,98 +447,113 @@ public class PlayerSplashLogoView extends View {
             );
         }
 
-        // 3. Цикл пробега импульсов по скобкам и отклика на «A»
+        // 3. Непрерывный 1400мс цикл: волна света по скобкам + отклик на «A»
         long cycleElapsed = Math.max(0L, elapsed - LOOP_BLEND_START_MS);
         float cycleT = (cycleElapsed % CYCLE_DURATION_MS) / (float) CYCLE_DURATION_MS;
 
-        float headT = easeInOutCubic(clamp01(cycleT / 0.65f));
-        float tailT = easeInOutCubic(clamp01((cycleT - 0.17f) / 0.63f));
-
-        // Мягкое оптическое дыхание скобок на повороте угла (без «резиновости»)
-        float breathUnits = 0f;
-        if (cycleT > 0.10f && cycleT < 0.68f) {
-            float bt = (cycleT - 0.10f) / 0.58f;
-            float s = (float) Math.sin(Math.PI * bt);
-            breathUnits = 2.1f * s * s * loopBlend;
-        }
+        // Непрерывное гармоничное дыхание (синусоида без скачков на границах циклов)
+        float breathT = (float) Math.sin(cycleT * 2f * Math.PI);
+        float breathUnits = 1.35f * breathT * loopBlend;
 
         float entryOffsetUnits = (1f - easedEntry) * 18.5f;
         float exitOffsetUnits = exitEased * 6.8f;
         float totalDiagPx = (entryOffsetUnits + breathUnits + exitOffsetUnits) * viewportScale;
 
-        // Легкий контр-масштаб центральной «A» для ощущения глубины слоев
+        // Живой контр-масштаб центральной литеры «A»
         float aScale = (0.90f + 0.10f * easedEntry)
-                + (0.016f * (breathUnits / 2.1f))
+                + (0.015f * breathT * loopBlend)
                 + (0.042f * exitEased);
 
-        // --- Отрисовка центральной литеры «A» ---
+        // --- 1. Отрисовка центральной литеры «A» с алмазным бликом ---
         int aAlpha = Math.round(255f * masterAlpha);
         letterAPaint.setColor(applyAlpha(letterAColor, aAlpha));
 
-        boolean hasAGlint = (loopBlend > 0.15f && cycleT > 0.52f && cycleT < 0.90f && letterASheenShader != null);
+        boolean hasAGlint = (loopBlend > 0.05f && cycleT >= 0.46f && cycleT <= 0.88f && letterASheenShader != null);
         canvas.save();
         canvas.scale(aScale, aScale, centerX, centerY);
-        if (hasAGlint) {
-            int saveA = canvas.saveLayer(letterABounds, layerPaint);
-            canvas.drawPath(scaledLetterA, letterAPaint);
+        canvas.drawPath(scaledLetterA, letterAPaint);
 
-            float glintT = easeInOutSine((cycleT - 0.52f) / 0.38f);
+        if (hasAGlint) {
+            canvas.save();
+            canvas.clipPath(scaledLetterA);
+
+            float glintT = easeInOutSine((cycleT - 0.46f) / 0.42f);
             float startX = letterABounds.left - sheenHalfBand * 1.25f;
             float endX = letterABounds.right + sheenHalfBand * 1.25f;
             float curX = startX + (endX - startX) * glintT;
+
             sheenMatrix.reset();
             sheenMatrix.setTranslate(curX, letterABounds.centerY());
             letterASheenShader.setLocalMatrix(sheenMatrix);
             letterASheenPaint.setAlpha(Math.round(255f * loopBlend * masterAlpha));
             canvas.drawRect(letterABounds, letterASheenPaint);
 
-            canvas.restoreToCount(saveA);
-        } else {
-            canvas.drawPath(scaledLetterA, letterAPaint);
+            canvas.restore();
         }
         canvas.restore();
 
-        // --- Отрисовка скобок (┏ и ┛) ---
-        float targetTrackAlpha = isNightMode ? 0.36f : 0.30f;
-        float baseAlphaFraction = (1f - (1f - targetTrackAlpha) * loopBlend) * masterAlpha;
-        bracketBasePaint.setColor(applyAlpha(brandPurpleColor, Math.round(255f * baseAlphaFraction)));
+        // --- 2. Отрисовка скобок (100% сочный брендовый цвет, НИКАКОГО обесцвечивания!) ---
+        bracketBasePaint.setColor(applyAlpha(brandPurpleColor, Math.round(255f * masterAlpha)));
 
-        boolean drawActivePulse = (loopBlend > 0.01f) && ((headT - tailT) > 0.004f)
-                && traceLengthTL > 0f && traceLengthBR > 0f;
+        // Расчет непрерывного пробега световой волны (фаза 0.0 - 0.72)
+        boolean hasActivePulse = (loopBlend > 0.01f && cycleT <= 0.72f && traceLengthTL > 0f && traceLengthBR > 0f);
 
-        if (drawActivePulse) {
-            int pulseAlpha = Math.round(255f * loopBlend * masterAlpha);
-            bracketPulsePaint.setColor(applyAlpha(brandPurpleColor, pulseAlpha));
-            bracketCrestPaint.setAlpha(pulseAlpha);
+        if (hasActivePulse) {
+            float u = easeInOutQuad(cycleT / 0.72f);
 
-            // Верхняя левая скобка (┏)
+            // Верхняя левая скобка (TL)
+            float pulseLenTL = traceLengthTL * 0.44f;
+            float travelDistTL = u * (traceLengthTL + pulseLenTL);
+            float headDTL = Math.min(traceLengthTL, travelDistTL);
+            float tailDTL = Math.max(0f, travelDistTL - pulseLenTL);
+
+            float alphaFractionTL = 1.0f;
+            if (travelDistTL < pulseLenTL) {
+                alphaFractionTL = travelDistTL / pulseLenTL;
+            } else if (travelDistTL > traceLengthTL) {
+                alphaFractionTL = 1.0f - (travelDistTL - traceLengthTL) / pulseLenTL;
+            }
+            alphaFractionTL = clamp01(alphaFractionTL) * loopBlend * masterAlpha;
+
             drawAnimatedBracket(
                     canvas,
                     scaledBracketTL,
-                    bracketTLBounds,
                     pathMeasureTL,
-                    traceLengthTL,
                     activeSegmentTL,
-                    tailT,
-                    headT,
+                    tailDTL,
+                    headDTL,
+                    alphaFractionTL,
                     -totalDiagPx,
                     -totalDiagPx
             );
 
-            // Нижняя правая скобка (┛)
+            // Нижняя правая скобка (BR)
+            float pulseLenBR = traceLengthBR * 0.44f;
+            float travelDistBR = u * (traceLengthBR + pulseLenBR);
+            float headDBR = Math.min(traceLengthBR, travelDistBR);
+            float tailDBR = Math.max(0f, travelDistBR - pulseLenBR);
+
+            float alphaFractionBR = 1.0f;
+            if (travelDistBR < pulseLenBR) {
+                alphaFractionBR = travelDistBR / pulseLenBR;
+            } else if (travelDistBR > traceLengthBR) {
+                alphaFractionBR = 1.0f - (travelDistBR - traceLengthBR) / pulseLenBR;
+            }
+            alphaFractionBR = clamp01(alphaFractionBR) * loopBlend * masterAlpha;
+
             drawAnimatedBracket(
                     canvas,
                     scaledBracketBR,
-                    bracketBRBounds,
                     pathMeasureBR,
-                    traceLengthBR,
                     activeSegmentBR,
-                    tailT,
-                    headT,
+                    tailDBR,
+                    headDBR,
+                    alphaFractionBR,
                     totalDiagPx,
                     totalDiagPx
             );
         } else {
+            // Статичная отрисовка 100% сочных скобок с легким дыханием
             canvas.save();
             canvas.translate(-totalDiagPx, -totalDiagPx);
             canvas.drawPath(scaledBracketTL, bracketBasePaint);
@@ -565,39 +566,52 @@ public class PlayerSplashLogoView extends View {
         }
     }
 
+    /**
+     * Отрисовывает скобку со 100% сочным базовым цветом и гладким световым переливом внутри.
+     * Не использует saveLayer, работает напрямую в GPU буфере без микро-фризов.
+     */
     private void drawAnimatedBracket(
             @NonNull Canvas canvas,
             @NonNull Path bracketOutline,
-            @NonNull RectF localBounds,
             @NonNull PathMeasure pm,
-            float totalLen,
             @NonNull Path outSegment,
-            float tailT,
-            float headT,
+            float tailD,
+            float headD,
+            float alphaFraction,
             float dx,
             float dy
     ) {
-        outSegment.reset();
-        float startD = tailT * totalLen;
-        float stopD = headT * totalLen;
-        pm.getSegment(startD, stopD, outSegment, true);
-        pm.getPosTan(stopD, headPos, null);
-
         canvas.save();
         canvas.translate(dx, dy);
-        int sc = canvas.saveLayer(localBounds, layerPaint);
 
+        // 1. Всегда рисуем базовую скобку в 100% сочном брендовом цвете
         canvas.drawPath(bracketOutline, bracketBasePaint);
-        canvas.drawPath(outSegment, bracketPulsePaint);
 
-        if (bracketCrestShader != null) {
-            crestMatrix.reset();
-            crestMatrix.setTranslate(headPos[0], headPos[1]);
-            bracketCrestShader.setLocalMatrix(crestMatrix);
-            canvas.drawPath(outSegment, bracketCrestPaint);
+        // 2. Внутри скобки отрисовываем переливающийся световой импульс
+        if (headD > tailD && alphaFraction > 0.01f) {
+            outSegment.reset();
+            pm.getSegment(tailD, headD, outSegment, true);
+            pm.getPosTan(headD, headPos, null);
+
+            canvas.save();
+            canvas.clipPath(bracketOutline);
+
+            // Мягкий неоновый ореол вокруг импульса
+            bracketPulseGlowPaint.setAlpha(Math.round(180f * alphaFraction));
+            canvas.drawPath(outSegment, bracketPulseGlowPaint);
+
+            // Яркое белое ядро импульса
+            bracketPulseCorePaint.setAlpha(Math.round(230f * alphaFraction));
+            canvas.drawPath(outSegment, bracketPulseCorePaint);
+
+            // Головная светящаяся искра на пике волны
+            float sparkRadius = 6.0f * viewportScale;
+            bracketSparkPaint.setAlpha(Math.round(255f * alphaFraction));
+            canvas.drawCircle(headPos[0], headPos[1], sparkRadius, bracketSparkPaint);
+
+            canvas.restore();
         }
 
-        canvas.restoreToCount(sc);
         canvas.restore();
     }
 
@@ -626,11 +640,9 @@ public class PlayerSplashLogoView extends View {
         return 1f - inv * inv * inv;
     }
 
-    private static float easeInOutCubic(float t) {
+    private static float easeInOutQuad(float t) {
         t = clamp01(t);
-        return t < 0.5f
-                ? 4f * t * t * t
-                : 1f - (float) Math.pow(-2f * t + 2f, 3) / 2f;
+        return t < 0.5f ? 2f * t * t : 1f - (float) Math.pow(-2f * t + 2f, 2) / 2f;
     }
 
     private static float easeInOutSine(float t) {

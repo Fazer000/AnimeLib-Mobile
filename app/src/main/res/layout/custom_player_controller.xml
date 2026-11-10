@@ -189,7 +189,7 @@
                 android:id="@+id/btnPlayerPlayPause"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:padding="8dp"
+                android:padding="14dp"
                 android:layout_gravity="center"
                 android:background="@android:color/transparent"
                 android:foreground="@drawable/ripple_circle"
@@ -220,7 +220,7 @@
                 app:indicatorColor="@color/purple_primary"
                 app:trackCornerRadius="8dp"
                 app:trackThickness="4dp"
-                app:indicatorSize="64dp"
+                app:indicatorSize="48dp"
                 android:visibility="gone"
                 android:clickable="false"
                 android:focusable="false" />

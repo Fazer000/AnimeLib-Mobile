@@ -10,23 +10,24 @@ import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
-import android.view.animation.DecelerateInterpolator;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.interpolator.view.animation.FastOutSlowInInterpolator;
 
 /**
- * YouTube-style Morphing Play/Pause Drawable.
- * Morphing path transformation with rotation and elastic pulse scaling.
+ * High-performance Morphing Outlined Play/Pause Drawable.
+ * Directly morphs an outlined (stroke) rounded Play triangle into two outlined (stroke) Pause bars.
+ * No rotation. Generous corner rounding. Ultra-smooth Material cubic interpolation with subtle tactile pulse.
  */
 public class PlayPauseDrawable extends Drawable {
 
     private final Paint paint;
-    private final Path leftPath;
-    private final Path rightPath;
+    private final Path playPath;
+    private final Path leftBarPath;
+    private final Path rightBarPath;
 
     private float progress = 0.0f; // 0.0f = PLAY, 1.0f = PAUSE
-    private float rotation = 0.0f; // in degrees
     private boolean isPause = false;
     private ValueAnimator animator;
 
@@ -34,11 +35,14 @@ public class PlayPauseDrawable extends Drawable {
 
     public PlayPauseDrawable() {
         paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setStyle(Paint.Style.FILL);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
         paint.setColor(color);
 
-        leftPath = new Path();
-        rightPath = new Path();
+        playPath = new Path();
+        leftBarPath = new Path();
+        rightBarPath = new Path();
     }
 
     public PlayPauseDrawable(int color) {
@@ -52,6 +56,10 @@ public class PlayPauseDrawable extends Drawable {
         invalidateSelf();
     }
 
+    public boolean isPause() {
+        return isPause;
+    }
+
     public boolean isAnimating() {
         return animator != null && animator.isRunning();
     }
@@ -59,12 +67,10 @@ public class PlayPauseDrawable extends Drawable {
     public void setPause(boolean pause, boolean animate) {
         if (this.isPause == pause) {
             if (isAnimating()) {
-                // If it's already morphing towards this state, let it complete
                 return;
             }
             if (!animate) {
                 this.progress = pause ? 1.0f : 0.0f;
-                this.rotation = pause ? 90.0f : 0.0f;
                 invalidateSelf();
             }
             return;
@@ -72,14 +78,12 @@ public class PlayPauseDrawable extends Drawable {
 
         this.isPause = pause;
         float targetProgress = pause ? 1.0f : 0.0f;
-        float targetRotation = pause ? 90.0f : 0.0f;
 
         if (!animate) {
             if (animator != null) {
                 animator.cancel();
             }
             this.progress = targetProgress;
-            this.rotation = targetRotation;
             invalidateSelf();
             return;
         }
@@ -89,15 +93,12 @@ public class PlayPauseDrawable extends Drawable {
         }
 
         float startProgress = this.progress;
-        float startRotation = this.rotation;
 
-        animator = ValueAnimator.ofFloat(0.0f, 1.0f);
-        animator.setDuration(320);
-        animator.setInterpolator(new android.view.animation.OvershootInterpolator(1.2f));
+        animator = ValueAnimator.ofFloat(startProgress, targetProgress);
+        animator.setDuration(260);
+        animator.setInterpolator(new FastOutSlowInInterpolator());
         animator.addUpdateListener(animation -> {
-            float fraction = (float) animation.getAnimatedValue();
-            progress = startProgress + (targetProgress - startProgress) * fraction;
-            rotation = startRotation + (targetRotation - startRotation) * fraction;
+            progress = (float) animation.getAnimatedValue();
             invalidateSelf();
         });
         animator.start();
@@ -117,63 +118,78 @@ public class PlayPauseDrawable extends Drawable {
         float cx = bounds.exactCenterX();
         float cy = bounds.exactCenterY();
 
+        // Stroke width aligned with the outlined player theme
+        float strokeWidth = 1.85f * scale;
+        paint.setStrokeWidth(strokeWidth);
+
         int saveCount = canvas.save();
 
-        // 1. Elastic pulse scaling during morphing
-        float pulse = 1.0f - 0.12f * (float) Math.sin(progress * Math.PI);
+        float p = Math.max(0.0f, Math.min(1.0f, progress));
+
+        // Subtle organic tactile pulse during transition (compress slightly then release)
+        float pulse = 1.0f - 0.08f * (float) Math.sin(p * Math.PI);
         canvas.scale(pulse, pulse, cx, cy);
 
-        // 2. Rotate canvas
-        canvas.rotate(rotation, cx, cy);
+        // Generous corner rounding for the play triangle
+        float cornerRadius = 3.2f * scale;
 
-        // 3. Smooth corner rounding
-        float cornerRadius = (2.2f - 0.8f * progress) * scale;
-        paint.setPathEffect(new CornerPathEffect(cornerRadius));
+        if (p <= 0.001f) {
+            // Pure PLAY: Single continuous stroked triangle with soft, smooth, rounded corners
+            paint.setPathEffect(new CornerPathEffect(cornerRadius));
 
-        float p = progress;
+            playPath.rewind();
+            playPath.moveTo(cx + (7.5f - 12.0f) * scale, cy + (5.0f - 12.0f) * scale);
+            playPath.lineTo(cx + (19.2f - 12.0f) * scale, cy + (12.0f - 12.0f) * scale);
+            playPath.lineTo(cx + (7.5f - 12.0f) * scale, cy + (19.0f - 12.0f) * scale);
+            playPath.close();
 
-        // Path 1 (Left bar <-> Top triangle half)
-        float x11 = 7.5f - 2.75f * p;
-        float y11 = 4.75f + 2.0f * p;
+            canvas.drawPath(playPath, paint);
+            paint.setPathEffect(null);
+        } else if (p >= 0.999f) {
+            // Pure PAUSE: Two vertical parallel stroke bars with round caps
+            paint.setPathEffect(null);
+            float x1 = cx + (8.5f - 12.0f) * scale;
+            float x2 = cx + (15.5f - 12.0f) * scale;
+            float yTop = cy + (5.5f - 12.0f) * scale;
+            float yBot = cy + (18.5f - 12.0f) * scale;
 
-        float x12 = 18.5f + 0.75f * p;
-        float y12 = 12.0f - 5.25f * p;
+            canvas.drawLine(x1, yTop, x1, yBot, paint);
+            canvas.drawLine(x2, yTop, x2, yBot, paint);
+        } else {
+            // Smooth morphing in-between without rotation
+            float currentRadius = cornerRadius * (1.0f - p);
+            if (currentRadius > 0.1f) {
+                paint.setPathEffect(new CornerPathEffect(currentRadius));
+            } else {
+                paint.setPathEffect(null);
+            }
 
-        float x13 = 18.5f + 0.75f * p;
-        float y13 = 12.0f - 0.75f * p;
+            float x_left = 7.5f + (8.5f - 7.5f) * p;
 
-        float x14 = 7.5f - 2.75f * p;
-        float y14 = 12.0f - 0.75f * p;
+            float x_top = 7.5f + (15.5f - 7.5f) * p;
+            float y_top = 5.0f + 0.5f * p;
 
-        leftPath.rewind();
-        leftPath.moveTo(cx + (x11 - 12.0f) * scale, cy + (y11 - 12.0f) * scale);
-        leftPath.lineTo(cx + (x12 - 12.0f) * scale, cy + (y12 - 12.0f) * scale);
-        leftPath.lineTo(cx + (x13 - 12.0f) * scale, cy + (y13 - 12.0f) * scale);
-        leftPath.lineTo(cx + (x14 - 12.0f) * scale, cy + (y14 - 12.0f) * scale);
-        leftPath.close();
+            float x_apex = 19.2f - (19.2f - 15.5f) * p;
+            float y_apex = 12.0f;
 
-        // Path 2 (Right bar <-> Bottom triangle half)
-        float x21 = 7.5f - 2.75f * p;
-        float y21 = 12.0f + 0.75f * p;
+            float x_bot = 7.5f + (15.5f - 7.5f) * p;
+            float y_bot = 19.0f - 0.5f * p;
 
-        float x22 = 18.5f + 0.75f * p;
-        float y22 = 12.0f + 0.75f * p;
+            // Left bar
+            leftBarPath.rewind();
+            leftBarPath.moveTo(cx + (x_left - 12.0f) * scale, cy + (5.5f - 12.0f) * scale);
+            leftBarPath.lineTo(cx + (x_left - 12.0f) * scale, cy + (18.5f - 12.0f) * scale);
 
-        float x23 = 18.5f + 0.75f * p;
-        float y23 = 12.0f + 5.25f * p;
+            // Right chevron morphing into vertical bar
+            rightBarPath.rewind();
+            rightBarPath.moveTo(cx + (x_top - 12.0f) * scale, cy + (y_top - 12.0f) * scale);
+            rightBarPath.lineTo(cx + (x_apex - 12.0f) * scale, cy + (y_apex - 12.0f) * scale);
+            rightBarPath.lineTo(cx + (x_bot - 12.0f) * scale, cy + (y_bot - 12.0f) * scale);
 
-        float x24 = 7.5f - 2.75f * p;
-        float y24 = 19.25f - 2.0f * p;
-
-        rightPath.rewind();
-        rightPath.moveTo(cx + (x21 - 12.0f) * scale, cy + (y21 - 12.0f) * scale);
-        rightPath.lineTo(cx + (x22 - 12.0f) * scale, cy + (y22 - 12.0f) * scale);
-        rightPath.lineTo(cx + (x23 - 12.0f) * scale, cy + (y23 - 12.0f) * scale);
-        rightPath.lineTo(cx + (x24 - 12.0f) * scale, cy + (y24 - 12.0f) * scale);
-        rightPath.close();
-
-        canvas.drawPath(leftPath, paint);
-        canvas.drawPath(rightPath, paint);
+            canvas.drawPath(leftBarPath, paint);
+            canvas.drawPath(rightBarPath, paint);
+            paint.setPathEffect(null);
+        }
 
         canvas.restoreToCount(saveCount);
     }
