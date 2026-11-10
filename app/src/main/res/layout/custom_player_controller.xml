@@ -182,38 +182,34 @@
 
         <!-- Play/Pause Button -->
         <FrameLayout
-            android:layout_width="64dp"
-            android:layout_height="64dp">
+            android:layout_width="96dp"
+            android:layout_height="96dp">
+
+            <ImageButton
+                android:id="@+id/btnPlayerPlayPause"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="8dp"
+                android:layout_gravity="center"
+                android:background="@android:color/transparent"
+                android:foreground="@drawable/ripple_circle"
+                android:scaleType="fitCenter"
+                android:visibility="gone"
+                android:contentDescription="Play/Pause"
+                android:clickable="true"
+                android:focusable="true" />
 
             <ImageButton
                 android:id="@+id/btnPlayerPlay"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:padding="0dp"
-                android:layout_gravity="center"
-                android:background="@android:color/transparent"
-                android:foreground="@drawable/ripple_circle"
-                android:src="@drawable/ic_player_play"
-                android:scaleType="fitCenter"
-                android:visibility="gone"
-                android:contentDescription="Play"
-                android:clickable="true"
-                android:focusable="true" />
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone" />
 
             <ImageButton
                 android:id="@+id/btnPlayerPause"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:padding="0dp"
-                android:layout_gravity="center"
-                android:background="@android:color/transparent"
-                android:foreground="@drawable/ripple_circle"
-                android:src="@drawable/ic_player_pause"
-                android:scaleType="fitCenter"
-                android:visibility="gone"
-                android:contentDescription="Pause"
-                android:clickable="true"
-                android:focusable="true" />
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone" />
 
             <com.google.android.material.progressindicator.CircularProgressIndicator
                 android:id="@+id/playLoadingIndicator"
@@ -224,7 +220,7 @@
                 app:indicatorColor="@color/purple_primary"
                 app:trackCornerRadius="8dp"
                 app:trackThickness="4dp"
-                app:indicatorSize="48dp"
+                app:indicatorSize="64dp"
                 android:visibility="gone"
                 android:clickable="false"
                 android:focusable="false" />

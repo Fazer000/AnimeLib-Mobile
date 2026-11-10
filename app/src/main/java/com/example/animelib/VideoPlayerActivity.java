@@ -216,6 +216,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private volatile boolean isSeeking = false;
     private volatile boolean isScrubbingTimeBar = false;
     private int currentControlState = -1; // -1 = uninitialized, 0 = play, 1 = pause, 2 = loading
+    private com.example.animelib.ui.PlayPauseDrawable playPauseDrawable;
     private final Handler seekResetHandler = new Handler(Looper.getMainLooper());
     private Player.Listener playerEventListener;
 
@@ -6417,16 +6418,32 @@ public class VideoPlayerActivity extends AppCompatActivity {
         // Устанавливаем начальную видимость play/pause кнопок и индикатора
         updatePlayPauseAndLoadingState(false);
 
-        // Проверяем, что найдены кнопки управления
+        if (playPauseDrawable == null) {
+            playPauseDrawable = new com.example.animelib.ui.PlayPauseDrawable(android.graphics.Color.WHITE);
+        }
+
+        // Проверяем кнопки управления
+        ImageButton btnPlayerPlayPause = controllerView.findViewById(R.id.btnPlayerPlayPause);
         ImageButton btnPlayerPlay = controllerView.findViewById(R.id.btnPlayerPlay);
         ImageButton btnPlayerPause = controllerView.findViewById(R.id.btnPlayerPause);
 
-        Log.d("PlayerControls", "Player buttons found - Play: " + (btnPlayerPlay != null) +
-                ", Pause: " + (btnPlayerPause != null));
+        if (btnPlayerPlayPause != null) {
+            btnPlayerPlayPause.setImageDrawable(playPauseDrawable);
+            btnPlayerPlayPause.setOnClickListener(v -> {
+                Log.d("PlayerControls", "Play/Pause morphing button clicked!");
+                if (player != null) {
+                    if (player.isPlaying()) {
+                        player.pause();
+                    } else {
+                        player.play();
+                    }
+                    updatePlayPauseAndLoadingState(true);
+                }
+            });
+        }
 
         if (btnPlayerPlay != null) {
             btnPlayerPlay.setOnClickListener(v -> {
-                Log.d("PlayerControls", "Play button clicked!");
                 if (player != null) {
                     player.play();
                     updatePlayPauseAndLoadingState(true);
@@ -6436,7 +6453,6 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         if (btnPlayerPause != null) {
             btnPlayerPause.setOnClickListener(v -> {
-                Log.d("PlayerControls", "Pause button clicked!");
                 if (player != null) {
                     player.pause();
                     updatePlayPauseAndLoadingState(true);
@@ -6462,11 +6478,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
             long currentPos = (player != null) ? player.getCurrentPosition() : 0;
             long bufferedPos = (player != null) ? player.getBufferedPosition() : 0;
             long duration = (player != null) ? player.getDuration() : 0;
-            long bufferedAheadMs = bufferedPos - currentPos;
 
             boolean isNearEnd = duration > 0 && currentPos >= (duration - 2000);
 
-            // Детектируем реальную подгрузку/буферизацию сети (особенно для MP4 AnimeLib и HLS):
+            // Детектируем реальную подгрузку/буферизацию сети:
             boolean isNetworkBuffering = isPlayWhenReady && !isNearEnd && playbackState == Player.STATE_BUFFERING;
 
             // Буферизация / загрузка / перемотка:
@@ -6477,10 +6492,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     || isNetworkBuffering
             );
 
-            // Показываем индикатор буферизации поверх плеера/контролов, если не активен полноэкранный loadingOverlay
+            // Показываем индикатор буферизации поверх плеера/контролов
             boolean showBuffering = isBuffering && (loadingOverlay == null || loadingOverlay.getVisibility() != View.VISIBLE);
 
-            // Оверлейный индикатор на самом плеере (отображается, когда контролы скрыты)
+            // Оверлейный индикатор на самом плеере
             if (playerBufferingIndicator != null) {
                 if (showBuffering && !isControllerVisible) {
                     if (playerBufferingIndicator.getVisibility() != View.VISIBLE) {
@@ -6513,11 +6528,23 @@ public class VideoPlayerActivity extends AppCompatActivity {
             View controllerView = playerView.findViewById(R.id.exo_controller);
             if (controllerView == null) return;
 
-            View play = controllerView.findViewById(R.id.btnPlayerPlay);
-            View pause = controllerView.findViewById(R.id.btnPlayerPause);
+            View playPauseButton = controllerView.findViewById(R.id.btnPlayerPlayPause);
+            if (playPauseButton == null) {
+                playPauseButton = controllerView.findViewById(R.id.btnPlayerPlay);
+            }
             View spinner = controllerView.findViewById(R.id.playLoadingIndicator);
 
-            if (play == null || pause == null || spinner == null) return;
+            if (playPauseButton == null || spinner == null) return;
+
+            if (playPauseDrawable == null) {
+                playPauseDrawable = new com.example.animelib.ui.PlayPauseDrawable(android.graphics.Color.WHITE);
+            }
+            if (playPauseButton instanceof ImageButton) {
+                ImageButton ib = (ImageButton) playPauseButton;
+                if (ib.getDrawable() != playPauseDrawable) {
+                    ib.setImageDrawable(playPauseDrawable);
+                }
+            }
 
             int targetState;
             if (showBuffering) {
@@ -6528,24 +6555,95 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 targetState = 0; // PLAY
             }
 
+            boolean isPlayingState = (targetState == 1);
+            boolean isLoadingState = (targetState == 2);
+            boolean shouldAnimate = animate && (currentControlState != -1);
+
             if (currentControlState == targetState && currentControlState != -1) {
-                // Убедимся, что нужная view точно видима при совпадении состояния
-                View activeView = (targetState == 2) ? spinner : ((targetState == 1) ? pause : play);
-                if (activeView.getVisibility() != View.VISIBLE) {
-                    activeView.setVisibility(View.VISIBLE);
-                    activeView.setAlpha(1.0f);
+                if (isLoadingState) {
+                    if (spinner.getVisibility() != View.VISIBLE) {
+                        spinner.setVisibility(View.VISIBLE);
+                        spinner.setAlpha(1.0f);
+                    }
+                    playPauseButton.setVisibility(View.GONE);
+                } else {
+                    if (playPauseButton.getVisibility() != View.VISIBLE) {
+                        playPauseButton.setVisibility(View.VISIBLE);
+                        playPauseButton.setAlpha(1.0f);
+                    }
+                    spinner.setVisibility(View.GONE);
+                    playPauseDrawable.setPause(isPlayingState, shouldAnimate);
                 }
                 return;
             }
 
-            boolean shouldAnimate = animate && (currentControlState != -1);
             currentControlState = targetState;
 
-            View showView = (targetState == 2) ? spinner : ((targetState == 1) ? pause : play);
-            View hideView1 = (targetState == 2) ? play : ((targetState == 1) ? play : pause);
-            View hideView2 = (targetState == 2) ? pause : ((targetState == 1) ? spinner : spinner);
+            final View targetButton = playPauseButton;
+            final View targetSpinner = spinner;
 
-            animateControlViewSwitch(showView, hideView1, hideView2, shouldAnimate);
+            if (isLoadingState) {
+                if (targetButton.getVisibility() == View.VISIBLE) {
+                    if (shouldAnimate) {
+                        targetButton.animate().cancel();
+                        targetButton.animate()
+                                .alpha(0f)
+                                .scaleX(0.6f)
+                                .scaleY(0.6f)
+                                .setDuration(150)
+                                .withEndAction(() -> targetButton.setVisibility(View.GONE))
+                                .start();
+                    } else {
+                        targetButton.setVisibility(View.GONE);
+                    }
+                }
+                targetSpinner.animate().cancel();
+                targetSpinner.setVisibility(View.VISIBLE);
+                targetSpinner.setAlpha(1.0f);
+                targetSpinner.setScaleX(1.0f);
+                targetSpinner.setScaleY(1.0f);
+                if (targetSpinner instanceof com.google.android.material.progressindicator.CircularProgressIndicator) {
+                    ((com.google.android.material.progressindicator.CircularProgressIndicator) targetSpinner).show();
+                }
+            } else {
+                if (targetSpinner.getVisibility() == View.VISIBLE) {
+                    targetSpinner.animate().cancel();
+                    if (shouldAnimate) {
+                        targetSpinner.animate()
+                                .alpha(0f)
+                                .scaleX(0.6f)
+                                .scaleY(0.6f)
+                                .setDuration(150)
+                                .withEndAction(() -> targetSpinner.setVisibility(View.GONE))
+                                .start();
+                    } else {
+                        targetSpinner.setVisibility(View.GONE);
+                    }
+                }
+
+                if (targetButton.getVisibility() != View.VISIBLE) {
+                    targetButton.animate().cancel();
+                    targetButton.setVisibility(View.VISIBLE);
+                    if (shouldAnimate) {
+                        targetButton.setAlpha(0f);
+                        targetButton.setScaleX(0.7f);
+                        targetButton.setScaleY(0.7f);
+                        targetButton.animate()
+                                .alpha(1.0f)
+                                .scaleX(1.0f)
+                                .scaleY(1.0f)
+                                .setDuration(200)
+                                .start();
+                    } else {
+                        targetButton.setAlpha(1.0f);
+                        targetButton.setScaleX(1.0f);
+                        targetButton.setScaleY(1.0f);
+                    }
+                }
+
+                // Smooth YouTube morphing Play <-> Pause!
+                playPauseDrawable.setPause(isPlayingState, shouldAnimate);
+            }
         });
     }
 
