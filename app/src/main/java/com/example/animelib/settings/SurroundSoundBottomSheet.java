@@ -16,13 +16,15 @@ import com.example.animelib.R;
 import com.example.animelib.util.FloatingBottomSheetUtils;
 import com.example.animelib.util.FlexibleBottomSheetDialog;
 import com.example.animelib.util.Surround51AudioProcessor;
-import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.materialswitch.MaterialSwitch;
 
 public class SurroundSoundBottomSheet extends FlexibleBottomSheetDialog {
 
     public interface OnSurroundChangedListener {
-        void onSurroundChanged(boolean enabled, int mode, float spatialWidth, float dialogueBoost, float bassBoost, float trebleBoost);
+        void onSurroundChanged(boolean enabled, int mode, float spatialWidth, float dialogueBoost, float bassBoost, float trebleBoost, float midBoost);
+        default void onSurroundChanged(boolean enabled, int mode, float spatialWidth, float dialogueBoost, float bassBoost, float trebleBoost) {
+            onSurroundChanged(enabled, mode, spatialWidth, dialogueBoost, bassBoost, trebleBoost, 1.0f);
+        }
     }
 
     public interface OnBackPressedListener {
@@ -34,6 +36,7 @@ public class SurroundSoundBottomSheet extends FlexibleBottomSheetDialog {
     private float currentSpatialWidth = 1.0f;
     private float currentDialogueBoost = 1.0f;
     private float currentBassBoost = 1.0f;
+    private float currentMidBoost = 1.0f;
     private float currentTrebleBoost = 1.0f;
 
     private final OnSurroundChangedListener listener;
@@ -42,16 +45,18 @@ public class SurroundSoundBottomSheet extends FlexibleBottomSheetDialog {
     private MaterialSwitch mainSwitch;
     private LinearLayout controlsContainer;
 
-    private View pillCinema, pillConcert, pillVoice, pillClassic, pillExtreme;
-    private View unselectedCinema, unselectedConcert, unselectedVoice, unselectedClassic, unselectedExtreme;
+    private View pillCinema, pillConcert, pillVoice;
+    private View unselectedCinema, unselectedConcert, unselectedVoice;
     private TextView[] widthChips = new TextView[4];
     private TextView[] dialogueChips = new TextView[4];
     private TextView[] bassChips = new TextView[4];
+    private TextView[] midsChips = new TextView[4];
     private TextView[] trebleChips = new TextView[4];
 
     private final float[] widthValues = {0.7f, 1.0f, 1.4f, 1.8f};
     private final float[] dialogueValues = {0.7f, 1.0f, 1.4f, 1.8f};
     private final float[] bassValues = {0.7f, 1.0f, 1.4f, 1.8f};
+    private final float[] midsValues = {0.7f, 1.0f, 1.4f, 1.8f};
     private final float[] trebleValues = {0.7f, 1.0f, 1.4f, 1.8f};
 
     public SurroundSoundBottomSheet(@NonNull Context context,
@@ -62,12 +67,25 @@ public class SurroundSoundBottomSheet extends FlexibleBottomSheetDialog {
                                     float bassBoost,
                                     float trebleBoost,
                                     OnSurroundChangedListener listener) {
+        this(context, isEnabled, mode, spatialWidth, dialogueBoost, bassBoost, 1.0f, trebleBoost, listener);
+    }
+
+    public SurroundSoundBottomSheet(@NonNull Context context,
+                                    boolean isEnabled,
+                                    int mode,
+                                    float spatialWidth,
+                                    float dialogueBoost,
+                                    float bassBoost,
+                                    float midBoost,
+                                    float trebleBoost,
+                                    OnSurroundChangedListener listener) {
         super(context, com.example.animelib.R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
         this.isEnabled = isEnabled;
         this.currentMode = mode;
         this.currentSpatialWidth = spatialWidth;
         this.currentDialogueBoost = dialogueBoost;
         this.currentBassBoost = bassBoost;
+        this.currentMidBoost = midBoost;
         this.currentTrebleBoost = trebleBoost;
         this.listener = listener;
     }
@@ -91,16 +109,12 @@ public class SurroundSoundBottomSheet extends FlexibleBottomSheetDialog {
         controlsContainer = view.findViewById(R.id.surroundControlsContainer);
 
         pillCinema = view.findViewById(R.id.pillCinema);
-        pillConcert = view.findViewById(R.id.pillConcert);
         pillVoice = view.findViewById(R.id.pillVoice);
-        pillClassic = view.findViewById(R.id.pillClassic);
-        pillExtreme = view.findViewById(R.id.pillExtreme);
+        pillConcert = view.findViewById(R.id.pillConcert);
 
         unselectedCinema = view.findViewById(R.id.unselectedCinema);
-        unselectedConcert = view.findViewById(R.id.unselectedConcert);
         unselectedVoice = view.findViewById(R.id.unselectedVoice);
-        unselectedClassic = view.findViewById(R.id.unselectedClassic);
-        unselectedExtreme = view.findViewById(R.id.unselectedExtreme);
+        unselectedConcert = view.findViewById(R.id.unselectedConcert);
 
         widthChips[0] = view.findViewById(R.id.chipWidth0);
         widthChips[1] = view.findViewById(R.id.chipWidth1);
@@ -116,6 +130,11 @@ public class SurroundSoundBottomSheet extends FlexibleBottomSheetDialog {
         bassChips[1] = view.findViewById(R.id.chipBass1);
         bassChips[2] = view.findViewById(R.id.chipBass2);
         bassChips[3] = view.findViewById(R.id.chipBass3);
+
+        midsChips[0] = view.findViewById(R.id.chipMids0);
+        midsChips[1] = view.findViewById(R.id.chipMids1);
+        midsChips[2] = view.findViewById(R.id.chipMids2);
+        midsChips[3] = view.findViewById(R.id.chipMids3);
 
         trebleChips[0] = view.findViewById(R.id.chipTreble0);
         trebleChips[1] = view.findViewById(R.id.chipTreble1);
@@ -140,56 +159,86 @@ public class SurroundSoundBottomSheet extends FlexibleBottomSheetDialog {
             notifyChanges();
         });
 
-        // Mode option click listeners
-        view.findViewById(R.id.modeCinemaOption).setOnClickListener(v -> selectMode(Surround51AudioProcessor.MODE_CINEMA_3D));
-        view.findViewById(R.id.modeConcertOption).setOnClickListener(v -> selectMode(Surround51AudioProcessor.MODE_CONCERT_3D));
-        view.findViewById(R.id.modeVoiceOption).setOnClickListener(v -> selectMode(Surround51AudioProcessor.MODE_VOICE_3D));
-        view.findViewById(R.id.modeClassicOption).setOnClickListener(v -> selectMode(Surround51AudioProcessor.MODE_CLASSIC_51));
-        view.findViewById(R.id.modeExtremeOption).setOnClickListener(v -> selectMode(Surround51AudioProcessor.MODE_EXTREME_3D));
+        // Mode option click listeners (Cinema, Voice, Concert)
+        View modeCinemaOption = view.findViewById(R.id.modeCinemaOption);
+        if (modeCinemaOption != null) {
+            modeCinemaOption.setOnClickListener(v -> selectMode(Surround51AudioProcessor.MODE_CINEMA_3D));
+        }
+
+        View modeVoiceOption = view.findViewById(R.id.modeVoiceOption);
+        if (modeVoiceOption != null) {
+            modeVoiceOption.setOnClickListener(v -> selectMode(Surround51AudioProcessor.MODE_VOICE_3D));
+        }
+
+        View modeConcertOption = view.findViewById(R.id.modeConcertOption);
+        if (modeConcertOption != null) {
+            modeConcertOption.setOnClickListener(v -> selectMode(Surround51AudioProcessor.MODE_CONCERT_3D));
+        }
 
         updateModeUI();
 
         // Width chip clicks
         for (int i = 0; i < 4; i++) {
             final int index = i;
-            widthChips[i].setOnClickListener(v -> {
-                currentSpatialWidth = widthValues[index];
-                updateWidthChipsUI();
-                notifyChanges();
-            });
+            if (widthChips[i] != null) {
+                widthChips[i].setOnClickListener(v -> {
+                    currentSpatialWidth = widthValues[index];
+                    updateWidthChipsUI();
+                    notifyChanges();
+                });
+            }
         }
         updateWidthChipsUI();
 
         // Dialogue chip clicks
         for (int i = 0; i < 4; i++) {
             final int index = i;
-            dialogueChips[i].setOnClickListener(v -> {
-                currentDialogueBoost = dialogueValues[index];
-                updateDialogueChipsUI();
-                notifyChanges();
-            });
+            if (dialogueChips[i] != null) {
+                dialogueChips[i].setOnClickListener(v -> {
+                    currentDialogueBoost = dialogueValues[index];
+                    updateDialogueChipsUI();
+                    notifyChanges();
+                });
+            }
         }
         updateDialogueChipsUI();
 
         // Bass chip clicks
         for (int i = 0; i < 4; i++) {
             final int index = i;
-            bassChips[i].setOnClickListener(v -> {
-                currentBassBoost = bassValues[index];
-                updateBassChipsUI();
-                notifyChanges();
-            });
+            if (bassChips[i] != null) {
+                bassChips[i].setOnClickListener(v -> {
+                    currentBassBoost = bassValues[index];
+                    updateBassChipsUI();
+                    notifyChanges();
+                });
+            }
         }
         updateBassChipsUI();
+
+        // Mids chip clicks
+        for (int i = 0; i < 4; i++) {
+            final int index = i;
+            if (midsChips[i] != null) {
+                midsChips[i].setOnClickListener(v -> {
+                    currentMidBoost = midsValues[index];
+                    updateMidsChipsUI();
+                    notifyChanges();
+                });
+            }
+        }
+        updateMidsChipsUI();
 
         // Treble chip clicks
         for (int i = 0; i < 4; i++) {
             final int index = i;
-            trebleChips[i].setOnClickListener(v -> {
-                currentTrebleBoost = trebleValues[index];
-                updateTrebleChipsUI();
-                notifyChanges();
-            });
+            if (trebleChips[i] != null) {
+                trebleChips[i].setOnClickListener(v -> {
+                    currentTrebleBoost = trebleValues[index];
+                    updateTrebleChipsUI();
+                    notifyChanges();
+                });
+            }
         }
         updateTrebleChipsUI();
     }
@@ -212,25 +261,17 @@ public class SurroundSoundBottomSheet extends FlexibleBottomSheetDialog {
 
     private void updateModeUI() {
         boolean isCinema = (currentMode == Surround51AudioProcessor.MODE_CINEMA_3D);
-        boolean isConcert = (currentMode == Surround51AudioProcessor.MODE_CONCERT_3D);
         boolean isVoice = (currentMode == Surround51AudioProcessor.MODE_VOICE_3D);
-        boolean isClassic = (currentMode == Surround51AudioProcessor.MODE_CLASSIC_51);
-        boolean isExtreme = (currentMode == Surround51AudioProcessor.MODE_EXTREME_3D);
+        boolean isConcert = (currentMode == Surround51AudioProcessor.MODE_CONCERT_3D);
 
         if (pillCinema != null) pillCinema.setVisibility(isCinema ? View.VISIBLE : View.GONE);
         if (unselectedCinema != null) unselectedCinema.setVisibility(isCinema ? View.GONE : View.VISIBLE);
 
-        if (pillConcert != null) pillConcert.setVisibility(isConcert ? View.VISIBLE : View.GONE);
-        if (unselectedConcert != null) unselectedConcert.setVisibility(isConcert ? View.GONE : View.VISIBLE);
-
         if (pillVoice != null) pillVoice.setVisibility(isVoice ? View.VISIBLE : View.GONE);
         if (unselectedVoice != null) unselectedVoice.setVisibility(isVoice ? View.GONE : View.VISIBLE);
 
-        if (pillClassic != null) pillClassic.setVisibility(isClassic ? View.VISIBLE : View.GONE);
-        if (unselectedClassic != null) unselectedClassic.setVisibility(isClassic ? View.GONE : View.VISIBLE);
-
-        if (pillExtreme != null) pillExtreme.setVisibility(isExtreme ? View.VISIBLE : View.GONE);
-        if (unselectedExtreme != null) unselectedExtreme.setVisibility(isExtreme ? View.GONE : View.VISIBLE);
+        if (pillConcert != null) pillConcert.setVisibility(isConcert ? View.VISIBLE : View.GONE);
+        if (unselectedConcert != null) unselectedConcert.setVisibility(isConcert ? View.GONE : View.VISIBLE);
     }
 
     private void updateWidthChipsUI() {
@@ -272,6 +313,19 @@ public class SurroundSoundBottomSheet extends FlexibleBottomSheetDialog {
         }
     }
 
+    private void updateMidsChipsUI() {
+        int selectedIdx = getClosestIndex(currentMidBoost, midsValues);
+        int selectedColor = androidx.core.content.ContextCompat.getColor(getContext(), R.color.purple_primary);
+        int unselectedColor = androidx.core.content.ContextCompat.getColor(getContext(), R.color.primary_text_color);
+        for (int i = 0; i < 4; i++) {
+            if (midsChips[i] != null) {
+                boolean isSelected = (i == selectedIdx);
+                midsChips[i].setBackgroundResource(isSelected ? R.drawable.chip_selected : R.drawable.chip_unselected);
+                midsChips[i].setTextColor(isSelected ? selectedColor : unselectedColor);
+            }
+        }
+    }
+
     private void updateTrebleChipsUI() {
         int selectedIdx = getClosestIndex(currentTrebleBoost, trebleValues);
         int selectedColor = androidx.core.content.ContextCompat.getColor(getContext(), R.color.purple_primary);
@@ -300,7 +354,8 @@ public class SurroundSoundBottomSheet extends FlexibleBottomSheetDialog {
 
     private void notifyChanges() {
         if (listener != null) {
-            listener.onSurroundChanged(isEnabled, currentMode, currentSpatialWidth, currentDialogueBoost, currentBassBoost, currentTrebleBoost);
+            listener.onSurroundChanged(isEnabled, currentMode, currentSpatialWidth, currentDialogueBoost, currentBassBoost, currentTrebleBoost, currentMidBoost);
         }
     }
 }
+

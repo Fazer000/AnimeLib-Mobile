@@ -154,7 +154,136 @@
                     android:layout_marginStart="8dp" />
             </LinearLayout>
 
-            <!-- 2. Import Progress Section -->
+            <!-- 2. FAQ / Requirements Card -->
+            <LinearLayout
+                android:id="@+id/cardFaq"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/chip_unselected"
+                android:padding="14dp"
+                android:layout_marginTop="12dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_info"
+                        app:tint="@color/purple_primary"
+                        android:layout_marginEnd="8dp" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Инструкция и требования (FAQ)"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="13.5sp"
+                        android:fontFamily="@font/open_sans_bold" />
+
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:background="@color/bs_divider_color"
+                    android:layout_marginTop="10dp"
+                    android:layout_marginBottom="10dp" />
+
+                <!-- Requirement 1 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="8dp">
+
+                    <TextView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:background="@drawable/badge_success"
+                        android:text="1"
+                        android:textColor="#3CCE7B"
+                        android:textSize="11sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:gravity="center"
+                        android:layout_marginEnd="10dp" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Файл нужен строго в формате .txt из приложения Anixart."
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans_semibold" />
+                </LinearLayout>
+
+                <!-- Requirement 2 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="8dp">
+
+                    <TextView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:background="@drawable/badge_not_found"
+                        android:text="2"
+                        android:textColor="#FFB74D"
+                        android:textSize="11sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:gravity="center"
+                        android:layout_marginEnd="10dp" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="В настройках экспорта в Anixart необходимо поставить галочку «Оригинальное название»."
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans_semibold" />
+                </LinearLayout>
+
+                <!-- Requirement 3 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:background="@drawable/badge_error"
+                        android:text="3"
+                        android:textColor="#FCA5A5"
+                        android:textSize="11sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:gravity="center"
+                        android:layout_marginEnd="10dp" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Принимаются только списки «Просмотрено» (статус 24)."
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans_semibold" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- 3. Import Progress Section -->
             <LinearLayout
                 android:id="@+id/layoutImportStats"
                 android:layout_width="match_parent"
@@ -255,7 +384,7 @@
 
             </LinearLayout>
 
-            <!-- 3. Current Live Status Card (Visible during processing) -->
+            <!-- 4. Current Live Status Card (Visible during processing) -->
             <LinearLayout
                 android:id="@+id/cardCurrentStatus"
                 android:layout_width="match_parent"
@@ -319,7 +448,7 @@
 
             </LinearLayout>
 
-            <!-- 4. Final Results Section (Visible after import finishes/stops) -->
+            <!-- 5. Final Results Section (Visible after import finishes/stops) -->
             <LinearLayout
                 android:id="@+id/layoutResultsSection"
                 android:layout_width="match_parent"
@@ -412,7 +541,7 @@
 
             </LinearLayout>
 
-            <!-- 5. Single Full-Width Action Button (Start / Stop / Re-select) -->
+            <!-- 6. Single Full-Width Action Button (Start / Stop / Re-select) -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnActionImport"
                 style="@style/Widget.AnimeLIB.Button"

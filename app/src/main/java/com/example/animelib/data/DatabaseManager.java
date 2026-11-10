@@ -240,6 +240,10 @@ public class DatabaseManager {
      * Сохраняет детальные параметры 3D пространственного звука
      */
     public void saveSurround3DSettings(int mode, float spatialWidth, float dialogueBoost, float bassBoost, float trebleBoost) {
+        saveSurround3DSettings(mode, spatialWidth, dialogueBoost, bassBoost, 1.0f, trebleBoost);
+    }
+
+    public void saveSurround3DSettings(int mode, float spatialWidth, float dialogueBoost, float bassBoost, float midBoost, float trebleBoost) {
         executor.execute(() -> {
             try {
                 AppSettings settings = db.appSettingsDao().getSettingsSync();
@@ -250,9 +254,10 @@ public class DatabaseManager {
                 settings.setSurroundSpatialWidth(spatialWidth);
                 settings.setSurroundDialogueBoost(dialogueBoost);
                 settings.setSurroundBassBoost(bassBoost);
+                settings.setSurroundMidBoost(midBoost);
                 settings.setSurroundTrebleBoost(trebleBoost);
                 db.appSettingsDao().upsert(settings);
-                Log.d(TAG, "Saved 3D surround settings: mode=" + mode + ", width=" + spatialWidth + ", dialogue=" + dialogueBoost + ", bass=" + bassBoost + ", treble=" + trebleBoost);
+                Log.d(TAG, "Saved 3D surround settings: mode=" + mode + ", width=" + spatialWidth + ", dialogue=" + dialogueBoost + ", bass=" + bassBoost + ", mid=" + midBoost + ", treble=" + trebleBoost);
             } catch (Exception e) {
                 Log.e(TAG, "Failed to save 3D surround settings", e);
             }
@@ -308,6 +313,16 @@ public class DatabaseManager {
             return settings == null ? 1.0f : settings.getSurroundBassBoost();
         } catch (Exception e) {
             Log.e(TAG, "Failed to load 3D bass boost", e);
+            return 1.0f;
+        }
+    }
+
+    public float loadSurroundMidBoost() {
+        try {
+            AppSettings settings = db.appSettingsDao().getSettingsSync();
+            return settings == null ? 1.0f : settings.getSurroundMidBoost();
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to load 3D mid boost", e);
             return 1.0f;
         }
     }

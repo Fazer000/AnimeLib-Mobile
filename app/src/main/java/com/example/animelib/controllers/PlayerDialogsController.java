@@ -239,8 +239,12 @@ public class PlayerDialogsController {
         float getSurroundSpatialWidth();
         float getSurroundDialogueBoost();
         float getSurroundBassBoost();
+        default float getSurroundMidBoost() { return 1.0f; }
         float getSurroundTrebleBoost();
         void onSurround3DChanged(boolean enabled, int mode, float spatialWidth, float dialogueBoost, float bassBoost, float trebleBoost);
+        default void onSurround3DChanged(boolean enabled, int mode, float spatialWidth, float dialogueBoost, float bassBoost, float trebleBoost, float midBoost) {
+            onSurround3DChanged(enabled, mode, spatialWidth, dialogueBoost, bassBoost, trebleBoost);
+        }
         int getCurrentResizeMode();
         void onResizeModeChanged(int newMode);
         boolean isSubtitlesEnabled();
@@ -307,6 +311,7 @@ public class PlayerDialogsController {
                 provider.getSurroundSpatialWidth(),
                 provider.getSurroundDialogueBoost(),
                 provider.getSurroundBassBoost(),
+                provider.getSurroundMidBoost(),
                 provider.getSurroundTrebleBoost(),
                 provider::onSurround3DChanged
         );

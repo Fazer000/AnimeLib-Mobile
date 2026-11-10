@@ -10,24 +10,23 @@ import java.nio.ByteOrder;
 
 /**
  * Custom 5.1 Virtual Surround & 3D Spatial Audio Processor for ExoPlayer (Media3).
- * Applies real-time 3D Spatial Audio Processing with multiple audio profiles:
- * 1. 3D Spatial Modes: Cinema 3D, Concert/OST 3D, Voice Focus 3D, Classic 5.1, Extreme 3D HRTF.
+ * Applies real-time 3D Spatial Audio Processing with streamlined high-impact profiles:
+ * 1. Streamlined 3D Spatial Modes: Cinema 3D, Voice Focus 3D, Concert & OST 3D.
  * 2. Multi-tap Haas delay matrix + early reflection diffusion for true 3D soundstage depth.
  * 3. Center dialogue & vocal bandpass clarity booster (Japanese seiyuu & dubbing focus).
- * 4. Cinematic 2nd-order Biquad LFE sub-bass synthesizer (<90Hz).
- * 5. Interaural HRTF head-shadow crossfeed simulation (pinna acoustic model).
- * 6. Dynamic soft-knee limiter with gain compensation for zero distortion.
+ * 4. Mid-range presence & body shaping filter (350Hz - 2.5kHz).
+ * 5. Cinematic 2nd-order Biquad LFE sub-bass synthesizer (<85Hz).
+ * 6. Interaural HRTF head-shadow crossfeed simulation (pinna acoustic model).
+ * 7. Dynamic soft-knee limiter with gain compensation for zero distortion.
  */
 public class Surround51AudioProcessor implements AudioProcessor {
 
     private static final String TAG = "Surround51Processor";
 
-    // 3D Spatial Mode Constants
-    public static final int MODE_CINEMA_3D = 0;   // Кинотеатр 3D
-    public static final int MODE_CONCERT_3D = 1;  // Концерт & OST 3D
-    public static final int MODE_VOICE_3D = 2;    // Четкая Озвучка 3D
-    public static final int MODE_CLASSIC_51 = 3;  // Классический 5.1
-    public static final int MODE_EXTREME_3D = 4;  // Экстрим 3D HRTF
+    // Streamlined 3D Spatial Mode Constants
+    public static final int MODE_CINEMA_3D = 0;   // Кинотеатр 3D (Глубокая сцена, кинобас)
+    public static final int MODE_VOICE_3D = 1;    // Четкая Озвучка 3D (Фокус на голосах)
+    public static final int MODE_CONCERT_3D = 2;  // Концерт & OST 3D (Широкое стерео, опенинги)
 
     private boolean enabled = true;
 
@@ -35,6 +34,7 @@ public class Surround51AudioProcessor implements AudioProcessor {
     private float spatialWidth = 1.0f;       // 0.5f (Narrow) .. 2.0f (Ultra Wide)
     private float dialogueBoost = 1.0f;      // 0.5f (Normal) .. 2.0f (Max Clarity)
     private float bassBoostLevel = 1.0f;     // 0.5f (Soft) .. 2.0f (Heavy LFE)
+    private float midBoostLevel = 1.0f;      // 0.5f (Soft) .. 2.0f (Warm/Punchy Mids)
     private float trebleBoostLevel = 1.0f;   // 0.5f (Soft) .. 2.0f (High Air/Treble)
 
     private AudioFormat inputAudioFormat = AudioFormat.NOT_SET;
@@ -53,15 +53,17 @@ public class Surround51AudioProcessor implements AudioProcessor {
     private int ringIndex = 0;
 
     // Delay tap sample offsets
-    private int tap1Samples = 0; // ~18ms
-    private int tap2Samples = 0; // ~30ms
-    private int tap3Samples = 0; // ~44ms
-    private int tap4Samples = 0; // ~58ms (Deep 3D Room Reflection)
+    private int tap1Samples = 0; // ~14ms
+    private int tap2Samples = 0; // ~26ms
+    private int tap3Samples = 0; // ~40ms
+    private int tap4Samples = 0; // ~56ms (Deep 3D Room Reflection)
     private int crossfeedSamples = 0; // ~0.28ms (Interaural Head Distance)
 
     // Filter states
     private float vocalFilterState = 0f;
     private float vocalHighFilterState = 0f;
+    private float midLowFilterState = 0f;
+    private float midHighFilterState = 0f;
     private float lfeFilter1 = 0f;
     private float lfeFilter2 = 0f;
     private float crossLFilter = 0f;
@@ -69,6 +71,8 @@ public class Surround51AudioProcessor implements AudioProcessor {
     private float alphaLfe = 0.013f;
     private float alphaVocalLow = 0.08f;
     private float alphaVocalHigh = 0.35f;
+    private float alphaMidLow = 0.05f;
+    private float alphaMidHigh = 0.25f;
 
     public Surround51AudioProcessor() {
     }
@@ -85,6 +89,9 @@ public class Surround51AudioProcessor implements AudioProcessor {
     }
 
     public synchronized void setSpatialMode(int mode) {
+        if (mode < 0 || mode > 2) {
+            mode = MODE_CINEMA_3D;
+        }
         if (this.spatialMode != mode) {
             this.spatialMode = mode;
             Log.d(TAG, "Spatial Mode changed to: " + getModeName(mode));
@@ -119,6 +126,14 @@ public class Surround51AudioProcessor implements AudioProcessor {
         return bassBoostLevel;
     }
 
+    public synchronized void setMidBoostLevel(float mid) {
+        this.midBoostLevel = Math.max(0.3f, Math.min(2.5f, mid));
+    }
+
+    public synchronized float getMidBoostLevel() {
+        return midBoostLevel;
+    }
+
     public synchronized void setTrebleBoostLevel(float treble) {
         this.trebleBoostLevel = Math.max(0.3f, Math.min(2.5f, treble));
     }
@@ -129,11 +144,9 @@ public class Surround51AudioProcessor implements AudioProcessor {
 
     public static String getModeName(int mode) {
         switch (mode) {
-            case MODE_CINEMA_3D: return "Кинотеатр 3D";
-            case MODE_CONCERT_3D: return "Концерт & OST 3D";
             case MODE_VOICE_3D: return "Четкая Озвучка 3D";
-            case MODE_CLASSIC_51: return "Классический 5.1";
-            case MODE_EXTREME_3D: return "Экстрим 3D HRTF";
+            case MODE_CONCERT_3D: return "Концерт & OST 3D";
+            case MODE_CINEMA_3D:
             default: return "Кинотеатр 3D";
         }
     }
@@ -164,19 +177,23 @@ public class Surround51AudioProcessor implements AudioProcessor {
         }
 
         // Multi-tap surround delays & crossfeed offsets
-        this.tap1Samples = (int) (sampleRate * 0.018f); // ~18ms
-        this.tap2Samples = (int) (sampleRate * 0.030f); // ~30ms
-        this.tap3Samples = (int) (sampleRate * 0.044f); // ~44ms
-        this.tap4Samples = (int) (sampleRate * 0.058f); // ~58ms (Deep 3D Room Reflection)
+        this.tap1Samples = (int) (sampleRate * 0.014f); // ~14ms
+        this.tap2Samples = (int) (sampleRate * 0.026f); // ~26ms
+        this.tap3Samples = (int) (sampleRate * 0.040f); // ~40ms
+        this.tap4Samples = (int) (sampleRate * 0.056f); // ~56ms (Deep 3D Room Reflection)
         this.crossfeedSamples = Math.max(1, (int) (sampleRate * 0.00028f)); // ~0.28ms (Interaural Head Distance)
 
-        // Low-pass coefficient for sub-bass LFE (< 85 Hz): Fc = 85 Hz
+        // Low-pass coefficient for sub-bass LFE (< 85 Hz)
         this.alphaLfe = (float) (2.0 * Math.PI * 85.0 / sampleRate);
         if (alphaLfe > 0.5f) alphaLfe = 0.5f;
 
         // Bandpass coefficients for Dialogue (800Hz - 3.8kHz)
         this.alphaVocalLow = (float) (2.0 * Math.PI * 800.0 / sampleRate);
         this.alphaVocalHigh = (float) (2.0 * Math.PI * 3800.0 / sampleRate);
+
+        // Bandpass coefficients for Mids & Body (350Hz - 2.5kHz)
+        this.alphaMidLow = (float) (2.0 * Math.PI * 350.0 / sampleRate);
+        this.alphaMidHigh = (float) (2.0 * Math.PI * 2500.0 / sampleRate);
 
         Log.d(TAG, "Configured 3D Spatial AudioProcessor: inCh=" + inputAudioFormat.channelCount
                 + ", sampleRate=" + sampleRate + "Hz, ringBufferSize=" + ringBufferSize);
@@ -230,49 +247,37 @@ public class Surround51AudioProcessor implements AudioProcessor {
         float modeSurroundGain;
         float modeVocalGain;
         float modeBassGain;
+        float modeMidGain;
         float modeXfeedGain;
         float modeAirGain;
 
         switch (spatialMode) {
-            case MODE_CONCERT_3D:
-                modeSurroundGain = 1.65f * spatialWidth;
-                modeVocalGain = 0.85f * dialogueBoost;
-                modeBassGain = 1.15f * bassBoostLevel;
-                modeXfeedGain = 0.35f;
-                modeAirGain = 0.65f; // High air sparkle for soundtracks & openings
-                break;
-
             case MODE_VOICE_3D:
-                modeSurroundGain = 0.75f * spatialWidth;
-                modeVocalGain = 2.40f * dialogueBoost; // Powerful voice & seiyuu boost
-                modeBassGain = 0.45f * bassBoostLevel; // Clean low end
+                modeSurroundGain = 0.85f * spatialWidth;
+                modeVocalGain = 2.45f * dialogueBoost; // Powerful voice & seiyuu boost
+                modeBassGain = 0.50f * bassBoostLevel; // Clean low end
+                modeMidGain = 1.35f * midBoostLevel;
                 modeXfeedGain = 0.15f;
-                modeAirGain = 0.30f;
+                modeAirGain = 0.35f * trebleBoostLevel;
                 break;
 
-            case MODE_CLASSIC_51:
-                modeSurroundGain = 1.00f * spatialWidth;
-                modeVocalGain = 1.00f * dialogueBoost;
-                modeBassGain = 1.00f * bassBoostLevel;
-                modeXfeedGain = 0.22f;
-                modeAirGain = 0.25f;
-                break;
-
-            case MODE_EXTREME_3D:
-                modeSurroundGain = 2.10f * spatialWidth; // Ultra 3D soundstage
-                modeVocalGain = 1.60f * dialogueBoost;
-                modeBassGain = 1.95f * bassBoostLevel; // Heavy sub-bass rumble
-                modeXfeedGain = 0.42f;
-                modeAirGain = 0.55f;
+            case MODE_CONCERT_3D:
+                modeSurroundGain = 1.75f * spatialWidth; // Wide acoustic stage
+                modeVocalGain = 0.90f * dialogueBoost;
+                modeBassGain = 1.20f * bassBoostLevel;
+                modeMidGain = 1.10f * midBoostLevel;
+                modeXfeedGain = 0.35f;
+                modeAirGain = 0.75f * trebleBoostLevel; // High air sparkle for soundtracks & openings
                 break;
 
             case MODE_CINEMA_3D:
             default:
-                modeSurroundGain = 1.35f * spatialWidth;
+                modeSurroundGain = 1.45f * spatialWidth; // Deep cinematic spatial stage
                 modeVocalGain = 1.25f * dialogueBoost;
-                modeBassGain = 1.60f * bassBoostLevel;
+                modeBassGain = 1.65f * bassBoostLevel; // Punchy LFE action sub-bass
+                modeMidGain = 1.15f * midBoostLevel;
                 modeXfeedGain = 0.28f;
-                modeAirGain = 0.35f;
+                modeAirGain = 0.40f * trebleBoostLevel;
                 break;
         }
 
@@ -319,19 +324,25 @@ public class Surround51AudioProcessor implements AudioProcessor {
                 side = (fL - fR) * 0.5f;
             }
 
-            // A. Anime Vocal & Dialogue Clarity Enhancement
+            // A. Anime Vocal & Dialogue Clarity Enhancement (800Hz - 3.8kHz)
             vocalFilterState += alphaVocalLow * (mid - vocalFilterState);
             vocalHighFilterState += alphaVocalHigh * (vocalFilterState - vocalHighFilterState);
-            float vocalBand = vocalFilterState - vocalHighFilterState; // 800Hz - 3.8kHz vocal spectrum
-            float centerAudio = mid * 0.75f + vocalBand * modeVocalGain * 1.5f;
+            float vocalBand = vocalFilterState - vocalHighFilterState;
 
-            // B. Cinematic Action Sub-Bass LFE Synthesis (< 85 Hz)
+            // B. Mid-Range Body & Presence Filter (350Hz - 2.5kHz)
+            midLowFilterState += alphaMidLow * (mid - midLowFilterState);
+            midHighFilterState += alphaMidHigh * (midLowFilterState - midHighFilterState);
+            float midBand = midLowFilterState - midHighFilterState;
+
+            float centerAudio = mid * 0.70f + vocalBand * modeVocalGain * 1.4f + midBand * modeMidGain * 0.6f;
+
+            // C. Cinematic Action Sub-Bass LFE Synthesis (< 85 Hz)
             lfeFilter1 += alphaLfe * (mid - lfeFilter1);
             lfeFilter2 += alphaLfe * (lfeFilter1 - lfeFilter2);
             float synthesizedLfe = lfeFilter2 * modeBassGain * 1.6f;
             float totalLfe = synthesizedLfe + nativeLfe * 0.85f;
 
-            // C. Wide 3D Spatial Surround Field & Acoustic Room Diffusion
+            // D. Wide 3D Spatial Surround Field & Acoustic Room Diffusion
             float spatialSurroundL = side;
             float spatialSurroundR = -side;
 
@@ -347,9 +358,9 @@ public class Surround51AudioProcessor implements AudioProcessor {
                 // Decorrelate mid channel for mono or narrow stereo sources to create true 3D spatial width
                 float midTap1 = midRingBuffer[tap1Idx];
                 float midTap2 = midRingBuffer[tap2Idx];
-                float midSpatialSide = (midTap1 - midTap2) * 0.40f;
+                float midSpatialSide = (midTap1 - midTap2) * 0.45f;
 
-                float totalSide = side + midSpatialSide * (modeSurroundGain * 0.6f);
+                float totalSide = side + midSpatialSide * (modeSurroundGain * 0.65f);
                 surroundRingBuffer[ringIndex] = totalSide;
                 leftRingBuffer[ringIndex] = fL;
                 rightRingBuffer[ringIndex] = fR;
@@ -373,17 +384,17 @@ public class Surround51AudioProcessor implements AudioProcessor {
                 ringIndex = (ringIndex + 1) % ringBufferSize;
             }
 
-            // D. High-Frequency Air & Detail for Anime SFX (Swords, Magic, Attacks, Openings)
+            // E. High-Frequency Air & Detail for Anime SFX (Swords, Magic, Attacks, Openings)
             float sfxDetailL = fL - crossLFilter;
             float sfxDetailR = fR - crossRFilter;
-            float highAirL = sfxDetailL * modeAirGain * 1.3f * trebleBoostLevel;
-            float highAirR = sfxDetailR * modeAirGain * 1.3f * trebleBoostLevel;
+            float highAirL = sfxDetailL * modeAirGain * 1.3f;
+            float highAirR = sfxDetailR * modeAirGain * 1.3f;
 
-            // E. 5.1 & 3D Binaural Downmix Assembly
+            // F. 5.1 & 3D Binaural Downmix Assembly
             float outL = (fL * 0.50f) + (centerAudio * 0.45f) + (spatialSurroundL * modeSurroundGain) + (crossRFilter * modeXfeedGain) + totalLfe + highAirL;
             float outR = (fR * 0.50f) + (centerAudio * 0.45f) + (spatialSurroundR * modeSurroundGain) + (crossLFilter * modeXfeedGain) + totalLfe + highAirR;
 
-            // F. Dynamic Soft-Knee Limiter for Zero Clipping Loudness
+            // G. Dynamic Soft-Knee Limiter for Zero Clipping Loudness
             outL = softLimit(outL * 1.10f);
             outR = softLimit(outR * 1.10f);
 
@@ -428,6 +439,8 @@ public class Surround51AudioProcessor implements AudioProcessor {
         }
         vocalFilterState = 0f;
         vocalHighFilterState = 0f;
+        midLowFilterState = 0f;
+        midHighFilterState = 0f;
         lfeFilter1 = 0f;
         lfeFilter2 = 0f;
         crossLFilter = 0f;

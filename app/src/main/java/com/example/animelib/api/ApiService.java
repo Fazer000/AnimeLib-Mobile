@@ -1822,7 +1822,11 @@ public class ApiService {
     }
 
     public void saveSurround3DSettings(int mode, float spatialWidth, float dialogueBoost, float bassBoost, float trebleBoost) {
-        databaseManager.saveSurround3DSettings(mode, spatialWidth, dialogueBoost, bassBoost, trebleBoost);
+        databaseManager.saveSurround3DSettings(mode, spatialWidth, dialogueBoost, bassBoost, 1.0f, trebleBoost);
+    }
+
+    public void saveSurround3DSettings(int mode, float spatialWidth, float dialogueBoost, float bassBoost, float midBoost, float trebleBoost) {
+        databaseManager.saveSurround3DSettings(mode, spatialWidth, dialogueBoost, bassBoost, midBoost, trebleBoost);
     }
 
     public int loadSurround3DMode() {
@@ -1839,6 +1843,10 @@ public class ApiService {
 
     public float loadSurroundBassBoost() {
         return databaseManager.loadSurroundBassBoost();
+    }
+
+    public float loadSurroundMidBoost() {
+        return databaseManager.loadSurroundMidBoost();
     }
 
     public float loadSurroundTrebleBoost() {

@@ -195,7 +195,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
-                            android:text="Глубокая сцена, кинобас и объемный эффект"
+                            android:text="Глубокая сцена, кинобас и экшен эффект"
                             android:textColor="?attr/accentTextColor"
                             android:textSize="12.5sp"/>
                     </LinearLayout>
@@ -226,77 +226,7 @@
                         android:visibility="gone"/>
                 </LinearLayout>
 
-                <!-- Mode Option 1: Concert 3D -->
-                <LinearLayout
-                    android:id="@+id/modeConcertOption"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="18dp"
-                    android:paddingVertical="14dp"
-                    android:layout_marginBottom="3dp"
-                    android:background="@drawable/bg_m3_item_middle"
-                    android:clickable="true"
-                    android:focusable="true">
-
-                    <ImageView
-                        android:layout_width="22dp"
-                        android:layout_height="22dp"
-                        android:src="@drawable/ic_headphones"
-                        app:tint="?attr/secondaryColor"
-                        android:layout_marginEnd="12dp"/>
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Концерт &amp; OST 3D"
-                            android:textColor="?attr/primaryTextColor"
-                            android:fontFamily="@font/open_sans_bold"
-                            android:textSize="15.5sp"/>
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="Широкое стерео и чистые опенинги"
-                            android:textColor="?attr/accentTextColor"
-                            android:textSize="12.5sp"/>
-                    </LinearLayout>
-
-                    <FrameLayout
-                        android:id="@+id/pillConcert"
-                        android:layout_width="38dp"
-                        android:layout_height="26dp"
-                        android:layout_marginStart="12dp"
-                        android:background="@drawable/bg_m3_selected_pill"
-                        android:visibility="gone">
-
-                        <ImageView
-                            android:layout_width="16dp"
-                            android:layout_height="16dp"
-                            android:layout_gravity="center"
-                            android:src="@drawable/ic_check"
-                            app:tint="#FFFFFF"
-                            android:contentDescription="Selected"/>
-                    </FrameLayout>
-
-                    <View
-                        android:id="@+id/unselectedConcert"
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:layout_marginStart="12dp"
-                        android:background="@drawable/bg_m3_unselected_circle"
-                        android:visibility="visible"/>
-                </LinearLayout>
-
-                <!-- Mode Option 2: Voice Focus 3D -->
+                <!-- Mode Option 1: Voice Focus 3D -->
                 <LinearLayout
                     android:id="@+id/modeVoiceOption"
                     android:layout_width="match_parent"
@@ -366,79 +296,9 @@
                         android:visibility="visible"/>
                 </LinearLayout>
 
-                <!-- Mode Option 3: Classic 5.1 -->
+                <!-- Mode Option 2: Concert 3D -->
                 <LinearLayout
-                    android:id="@+id/modeClassicOption"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="18dp"
-                    android:paddingVertical="14dp"
-                    android:layout_marginBottom="3dp"
-                    android:background="@drawable/bg_m3_item_middle"
-                    android:clickable="true"
-                    android:focusable="true">
-
-                    <ImageView
-                        android:layout_width="22dp"
-                        android:layout_height="22dp"
-                        android:src="@drawable/ic_volume"
-                        app:tint="?attr/secondaryColor"
-                        android:layout_marginEnd="12dp"/>
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Классический 5.1"
-                            android:textColor="?attr/primaryTextColor"
-                            android:fontFamily="@font/open_sans_bold"
-                            android:textSize="15.5sp"/>
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="Стандартный естественный 5.1 микс"
-                            android:textColor="?attr/accentTextColor"
-                            android:textSize="12.5sp"/>
-                    </LinearLayout>
-
-                    <FrameLayout
-                        android:id="@+id/pillClassic"
-                        android:layout_width="38dp"
-                        android:layout_height="26dp"
-                        android:layout_marginStart="12dp"
-                        android:background="@drawable/bg_m3_selected_pill"
-                        android:visibility="gone">
-
-                        <ImageView
-                            android:layout_width="16dp"
-                            android:layout_height="16dp"
-                            android:layout_gravity="center"
-                            android:src="@drawable/ic_check"
-                            app:tint="#FFFFFF"
-                            android:contentDescription="Selected"/>
-                    </FrameLayout>
-
-                    <View
-                        android:id="@+id/unselectedClassic"
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:layout_marginStart="12dp"
-                        android:background="@drawable/bg_m3_unselected_circle"
-                        android:visibility="visible"/>
-                </LinearLayout>
-
-                <!-- Mode Option 4: Extreme 3D HRTF -->
-                <LinearLayout
-                    android:id="@+id/modeExtremeOption"
+                    android:id="@+id/modeConcertOption"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
@@ -453,7 +313,7 @@
                     <ImageView
                         android:layout_width="22dp"
                         android:layout_height="22dp"
-                        android:src="@drawable/ic_spatial_3d"
+                        android:src="@drawable/ic_headphones"
                         app:tint="?attr/secondaryColor"
                         android:layout_marginEnd="12dp"/>
 
@@ -466,7 +326,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Экстрим 3D HRTF"
+                            android:text="Концерт &amp; OST 3D"
                             android:textColor="?attr/primaryTextColor"
                             android:fontFamily="@font/open_sans_bold"
                             android:textSize="15.5sp"/>
@@ -475,13 +335,13 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
-                            android:text="Максимальная бинауральная 3D глубина"
+                            android:text="Широкое стерео и чистые опенинги"
                             android:textColor="?attr/accentTextColor"
                             android:textSize="12.5sp"/>
                     </LinearLayout>
 
                     <FrameLayout
-                        android:id="@+id/pillExtreme"
+                        android:id="@+id/pillConcert"
                         android:layout_width="38dp"
                         android:layout_height="26dp"
                         android:layout_marginStart="12dp"
@@ -498,7 +358,7 @@
                     </FrameLayout>
 
                     <View
-                        android:id="@+id/unselectedExtreme"
+                        android:id="@+id/unselectedConcert"
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:layout_marginStart="12dp"
@@ -733,6 +593,84 @@
                         android:background="@drawable/chip_unselected"
                         android:gravity="center"
                         android:text="Экстрим"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="12sp"
+                        android:fontFamily="@font/open_sans_semibold"
+                        android:clickable="true"
+                        android:focusable="true"/>
+                </LinearLayout>
+
+                <!-- Mid-Range Boost Header -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Средние частоты (Теплота &amp; SFX)"
+                    android:textColor="@color/secondary_text_color"
+                    android:textSize="@dimen/bs_subtitle_text_size"
+                    android:textStyle="bold"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:layout_marginBottom="6dp"/>
+
+                <!-- Mid Chips -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="14dp">
+
+                    <TextView
+                        android:id="@+id/chipMids0"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:background="@drawable/chip_unselected"
+                        android:gravity="center"
+                        android:text="Мягкие"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="12sp"
+                        android:fontFamily="@font/open_sans_semibold"
+                        android:clickable="true"
+                        android:focusable="true"/>
+
+                    <TextView
+                        android:id="@+id/chipMids1"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:background="@drawable/chip_selected"
+                        android:gravity="center"
+                        android:text="Норма"
+                        android:textColor="@color/purple_primary"
+                        android:textSize="12sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:clickable="true"
+                        android:focusable="true"/>
+
+                    <TextView
+                        android:id="@+id/chipMids2"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:background="@drawable/chip_unselected"
+                        android:gravity="center"
+                        android:text="Плотные"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="12sp"
+                        android:fontFamily="@font/open_sans_semibold"
+                        android:clickable="true"
+                        android:focusable="true"/>
+
+                    <TextView
+                        android:id="@+id/chipMids3"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/chip_unselected"
+                        android:gravity="center"
+                        android:text="Максимум"
                         android:textColor="@color/primary_text_color"
                         android:textSize="12sp"
                         android:fontFamily="@font/open_sans_semibold"

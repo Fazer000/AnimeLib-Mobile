@@ -4510,17 +4510,27 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
 
             @Override
+            public float getSurroundMidBoost() {
+                return playerAudioController != null ? playerAudioController.getSurroundMidBoost() : 1.0f;
+            }
+
+            @Override
             public float getSurroundTrebleBoost() {
                 return playerAudioController != null ? playerAudioController.getSurroundTrebleBoost() : 1.0f;
             }
 
             @Override
             public void onSurround3DChanged(boolean enabled, int mode, float spatialWidth, float dialogueBoost, float bassBoost, float trebleBoost) {
+                onSurround3DChanged(enabled, mode, spatialWidth, dialogueBoost, bassBoost, trebleBoost, 1.0f);
+            }
+
+            @Override
+            public void onSurround3DChanged(boolean enabled, int mode, float spatialWidth, float dialogueBoost, float bassBoost, float trebleBoost, float midBoost) {
                 if (playerAudioController != null) {
-                    playerAudioController.updateSettings(enabled, mode, spatialWidth, dialogueBoost, bassBoost, trebleBoost, apiService);
+                    playerAudioController.updateSettings(enabled, mode, spatialWidth, dialogueBoost, bassBoost, midBoost, trebleBoost, apiService);
                 }
                 showSurroundSoundToast(enabled);
-                Log.d("VideoPlayer", "3D Surround sound settings changed: enabled=" + enabled + ", mode=" + mode + ", width=" + spatialWidth + ", dialogue=" + dialogueBoost + ", bass=" + bassBoost + ", treble=" + trebleBoost);
+                Log.d("VideoPlayer", "3D Surround sound settings changed: enabled=" + enabled + ", mode=" + mode + ", width=" + spatialWidth + ", dialogue=" + dialogueBoost + ", bass=" + bassBoost + ", mid=" + midBoost + ", treble=" + trebleBoost);
             }
 
             @Override

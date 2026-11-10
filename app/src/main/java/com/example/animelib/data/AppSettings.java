@@ -11,10 +11,11 @@ public class AppSettings {
     private boolean enable4K = false;
     private boolean enableAmbientLight = true;
     private boolean enableSurroundSound = true;
-    private int surroundMode = 0; // 0 = Cinema 3D, 1 = Concert 3D, 2 = Voice 3D, 3 = Classic 5.1, 4 = Extreme 3D
+    private int surroundMode = 0; // 0 = Cinema 3D, 1 = Voice 3D, 2 = Concert 3D
     private float surroundSpatialWidth = 1.0f;
     private float surroundDialogueBoost = 1.0f;
     private float surroundBassBoost = 1.0f;
+    private float surroundMidBoost = 1.0f;
     private float surroundTrebleBoost = 1.0f;
     private boolean autoPlay = true;
     private int longSkipDuration = 85; // seconds
@@ -111,6 +112,14 @@ public class AppSettings {
 
     public void setSurroundBassBoost(float surroundBassBoost) {
         this.surroundBassBoost = surroundBassBoost;
+    }
+
+    public float getSurroundMidBoost() {
+        return surroundMidBoost;
+    }
+
+    public void setSurroundMidBoost(float surroundMidBoost) {
+        this.surroundMidBoost = surroundMidBoost;
     }
 
     public float getSurroundTrebleBoost() {

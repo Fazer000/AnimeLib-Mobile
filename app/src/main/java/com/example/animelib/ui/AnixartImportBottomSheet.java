@@ -51,6 +51,9 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
     private TextView tvSelectedFileInfo;
     private LinearLayout btnSelectFile;
 
+    // FAQ card
+    private View cardFaq;
+
     private LinearLayout layoutImportStats;
     private TextView tvStatSuccess;
     private TextView tvStatSkipped;
@@ -110,6 +113,7 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
         tvSelectedFileName = view.findViewById(R.id.tvSelectedFileName);
         tvSelectedFileInfo = view.findViewById(R.id.tvSelectedFileInfo);
         btnSelectFile = view.findViewById(R.id.btnSelectFile);
+        cardFaq = view.findViewById(R.id.cardFaq);
 
         layoutImportStats = view.findViewById(R.id.layoutImportStats);
         tvStatSuccess = view.findViewById(R.id.tvStatSuccess);
@@ -237,6 +241,7 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
         if (layoutImportStats != null) layoutImportStats.setVisibility(View.VISIBLE);
         if (cardCurrentStatus != null) cardCurrentStatus.setVisibility(View.VISIBLE);
         if (layoutResultsSection != null) layoutResultsSection.setVisibility(View.GONE);
+        if (cardFaq != null) cardFaq.setVisibility(View.GONE);
 
         if (m3ProgressIndicator != null) {
             m3ProgressIndicator.setMax(pendingEntries.size());
@@ -351,6 +356,7 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
     }
 
     private void showResultsUI(int successCount, int alreadyExistsCount, int notFoundCount, int errorCount, boolean cancelled, List<AnixartImportManager.ImportItemProgress> problemItems) {
+        if (cardFaq != null) cardFaq.setVisibility(View.VISIBLE);
         if (layoutResultsSection == null) return;
         layoutResultsSection.setVisibility(View.VISIBLE);
 

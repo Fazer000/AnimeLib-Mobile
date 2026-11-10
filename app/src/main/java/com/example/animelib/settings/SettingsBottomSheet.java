@@ -818,8 +818,13 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
         void onSurroundSoundToggled(boolean enabled);
     }
 
+    private float surroundMidBoost = 1.0f;
+
     public interface OnSurround3DChangedListener {
-        void onSurround3DChanged(boolean enabled, int mode, float spatialWidth, float dialogueBoost, float bassBoost, float trebleBoost);
+        void onSurround3DChanged(boolean enabled, int mode, float spatialWidth, float dialogueBoost, float bassBoost, float trebleBoost, float midBoost);
+        default void onSurround3DChanged(boolean enabled, int mode, float spatialWidth, float dialogueBoost, float bassBoost, float trebleBoost) {
+            onSurround3DChanged(enabled, mode, spatialWidth, dialogueBoost, bassBoost, trebleBoost, 1.0f);
+        }
     }
 
     public void setSurroundSound(boolean enableSurroundSound, OnSurroundSoundToggledListener listener) {
@@ -833,11 +838,16 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
     }
 
     public void setSurround3DSettings(boolean enableSurroundSound, int mode, float spatialWidth, float dialogueBoost, float bassBoost, float trebleBoost, OnSurround3DChangedListener listener) {
+        setSurround3DSettings(enableSurroundSound, mode, spatialWidth, dialogueBoost, bassBoost, 1.0f, trebleBoost, listener);
+    }
+
+    public void setSurround3DSettings(boolean enableSurroundSound, int mode, float spatialWidth, float dialogueBoost, float bassBoost, float midBoost, float trebleBoost, OnSurround3DChangedListener listener) {
         this.enableSurroundSound = enableSurroundSound;
         this.surroundMode = mode;
         this.surroundSpatialWidth = spatialWidth;
         this.surroundDialogueBoost = dialogueBoost;
         this.surroundBassBoost = bassBoost;
+        this.surroundMidBoost = midBoost;
         this.surroundTrebleBoost = trebleBoost;
         this.onSurround3DChangedListener = listener;
 
@@ -856,13 +866,15 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
                 surroundSpatialWidth,
                 surroundDialogueBoost,
                 surroundBassBoost,
+                surroundMidBoost,
                 surroundTrebleBoost,
-                (enabled, mode, spatialWidth, dialogueBoost, bassBoost, trebleBoost) -> {
+                (enabled, mode, spatialWidth, dialogueBoost, bassBoost, trebleBoost, midBoost) -> {
                     this.enableSurroundSound = enabled;
                     this.surroundMode = mode;
                     this.surroundSpatialWidth = spatialWidth;
                     this.surroundDialogueBoost = dialogueBoost;
                     this.surroundBassBoost = bassBoost;
+                    this.surroundMidBoost = midBoost;
                     this.surroundTrebleBoost = trebleBoost;
 
                     MaterialSwitch surroundSoundSwitch = findViewById(R.id.surroundSoundSwitch);
@@ -875,10 +887,9 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
                         onSurroundSoundToggledListener.onSurroundSoundToggled(enabled);
                     }
                     if (onSurround3DChangedListener != null) {
-                        onSurround3DChangedListener.onSurround3DChanged(enabled, mode, spatialWidth, dialogueBoost, bassBoost, trebleBoost);
+                        onSurround3DChangedListener.onSurround3DChanged(enabled, mode, spatialWidth, dialogueBoost, bassBoost, trebleBoost, midBoost);
                     }
-                }
-        );
+                });
 
         dialog.setOnBackPressedListener(this::show);
         dialog.show();

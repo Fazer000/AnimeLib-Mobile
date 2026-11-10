@@ -108,6 +108,17 @@ public class SurroundSoundManager {
         return surroundAudioProcessor.getBassBoostLevel();
     }
 
+    public void setMidBoostLevel(float mid) {
+        surroundAudioProcessor.setMidBoostLevel(mid);
+        if (activeAudioSessionId != C.AUDIO_SESSION_ID_UNSET && isEnabled) {
+            updateAudioEffectsState(true);
+        }
+    }
+
+    public float getMidBoostLevel() {
+        return surroundAudioProcessor.getMidBoostLevel();
+    }
+
     public void setTrebleBoostLevel(float treble) {
         surroundAudioProcessor.setTrebleBoostLevel(treble);
         if (activeAudioSessionId != C.AUDIO_SESSION_ID_UNSET && isEnabled) {
@@ -254,20 +265,25 @@ public class SurroundSoundManager {
                         short[] range = equalizer.getBandLevelRange();
                         float dialogueFactor = surroundAudioProcessor.getDialogueBoost();
                         float bassFactor = surroundAudioProcessor.getBassBoostLevel();
+                        float midFactor = surroundAudioProcessor.getMidBoostLevel();
+                        float trebleFactor = surroundAudioProcessor.getTrebleBoostLevel();
                         int mode = surroundAudioProcessor.getSpatialMode();
 
                         for (short band = 0; band < numBands; band++) {
                             int centerFreq = equalizer.getCenterFreq(band); // in mHz
                             short targetBoost = 0;
                             if (centerFreq <= 250000) { // Sub-bass < 250Hz
-                                float baseGain = (mode == Surround51AudioProcessor.MODE_CINEMA_3D || mode == Surround51AudioProcessor.MODE_EXTREME_3D) ? 450f : 250f;
+                                float baseGain = (mode == Surround51AudioProcessor.MODE_CINEMA_3D) ? 450f : 250f;
                                 targetBoost = (short) Math.min(range[1], (int) (baseGain * bassFactor));
+                            } else if (centerFreq > 250000 && centerFreq < 800000) { // Mids & Body (250Hz - 800Hz)
+                                float baseGain = 300f;
+                                targetBoost = (short) Math.min(range[1], (int) (baseGain * midFactor));
                             } else if (centerFreq >= 800000 && centerFreq <= 4000000) { // Vocal 800Hz - 4kHz
                                 float baseGain = (mode == Surround51AudioProcessor.MODE_VOICE_3D) ? 550f : 300f;
                                 targetBoost = (short) Math.min(range[1], (int) (baseGain * dialogueFactor));
                             } else if (centerFreq >= 6000000) { // Treble detail > 6kHz
                                 float baseGain = (mode == Surround51AudioProcessor.MODE_CONCERT_3D) ? 450f : 250f;
-                                targetBoost = (short) Math.min(range[1], (int) (baseGain * surroundAudioProcessor.getTrebleBoostLevel()));
+                                targetBoost = (short) Math.min(range[1], (int) (baseGain * trebleFactor));
                             }
                             equalizer.setBandLevel(band, targetBoost);
                         }
