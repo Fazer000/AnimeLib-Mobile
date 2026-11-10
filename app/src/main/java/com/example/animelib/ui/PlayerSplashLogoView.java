@@ -596,17 +596,17 @@ public class PlayerSplashLogoView extends View {
             canvas.save();
             canvas.clipPath(bracketOutline);
 
-            // Мягкий неоновый ореол вокруг импульса
-            bracketPulseGlowPaint.setAlpha(Math.round(180f * alphaFraction));
+            // Мягкий, деликатный ореол вокруг импульса (приглушенный, не слепящий)
+            bracketPulseGlowPaint.setAlpha(Math.round(90f * alphaFraction));
             canvas.drawPath(outSegment, bracketPulseGlowPaint);
 
-            // Яркое белое ядро импульса
-            bracketPulseCorePaint.setAlpha(Math.round(230f * alphaFraction));
+            // Нежное полупрозрачное световое ядро импульса
+            bracketPulseCorePaint.setAlpha(Math.round(110f * alphaFraction));
             canvas.drawPath(outSegment, bracketPulseCorePaint);
 
-            // Головная светящаяся искра на пике волны
-            float sparkRadius = 6.0f * viewportScale;
-            bracketSparkPaint.setAlpha(Math.round(255f * alphaFraction));
+            // Мягкая светящаяся точка на острие волны
+            float sparkRadius = 4.2f * viewportScale;
+            bracketSparkPaint.setAlpha(Math.round(125f * alphaFraction));
             canvas.drawCircle(headPos[0], headPos[1], sparkRadius, bracketSparkPaint);
 
             canvas.restore();

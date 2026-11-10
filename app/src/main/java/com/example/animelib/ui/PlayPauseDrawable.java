@@ -4,7 +4,6 @@ import android.animation.ValueAnimator;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorFilter;
-import android.graphics.CornerPathEffect;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
@@ -18,12 +17,12 @@ import androidx.interpolator.view.animation.FastOutSlowInInterpolator;
 /**
  * High-performance Morphing Outlined Play/Pause Drawable.
  * Directly morphs an outlined (stroke) rounded Play triangle into two outlined (stroke) Pause bars.
- * No rotation. Generous corner rounding. Ultra-smooth Material cubic interpolation with subtle tactile pulse.
+ * No rotation. Continuous Bézier interpolation without abrupt corner popping.
+ * Sleek 1.45dp line weight matching the player's vector icon theme.
  */
 public class PlayPauseDrawable extends Drawable {
 
     private final Paint paint;
-    private final Path playPath;
     private final Path leftBarPath;
     private final Path rightBarPath;
 
@@ -40,7 +39,6 @@ public class PlayPauseDrawable extends Drawable {
         paint.setStrokeJoin(Paint.Join.ROUND);
         paint.setColor(color);
 
-        playPath = new Path();
         leftBarPath = new Path();
         rightBarPath = new Path();
     }
@@ -118,8 +116,8 @@ public class PlayPauseDrawable extends Drawable {
         float cx = bounds.exactCenterX();
         float cy = bounds.exactCenterY();
 
-        // Stroke width aligned with the outlined player theme
-        float strokeWidth = 1.85f * scale;
+        // Refined stroke thickness (1.45dp standard, matching the player outline icons)
+        float strokeWidth = 1.45f * scale;
         paint.setStrokeWidth(strokeWidth);
 
         int saveCount = canvas.save();
@@ -127,69 +125,80 @@ public class PlayPauseDrawable extends Drawable {
         float p = Math.max(0.0f, Math.min(1.0f, progress));
 
         // Subtle organic tactile pulse during transition (compress slightly then release)
-        float pulse = 1.0f - 0.08f * (float) Math.sin(p * Math.PI);
+        float pulse = 1.0f - 0.07f * (float) Math.sin(p * Math.PI);
         canvas.scale(pulse, pulse, cx, cy);
 
-        // Generous corner rounding for the play triangle
-        float cornerRadius = 3.2f * scale;
+        // --- Left Path: Exactly matches ic_player_play.xml left half at p=0, morphs to M8.5,5.5V18.5 at p=1 ---
+        float lx1 = 9.9f + (8.5f - 9.9f) * p;
+        float ly1 = 5.02f + (5.5f - 5.02f) * p;
 
-        if (p <= 0.001f) {
-            // Pure PLAY: Single continuous stroked triangle with soft, smooth, rounded corners
-            paint.setPathEffect(new CornerPathEffect(cornerRadius));
+        float lcp1x = 8.85f + (8.5f - 8.85f) * p;
+        float lcp1y = 4.37f + (6.0f - 4.37f) * p;
 
-            playPath.rewind();
-            playPath.moveTo(cx + (7.5f - 12.0f) * scale, cy + (5.0f - 12.0f) * scale);
-            playPath.lineTo(cx + (19.2f - 12.0f) * scale, cy + (12.0f - 12.0f) * scale);
-            playPath.lineTo(cx + (7.5f - 12.0f) * scale, cy + (19.0f - 12.0f) * scale);
-            playPath.close();
+        float lcp2x = 7.5f + (8.5f - 7.5f) * p;
+        float lcp2y = 5.12f + (6.8f - 5.12f) * p;
 
-            canvas.drawPath(playPath, paint);
-            paint.setPathEffect(null);
-        } else if (p >= 0.999f) {
-            // Pure PAUSE: Two vertical parallel stroke bars with round caps
-            paint.setPathEffect(null);
-            float x1 = cx + (8.5f - 12.0f) * scale;
-            float x2 = cx + (15.5f - 12.0f) * scale;
-            float yTop = cy + (5.5f - 12.0f) * scale;
-            float yBot = cy + (18.5f - 12.0f) * scale;
+        float lx2 = 7.5f + (8.5f - 7.5f) * p;
+        float ly2 = 6.35f + (7.5f - 6.35f) * p;
 
-            canvas.drawLine(x1, yTop, x1, yBot, paint);
-            canvas.drawLine(x2, yTop, x2, yBot, paint);
-        } else {
-            // Smooth morphing in-between without rotation
-            float currentRadius = cornerRadius * (1.0f - p);
-            if (currentRadius > 0.1f) {
-                paint.setPathEffect(new CornerPathEffect(currentRadius));
-            } else {
-                paint.setPathEffect(null);
-            }
+        float lx3 = 7.5f + (8.5f - 7.5f) * p;
+        float ly3 = 17.65f + (16.5f - 17.65f) * p;
 
-            float x_left = 7.5f + (8.5f - 7.5f) * p;
+        float lcp3x = 7.5f + (8.5f - 7.5f) * p;
+        float lcp3y = 18.88f + (17.2f - 18.88f) * p;
 
-            float x_top = 7.5f + (15.5f - 7.5f) * p;
-            float y_top = 5.0f + 0.5f * p;
+        float lcp4x = 8.85f + (8.5f - 8.85f) * p;
+        float lcp4y = 19.63f + (18.0f - 19.63f) * p;
 
-            float x_apex = 19.2f - (19.2f - 15.5f) * p;
-            float y_apex = 12.0f;
+        float lx4 = 9.9f + (8.5f - 9.9f) * p;
+        float ly4 = 18.98f + (18.5f - 18.98f) * p;
 
-            float x_bot = 7.5f + (15.5f - 7.5f) * p;
-            float y_bot = 19.0f - 0.5f * p;
+        leftBarPath.rewind();
+        leftBarPath.moveTo(cx + (lx1 - 12f) * scale, cy + (ly1 - 12f) * scale);
+        leftBarPath.cubicTo(
+                cx + (lcp1x - 12f) * scale, cy + (lcp1y - 12f) * scale,
+                cx + (lcp2x - 12f) * scale, cy + (lcp2y - 12f) * scale,
+                cx + (lx2 - 12f) * scale, cy + (ly2 - 12f) * scale
+        );
+        leftBarPath.lineTo(cx + (lx3 - 12f) * scale, cy + (ly3 - 12f) * scale);
+        leftBarPath.cubicTo(
+                cx + (lcp3x - 12f) * scale, cy + (lcp3y - 12f) * scale,
+                cx + (lcp4x - 12f) * scale, cy + (lcp4y - 12f) * scale,
+                cx + (lx4 - 12f) * scale, cy + (ly4 - 12f) * scale
+        );
 
-            // Left bar
-            leftBarPath.rewind();
-            leftBarPath.moveTo(cx + (x_left - 12.0f) * scale, cy + (5.5f - 12.0f) * scale);
-            leftBarPath.lineTo(cx + (x_left - 12.0f) * scale, cy + (18.5f - 12.0f) * scale);
+        // --- Right Path: Exactly matches ic_player_play.xml apex nose & diagonals at p=0, morphs to M15.5,5.5V18.5 at p=1 ---
+        float rx1 = 9.9f + (15.5f - 9.9f) * p;
+        float ry1 = 5.02f + (5.5f - 5.02f) * p;
 
-            // Right chevron morphing into vertical bar
-            rightBarPath.rewind();
-            rightBarPath.moveTo(cx + (x_top - 12.0f) * scale, cy + (y_top - 12.0f) * scale);
-            rightBarPath.lineTo(cx + (x_apex - 12.0f) * scale, cy + (y_apex - 12.0f) * scale);
-            rightBarPath.lineTo(cx + (x_bot - 12.0f) * scale, cy + (y_bot - 12.0f) * scale);
+        float rx2 = 18.85f + (15.5f - 18.85f) * p;
+        float ry2 = 10.67f + (10.5f - 10.67f) * p;
 
-            canvas.drawPath(leftBarPath, paint);
-            canvas.drawPath(rightBarPath, paint);
-            paint.setPathEffect(null);
-        }
+        float rcp1x = 19.83f + (15.5f - 19.83f) * p;
+        float rcp1y = 11.28f + (11.5f - 11.28f) * p;
+
+        float rcp2x = 19.83f + (15.5f - 19.83f) * p;
+        float rcp2y = 12.72f + (12.5f - 12.72f) * p;
+
+        float rx3 = 18.85f + (15.5f - 18.85f) * p;
+        float ry3 = 13.33f + (13.5f - 13.33f) * p;
+
+        float rx4 = 9.9f + (15.5f - 9.9f) * p;
+        float ry4 = 18.98f + (18.5f - 18.98f) * p;
+
+        rightBarPath.rewind();
+        rightBarPath.moveTo(cx + (rx1 - 12f) * scale, cy + (ry1 - 12f) * scale);
+        rightBarPath.lineTo(cx + (rx2 - 12f) * scale, cy + (ry2 - 12f) * scale);
+        rightBarPath.cubicTo(
+                cx + (rcp1x - 12f) * scale, cy + (rcp1y - 12f) * scale,
+                cx + (rcp2x - 12f) * scale, cy + (rcp2y - 12f) * scale,
+                cx + (rx3 - 12f) * scale, cy + (ry3 - 12f) * scale
+        );
+        rightBarPath.lineTo(cx + (rx4 - 12f) * scale, cy + (ry4 - 12f) * scale);
+
+        // Draw both paths directly without snapping or mode switching
+        canvas.drawPath(leftBarPath, paint);
+        canvas.drawPath(rightBarPath, paint);
 
         canvas.restoreToCount(saveCount);
     }
