@@ -1,13 +1,10 @@
 /**
- * Иньекция кнопки "Скачанное" после элемента "Загрузки" в меню сайта.
+ * Иньекция кнопки "Скачанное" вместо элемента "Загрузки" в меню сайта.
+ * Оригинальный элемент "Загрузки" скрывается, оставляя только кастомные кнопки.
  */
 (function() {
     function injectDownloadedMenuItem() {
-        if (document.getElementById('app-downloaded-anime-item')) {
-            return;
-        }
-
-        var menuItems = document.querySelectorAll('.menu-item');
+        var menuItems = document.querySelectorAll('.menu-item, [class*="menu"] a, nav a');
         var downloadsEl = null;
 
         for (var i = 0; i < menuItems.length; i++) {
@@ -15,7 +12,7 @@
             var href = item.getAttribute('href') || '';
             var text = (item.textContent || '').trim();
 
-            if (href.indexOf('/downloads') !== -1 || text.indexOf('Загрузки') !== -1) {
+            if ((href.indexOf('/downloads') !== -1 || text.indexOf('Загрузки') !== -1) && item.id !== 'app-downloaded-anime-item' && item.id !== 'app-anixart-import-item') {
                 downloadsEl = item;
                 break;
             }
@@ -25,11 +22,19 @@
             return;
         }
 
+        // Скрываем оригинальный блок "Загрузки"
+        downloadsEl.style.display = 'none';
+
+        if (document.getElementById('app-downloaded-anime-item')) {
+            return;
+        }
+
         var downloadedItem = downloadsEl.cloneNode(true);
         downloadedItem.id = 'app-downloaded-anime-item';
         downloadedItem.setAttribute('href', 'javascript:void(0);');
+        downloadedItem.style.display = ''; // Делаем кастомную кнопку видимой
 
-        var textEl = downloadedItem.querySelector('.menu-item__text');
+        var textEl = downloadedItem.querySelector('.menu-item__text, span');
         if (textEl) {
             textEl.textContent = 'Скачанное';
         } else {
@@ -52,7 +57,7 @@
 
         if (downloadsEl.parentNode) {
             downloadsEl.parentNode.insertBefore(downloadedItem, downloadsEl.nextSibling);
-            console.log('[AnimeLIB] Successfully injected "Скачанное" menu item');
+            console.log('[AnimeLIB] Successfully injected "Скачанное" menu item and hidden original "Загрузки"');
         }
     }
 
@@ -63,7 +68,7 @@
 
         var rafPending = false;
         var scheduleInject = function() {
-            if (rafPending || document.getElementById('app-downloaded-anime-item')) return;
+            if (rafPending) return;
             rafPending = true;
             requestAnimationFrame(function() {
                 rafPending = false;
@@ -72,16 +77,7 @@
         };
 
         var observer = new MutationObserver(function(mutations) {
-            if (document.getElementById('app-downloaded-anime-item')) return;
-            for (var i = 0; i < mutations.length; i++) {
-                var added = mutations[i].addedNodes;
-                for (var j = 0; j < added.length; j++) {
-                    if (added[j] && added[j].nodeType === 1) {
-                        scheduleInject();
-                        return;
-                    }
-                }
-            }
+            scheduleInject();
         });
 
         var attach = function() {

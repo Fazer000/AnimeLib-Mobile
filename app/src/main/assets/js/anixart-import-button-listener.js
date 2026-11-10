@@ -1,49 +1,47 @@
 /**
  * Инъекция кнопки "Импорт из Anixart" ниже кнопки "Скачанное" в меню сайта.
- * Сохраняет оригинальную структуру пункта меню и иконку слева, аналогично пункту "Скачанное".
+ * Содержит собственный векторный значок импорта списка в стиле иконок сайта.
  */
 (function() {
     function injectAnixartImportMenuItem() {
         var existing = document.getElementById('app-anixart-import-item');
         if (existing) {
-            // Если иконка присутствует, повторно не создаем
-            var hasIcon = existing.querySelector('svg, img, i, [class*="icon"]');
-            if (hasIcon) {
+            // Если кнопка уже создана с новым значком, не пересоздаем
+            if (existing.querySelector('[data-custom-import-icon="true"]')) {
                 return;
             }
-            // Если иконки нет (старая версия), удаляем для пересоздания в правильном виде
             if (existing.parentNode) {
                 existing.parentNode.removeChild(existing);
             }
         }
 
         var downloadedEl = document.getElementById('app-downloaded-anime-item');
-        var targetToClone = downloadedEl;
+        var anchorEl = downloadedEl;
 
-        if (!targetToClone) {
-            var menuItems = document.querySelectorAll('.menu-item');
+        if (!anchorEl) {
+            var menuItems = document.querySelectorAll('.menu-item, [class*="menu"] a, nav a');
             for (var i = 0; i < menuItems.length; i++) {
                 var item = menuItems[i];
                 var href = item.getAttribute('href') || '';
                 var text = (item.textContent || '').trim();
 
                 if (href.indexOf('/downloads') !== -1 || text.indexOf('Загрузки') !== -1 || text.indexOf('Скачанное') !== -1) {
-                    targetToClone = item;
+                    anchorEl = item;
                     break;
                 }
             }
         }
 
-        if (!targetToClone) {
+        if (!anchorEl) {
             return;
         }
 
-        // Клонируем в точности так же, как пункт "Скачанное", полностью сохраняя иконку слева
-        var importItem = targetToClone.cloneNode(true);
+        var importItem = anchorEl.cloneNode(true);
         importItem.id = 'app-anixart-import-item';
         importItem.setAttribute('href', 'javascript:void(0);');
+        importItem.style.display = '';
 
-        // Меняем только текст, не затрагивая элементы иконки
+        // Меняем текст кнопки
         var textEl = importItem.querySelector('.menu-item__text');
         if (textEl) {
             textEl.textContent = 'Импорт из Anixart';
@@ -69,6 +67,19 @@
             }
         }
 
+        // Устанавливаем новый векторный значок импорта списка (документ со стрелкой) в стиле иконок сайта
+        var svgEl = importItem.querySelector('svg');
+        if (svgEl) {
+            svgEl.setAttribute('data-custom-import-icon', 'true');
+            svgEl.innerHTML = '<path fill="currentColor" d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm1 10h-2v3h-2v-3H9l3-3 3 3zm-2-4V3.5L18.5 9H13z"/>';
+        } else {
+            var iconContainer = importItem.querySelector('.menu-item__icon, [class*="icon"]');
+            if (iconContainer) {
+                iconContainer.setAttribute('data-custom-import-icon', 'true');
+                iconContainer.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" style="display:block;"><path fill="currentColor" d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm1 10h-2v3h-2v-3H9l3-3 3 3zm-2-4V3.5L18.5 9H13z"/></svg>';
+            }
+        }
+
         importItem.addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
@@ -83,10 +94,10 @@
             }
         }, true);
 
-        var insertAfter = downloadedEl || targetToClone;
+        var insertAfter = downloadedEl || anchorEl;
         if (insertAfter.parentNode) {
             insertAfter.parentNode.insertBefore(importItem, insertAfter.nextSibling);
-            console.log('[AnimeLIB] Successfully injected "Импорт из Anixart" menu item with icon in the same style as "Скачанное"');
+            console.log('[AnimeLIB] Successfully injected "Импорт из Anixart" menu item with new dedicated import icon');
         }
     }
 
@@ -99,7 +110,7 @@
         var scheduleInject = function() {
             if (rafPending) return;
             var cur = document.getElementById('app-anixart-import-item');
-            if (cur && cur.querySelector('svg, img, i, [class*="icon"]')) {
+            if (cur && cur.querySelector('[data-custom-import-icon="true"]')) {
                 return;
             }
             rafPending = true;
@@ -110,19 +121,7 @@
         };
 
         var observer = new MutationObserver(function(mutations) {
-            var cur = document.getElementById('app-anixart-import-item');
-            if (cur && cur.querySelector('svg, img, i, [class*="icon"]')) {
-                return;
-            }
-            for (var i = 0; i < mutations.length; i++) {
-                var added = mutations[i].addedNodes;
-                for (var j = 0; j < added.length; j++) {
-                    if (added[j] && added[j].nodeType === 1) {
-                        scheduleInject();
-                        return;
-                    }
-                }
-            }
+            scheduleInject();
         });
 
         var attach = function() {
