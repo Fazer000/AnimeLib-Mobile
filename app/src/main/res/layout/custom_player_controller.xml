@@ -40,8 +40,8 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <!-- Settings Button Container with Quality Badge overlay -->
-            <FrameLayout
+            <!-- Settings Button Container with Quality Badge overlay and precision cutout -->
+            <com.example.animelib.ui.SettingsBadgeContainer
                 android:id="@+id/settingsButtonContainer"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -77,9 +77,9 @@
                     android:textStyle="bold"
                     android:gravity="center"
                     android:includeFontPadding="false"
-                    android:elevation="2dp"
+                    android:elevation="0dp"
                     android:visibility="gone" />
-            </FrameLayout>
+            </com.example.animelib.ui.SettingsBadgeContainer>
 
             <!-- Picture-in-Picture Button -->
             <ImageButton

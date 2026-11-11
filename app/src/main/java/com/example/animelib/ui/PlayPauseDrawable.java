@@ -91,9 +91,11 @@ public class PlayPauseDrawable extends Drawable {
         }
 
         float startProgress = this.progress;
+        long duration = (long) (180 * Math.abs(targetProgress - startProgress));
+        if (duration <= 0) duration = 180;
 
         animator = ValueAnimator.ofFloat(startProgress, targetProgress);
-        animator.setDuration(260);
+        animator.setDuration(duration);
         animator.setInterpolator(new FastOutSlowInInterpolator());
         animator.addUpdateListener(animation -> {
             progress = (float) animation.getAnimatedValue();
