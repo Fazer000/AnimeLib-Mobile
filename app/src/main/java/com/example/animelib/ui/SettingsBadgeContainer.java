@@ -54,10 +54,10 @@ public class SettingsBadgeContainer extends FrameLayout {
         clearPaint.setStyle(Paint.Style.FILL);
         clearPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
 
-        // Precision gap (2.0dp) between badge and gear cutout
-        gapPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2.0f, getResources().getDisplayMetrics());
-        // Badge has 3.5dp corner radius; concentric cutout radius = 3.5dp + 2.0dp = 5.5dp
-        badgeCornerRadiusPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 3.5f, getResources().getDisplayMetrics());
+        // Precision gap (1.5dp) between badge and gear cutout
+        gapPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 1.5f, getResources().getDisplayMetrics());
+        // Badge has 2.5dp corner radius; concentric cutout radius = 2.5dp + 1.5dp = 4.0dp
+        badgeCornerRadiusPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2.5f, getResources().getDisplayMetrics());
     }
 
     @Override
@@ -80,6 +80,26 @@ public class SettingsBadgeContainer extends FrameLayout {
                     }
                     invalidate();
                 });
+            }
+        }
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        resolveChildViews();
+        if (settingsQualityTag != null && settingsQualityTag.getVisibility() != GONE) {
+            int tagWidth = settingsQualityTag.getMeasuredWidth();
+            int tagHeight = settingsQualityTag.getMeasuredHeight();
+            MarginLayoutParams lp = (MarginLayoutParams) settingsQualityTag.getLayoutParams();
+            int requiredWidth = tagWidth + Math.max(0, lp.leftMargin) + Math.max(0, lp.rightMargin);
+            int requiredHeight = tagHeight + Math.max(0, lp.topMargin) + Math.max(0, lp.bottomMargin);
+
+            int finalWidth = Math.max(getMeasuredWidth(), requiredWidth);
+            int finalHeight = Math.max(getMeasuredHeight(), requiredHeight);
+
+            if (finalWidth != getMeasuredWidth() || finalHeight != getMeasuredHeight()) {
+                setMeasuredDimension(finalWidth, finalHeight);
             }
         }
     }
