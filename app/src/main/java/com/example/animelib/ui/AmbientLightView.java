@@ -6,7 +6,6 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.RenderEffect;
 import android.graphics.Shader;
@@ -20,18 +19,20 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 /**
- * Ультра-оптимизированный View фоновой подсветки (Ambilight).
- * - Нативное аппаратное размытие (RenderEffect DECAL на Android 12+) и билинейная интерполяция;
- * - 0 непрерывных циклов перерисовки на UI-потоке (отрисовка строго по поступлению кадра);
- * - 0 аллокаций памяти в рантайме;
- * - Мгновенный 60-120 FPS скролл списков и табов без единого микрофриза.
+ * Аппаратно-ускоренный View краевой фоновой подсветки (Edge-Diffused Ambilight).
+ *
+ * Рисует предрассчитанное поле рассеивания краёв (60x48, сетка 3x3) через Canvas.drawBitmapMesh:
+ * - Центральная зона [1/3..2/3] выравнивается по границам активного видео;
+ * - 4 внешние полосы и 4 угла равномерно растягиваются ровно на ширину/высоту
+ *   соответствующих пустых областей вокруг плеера (статус-бар, пилларбоксы, леттербоксы, область у шторки);
+ * - Билинейная интерполяция на GPU + мягкий RenderEffect на Android 12+ создают
+ *   абсолютно плавное свечение без швов, полос и дублирования содержимого видео.
  */
 public class AmbientLightView extends View {
     private static final String TAG = "AmbientLightView";
 
     private final Paint drawPaint;
-    private final Rect srcRect = new Rect();
-    private final RectF dstRect = new RectF();
+    private final float[] meshVerts = new float[32]; // 4x4 vertices * (x, y)
 
     private Bitmap displayBitmap;
     private int[] displayPixels;
@@ -40,6 +41,7 @@ public class AmbientLightView extends View {
     private ValueAnimator intensityAnimator;
 
     private RectF customVideoBounds = null;
+    private RectF availableBounds = null;
     private float videoAspectRatio = 16f / 9f;
 
     public AmbientLightView(Context context) {
@@ -61,7 +63,7 @@ public class AmbientLightView extends View {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
-                RenderEffect blurEffect = RenderEffect.createBlurEffect(48f, 48f, Shader.TileMode.CLAMP);
+                RenderEffect blurEffect = RenderEffect.createBlurEffect(76f, 76f, Shader.TileMode.CLAMP);
                 setRenderEffect(blurEffect);
             } catch (Exception e) {
                 Log.e(TAG, "Failed to apply RenderEffect to AmbientLightView", e);
@@ -70,8 +72,7 @@ public class AmbientLightView extends View {
     }
 
     /**
-     * Получение нового кадра подсветки из фонового воркера.
-     * Выполняется мгновенно с плавным cross-fade переходом без мерцания.
+     * Обновляет предрассчитанное поле краевого рассеивания (GLOW_WIDTH x GLOW_HEIGHT).
      */
     public void updateSamplePixels(int[] pixels, int width, int height) {
         if (pixels == null || pixels.length < width * height || getVisibility() != VISIBLE) {
@@ -121,11 +122,29 @@ public class AmbientLightView extends View {
         }
     }
 
+    public void setAvailableBounds(float left, float top, float right, float bottom) {
+        if (availableBounds == null) {
+            availableBounds = new RectF(left, top, right, bottom);
+        } else {
+            availableBounds.set(left, top, right, bottom);
+        }
+        invalidate();
+    }
+
+    public void clearAvailableBounds() {
+        if (availableBounds != null) {
+            availableBounds = null;
+            invalidate();
+        }
+    }
+
     @Override
     protected void onDraw(@NonNull Canvas canvas) {
         super.onDraw(canvas);
 
-        if (getWidth() <= 0 || getHeight() <= 0 || getVisibility() != VISIBLE) {
+        int viewW = getWidth();
+        int viewH = getHeight();
+        if (viewW <= 0 || viewH <= 0 || getVisibility() != VISIBLE) {
             return;
         }
 
@@ -134,41 +153,71 @@ public class AmbientLightView extends View {
         }
 
         try {
-            int screenWidth = getWidth();
-            int screenHeight = getHeight();
-            int bmpW = displayBitmap.getWidth();
-            int bmpH = displayBitmap.getHeight();
+            float availL = 0f;
+            float availT = 0f;
+            float availR = viewW;
+            float availB = viewH;
 
-            if (bmpW <= 0 || bmpH <= 0) return;
-
-            if (customVideoBounds != null && customVideoBounds.width() > 0 && customVideoBounds.height() > 0) {
-                float marginX = customVideoBounds.width() * 0.28f;
-                float marginY = customVideoBounds.height() * 0.28f;
-                srcRect.set(0, 0, bmpW, bmpH);
-                dstRect.set(
-                        customVideoBounds.left - marginX,
-                        customVideoBounds.top - marginY,
-                        customVideoBounds.right + marginX,
-                        customVideoBounds.bottom + marginY
-                );
-            } else {
-                float aspect = videoAspectRatio > 0 ? videoAspectRatio : 16f / 9f;
-                float fullVideoW = Math.min((float) screenWidth, (float) screenHeight * aspect);
-                float fullVideoH = Math.min((float) screenHeight, (float) screenWidth / aspect);
-                float left = (screenWidth - fullVideoW) * 0.5f;
-                float top = (screenHeight - fullVideoH) * 0.5f;
-                float right = left + fullVideoW;
-                float bottom = top + fullVideoH;
-                float marginX = fullVideoW * 0.28f;
-                float marginY = fullVideoH * 0.28f;
-
-                srcRect.set(0, 0, bmpW, bmpH);
-                dstRect.set(left - marginX, top - marginY, right + marginX, bottom + marginY);
+            if (availableBounds != null && availableBounds.width() > 0 && availableBounds.height() > 0) {
+                availL = Math.max(0f, availableBounds.left);
+                availT = Math.max(0f, availableBounds.top);
+                availR = Math.min((float) viewW, availableBounds.right);
+                availB = Math.min((float) viewH, availableBounds.bottom);
             }
 
-            drawPaint.setAlpha((int) (currentIntensity * 255));
-            canvas.drawBitmap(displayBitmap, srcRect, dstRect, drawPaint);
+            if (availR <= availL || availB <= availT) {
+                return;
+            }
 
+            float vL, vT, vR, vB;
+            if (customVideoBounds != null && customVideoBounds.width() > 0 && customVideoBounds.height() > 0) {
+                vL = customVideoBounds.left;
+                vT = customVideoBounds.top;
+                vR = customVideoBounds.right;
+                vB = customVideoBounds.bottom;
+            } else {
+                float aspect = videoAspectRatio > 0 ? videoAspectRatio : 16f / 9f;
+                float fullVideoW = Math.min((float) viewW, (float) viewH * aspect);
+                float fullVideoH = Math.min((float) viewH, (float) viewW / aspect);
+                vL = (viewW - fullVideoW) * 0.5f;
+                vT = (viewH - fullVideoH) * 0.5f;
+                vR = vL + fullVideoW;
+                vB = vT + fullVideoH;
+            }
+
+            float x0 = availL;
+            float x1 = Math.max(availL, Math.min(availR, vL));
+            float x2 = Math.max(x1, Math.min(availR, vR));
+            float x3 = availR;
+
+            float y0 = availT;
+            float y1 = Math.max(availT, Math.min(availB, vT));
+            float y2 = Math.max(y1, Math.min(availB, vB));
+            float y3 = availB;
+
+            // Заполняем 4x4 вершины 3x3 сетки: края ровно по [avail .. video], центр [video]
+            meshVerts[0]  = x0; meshVerts[1]  = y0;
+            meshVerts[2]  = x1; meshVerts[3]  = y0;
+            meshVerts[4]  = x2; meshVerts[5]  = y0;
+            meshVerts[6]  = x3; meshVerts[7]  = y0;
+
+            meshVerts[8]  = x0; meshVerts[9]  = y1;
+            meshVerts[10] = x1; meshVerts[11] = y1;
+            meshVerts[12] = x2; meshVerts[13] = y1;
+            meshVerts[14] = x3; meshVerts[15] = y1;
+
+            meshVerts[16] = x0; meshVerts[17] = y2;
+            meshVerts[18] = x1; meshVerts[19] = y2;
+            meshVerts[20] = x2; meshVerts[21] = y2;
+            meshVerts[22] = x3; meshVerts[23] = y2;
+
+            meshVerts[24] = x0; meshVerts[25] = y3;
+            meshVerts[26] = x1; meshVerts[27] = y3;
+            meshVerts[28] = x2; meshVerts[29] = y3;
+            meshVerts[30] = x3; meshVerts[31] = y3;
+
+            drawPaint.setAlpha((int) (currentIntensity * 255));
+            canvas.drawBitmapMesh(displayBitmap, 3, 3, meshVerts, 0, null, 0, drawPaint);
         } catch (Exception e) {
             Log.e(TAG, "Error in onDraw", e);
         }

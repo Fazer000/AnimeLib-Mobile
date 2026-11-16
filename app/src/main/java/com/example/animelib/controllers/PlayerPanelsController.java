@@ -14,10 +14,8 @@ import androidx.core.view.ViewCompat;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 
-import com.example.animelib.R;
 import com.example.animelib.managers.CommentsManager;
 import com.example.animelib.managers.PlayersManager;
-import com.example.animelib.ui.AmbientVignetteOverlayView;
 import com.example.animelib.ui.DraggableSidePanel;
 
 public class PlayerPanelsController {
@@ -39,7 +37,7 @@ public class PlayerPanelsController {
         CommentsManager getCommentsManager();
         boolean isOfflineMode();
         int getStatusBarHeight();
-        void updateAmbientPlayerTransform(float scale, float translationX, float translationY, boolean isCropped);
+        void updateAmbientPlayerTransform(float scale, float translationX, float translationY, boolean isCropped, float availRight);
         void onOutlineValuesChanged(float left, float top, float right, float bottom, float radiusPx);
     }
 
@@ -260,55 +258,6 @@ public class PlayerPanelsController {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 playerContainer.invalidateOutline();
             }
-            View ambientContainer = activity.findViewById(R.id.ambientContainer);
-            int sbHeight = callback.getStatusBarHeight();
-            float actualTop = sbHeight;
-            float actualLeft = 0f;
-            if (playerContainer != null && ambientContainer != null) {
-                int[] pLoc = new int[2];
-                int[] aLoc = new int[2];
-                playerContainer.getLocationOnScreen(pLoc);
-                ambientContainer.getLocationOnScreen(aLoc);
-                if (pLoc[1] > 0 || aLoc[1] > 0) {
-                    actualTop = pLoc[1] - aLoc[1];
-                    actualLeft = pLoc[0] - aLoc[0];
-                }
-            }
-
-            int sw = activity.getResources().getDisplayMetrics().widthPixels;
-            float containerW = (playerContainer != null && playerContainer.getWidth() > 0) ? playerContainer.getWidth() : sw;
-            float containerH = (playerContainer != null && playerContainer.getHeight() > 0) ? playerContainer.getHeight() : (sw * 9f / 16f);
-
-            float portW = containerW;
-            float portH = containerH;
-            float portLeft = actualLeft;
-            float portTop = actualTop;
-
-            if (player != null && player.getVideoSize() != null) {
-                int vw = player.getVideoSize().width;
-                int vh = player.getVideoSize().height;
-                if (vw > 0 && vh > 0) {
-                    float videoAspect = (float) vw / vh;
-                    float containerAspect = containerW / containerH;
-                    if (containerAspect > videoAspect) {
-                        portH = containerH;
-                        portW = containerH * videoAspect;
-                        portLeft = actualLeft + (containerW - portW) / 2f;
-                        portTop = actualTop;
-                    } else {
-                        portW = containerW;
-                        portH = containerW / videoAspect;
-                        portLeft = actualLeft;
-                        portTop = actualTop + (containerH - portH) / 2f;
-                    }
-                }
-            }
-
-            AmbientVignetteOverlayView ambientVignetteOverlay = activity.findViewById(R.id.ambientVignetteOverlay);
-            if (ambientVignetteOverlay != null) {
-                ambientVignetteOverlay.setVideoBounds(portLeft, portTop, portLeft + portW, portTop + portH);
-            }
-            callback.updateAmbientPlayerTransform(1f, 0f, 0f, true);
             ViewGroup.LayoutParams lp = playerContainer.getLayoutParams();
             if (lp != null) {
                 if (lp instanceof ViewGroup.MarginLayoutParams) {
@@ -334,6 +283,7 @@ public class PlayerPanelsController {
                     playerContainer.setLayoutParams(lp);
                 }
             }
+            callback.updateAmbientPlayerTransform(1f, 0f, 0f, true, -1f);
             return;
         }
 
@@ -355,20 +305,7 @@ public class PlayerPanelsController {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 playerContainer.invalidateOutline();
             }
-            int sw = 0;
-            int sh = 0;
-            if (decorView != null && decorView.getWidth() > 0 && decorView.getHeight() > 0) {
-                sw = decorView.getWidth();
-                sh = decorView.getHeight();
-            } else {
-                sw = dm.widthPixels;
-                sh = dm.heightPixels;
-            }
-            AmbientVignetteOverlayView ambientVignetteOverlay = activity.findViewById(R.id.ambientVignetteOverlay);
-            if (ambientVignetteOverlay != null) {
-                ambientVignetteOverlay.clearCustomVideoBounds();
-            }
-            callback.updateAmbientPlayerTransform(1f, 0f, 0f, false);
+            callback.updateAmbientPlayerTransform(1f, 0f, 0f, false, -1f);
             ViewGroup.LayoutParams rawLp = playerContainer.getLayoutParams();
             if (rawLp != null) {
                 if (rawLp instanceof ViewGroup.MarginLayoutParams) {
@@ -497,17 +434,6 @@ public class PlayerPanelsController {
             playerContainer.invalidateOutline();
         }
 
-        AmbientVignetteOverlayView ambientVignetteOverlay = activity.findViewById(R.id.ambientVignetteOverlay);
-        if (ambientVignetteOverlay != null) {
-            float currentVideoW = fullVideoW * currentScale;
-            float currentVideoH = fullVideoH * currentScale;
-            float videoLeft = translationX + (scaledW - currentVideoW) / 2f;
-            float videoTop = translationY + (scaledH - currentVideoH) / 2f;
-            float videoRight = videoLeft + currentVideoW;
-            float videoBottom = videoTop + currentVideoH;
-
-            ambientVignetteOverlay.setVideoBounds(videoLeft, videoTop, videoRight, videoBottom, currentAvailW);
-        }
-        callback.updateAmbientPlayerTransform(currentScale, translationX, translationY, false);
+        callback.updateAmbientPlayerTransform(currentScale, translationX, translationY, false, currentAvailW);
     }
 }

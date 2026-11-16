@@ -368,9 +368,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
 
             @Override
-            public void updateAmbientPlayerTransform(float scale, float translationX, float translationY, boolean isCropped) {
+            public void updateAmbientPlayerTransform(float scale, float translationX, float translationY, boolean isCropped, float availRight) {
                 if (ambientLightManager != null) {
-                    ambientLightManager.updateTransform(scale, translationX, translationY, isCropped);
+                    ambientLightManager.updateTransform(scale, translationX, translationY, isCropped, availRight);
                 }
             }
 
@@ -1670,6 +1670,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
             public void onResizeModeChanged(int newMode) {
                 if (playerPlaybackController != null) {
                     playerPlaybackController.setVideoResizeMode(newMode);
+                }
+                if (ambientLightManager != null) {
+                    ambientLightManager.updateBoundsFromPlayer();
                 }
             }
 

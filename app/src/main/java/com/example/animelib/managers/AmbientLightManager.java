@@ -3,12 +3,15 @@ package com.example.animelib.managers;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -17,6 +20,7 @@ import androidx.media3.common.Player;
 import androidx.media3.common.VideoSize;
 import androidx.media3.datasource.DataSource;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
 
 import com.example.animelib.R;
@@ -29,22 +33,17 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Высокопроизводительный менеджер фоновой подсветки (Ambilight Ultra).
+ * Высокопроизводительный менеджер фоновой подсветки (Edge-Diffused Ambilight).
  *
  * Архитектурные принципы:
  * 1. Идеальная синхронизация без задержек (Direct Texture Sampling):
- *    - Кадры берутся напрямую из аппаратного TextureView основного плеера.
- *    - Задержка = 0 мс (невозможно получить рассинхрон, так как считывается отображаемый в данный миг кадр).
- *    - Полная независимость от битрейта, звуковых дорожек, изменения скорости (0.5x - 2.0x) и сети.
- * 2. Нулевая избыточная нагрузка на систему (Zero Secondary Decoder Load):
- *    - Полное исключение второго экземпляра ExoPlayer: освобожден второй аппаратный декодер MediaCodec.
- *    - 0 повторного сетевого трафика HLS.
- *    - Сэмплинг в микро-буфер 36x20 (~0.2 мс на GPU), 0 аллокаций памяти в рантайме.
- *    - Фоновая обработка StackBlur, Pure Hue калибровки и темпорального сглаживания в выделенном демоне.
- * 3. Кинематографичный вид:
- *    - Аппаратное размытие RenderEffect DECAL + билинейная фильтрация.
- *    - Единый бесшовный эллиптический оверлей (Smooth Hermite S-Curve) с затуханием в чистый #000000.
- * 4. Полная поддержка портретного режима и анимаций боковых панелей.
+ *    - Кадры берутся напрямую из аппаратного TextureView основного плеера (~0.2 мс).
+ * 2. Отсутствие дублирования видеоконтента:
+ *    - FastBlurUtils извлекает только периметральные полосы краёв и строит 9-зонное
+ *      поле рассеивания (60x48), растягивающееся ровно на ширину пустых областей плеера.
+ * 3. Единый источник границ (AmbientLightView + AmbientVignetteOverlayView):
+ *    - Точно учитывает resizeMode (FIT / FILL / ZOOM / FIXED_*), портретный статус-бар,
+ *      боковую панель (availRight) и автоматическое обновление при изменении layout.
  */
 public class AmbientLightManager {
     private static final String TAG = "AmbientLightManager";
@@ -52,6 +51,7 @@ public class AmbientLightManager {
     private static final int SAMPLE_WIDTH = 36;
     private static final int SAMPLE_HEIGHT = 20;
     private static final int TOTAL_PIXELS = SAMPLE_WIDTH * SAMPLE_HEIGHT;
+    private static final int GLOW_TOTAL_PIXELS = FastBlurUtils.GLOW_WIDTH * FastBlurUtils.GLOW_HEIGHT;
     private static final long SAMPLING_INTERVAL_MS = 33L; // ~30 FPS
 
     private final Context context;
@@ -65,14 +65,18 @@ public class AmbientLightManager {
     private final FastBlurUtils fastBlurUtils;
     private final ExecutorService backgroundExecutor;
     private final AtomicBoolean isProcessing = new AtomicBoolean(false);
+    private final Object glowBufferLock = new Object();
 
     private Bitmap sampleBitmap;
     private final int[] rawPixels;
     private final int[] workerPixels;
+    private final int[] workerGlowPixels;
+    private final int[] uiGlowPixels;
 
     private ExoPlayer mainPlayer;
     private Player.Listener mainPlayerListener;
     private TextureView cachedTextureView;
+    private final View.OnLayoutChangeListener playerLayoutChangeListener;
 
     private volatile boolean isEnabled = true;
     private boolean isSuspended = false;
@@ -83,6 +87,7 @@ public class AmbientLightManager {
     private float currentTranslationX = 0f;
     private float currentTranslationY = 0f;
     private boolean isCurrentCropped = false;
+    private float currentAvailRight = -1f;
 
     public AmbientLightManager(@NonNull Context context,
                                @NonNull PlayerView mainPlayerView,
@@ -114,6 +119,8 @@ public class AmbientLightManager {
         this.fastBlurUtils = new FastBlurUtils(SAMPLE_WIDTH, SAMPLE_HEIGHT, 4);
         this.rawPixels = new int[TOTAL_PIXELS];
         this.workerPixels = new int[TOTAL_PIXELS];
+        this.workerGlowPixels = new int[GLOW_TOTAL_PIXELS];
+        this.uiGlowPixels = new int[GLOW_TOTAL_PIXELS];
         this.sampleBitmap = Bitmap.createBitmap(SAMPLE_WIDTH, SAMPLE_HEIGHT, Bitmap.Config.ARGB_8888);
 
         this.backgroundExecutor = Executors.newSingleThreadExecutor(r -> {
@@ -122,6 +129,17 @@ public class AmbientLightManager {
             thread.setPriority(Thread.NORM_PRIORITY - 1);
             return thread;
         });
+
+        this.playerLayoutChangeListener = (v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) {
+                if (isEnabled && !isSuspended && !isFrozen) {
+                    updateBoundsFromPlayer();
+                }
+            }
+        };
+        if (this.mainPlayerView != null) {
+            this.mainPlayerView.addOnLayoutChangeListener(playerLayoutChangeListener);
+        }
 
         setupAmbientViewStyle();
     }
@@ -305,7 +323,7 @@ public class AmbientLightManager {
     };
 
     /**
-     * Захватывает текущий кадр из TextureView и отправляет на фоновую фильтрацию
+     * Захватывает текущий кадр из TextureView и строит краевое поле рассеивания на фоне.
      */
     private void captureAndProcessFrame() {
         if (!isEnabled || isSuspended || isFrozen) return;
@@ -330,10 +348,19 @@ public class AmbientLightManager {
                     System.arraycopy(rawPixels, 0, workerPixels, 0, TOTAL_PIXELS);
                     backgroundExecutor.execute(() -> {
                         try {
-                            fastBlurUtils.blurAndSmooth(workerPixels);
+                            fastBlurUtils.buildEdgeGlowField(workerPixels, workerGlowPixels);
+                            synchronized (glowBufferLock) {
+                                System.arraycopy(workerGlowPixels, 0, uiGlowPixels, 0, GLOW_TOTAL_PIXELS);
+                            }
                             mainHandler.post(() -> {
                                 if (ambientLightView != null && isEnabled && !isSuspended && !isFrozen) {
-                                    ambientLightView.updateSamplePixels(workerPixels, SAMPLE_WIDTH, SAMPLE_HEIGHT);
+                                    synchronized (glowBufferLock) {
+                                        ambientLightView.updateSamplePixels(
+                                                uiGlowPixels,
+                                                FastBlurUtils.GLOW_WIDTH,
+                                                FastBlurUtils.GLOW_HEIGHT
+                                        );
+                                    }
                                 }
                             });
                         } catch (Exception e) {
@@ -444,13 +471,6 @@ public class AmbientLightManager {
             @Override
             public void onVideoSizeChanged(@NonNull VideoSize videoSize) {
                 if (videoSize.width > 0 && videoSize.height > 0) {
-                    float aspect = (float) videoSize.width / (float) videoSize.height;
-                    if (ambientVignetteOverlay != null) {
-                        ambientVignetteOverlay.setVideoAspectRatio(aspect);
-                    }
-                    if (ambientLightView != null) {
-                        ambientLightView.setVideoAspectRatio(aspect);
-                    }
                     updateBoundsFromPlayer();
                 }
             }
@@ -460,87 +480,174 @@ public class AmbientLightManager {
     }
 
     public void updateBoundsFromPlayer() {
-        if (mainPlayerView == null) return;
-
-        int sw = mainPlayerView.getWidth();
-        int sh = mainPlayerView.getHeight();
-        if (sw <= 0 || sh <= 0) {
-            sw = context.getResources().getDisplayMetrics().widthPixels;
-            sh = context.getResources().getDisplayMetrics().heightPixels;
-        }
-
-        float aspect = 16f / 9f;
-        if (mainPlayer != null && mainPlayer.getVideoSize().width > 0 && mainPlayer.getVideoSize().height > 0) {
-            aspect = (float) mainPlayer.getVideoSize().width / (float) mainPlayer.getVideoSize().height;
-        }
-
-        boolean isPortrait = context.getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
-
-        if (ambientVignetteOverlay != null) {
-            ambientVignetteOverlay.setVideoAspectRatio(aspect);
-            if (!isPortrait) {
-                float fullVideoW = Math.min((float) sw, (float) sh * aspect);
-                float fullVideoH = Math.min((float) sh, (float) sw / aspect);
-                float left = (sw - fullVideoW) * 0.5f;
-                float top = (sh - fullVideoH) * 0.5f;
-                ambientVignetteOverlay.setVideoBounds(left, top, left + fullVideoW, top + fullVideoH);
-            }
-        }
-
-        if (ambientLightView != null) {
-            ambientLightView.setVideoAspectRatio(aspect);
-        }
-
-        updateTransform(currentScale, currentTranslationX, currentTranslationY, isCurrentCropped);
+        updateTransform(currentScale, currentTranslationX, currentTranslationY, isCurrentCropped, currentAvailRight);
     }
 
     public void updateTransform(float scale, float translationX, float translationY, boolean isCropped) {
+        updateTransform(scale, translationX, translationY, isCropped, -1f);
+    }
+
+    public void updateTransform(float scale, float translationX, float translationY, boolean isCropped, float availRight) {
         this.currentScale = scale;
         this.currentTranslationX = translationX;
         this.currentTranslationY = translationY;
         this.isCurrentCropped = isCropped;
+        this.currentAvailRight = availRight;
 
-        int viewW = mainPlayerView != null ? mainPlayerView.getWidth() : 0;
-        int viewH = mainPlayerView != null ? mainPlayerView.getHeight() : 0;
-        if (viewW <= 0 || viewH <= 0) {
-            viewW = context.getResources().getDisplayMetrics().widthPixels;
-            viewH = context.getResources().getDisplayMetrics().heightPixels;
-        }
+        DisplayMetrics dm = context.getResources().getDisplayMetrics();
+        int rootW = (ambientContainer != null && ambientContainer.getWidth() > 0)
+                ? ambientContainer.getWidth()
+                : dm.widthPixels;
+        int rootH = (ambientContainer != null && ambientContainer.getHeight() > 0)
+                ? ambientContainer.getHeight()
+                : dm.heightPixels;
 
-        boolean isPortrait = context.getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
+        if (rootW <= 0 || rootH <= 0) return;
+
+        boolean isPortrait = context.getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT
+                || rootH > rootW;
 
         float aspect = 16f / 9f;
         if (mainPlayer != null && mainPlayer.getVideoSize().width > 0 && mainPlayer.getVideoSize().height > 0) {
             aspect = (float) mainPlayer.getVideoSize().width / (float) mainPlayer.getVideoSize().height;
         }
 
+        int resizeMode = (mainPlayerView != null)
+                ? mainPlayerView.getResizeMode()
+                : AspectRatioFrameLayout.RESIZE_MODE_FIT;
+
+        float vL, vT, vR, vB;
+        float aL, aT, aR, aB;
+
         if (isPortrait) {
-            int targetH = (int) (viewW / aspect);
-            if (ambientLightView != null) {
-                ambientLightView.setCustomVideoBounds(0f, 0f, (float) viewW, (float) targetH);
+            View playerContainer = (mainPlayerView != null && mainPlayerView.getParent() instanceof View)
+                    ? (View) mainPlayerView.getParent()
+                    : mainPlayerView;
+
+            float actualLeft = 0f;
+            float actualTop = getStatusBarHeightFallback();
+            float containerW = (float) rootW;
+            float containerH = rootW * 9f / 16f;
+
+            if (playerContainer != null) {
+                if (playerContainer.getWidth() > 0) {
+                    containerW = playerContainer.getWidth();
+                }
+                if (playerContainer.getHeight() > 0) {
+                    containerH = playerContainer.getHeight();
+                }
+                if (ambientContainer != null) {
+                    int[] pLoc = new int[2];
+                    int[] aLoc = new int[2];
+                    playerContainer.getLocationOnScreen(pLoc);
+                    ambientContainer.getLocationOnScreen(aLoc);
+                    if (pLoc[1] > 0 || aLoc[1] > 0) {
+                        actualLeft = pLoc[0] - aLoc[0];
+                        actualTop = pLoc[1] - aLoc[1];
+                    }
+                }
             }
-            if (ambientVignetteOverlay != null) {
-                ambientVignetteOverlay.setVideoBounds(0f, 0f, (float) viewW, (float) targetH);
-            }
+
+            float fitW = computeFittedWidth(containerW, containerH, aspect, resizeMode);
+            float fitH = computeFittedHeight(containerW, containerH, aspect, resizeMode);
+
+            vL = clamp(actualLeft + (containerW - fitW) * 0.5f, actualLeft, actualLeft + containerW);
+            vT = clamp(actualTop + (containerH - fitH) * 0.5f, actualTop, actualTop + containerH);
+            vR = clamp(actualLeft + (containerW + fitW) * 0.5f, vL, actualLeft + containerW);
+            vB = clamp(actualTop + (containerH + fitH) * 0.5f, vT, actualTop + containerH);
+
+            aL = 0f;
+            aT = 0f;
+            aR = (float) rootW;
+            aB = Math.min((float) rootH, actualTop + containerH);
         } else {
-            float fullVideoW = Math.min((float) viewW, (float) viewH * aspect);
-            float fullVideoH = Math.min((float) viewH, (float) viewW / aspect);
+            float viewW = (mainPlayerView != null && mainPlayerView.getWidth() > 0)
+                    ? mainPlayerView.getWidth()
+                    : rootW;
+            float viewH = (mainPlayerView != null && mainPlayerView.getHeight() > 0)
+                    ? mainPlayerView.getHeight()
+                    : rootH;
 
-            float unscaledVideoLeft = (viewW - fullVideoW) * 0.5f;
-            float unscaledVideoTop = (viewH - fullVideoH) * 0.5f;
+            float fitW = computeFittedWidth(viewW, viewH, aspect, resizeMode);
+            float fitH = computeFittedHeight(viewW, viewH, aspect, resizeMode);
 
-            float left = translationX + unscaledVideoLeft * scale;
-            float top = translationY + unscaledVideoTop * scale;
-            float right = left + fullVideoW * scale;
-            float bottom = top + fullVideoH * scale;
+            // Ограничиваем границами контейнера плеера (важно для RESIZE_MODE_ZOOM со шторкой)
+            float unscaledL = clamp((viewW - fitW) * 0.5f, 0f, viewW);
+            float unscaledT = clamp((viewH - fitH) * 0.5f, 0f, viewH);
+            float unscaledR = clamp((viewW + fitW) * 0.5f, unscaledL, viewW);
+            float unscaledB = clamp((viewH + fitH) * 0.5f, unscaledT, viewH);
 
-            if (ambientLightView != null) {
-                ambientLightView.setCustomVideoBounds(left, top, right, bottom);
-            }
-            if (ambientVignetteOverlay != null) {
-                ambientVignetteOverlay.setVideoBounds(left, top, right, bottom);
+            vL = translationX + unscaledL * scale;
+            vT = translationY + unscaledT * scale;
+            vR = translationX + unscaledR * scale;
+            vB = translationY + unscaledB * scale;
+
+            aL = 0f;
+            aT = 0f;
+            aR = (availRight > 0f && availRight < rootW) ? availRight : (float) rootW;
+            aB = (float) rootH;
+        }
+
+        if (ambientLightView != null) {
+            ambientLightView.setVideoAspectRatio(aspect);
+            ambientLightView.setAvailableBounds(aL, aT, aR, aB);
+            ambientLightView.setCustomVideoBounds(vL, vT, vR, vB);
+        }
+        if (ambientVignetteOverlay != null) {
+            ambientVignetteOverlay.setVideoAspectRatio(aspect);
+            ambientVignetteOverlay.setBounds(vL, vT, vR, vB, aL, aT, aR, aB);
+        }
+    }
+
+    private static float computeFittedWidth(float boxW, float boxH, float aspect, int resizeMode) {
+        switch (resizeMode) {
+            case AspectRatioFrameLayout.RESIZE_MODE_FILL:
+            case AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH:
+                return boxW;
+            case AspectRatioFrameLayout.RESIZE_MODE_FIXED_HEIGHT:
+                return boxH * aspect;
+            case AspectRatioFrameLayout.RESIZE_MODE_ZOOM:
+                return Math.max(boxW, boxH * aspect);
+            case AspectRatioFrameLayout.RESIZE_MODE_FIT:
+            default:
+                return Math.min(boxW, boxH * aspect);
+        }
+    }
+
+    private static float computeFittedHeight(float boxW, float boxH, float aspect, int resizeMode) {
+        switch (resizeMode) {
+            case AspectRatioFrameLayout.RESIZE_MODE_FILL:
+            case AspectRatioFrameLayout.RESIZE_MODE_FIXED_HEIGHT:
+                return boxH;
+            case AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH:
+                return boxW / aspect;
+            case AspectRatioFrameLayout.RESIZE_MODE_ZOOM:
+                return Math.max(boxH, boxW / aspect);
+            case AspectRatioFrameLayout.RESIZE_MODE_FIT:
+            default:
+                return Math.min(boxH, boxW / aspect);
+        }
+    }
+
+    private int getStatusBarHeightFallback() {
+        int sbHeight = 0;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && ambientContainer != null) {
+            WindowInsets insets = ambientContainer.getRootWindowInsets();
+            if (insets != null) {
+                sbHeight = insets.getInsets(WindowInsets.Type.statusBars()).top;
             }
         }
+        if (sbHeight <= 0) {
+            int resourceId = context.getResources().getIdentifier("status_bar_height", "dimen", "android");
+            if (resourceId > 0) {
+                sbHeight = context.getResources().getDimensionPixelSize(resourceId);
+            }
+        }
+        return sbHeight;
+    }
+
+    private static float clamp(float val, float min, float max) {
+        return Math.max(min, Math.min(max, val));
     }
 
     public void refreshAmbientFrame() {
@@ -553,7 +660,7 @@ public class AmbientLightManager {
 
     private void showAmbientContainer(boolean animate) {
         if (ambientContainer == null) return;
-        ambientContainer.removeCallbacks(null);
+        ambientContainer.animate().cancel();
         if (ambientContainer.getVisibility() != View.VISIBLE) {
             ambientContainer.setVisibility(View.VISIBLE);
             ambientContainer.setAlpha(0f);
@@ -571,6 +678,7 @@ public class AmbientLightManager {
 
     private void hideAmbientContainer(boolean animate) {
         if (ambientContainer == null) return;
+        ambientContainer.animate().cancel();
         if (animate) {
             ambientContainer.animate()
                     .alpha(0f)
@@ -597,6 +705,9 @@ public class AmbientLightManager {
 
     public void cleanup() {
         releaseAmbientPlayer();
+        if (mainPlayerView != null && playerLayoutChangeListener != null) {
+            mainPlayerView.removeOnLayoutChangeListener(playerLayoutChangeListener);
+        }
         if (backgroundExecutor != null && !backgroundExecutor.isShutdown()) {
             backgroundExecutor.shutdown();
         }

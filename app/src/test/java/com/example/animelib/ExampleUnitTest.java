@@ -76,22 +76,25 @@ public class ExampleUnitTest {
     public void testFastBlurUtilsProcessing() {
         int width = 36;
         int height = 20;
-        int radius = 4;
         com.example.animelib.util.FastBlurUtils blurUtils =
-                new com.example.animelib.util.FastBlurUtils(width, height, radius);
+                new com.example.animelib.util.FastBlurUtils(width, height, 4);
 
         int total = width * height;
         int[] pixels = new int[total];
+        int[] glow = new int[com.example.animelib.util.FastBlurUtils.GLOW_WIDTH
+                * com.example.animelib.util.FastBlurUtils.GLOW_HEIGHT];
 
         // Fill with a vibrant blue color (0xFF0055FF)
         for (int i = 0; i < total; i++) {
             pixels[i] = 0xFF0055FF;
         }
 
-        blurUtils.blurAndSmooth(pixels);
+        blurUtils.buildEdgeGlowField(pixels, glow);
 
         // Verify center pixel has high alpha and vibrant blue-ish color
-        int centerPixel = pixels[(height / 2) * width + (width / 2)];
+        int centerPixel = glow[(com.example.animelib.util.FastBlurUtils.GLOW_HEIGHT / 2)
+                * com.example.animelib.util.FastBlurUtils.GLOW_WIDTH
+                + (com.example.animelib.util.FastBlurUtils.GLOW_WIDTH / 2)];
         int a = (centerPixel >>> 24) & 0xff;
         int r = (centerPixel >>> 16) & 0xff;
         int g = (centerPixel >>> 8) & 0xff;
@@ -104,8 +107,10 @@ public class ExampleUnitTest {
         for (int i = 0; i < total; i++) {
             pixels[i] = 0xFFFF1111;
         }
-        blurUtils.blurAndSmooth(pixels);
-        int changedCenterPixel = pixels[(height / 2) * width + (width / 2)];
+        blurUtils.buildEdgeGlowField(pixels, glow);
+        int changedCenterPixel = glow[(com.example.animelib.util.FastBlurUtils.GLOW_HEIGHT / 2)
+                * com.example.animelib.util.FastBlurUtils.GLOW_WIDTH
+                + (com.example.animelib.util.FastBlurUtils.GLOW_WIDTH / 2)];
         int changedR = (changedCenterPixel >>> 16) & 0xff;
         int changedB = changedCenterPixel & 0xff;
         assertTrue("Red channel should dominate after scene change", changedR > changedB);
@@ -115,8 +120,10 @@ public class ExampleUnitTest {
         for (int i = 0; i < total; i++) {
             pixels[i] = 0xFF000000;
         }
-        blurUtils.blurAndSmooth(pixels);
-        int blackPixel = pixels[(height / 2) * width + (width / 2)];
+        blurUtils.buildEdgeGlowField(pixels, glow);
+        int blackPixel = glow[(com.example.animelib.util.FastBlurUtils.GLOW_HEIGHT / 2)
+                * com.example.animelib.util.FastBlurUtils.GLOW_WIDTH
+                + (com.example.animelib.util.FastBlurUtils.GLOW_WIDTH / 2)];
         int blackR = (blackPixel >>> 16) & 0xff;
         int blackG = (blackPixel >>> 8) & 0xff;
         int blackB = blackPixel & 0xff;
