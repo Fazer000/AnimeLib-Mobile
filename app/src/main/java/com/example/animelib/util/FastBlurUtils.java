@@ -28,6 +28,7 @@ public class FastBlurUtils {
     private static final int TWO_THIRD_H = THIRD_H * 2;  // 48
 
     private static final int MAX_EDGE_ALPHA = 248;
+    private static final float MIN_OUTER_FALLOFF = 0.48f;
 
     private final int sampleWidth;
     private final int sampleHeight;
@@ -140,21 +141,21 @@ public class FastBlurUtils {
 
         extractPerimeterStrips(samplePixels);
 
-        int horizNearRadius = Math.max(3, Math.round(sampleWidth * 0.18f)); // ~6
-        int horizFarRadius = Math.max(6, Math.round(sampleWidth * 0.42f));  // ~15
-        int vertNearRadius = Math.max(2, Math.round(sampleHeight * 0.20f)); // ~4
-        int vertFarRadius = Math.max(5, Math.round(sampleHeight * 0.45f));  // ~9
+        int horizNearRadius = Math.max(1, Math.round(sampleWidth * 0.055f)); // ~2 (четкие локальные цвета)
+        int horizFarRadius = Math.max(2, Math.round(sampleWidth * 0.14f));   // ~5 (мягкое рассеивание без каши)
+        int vertNearRadius = Math.max(1, Math.round(sampleHeight * 0.06f));  // ~1
+        int vertFarRadius = Math.max(2, Math.round(sampleHeight * 0.16f));   // ~3
 
-        // Многопроходное сглаживание (аппроксимация Гаусса) для Near и Far полос
-        smoothStrip1D(topNearR, topNearG, topNearB, sampleWidth, horizNearRadius, 2);
-        smoothStrip1D(topFarR, topFarG, topFarB, sampleWidth, horizFarRadius, 3);
-        smoothStrip1D(bottomNearR, bottomNearG, bottomNearB, sampleWidth, horizNearRadius, 2);
-        smoothStrip1D(bottomFarR, bottomFarG, bottomFarB, sampleWidth, horizFarRadius, 3);
+        // Умеренное сглаживание: сохраняет четкость цветовых зон вдоль кромки видео
+        smoothStrip1D(topNearR, topNearG, topNearB, sampleWidth, horizNearRadius, 1);
+        smoothStrip1D(topFarR, topFarG, topFarB, sampleWidth, horizFarRadius, 2);
+        smoothStrip1D(bottomNearR, bottomNearG, bottomNearB, sampleWidth, horizNearRadius, 1);
+        smoothStrip1D(bottomFarR, bottomFarG, bottomFarB, sampleWidth, horizFarRadius, 2);
 
-        smoothStrip1D(leftNearR, leftNearG, leftNearB, sampleHeight, vertNearRadius, 2);
-        smoothStrip1D(leftFarR, leftFarG, leftFarB, sampleHeight, vertFarRadius, 3);
-        smoothStrip1D(rightNearR, rightNearG, rightNearB, sampleHeight, vertNearRadius, 2);
-        smoothStrip1D(rightFarR, rightFarG, rightFarB, sampleHeight, vertFarRadius, 3);
+        smoothStrip1D(leftNearR, leftNearG, leftNearB, sampleHeight, vertNearRadius, 1);
+        smoothStrip1D(leftFarR, leftFarG, leftFarB, sampleHeight, vertFarRadius, 2);
+        smoothStrip1D(rightNearR, rightNearG, rightNearB, sampleHeight, vertNearRadius, 1);
+        smoothStrip1D(rightFarR, rightFarG, rightFarB, sampleHeight, vertFarRadius, 2);
 
         // Кинематографичная калибровка цвета (Pure Hue, мягкие блики, глубокий черный)
         calibrateStrip(topNearR, topNearG, topNearB, sampleWidth);
@@ -191,9 +192,9 @@ public class FastBlurUtils {
         int w = sampleWidth;
         int h = sampleHeight;
 
-        // Веса от самого края внутрь (до ~14% глубины рамки)
-        float[] vWeights = {0.16f, 0.34f, 0.26f, 0.15f, 0.09f};
-        float[] hWeights = {0.16f, 0.34f, 0.26f, 0.15f, 0.09f};
+        // Веса от самого края внутрь (~12% глубины рамки — чистые цвета кромки без смешивания с центром)
+        float[] vWeights = {0.22f, 0.38f, 0.26f, 0.14f};
+        float[] hWeights = {0.22f, 0.38f, 0.26f, 0.14f};
 
         int maxRowDepth = Math.min(vWeights.length, h / 3);
         int maxColDepth = Math.min(hWeights.length, w / 3);
@@ -495,15 +496,16 @@ public class FastBlurUtils {
     }
 
     /**
-     * Перцептивно линейное (гамма-компенсированное, 1/2.2) косинусное затухание:
-     * растягивает переход от яркого цвета к #000000 равномерно на всю ширину пустой области
-     * без резкого порога в середине.
+     * Сверхплавное затухание по всей ширине пустой области:
+     * плавно снижается от 1.0 у кромки видео до уверенно полупрозрачного уровня (~0.48)
+     * у внешнего края, чтобы концы не уходили в чистый чёрный.
      */
     public static float cinemaFalloff(float distNorm) {
         if (distNorm <= 0f) return 1f;
-        if (distNorm >= 1f) return 0f;
+        if (distNorm >= 1f) return MIN_OUTER_FALLOFF;
         double cosHalf = 0.5 * (1.0 + Math.cos(Math.PI * distNorm));
-        return (float) Math.pow(cosHalf, 0.65);
+        float eased = (float) Math.pow(cosHalf, 0.72);
+        return MIN_OUTER_FALLOFF + (1.0f - MIN_OUTER_FALLOFF) * eased;
     }
 
     private static float sampleChannel(float[] strip, int len, float t) {

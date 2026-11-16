@@ -22,26 +22,24 @@ import androidx.annotation.Nullable;
  */
 public class AmbientVignetteOverlayView extends View {
 
-    // Вдоль градиента: 0.0 = внешняя граница пустой области (#FF000000), 1.0 = край видео (#00000000)
-    // Внутренние 75% области (0.25..1.0) остаются без затемнения, чтобы не создавать двойного порога,
-    // а внешние 25% (0.0..0.25) мягко доводят край до чистого #000000 по C2-кривой из 16 точек.
-    private static final float FADE_START_STOP = 0.25f;
-    private static final int FADE_STOP_COUNT = 16;
-    private static final int[] FADE_COLORS = new int[FADE_STOP_COUNT + 1];
-    private static final float[] FADE_STOPS = new float[FADE_STOP_COUNT + 1];
+    // Вдоль градиента: 0.0 = внешняя граница пустой области, 1.0 = край видео (#00000000).
+    // Затемнение плавно распределено по всей ширине (от 1.0 до 0.0) по C2-гладкой
+    // квинтик-кривой из 17 точек и доходит только до 36% затемнения на самом краю,
+    // оставляя концы подсветки заметно полупрозрачными, а не чисто чёрными.
+    private static final float MAX_OUTER_BLACK_ALPHA = 0.36f;
+    private static final int FADE_STOP_COUNT = 17;
+    private static final int[] FADE_COLORS = new int[FADE_STOP_COUNT];
+    private static final float[] FADE_STOPS = new float[FADE_STOP_COUNT];
 
     static {
         for (int i = 0; i < FADE_STOP_COUNT; i++) {
-            float u = (float) i / (float) (FADE_STOP_COUNT - 1); // 0.0 (внешний край) -> 1.0 (начало затухания)
-            float stopPos = u * FADE_START_STOP;
-            float smoother = u * u * u * (u * (u * 6.0f - 15.0f) + 10.0f);
-            float blackAlpha = 1.0f - smoother;
+            float stopPos = (float) i / (float) (FADE_STOP_COUNT - 1); // 0.0 (внешний край) -> 1.0 (край видео)
+            float smoother = stopPos * stopPos * stopPos * (stopPos * (stopPos * 6.0f - 15.0f) + 10.0f);
+            float blackAlpha = MAX_OUTER_BLACK_ALPHA * (1.0f - smoother);
             int alphaByte = Math.max(0, Math.min(255, Math.round(blackAlpha * 255.0f)));
             FADE_STOPS[i] = stopPos;
             FADE_COLORS[i] = alphaByte << 24;
         }
-        FADE_STOPS[FADE_STOP_COUNT] = 1.0f;
-        FADE_COLORS[FADE_STOP_COUNT] = 0x00000000;
     }
 
     private final Paint leftPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);

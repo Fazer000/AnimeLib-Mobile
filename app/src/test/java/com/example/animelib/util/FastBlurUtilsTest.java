@@ -84,6 +84,30 @@ public class FastBlurUtilsTest {
     }
 
     @Test
+    public void buildEdgeGlowField_preservesDistinctColorZonesAlongSameEdge() {
+        FastBlurUtils utils = new FastBlurUtils(SAMPLE_W, SAMPLE_H, 4);
+        int[] sample = new int[SAMPLE_W * SAMPLE_H];
+        int[] glow = new int[FastBlurUtils.GLOW_WIDTH * FastBlurUtils.GLOW_HEIGHT];
+
+        // Top edge split cleanly: left half vivid red, right half vivid blue
+        for (int y = 0; y < SAMPLE_H; y++) {
+            for (int x = 0; x < SAMPLE_W; x++) {
+                sample[y * SAMPLE_W + x] = (x < SAMPLE_W / 2) ? 0xFFE52020 : 0xFF2050E5;
+            }
+        }
+
+        utils.buildEdgeGlowField(sample, glow);
+
+        int thirdW = FastBlurUtils.GLOW_WIDTH / 3;
+        int topRowNearVideo = (FastBlurUtils.GLOW_HEIGHT / 3) - 3;
+        int topLeftZone = glow[topRowNearVideo * FastBlurUtils.GLOW_WIDTH + thirdW + 4];
+        int topRightZone = glow[topRowNearVideo * FastBlurUtils.GLOW_WIDTH + (thirdW * 2 - 4)];
+
+        assertTrue("Top-left zone must stay strongly red without mixing into blue", red(topLeftZone) > blue(topLeftZone) + 120);
+        assertTrue("Top-right zone must stay strongly blue without mixing into red", blue(topRightZone) > red(topRightZone) + 120);
+    }
+
+    @Test
     public void buildEdgeGlowField_fadesMonotonicallyToZeroAtOuterBorder() {
         FastBlurUtils utils = new FastBlurUtils(SAMPLE_W, SAMPLE_H, 4);
         int[] sample = new int[SAMPLE_W * SAMPLE_H];
@@ -104,19 +128,24 @@ public class FastBlurUtilsTest {
             assertTrue("Alpha must decrease monotonically outward at gx=" + gx, a <= prevAlpha);
             prevAlpha = a;
         }
-        assertTrue("Outer left border must fade smoothly near zero", alpha(glow[midY * FastBlurUtils.GLOW_WIDTH]) <= 20);
-        assertTrue("Outer right border must fade smoothly near zero", alpha(glow[midY * FastBlurUtils.GLOW_WIDTH + (FastBlurUtils.GLOW_WIDTH - 1)]) <= 20);
+        int outerLeftAlpha = alpha(glow[midY * FastBlurUtils.GLOW_WIDTH]);
+        int outerRightAlpha = alpha(glow[midY * FastBlurUtils.GLOW_WIDTH + (FastBlurUtils.GLOW_WIDTH - 1)]);
+        assertTrue("Outer left border should remain clearly semi-transparent", outerLeftAlpha >= 100 && outerLeftAlpha <= 145);
+        assertTrue("Outer right border should remain clearly semi-transparent", outerRightAlpha >= 100 && outerRightAlpha <= 145);
 
         int midX = FastBlurUtils.GLOW_WIDTH / 2;
-        assertTrue("Outer top border must fade smoothly near zero", alpha(glow[midX]) <= 24);
-        assertTrue("Outer bottom border must fade smoothly near zero", alpha(glow[(FastBlurUtils.GLOW_HEIGHT - 1) * FastBlurUtils.GLOW_WIDTH + midX]) <= 24);
+        int outerTopAlpha = alpha(glow[midX]);
+        int outerBottomAlpha = alpha(glow[(FastBlurUtils.GLOW_HEIGHT - 1) * FastBlurUtils.GLOW_WIDTH + midX]);
+        assertTrue("Outer top border should remain clearly semi-transparent", outerTopAlpha >= 100 && outerTopAlpha <= 145);
+        assertTrue("Outer bottom border should remain clearly semi-transparent", outerBottomAlpha >= 100 && outerBottomAlpha <= 145);
     }
 
     @Test
     public void cinemaFalloff_respectsBoundsAndMonotonicity() {
         assertEquals(1.0f, FastBlurUtils.cinemaFalloff(0f), 0.0001f);
-        assertTrue("Expanded zone should retain >60% alpha at midpoint", FastBlurUtils.cinemaFalloff(0.50f) > 0.60f);
-        assertEquals(0.0f, FastBlurUtils.cinemaFalloff(1.0f), 0.0001f);
+        assertTrue("Expanded zone should retain >70% alpha at midpoint", FastBlurUtils.cinemaFalloff(0.50f) > 0.70f);
+        float endFalloff = FastBlurUtils.cinemaFalloff(1.0f);
+        assertTrue("Outer falloff should end at a visibly semi-transparent level", endFalloff >= 0.45f && endFalloff <= 0.52f);
 
         float prev = 1.0f;
         for (int i = 1; i <= 20; i++) {

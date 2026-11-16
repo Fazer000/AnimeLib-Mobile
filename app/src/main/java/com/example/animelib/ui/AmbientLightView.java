@@ -63,7 +63,7 @@ public class AmbientLightView extends View {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
-                RenderEffect blurEffect = RenderEffect.createBlurEffect(76f, 76f, Shader.TileMode.CLAMP);
+                RenderEffect blurEffect = RenderEffect.createBlurEffect(26f, 26f, Shader.TileMode.CLAMP);
                 setRenderEffect(blurEffect);
             } catch (Exception e) {
                 Log.e(TAG, "Failed to apply RenderEffect to AmbientLightView", e);
