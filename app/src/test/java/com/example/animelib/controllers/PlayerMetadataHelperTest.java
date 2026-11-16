@@ -182,6 +182,20 @@ public class PlayerMetadataHelperTest {
         assertNull(PlayerMetadataHelper.extractResolutionFromUrl("https://cdn/unknown.mp4"));
     }
 
+    @Test
+    public void episodeData_parsesNameAndNumber() {
+        EpisodeResponse.EpisodeData data = new EpisodeResponse.EpisodeData();
+        data.setId(101);
+        data.setName("Пилотная серия");
+        data.setNumber("1");
+        data.setSeason("1");
+
+        assertEquals(101, data.getId());
+        assertEquals("Пилотная серия", data.getName());
+        assertEquals("1", data.getNumber());
+        assertEquals("1", data.getSeason());
+    }
+
     private static EpisodeResponse.PlayerData createPlayer(String playerType, String teamName, String src, int quality) {
         EpisodeResponse.PlayerData pd = new EpisodeResponse.PlayerData();
         pd.setPlayer(playerType);

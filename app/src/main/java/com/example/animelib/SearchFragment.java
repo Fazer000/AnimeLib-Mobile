@@ -413,9 +413,9 @@ public class SearchFragment extends Fragment {
         closeKeyboard();
         String animeUrl = "https://api.cdnlibs.org/api/anime/" + item.getSlugUrl();
         
-        Intent intent = new Intent(getContext(), VideoPlayerActivity.class);
-        intent.putExtra("anime_url", animeUrl);
-        startActivity(intent);
+        if (getContext() != null) {
+            VideoPlayerActivity.startFromAnimePage(getContext(), animeUrl);
+        }
         
         if (getActivity() != null) {
             getActivity().getSupportFragmentManager().popBackStack();

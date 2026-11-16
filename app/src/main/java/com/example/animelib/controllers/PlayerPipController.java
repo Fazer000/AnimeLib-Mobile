@@ -156,15 +156,33 @@ public class PlayerPipController {
     }
 
     public void updatePictureInPictureParams() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                ExoPlayer player = callback != null ? callback.getPlayer() : null;
+                boolean isPlaying = player != null && player.isPlaying();
+                PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder()
+                        .setAspectRatio(new Rational(16, 9))
+                        .setActions(buildPipActions());
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    builder.setAutoEnterEnabled(isPlaying);
+                }
+                activity.setPictureInPictureParams(builder.build());
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to update Picture-in-Picture params", e);
+            }
+        }
+    }
+
+    public void disableAutoEnterPip() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
                 PictureInPictureParams params = new PictureInPictureParams.Builder()
                         .setAspectRatio(new Rational(16, 9))
-                        .setActions(buildPipActions())
+                        .setAutoEnterEnabled(false)
                         .build();
                 activity.setPictureInPictureParams(params);
             } catch (Exception e) {
-                Log.e(TAG, "Failed to update Picture-in-Picture params", e);
+                Log.w(TAG, "Failed to disable auto-enter PiP", e);
             }
         }
     }
@@ -172,11 +190,18 @@ public class PlayerPipController {
     public void enterPictureInPictureMode() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
-                PictureInPictureParams params = new PictureInPictureParams.Builder()
+                ExoPlayer player = callback != null ? callback.getPlayer() : null;
+                boolean isPlaying = player != null && player.isPlaying();
+                PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder()
                         .setAspectRatio(new Rational(16, 9))
-                        .setActions(buildPipActions())
-                        .build();
-                activity.enterPictureInPictureMode(params);
+                        .setActions(buildPipActions());
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    builder.setAutoEnterEnabled(isPlaying);
+                }
+                boolean entered = activity.enterPictureInPictureMode(builder.build());
+                if (entered) {
+                    this.isInPictureInPictureMode = true;
+                }
             } catch (Exception e) {
                 Log.e(TAG, "Failed to enter Picture-in-Picture mode", e);
             }
@@ -196,6 +221,7 @@ public class PlayerPipController {
             Log.d(TAG, "Entered Picture-in-Picture mode");
         } else {
             if (callback != null) callback.onPipExitUIState();
+            updatePictureInPictureParams();
             Log.d(TAG, "Exited Picture-in-Picture mode");
         }
     }

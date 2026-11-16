@@ -119,9 +119,11 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
 
         if (btnOpenDownloadSheet != null) {
             btnOpenDownloadSheet.setOnClickListener(v -> {
+                Runnable previousAction = getOnBackPressedAction();
                 dismiss();
                 if (getActivity() instanceof com.example.animelib.VideoPlayerActivity) {
-                    ((com.example.animelib.VideoPlayerActivity) getActivity()).showDownloadBottomSheet();
+                    com.example.animelib.VideoPlayerActivity activity = (com.example.animelib.VideoPlayerActivity) getActivity();
+                    activity.showDownloadBottomSheet(() -> activity.showDownloadProgressBottomSheet(previousAction));
                 }
             });
         }

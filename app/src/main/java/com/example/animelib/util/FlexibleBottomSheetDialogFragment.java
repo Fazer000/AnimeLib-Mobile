@@ -12,6 +12,38 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment;
 
 public class FlexibleBottomSheetDialogFragment extends BottomSheetDialogFragment {
 
+    private Runnable backPressedAction;
+
+    public void setOnBackPressedAction(@Nullable Runnable action) {
+        this.backPressedAction = action;
+        Dialog dialog = getDialog();
+        if (dialog instanceof FlexibleBottomSheetDialog) {
+            ((FlexibleBottomSheetDialog) dialog).setOnBackPressedAction(action);
+        }
+    }
+
+    @Nullable
+    public Runnable getOnBackPressedAction() {
+        return this.backPressedAction;
+    }
+
+    protected boolean onHandleInternalBack() {
+        return false;
+    }
+
+    public void performBackPress() {
+        if (onHandleInternalBack()) {
+            return;
+        }
+        if (backPressedAction != null) {
+            Runnable action = backPressedAction;
+            dismiss();
+            action.run();
+        } else if (isCancelable()) {
+            dismiss();
+        }
+    }
+
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -21,7 +53,13 @@ public class FlexibleBottomSheetDialogFragment extends BottomSheetDialogFragment
     @NonNull
     @Override
     public Dialog onCreateDialog(@Nullable Bundle savedInstanceState) {
-        BottomSheetDialog dialog = new FlexibleBottomSheetDialog(requireContext(), getTheme());
+        FlexibleBottomSheetDialog dialog = new FlexibleBottomSheetDialog(requireContext(), getTheme()) {
+            @Override
+            protected boolean onHandleInternalBack() {
+                return FlexibleBottomSheetDialogFragment.this.onHandleInternalBack();
+            }
+        };
+        dialog.setOnBackPressedAction(backPressedAction);
         FlexibleBottomSheetUtils.setupFlexibleStyle(dialog);
         return dialog;
     }
@@ -44,3 +82,4 @@ public class FlexibleBottomSheetDialogFragment extends BottomSheetDialogFragment
         }
     }
 }
+

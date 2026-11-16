@@ -81,9 +81,11 @@ import com.example.animelib.util.MediaCacheManager;
 import com.example.animelib.util.SkeletonHelper;
 import com.example.animelib.util.ThemeUtils;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -96,6 +98,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private static final int CONTROLLER_SHOW_TIMEOUT_MS = 4000;
     private static final int MENU_WIDTH_DP = 300;
     private static final int REQUEST_POST_NOTIFICATIONS = 4201;
+
+    private static final List<WeakReference<VideoPlayerActivity>> ACTIVE_INSTANCES = new CopyOnWriteArrayList<>();
 
     // Core services & managers
     private ApiService apiService;
@@ -152,25 +156,129 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private int currentTheme = ThemeUtils.THEME_SYSTEM;
     private boolean wasCommentsVisibleBeforePiP = false;
     private boolean wasPlayingBeforeBackground = false;
+    private boolean isClosingOrFinishing = false;
+    private boolean suppressUserLeavePip = false;
+
+    public static void closeAllExistingInstances() {
+        closeOtherInstances(null);
+    }
+
+    private static void closeOtherInstances(@Nullable VideoPlayerActivity keepInstance) {
+        for (WeakReference<VideoPlayerActivity> ref : ACTIVE_INSTANCES) {
+            VideoPlayerActivity instance = ref != null ? ref.get() : null;
+            if (instance == null) {
+                ACTIVE_INSTANCES.remove(ref);
+                continue;
+            }
+            if (instance != keepInstance) {
+                ACTIVE_INSTANCES.remove(ref);
+                instance.closeImmediately();
+            }
+        }
+    }
+
+    private static void registerActiveInstance(VideoPlayerActivity instance) {
+        if (instance == null) return;
+        for (WeakReference<VideoPlayerActivity> ref : ACTIVE_INSTANCES) {
+            VideoPlayerActivity existing = ref != null ? ref.get() : null;
+            if (existing == null) {
+                ACTIVE_INSTANCES.remove(ref);
+            } else if (existing == instance) {
+                return;
+            }
+        }
+        ACTIVE_INSTANCES.add(new WeakReference<>(instance));
+    }
+
+    private static void unregisterActiveInstance(VideoPlayerActivity instance) {
+        for (WeakReference<VideoPlayerActivity> ref : ACTIVE_INSTANCES) {
+            VideoPlayerActivity existing = ref != null ? ref.get() : null;
+            if (existing == null || existing == instance) {
+                ACTIVE_INSTANCES.remove(ref);
+            }
+        }
+    }
+
+    public boolean isInPipMode() {
+        if (playerPipController != null && playerPipController.isInPictureInPictureMode()) {
+            return true;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            return isInPictureInPictureMode();
+        }
+        return false;
+    }
+
+    public void closeImmediately() {
+        if (isClosingOrFinishing) return;
+        boolean wasInPip = isInPipMode();
+        isClosingOrFinishing = true;
+        suppressUserLeavePip = true;
+        try {
+            if (playerPipController != null) {
+                playerPipController.disableAutoEnterPip();
+                playerPipController.setInPictureInPictureMode(false);
+                playerPipController.unregisterPipReceiver();
+            }
+            if (playerProgressController != null) {
+                playerProgressController.autoSaveBookmark();
+                playerProgressController.stopViewProgressTracking();
+            }
+            if (playerVideoResolverController != null) {
+                playerVideoResolverController.cancelPendingResolutions();
+            }
+            if (playersManager != null) {
+                playersManager.cancelPendingPlayerLoads();
+            }
+            if (playerPlaybackController != null) {
+                playerPlaybackController.stopCurrentPlayback();
+                playerPlaybackController.release();
+                playerPlaybackController = null;
+            }
+            if (!isFinishing() && !isDestroyed()) {
+                if (wasInPip && isTaskRoot() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    finishAndRemoveTask();
+                } else {
+                    super.finish();
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error closing old VideoPlayerActivity instance", e);
+        }
+    }
 
     public static void startFromAnimePage(Context context, String animeUrl) {
         Intent intent = new Intent(context, VideoPlayerActivity.class);
         intent.putExtra(EXTRA_ANIME_URL, animeUrl);
         if (context instanceof VideoPlayerActivity) {
-            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        } else if (!(context instanceof Activity)) {
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            VideoPlayerActivity current = (VideoPlayerActivity) context;
+            if (current.isInPipMode()) {
+                closeAllExistingInstances();
+            } else {
+                closeOtherInstances(current);
+                current.suppressUserLeavePip = true;
+                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NO_USER_ACTION);
+            }
+        } else {
+            closeAllExistingInstances();
+            if (!(context instanceof Activity)) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            }
         }
         context.startActivity(intent);
     }
 
     public static void startForOfflineEpisode(Context context, String localFilePath, String animeTitle, String episodeTitle, String animeId, String episodeNumber) {
+        closeAllExistingInstances();
         Intent intent = new Intent(context, VideoPlayerActivity.class);
         intent.putExtra("EXTRA_LOCAL_FILE_PATH", localFilePath);
         intent.putExtra("EXTRA_ANIME_TITLE", animeTitle);
         intent.putExtra("EXTRA_EPISODE_TITLE", episodeTitle);
         intent.putExtra("EXTRA_ANIME_ID", animeId);
         intent.putExtra("EXTRA_EPISODE_NUMBER", episodeNumber);
+        if (!(context instanceof Activity)) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        }
         context.startActivity(intent);
     }
 
@@ -191,6 +299,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 return;
             }
         }
+        closeOtherInstances(this);
+        registerActiveInstance(this);
         ThemeUtils.applyTheme(ThemeUtils.getSavedThemePreference(this));
         super.onCreate(savedInstanceState);
         setTheme(R.style.Theme_AnimeLIB_VideoPlayer);
@@ -1213,6 +1323,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        suppressUserLeavePip = false;
+        closeOtherInstances(this);
         if (playerProgressController != null) {
             playerProgressController.autoSaveBookmark();
         }
@@ -1932,6 +2044,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        suppressUserLeavePip = false;
         if (playerOrientationController != null) {
             playerOrientationController.enable();
         }
@@ -1964,7 +2077,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
         ExoPlayer p = getActivePlayer();
         if (p != null) {
             wasPlayingBeforeBackground = p.getPlayWhenReady();
-            p.pause();
+            if (!isInPipMode()) {
+                p.pause();
+            }
         }
     }
 
@@ -2012,8 +2127,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
     @Override
     protected void onUserLeaveHint() {
         super.onUserLeaveHint();
+        if (isClosingOrFinishing || suppressUserLeavePip || isFinishing() || isDestroyed()) {
+            return;
+        }
         ExoPlayer p = getActivePlayer();
-        if (p != null && p.isPlaying() && playerPipController != null && !playerPipController.isInPictureInPictureMode()) {
+        if (p != null && p.isPlaying() && playerPipController != null && !isInPipMode()) {
             if (playerProgressController != null) {
                 playerProgressController.autoSaveBookmark();
             }
@@ -2023,6 +2141,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     @Override
     public void finish() {
+        isClosingOrFinishing = true;
+        suppressUserLeavePip = true;
+        if (playerPipController != null) {
+            playerPipController.disableAutoEnterPip();
+        }
         if (playerProgressController != null) {
             playerProgressController.autoSaveBookmark();
         }
@@ -2035,13 +2158,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
             playerLockController.unlockScreen();
             return;
         }
-        ExoPlayer p = getActivePlayer();
-        if (p != null && p.isPlaying() && playerPipController != null && !playerPipController.isInPictureInPictureMode()) {
-            if (playerProgressController != null) {
-                playerProgressController.autoSaveBookmark();
-            }
-            playerPipController.enterPictureInPictureMode();
-            return;
+        isClosingOrFinishing = true;
+        suppressUserLeavePip = true;
+        if (playerPipController != null) {
+            playerPipController.disableAutoEnterPip();
         }
         if (playerProgressController != null) {
             playerProgressController.autoSaveBookmark();
@@ -2051,6 +2171,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        isClosingOrFinishing = true;
+        unregisterActiveInstance(this);
         if (playerProgressController != null) {
             playerProgressController.autoSaveBookmark();
         }
@@ -2179,19 +2301,27 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     public void showDownloadBottomSheet() {
+        showDownloadBottomSheet(null);
+    }
+
+    public void showDownloadBottomSheet(Runnable onBackPressedAction) {
         if (isOfflineMode()) {
             CustomToast.showInfo(this, "Воспроизводится скачанный файл");
             return;
         }
         requestNotificationPermission();
         if (playerDownloadController != null) {
-            playerDownloadController.showDownloadBottomSheet(episodesManager, playersManager);
+            playerDownloadController.showDownloadBottomSheet(episodesManager, playersManager, onBackPressedAction);
         }
     }
 
     public void showDownloadProgressBottomSheet() {
+        showDownloadProgressBottomSheet(null);
+    }
+
+    public void showDownloadProgressBottomSheet(Runnable onBackPressedAction) {
         if (playerDownloadController != null) {
-            playerDownloadController.showDownloadProgressBottomSheet();
+            playerDownloadController.showDownloadProgressBottomSheet(onBackPressedAction);
         }
     }
 
@@ -2210,6 +2340,16 @@ public class VideoPlayerActivity extends AppCompatActivity {
     public void syncCurrentPlayerDataForDownloadedIfNeeded() {
         if (playerOfflineController != null) {
             playerOfflineController.syncCurrentPlayerDataForDownloadedIfNeeded();
+        }
+    }
+
+    public EpisodesManager getEpisodesManager() {
+        return episodesManager;
+    }
+
+    public void updateEpisodeHeaderQuick() {
+        if (playerPortraitController != null) {
+            playerPortraitController.updateEpisodeHeaderQuick();
         }
     }
 
@@ -2713,6 +2853,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
             @Override
             public void enterPipMode() {
+                if (playerProgressController != null) {
+                    playerProgressController.autoSaveBookmark();
+                }
                 if (playerPipController != null) {
                     playerPipController.enterPictureInPictureMode();
                 }
@@ -2759,7 +2902,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
             @Override
             public void onPipParamsUpdateNeeded() {
-                if (playerPipController != null && playerPipController.isInPictureInPictureMode()) {
+                if (playerPipController != null && !isClosingOrFinishing && !isFinishing() && !isDestroyed()) {
                     playerPipController.updatePictureInPictureParams();
                 }
             }

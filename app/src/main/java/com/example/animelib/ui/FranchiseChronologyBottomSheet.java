@@ -369,6 +369,7 @@ public class FranchiseChronologyBottomSheet extends FlexibleBottomSheetDialog {
                         }
 
                         TitleWebViewBottomSheet webSheet = new TitleWebViewBottomSheet(act, titleName, webUrl);
+                        webSheet.setOnBackPressedAction(FranchiseChronologyBottomSheet.this::show);
                         webSheet.show();
                     } else if (fallbackQuery != null && !fallbackQuery.equals(searchQuery)) {
                         performAnimelibSearchAndNavigate(node, fallbackQuery, null);
@@ -377,6 +378,7 @@ public class FranchiseChronologyBottomSheet extends FlexibleBottomSheetDialog {
                         dismiss();
                         String searchUrl = "https://v5.animelib.org/ru/anime?q=" + Uri.encode(searchQuery);
                         TitleWebViewBottomSheet webSheet = new TitleWebViewBottomSheet(act, searchQuery, searchUrl);
+                        webSheet.setOnBackPressedAction(FranchiseChronologyBottomSheet.this::show);
                         webSheet.show();
                     }
                 });
@@ -395,6 +397,7 @@ public class FranchiseChronologyBottomSheet extends FlexibleBottomSheetDialog {
                         dismiss();
                         String searchUrl = "https://v5.animelib.org/ru/anime?q=" + Uri.encode(searchQuery);
                         TitleWebViewBottomSheet webSheet = new TitleWebViewBottomSheet(act, searchQuery, searchUrl);
+                        webSheet.setOnBackPressedAction(FranchiseChronologyBottomSheet.this::show);
                         webSheet.show();
                     }
                 });

@@ -297,10 +297,11 @@ public class PlayersManager {
                 () -> {
                     if (context instanceof com.example.animelib.VideoPlayerActivity) {
                         com.example.animelib.VideoPlayerActivity activity = (com.example.animelib.VideoPlayerActivity) context;
+                        Runnable returnToVoiceover = this::showVoiceoverBottomSheet;
                         if (com.example.animelib.services.DownloadService.isRunning()) {
-                            activity.showDownloadProgressBottomSheet();
+                            activity.showDownloadProgressBottomSheet(returnToVoiceover);
                         } else {
-                            activity.showDownloadBottomSheet();
+                            activity.showDownloadBottomSheet(returnToVoiceover);
                         }
                     }
                 }
@@ -420,6 +421,27 @@ public class PlayersManager {
                 if (!isCurrentLoadGeneration(requestGen)) {
                     Log.d(TAG, "Ignoring stale episode data response for episode ID: " + episodeId + " (gen=" + requestGen + ")");
                     return;
+                }
+                if (response.getData() != null) {
+                    if (context instanceof com.example.animelib.VideoPlayerActivity) {
+                        com.example.animelib.VideoPlayerActivity playerActivity = (com.example.animelib.VideoPlayerActivity) context;
+                        com.example.animelib.managers.EpisodesManager epMgr = playerActivity.getEpisodesManager();
+                        if (epMgr != null && epMgr.getCurrentEpisode() != null && epMgr.getCurrentEpisode().getId() == episodeId) {
+                            com.example.animelib.models.EpisodesListResponse.EpisodeItem cur = epMgr.getCurrentEpisode();
+                            boolean updated = false;
+                            if ((cur.getName() == null || cur.getName().trim().isEmpty()) && response.getData().getName() != null) {
+                                cur.setName(response.getData().getName());
+                                updated = true;
+                            }
+                            if ((cur.getNumber() == null || cur.getNumber().trim().isEmpty()) && response.getData().getNumber() != null) {
+                                cur.setNumber(response.getData().getNumber());
+                                updated = true;
+                            }
+                            if (updated) {
+                                playerActivity.runOnUiThread(() -> playerActivity.updateEpisodeHeaderQuick());
+                            }
+                        }
+                    }
                 }
                 // ВАЖНО: onEpisodeDataReceived вызывается в фоновом потоке (от OkHttp callback)
                 // Поэтому loadPlayerPreferences вызывается БЕЗ проблем здесь

@@ -211,20 +211,19 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
                 }
             });
         }
+    }
 
-        setOnKeyListener((dialog, keyCode, event) -> {
-            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
-                if (webViewTitle != null) {
-                    try {
-                        if (webViewTitle.canGoBack()) {
-                            webViewTitle.goBack();
-                            return true;
-                        }
-                    } catch (Exception ignored) {}
+    @Override
+    protected boolean onHandleInternalBack() {
+        if (webViewTitle != null) {
+            try {
+                if (webViewTitle.canGoBack()) {
+                    webViewTitle.goBack();
+                    return true;
                 }
-            }
-            return false;
-        });
+            } catch (Exception ignored) {}
+        }
+        return false;
     }
 
     private void setupWebView() {

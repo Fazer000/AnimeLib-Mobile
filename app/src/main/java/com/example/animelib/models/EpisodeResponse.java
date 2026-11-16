@@ -18,6 +18,9 @@ public class EpisodeResponse {
 
     public static class EpisodeData {
         private int id;
+        private String name;
+        private String number;
+        private String season;
         private List<PlayerData> players;
 
         public EpisodeData() {}
@@ -28,6 +31,30 @@ public class EpisodeResponse {
 
         public void setId(int id) {
             this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public String getNumber() {
+            return number;
+        }
+
+        public void setNumber(String number) {
+            this.number = number;
+        }
+
+        public String getSeason() {
+            return season;
+        }
+
+        public void setSeason(String season) {
+            this.season = season;
         }
 
         public List<PlayerData> getPlayers() {

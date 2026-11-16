@@ -90,6 +90,7 @@ public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
 
     public void setOnBackPressedListener(OnBackPressedListener onBackPressedListener) {
         this.onBackPressedListener = onBackPressedListener;
+        setOnBackPressedAction(onBackPressedListener != null ? onBackPressedListener::onBackPressed : null);
     }
 
     @Override

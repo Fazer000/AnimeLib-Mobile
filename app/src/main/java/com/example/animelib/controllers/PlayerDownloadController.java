@@ -168,6 +168,10 @@ public class PlayerDownloadController {
     }
 
     public void showDownloadBottomSheet(EpisodesManager episodesManager, PlayersManager playersManager) {
+        showDownloadBottomSheet(episodesManager, playersManager, null);
+    }
+
+    public void showDownloadBottomSheet(EpisodesManager episodesManager, PlayersManager playersManager, Runnable onBackPressedAction) {
         if (episodesManager == null || callback == null) return;
         List<EpisodesListResponse.EpisodeItem> episodeList = episodesManager.getEpisodes();
         if (episodeList == null || episodeList.isEmpty()) {
@@ -183,11 +187,17 @@ public class PlayerDownloadController {
                 episodeList,
                 players
         );
+        bottomSheet.setOnBackPressedAction(onBackPressedAction);
         bottomSheet.show(activity.getSupportFragmentManager(), "DownloadBottomSheet");
     }
 
     public void showDownloadProgressBottomSheet() {
+        showDownloadProgressBottomSheet(null);
+    }
+
+    public void showDownloadProgressBottomSheet(Runnable onBackPressedAction) {
         DownloadProgressBottomSheet progressSheet = DownloadProgressBottomSheet.newInstance();
+        progressSheet.setOnBackPressedAction(onBackPressedAction);
         progressSheet.show(activity.getSupportFragmentManager(), "DownloadProgressBottomSheet");
     }
 

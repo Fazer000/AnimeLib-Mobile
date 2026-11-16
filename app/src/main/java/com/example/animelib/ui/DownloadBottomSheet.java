@@ -212,7 +212,10 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
 
         // Setup Header Listeners
         if (btnBsClose != null) btnBsClose.setOnClickListener(v -> dismiss());
-        if (btnBsBack != null) btnBsBack.setOnClickListener(v -> showStep1());
+        if (btnBsBack != null) {
+            btnBsBack.setVisibility(getOnBackPressedAction() != null ? View.VISIBLE : View.GONE);
+            btnBsBack.setOnClickListener(v -> performBackPress());
+        }
         ImageButton btnBsGoToDownloads = view.findViewById(R.id.btnBsGoToDownloads);
         if (btnBsGoToDownloads != null) {
             btnBsGoToDownloads.setOnClickListener(v -> {
@@ -287,8 +290,19 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         }
     }
 
+    @Override
+    protected boolean onHandleInternalBack() {
+        if (layoutStep2 != null && layoutStep2.getVisibility() == View.VISIBLE) {
+            showStep1();
+            return true;
+        }
+        return false;
+    }
+
     private void showStep1() {
-        btnBsBack.setVisibility(View.GONE);
+        if (btnBsBack != null) {
+            btnBsBack.setVisibility(getOnBackPressedAction() != null ? View.VISIBLE : View.GONE);
+        }
         tvTitle.setText("Скачивание серий");
         tvSubtitle.setText("Шаг 1 из 2: Озвучка и качество");
 

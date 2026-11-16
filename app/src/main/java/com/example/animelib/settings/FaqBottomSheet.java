@@ -28,6 +28,7 @@ public class FaqBottomSheet extends FlexibleBottomSheetDialog {
 
     public void setOnBackPressedListener(OnBackPressedListener listener) {
         this.onBackPressedListener = listener;
+        setOnBackPressedAction(listener != null ? listener::onBackPressed : null);
     }
 
     @Override

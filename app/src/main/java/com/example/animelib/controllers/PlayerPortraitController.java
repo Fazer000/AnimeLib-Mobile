@@ -574,42 +574,43 @@ public class PlayerPortraitController {
                 EpisodesListResponse.EpisodeItem curEp = episodesManager != null ? episodesManager.getCurrentEpisode() : null;
                 DownloadedEpisodeEntity dlEp = offlineCtrl != null ? offlineCtrl.getDownloadedEpisodeForActive() : null;
 
-                if (curEp != null) {
-                    String num = curEp.getNumber() != null ? curEp.getNumber().trim() : "";
-                    String name = PlayerMetadataHelper.cleanEpisodeName(curEp.getName(), num);
-                    if (!name.isEmpty()) {
-                        SkeletonHelper.hideSkeleton(tvPortraitEpisodeTitle, name);
-                        tvPortraitEpisodeTitle.setVisibility(View.VISIBLE);
-                    } else {
-                        SkeletonHelper.hideSkeleton(tvPortraitEpisodeTitle, "");
-                        tvPortraitEpisodeTitle.setVisibility(View.GONE);
+                String rawPortraitName = (curEp != null && curEp.getName() != null && !curEp.getName().trim().isEmpty())
+                        ? curEp.getName() : null;
+                if ((rawPortraitName == null || rawPortraitName.isEmpty()) && dlEp != null) {
+                    rawPortraitName = dlEp.getEpisodeName();
+                }
+                if ((rawPortraitName == null || rawPortraitName.isEmpty()) && intent != null) {
+                    rawPortraitName = intent.getStringExtra("EXTRA_EPISODE_TITLE");
+                    if (rawPortraitName == null || rawPortraitName.isEmpty()) {
+                        rawPortraitName = intent.getStringExtra("episode_title");
                     }
-                } else if (isPlayingDownloaded && dlEp != null) {
-                    String cleanName = PlayerMetadataHelper.cleanEpisodeName(dlEp.getEpisodeName(), dlEp.getEpisodeNumber());
-                    if (!cleanName.isEmpty()) {
-                        SkeletonHelper.hideSkeleton(tvPortraitEpisodeTitle, cleanName);
-                        tvPortraitEpisodeTitle.setVisibility(View.VISIBLE);
-                    } else {
-                        SkeletonHelper.hideSkeleton(tvPortraitEpisodeTitle, "");
-                        tvPortraitEpisodeTitle.setVisibility(View.GONE);
-                    }
-                } else if (isOfflineMode) {
-                    String epNum = intent != null ? intent.getStringExtra("EXTRA_EPISODE_NUMBER") : null;
-                    String epName = intent != null ? intent.getStringExtra("EXTRA_EPISODE_TITLE") : null;
-                    String cleanName = PlayerMetadataHelper.cleanEpisodeName(epName, epNum);
-                    if (!cleanName.isEmpty()) {
-                        SkeletonHelper.hideSkeleton(tvPortraitEpisodeTitle, cleanName);
-                        tvPortraitEpisodeTitle.setVisibility(View.VISIBLE);
-                    } else {
-                        SkeletonHelper.hideSkeleton(tvPortraitEpisodeTitle, "");
-                        tvPortraitEpisodeTitle.setVisibility(View.GONE);
-                    }
-                } else {
+                }
+                String portraitEpNum = (curEp != null) ? curEp.getNumber() : null;
+                if ((portraitEpNum == null || portraitEpNum.isEmpty()) && dlEp != null) {
+                    portraitEpNum = dlEp.getEpisodeNumber();
+                }
+                if ((portraitEpNum == null || portraitEpNum.isEmpty()) && intent != null) {
+                    portraitEpNum = intent.getStringExtra("EXTRA_EPISODE_NUMBER");
+                }
+
+                String cleanPortraitName = PlayerMetadataHelper.cleanEpisodeName(rawPortraitName, portraitEpNum);
+                if (!cleanPortraitName.isEmpty()) {
+                    SkeletonHelper.hideSkeleton(tvPortraitEpisodeTitle, cleanPortraitName);
+                    tvPortraitEpisodeTitle.setVisibility(View.VISIBLE);
+                } else if (currentEpisodeIsNullOrUnloaded(curEp, isPlayingDownloaded, dlEp)) {
                     SkeletonHelper.showSkeleton(tvPortraitEpisodeTitle, 120);
                     tvPortraitEpisodeTitle.setVisibility(View.VISIBLE);
+                } else {
+                    SkeletonHelper.hideSkeleton(tvPortraitEpisodeTitle, "");
+                    tvPortraitEpisodeTitle.setVisibility(View.GONE);
                 }
             }
         });
+    }
+
+    private boolean currentEpisodeIsNullOrUnloaded(EpisodesListResponse.EpisodeItem curEp, boolean isPlayingDownloaded, DownloadedEpisodeEntity dlEp) {
+        if (isPlayingDownloaded) return false;
+        return curEp == null || (curEp.getName() == null && curEp.getNumber() == null);
     }
 
     public void updateEpisodeHeaderQuick() {
@@ -642,8 +643,15 @@ public class PlayerPortraitController {
 
             String rawEm = (currentEpisode != null && currentEpisode.getName() != null && !Objects.equals(currentEpisode.getName(), ""))
                     ? currentEpisode.getName() : null;
-            if ((rawEm == null || rawEm.isEmpty()) && isPlayingDownloaded && downloadedEp != null) {
+            if ((rawEm == null || rawEm.isEmpty()) && downloadedEp != null) {
                 rawEm = downloadedEp.getEpisodeName();
+            }
+            Intent intent = host.getIntent();
+            if ((rawEm == null || rawEm.isEmpty()) && intent != null) {
+                rawEm = intent.getStringExtra("EXTRA_EPISODE_TITLE");
+                if (rawEm == null || rawEm.isEmpty()) {
+                    rawEm = intent.getStringExtra("episode_title");
+                }
             }
             String em = PlayerMetadataHelper.cleanEpisodeName(rawEm, ep);
 
@@ -673,6 +681,8 @@ public class PlayerPortraitController {
                 if (ui.currentEpisodeName != null) {
                     if (em != null && !em.isEmpty()) {
                         SkeletonHelper.hideSkeleton(ui.currentEpisodeName, ", " + em);
+                    } else if (currentEpisode == null && !isPlayingDownloaded) {
+                        SkeletonHelper.showSkeleton(ui.currentEpisodeName, 100);
                     } else {
                         SkeletonHelper.hideSkeleton(ui.currentEpisodeName, "");
                     }
