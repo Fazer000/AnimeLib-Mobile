@@ -38,6 +38,7 @@ public class PlayerPanelsController {
         boolean isOfflineMode();
         int getStatusBarHeight();
         void updateAmbientPlayerTransform(float scale, float translationX, float translationY, boolean isCropped, float availRight);
+        void setAmbientTransitionAnimating(boolean animating);
         void onOutlineValuesChanged(float left, float top, float right, float bottom, float radiusPx);
     }
 
@@ -115,6 +116,7 @@ public class PlayerPanelsController {
             menuPanelContainer.setOnPanelStateChangeListener(new DraggableSidePanel.OnPanelStateChangeListener() {
                 @Override
                 public void onPanelDragStart() {
+                    callback.setAmbientTransitionAnimating(true);
                     PlayersManager pm = callback.getPlayersManager();
                     if (pm != null) {
                         pm.onPanelDragStart();
@@ -123,6 +125,7 @@ public class PlayerPanelsController {
 
                 @Override
                 public void onPanelOpened() {
+                    callback.setAmbientTransitionAnimating(false);
                     applyPlayerSidePanelTransform(1f);
                     if (menuOverlay != null) {
                         menuOverlay.setVisibility(View.VISIBLE);
@@ -136,6 +139,7 @@ public class PlayerPanelsController {
 
                 @Override
                 public void onPanelClosed() {
+                    callback.setAmbientTransitionAnimating(false);
                     applyPlayerSidePanelTransform(0f);
                     if (menuOverlay != null) {
                         menuOverlay.setVisibility(View.GONE);
@@ -181,6 +185,7 @@ public class PlayerPanelsController {
             commentsPanelContainer.setOnPanelStateChangeListener(new DraggableSidePanel.OnPanelStateChangeListener() {
                 @Override
                 public void onPanelDragStart() {
+                    callback.setAmbientTransitionAnimating(true);
                     CommentsManager cm = callback.getCommentsManager();
                     if (cm != null) {
                         cm.onPanelDragStart();
@@ -189,6 +194,7 @@ public class PlayerPanelsController {
 
                 @Override
                 public void onPanelOpened() {
+                    callback.setAmbientTransitionAnimating(false);
                     applyPlayerSidePanelTransform(1f);
                     if (menuOverlay != null) {
                         menuOverlay.setVisibility(View.VISIBLE);
@@ -202,6 +208,7 @@ public class PlayerPanelsController {
 
                 @Override
                 public void onPanelClosed() {
+                    callback.setAmbientTransitionAnimating(false);
                     applyPlayerSidePanelTransform(0f);
                     if (menuOverlay != null) {
                         menuOverlay.setVisibility(View.GONE);

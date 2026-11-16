@@ -28,7 +28,7 @@ public class FastBlurUtils {
     private static final int TWO_THIRD_H = THIRD_H * 2;  // 48
 
     private static final int MAX_EDGE_ALPHA = 248;
-    private static final float MIN_OUTER_FALLOFF = 0.48f;
+    private static final float MIN_OUTER_FALLOFF = 0.31f;
 
     private final int sampleWidth;
     private final int sampleHeight;
@@ -496,15 +496,15 @@ public class FastBlurUtils {
     }
 
     /**
-     * Сверхплавное затухание по всей ширине пустой области:
-     * плавно снижается от 1.0 у кромки видео до уверенно полупрозрачного уровня (~0.48)
-     * у внешнего края, чтобы концы не уходили в чистый чёрный.
+     * Единая сверхплавная кривая затухания по всей ширине пустой области:
+     * плавно снижается от 1.0 у кромки видео до уверенно полупрозрачного уровня (~0.31)
+     * у внешнего края, заменяя отдельный виньеточный оверлей одним лёгким GPU-проходом.
      */
     public static float cinemaFalloff(float distNorm) {
         if (distNorm <= 0f) return 1f;
         if (distNorm >= 1f) return MIN_OUTER_FALLOFF;
         double cosHalf = 0.5 * (1.0 + Math.cos(Math.PI * distNorm));
-        float eased = (float) Math.pow(cosHalf, 0.72);
+        float eased = (float) Math.pow(cosHalf, 0.78);
         return MIN_OUTER_FALLOFF + (1.0f - MIN_OUTER_FALLOFF) * eased;
     }
 

@@ -52,7 +52,8 @@ public class AmbientLightManager {
     private static final int SAMPLE_HEIGHT = 20;
     private static final int TOTAL_PIXELS = SAMPLE_WIDTH * SAMPLE_HEIGHT;
     private static final int GLOW_TOTAL_PIXELS = FastBlurUtils.GLOW_WIDTH * FastBlurUtils.GLOW_HEIGHT;
-    private static final long SAMPLING_INTERVAL_MS = 33L; // ~30 FPS
+    private static final long SAMPLING_INTERVAL_MS = 42L; // ~24 FPS (оптимальный баланс плавности и нагрузки)
+    private static final long TRANSITION_SAFETY_TIMEOUT_MS = 450L;
 
     private final Context context;
     private final PlayerView mainPlayerView;
@@ -82,6 +83,8 @@ public class AmbientLightManager {
     private boolean isSuspended = false;
     private boolean isFrozen = false;
     private boolean isSamplingRunning = false;
+    private boolean isPanelTransitioning = false;
+    private final Runnable resetTransitionSafetyRunnable = () -> setPanelTransitioning(false);
 
     private float currentScale = 1.0f;
     private float currentTranslationX = 0f;
@@ -145,16 +148,13 @@ public class AmbientLightManager {
     }
 
     private void setupAmbientViewStyle() {
-        if (ambientContainer != null) {
-            ambientContainer.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-        }
-
         if (ambientLightView != null) {
             ambientLightView.setVisibility(View.VISIBLE);
         }
 
+        // Кривая затухания встроена в сетку AmbientLightView (1 GPU-проход без овердрава и пересборки шейдеров)
         if (ambientVignetteOverlay != null) {
-            ambientVignetteOverlay.setVisibility(View.VISIBLE);
+            ambientVignetteOverlay.setVisibility(View.GONE);
         }
 
         // Заглушка второго плеера отключается — декодирование теперь на 100% единое
@@ -292,6 +292,19 @@ public class AmbientLightManager {
         mainHandler.removeCallbacks(sampleRunnable);
     }
 
+    public void setPanelTransitioning(boolean transitioning) {
+        if (this.isPanelTransitioning == transitioning) return;
+        this.isPanelTransitioning = transitioning;
+        mainHandler.removeCallbacks(resetTransitionSafetyRunnable);
+        if (transitioning) {
+            // Страховочный таймер на случай прерванной анимации
+            mainHandler.postDelayed(resetTransitionSafetyRunnable, TRANSITION_SAFETY_TIMEOUT_MS);
+        } else if (isEnabled && !isSuspended && !isFrozen && mainPlayer != null && mainPlayer.isPlaying()) {
+            captureAndProcessFrame();
+            startSamplingLoop();
+        }
+    }
+
     private final Runnable sampleRunnable = new Runnable() {
         @Override
         public void run() {
@@ -302,6 +315,12 @@ public class AmbientLightManager {
 
             if (!mainPlayer.isPlaying()) {
                 isSamplingRunning = false;
+                return;
+            }
+
+            if (isPanelTransitioning) {
+                // Во время анимации шторки не читаем кадры с GPU, чтобы не ронять FPS интерфейса
+                mainHandler.postDelayed(this, SAMPLING_INTERVAL_MS);
                 return;
             }
 
@@ -582,9 +601,11 @@ public class AmbientLightManager {
             vR = translationX + unscaledR * scale;
             vB = translationY + unscaledB * scale;
 
+            // Не обрезаем правый край по левой границе шторки (dragZone), чтобы подсветка
+            // свободно уходила под скруглённую карточку панели без вертикального шва.
             aL = 0f;
             aT = 0f;
-            aR = (availRight > 0f && availRight < rootW) ? availRight : (float) rootW;
+            aR = (float) rootW;
             aB = (float) rootH;
         }
 
@@ -592,10 +613,6 @@ public class AmbientLightManager {
             ambientLightView.setVideoAspectRatio(aspect);
             ambientLightView.setAvailableBounds(aL, aT, aR, aB);
             ambientLightView.setCustomVideoBounds(vL, vT, vR, vB);
-        }
-        if (ambientVignetteOverlay != null) {
-            ambientVignetteOverlay.setVideoAspectRatio(aspect);
-            ambientVignetteOverlay.setBounds(vL, vT, vR, vB, aL, aT, aR, aB);
         }
     }
 
@@ -670,6 +687,7 @@ public class AmbientLightManager {
             ambientContainer.animate()
                     .alpha(1.0f)
                     .setDuration(280)
+                    .withLayer()
                     .start();
         } else {
             ambientContainer.setAlpha(1.0f);
@@ -683,6 +701,7 @@ public class AmbientLightManager {
             ambientContainer.animate()
                     .alpha(0f)
                     .setDuration(220)
+                    .withLayer()
                     .withEndAction(() -> ambientContainer.setVisibility(View.GONE))
                     .start();
         } else {
@@ -704,6 +723,7 @@ public class AmbientLightManager {
     }
 
     public void cleanup() {
+        mainHandler.removeCallbacks(resetTransitionSafetyRunnable);
         releaseAmbientPlayer();
         if (mainPlayerView != null && playerLayoutChangeListener != null) {
             mainPlayerView.removeOnLayoutChangeListener(playerLayoutChangeListener);

@@ -130,22 +130,22 @@ public class FastBlurUtilsTest {
         }
         int outerLeftAlpha = alpha(glow[midY * FastBlurUtils.GLOW_WIDTH]);
         int outerRightAlpha = alpha(glow[midY * FastBlurUtils.GLOW_WIDTH + (FastBlurUtils.GLOW_WIDTH - 1)]);
-        assertTrue("Outer left border should remain clearly semi-transparent", outerLeftAlpha >= 100 && outerLeftAlpha <= 145);
-        assertTrue("Outer right border should remain clearly semi-transparent", outerRightAlpha >= 100 && outerRightAlpha <= 145);
+        assertTrue("Outer left border should remain visibly semi-transparent", outerLeftAlpha >= 65 && outerLeftAlpha <= 100);
+        assertTrue("Outer right border should remain visibly semi-transparent", outerRightAlpha >= 65 && outerRightAlpha <= 100);
 
         int midX = FastBlurUtils.GLOW_WIDTH / 2;
         int outerTopAlpha = alpha(glow[midX]);
         int outerBottomAlpha = alpha(glow[(FastBlurUtils.GLOW_HEIGHT - 1) * FastBlurUtils.GLOW_WIDTH + midX]);
-        assertTrue("Outer top border should remain clearly semi-transparent", outerTopAlpha >= 100 && outerTopAlpha <= 145);
-        assertTrue("Outer bottom border should remain clearly semi-transparent", outerBottomAlpha >= 100 && outerBottomAlpha <= 145);
+        assertTrue("Outer top border should remain visibly semi-transparent", outerTopAlpha >= 65 && outerTopAlpha <= 100);
+        assertTrue("Outer bottom border should remain visibly semi-transparent", outerBottomAlpha >= 65 && outerBottomAlpha <= 100);
     }
 
     @Test
     public void cinemaFalloff_respectsBoundsAndMonotonicity() {
         assertEquals(1.0f, FastBlurUtils.cinemaFalloff(0f), 0.0001f);
-        assertTrue("Expanded zone should retain >70% alpha at midpoint", FastBlurUtils.cinemaFalloff(0.50f) > 0.70f);
+        assertTrue("Expanded zone should retain >65% alpha at midpoint", FastBlurUtils.cinemaFalloff(0.50f) > 0.65f);
         float endFalloff = FastBlurUtils.cinemaFalloff(1.0f);
-        assertTrue("Outer falloff should end at a visibly semi-transparent level", endFalloff >= 0.45f && endFalloff <= 0.52f);
+        assertTrue("Outer falloff should end at a visibly semi-transparent ~31% level", endFalloff >= 0.28f && endFalloff <= 0.35f);
 
         float prev = 1.0f;
         for (int i = 1; i <= 20; i++) {

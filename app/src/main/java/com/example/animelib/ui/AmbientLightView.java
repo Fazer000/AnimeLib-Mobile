@@ -7,9 +7,6 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
-import android.graphics.RenderEffect;
-import android.graphics.Shader;
-import android.os.Build;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.View;
@@ -21,12 +18,11 @@ import androidx.annotation.Nullable;
 /**
  * Аппаратно-ускоренный View краевой фоновой подсветки (Edge-Diffused Ambilight).
  *
- * Рисует предрассчитанное поле рассеивания краёв (60x48, сетка 3x3) через Canvas.drawBitmapMesh:
+ * Рисует предрассчитанное поле рассеивания краёв (96x72, сетка 3x3) через Canvas.drawBitmapMesh:
+ * - Нулевые аллокации и отсутствие тяжелых полноэкранных RenderEffect/FBO-слоёв во время анимаций;
  * - Центральная зона [1/3..2/3] выравнивается по границам активного видео;
  * - 4 внешние полосы и 4 угла равномерно растягиваются ровно на ширину/высоту
- *   соответствующих пустых областей вокруг плеера (статус-бар, пилларбоксы, леттербоксы, область у шторки);
- * - Билинейная интерполяция на GPU + мягкий RenderEffect на Android 12+ создают
- *   абсолютно плавное свечение без швов, полос и дублирования содержимого видео.
+ *   соответствующих пустых областей вокруг плеера с аппаратной билинейной фильтрацией.
  */
 public class AmbientLightView extends View {
     private static final String TAG = "AmbientLightView";
@@ -59,16 +55,6 @@ public class AmbientLightView extends View {
         drawPaint.setDither(true);
 
         setBackgroundColor(Color.TRANSPARENT);
-        setLayerType(LAYER_TYPE_HARDWARE, null);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            try {
-                RenderEffect blurEffect = RenderEffect.createBlurEffect(26f, 26f, Shader.TileMode.CLAMP);
-                setRenderEffect(blurEffect);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to apply RenderEffect to AmbientLightView", e);
-            }
-        }
     }
 
     /**
@@ -109,10 +95,14 @@ public class AmbientLightView extends View {
     public void setCustomVideoBounds(float left, float top, float right, float bottom) {
         if (customVideoBounds == null) {
             customVideoBounds = new RectF(left, top, right, bottom);
-        } else {
+            invalidate();
+        } else if (Math.abs(customVideoBounds.left - left) >= 0.5f
+                || Math.abs(customVideoBounds.top - top) >= 0.5f
+                || Math.abs(customVideoBounds.right - right) >= 0.5f
+                || Math.abs(customVideoBounds.bottom - bottom) >= 0.5f) {
             customVideoBounds.set(left, top, right, bottom);
+            invalidate();
         }
-        invalidate();
     }
 
     public void clearCustomVideoBounds() {
@@ -125,10 +115,14 @@ public class AmbientLightView extends View {
     public void setAvailableBounds(float left, float top, float right, float bottom) {
         if (availableBounds == null) {
             availableBounds = new RectF(left, top, right, bottom);
-        } else {
+            invalidate();
+        } else if (Math.abs(availableBounds.left - left) >= 0.5f
+                || Math.abs(availableBounds.top - top) >= 0.5f
+                || Math.abs(availableBounds.right - right) >= 0.5f
+                || Math.abs(availableBounds.bottom - bottom) >= 0.5f) {
             availableBounds.set(left, top, right, bottom);
+            invalidate();
         }
-        invalidate();
     }
 
     public void clearAvailableBounds() {

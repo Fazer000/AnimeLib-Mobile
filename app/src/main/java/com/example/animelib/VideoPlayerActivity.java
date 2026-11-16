@@ -375,6 +375,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
 
             @Override
+            public void setAmbientTransitionAnimating(boolean animating) {
+                if (ambientLightManager != null) {
+                    ambientLightManager.setPanelTransitioning(animating);
+                }
+            }
+
+            @Override
             public void onOutlineValuesChanged(float left, float top, float right, float bottom, float radiusPx) {
                 if (playerUIBinder != null && playerUIBinder.playerContainer != null) {
                     if (playerUIBinder.playerContainer instanceof RoundedCornerFrameLayout) {
