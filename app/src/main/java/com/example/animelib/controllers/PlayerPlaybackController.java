@@ -9,6 +9,7 @@ import android.view.View;
 import androidx.annotation.NonNull;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
+import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.datasource.DataSource;
@@ -20,17 +21,25 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.hls.HlsMediaSource;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.source.MediaSource;
+import androidx.media3.exoplayer.source.MergingMediaSource;
+import androidx.media3.exoplayer.source.SingleSampleMediaSource;
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy;
 import androidx.media3.ui.PlayerView;
 
 import com.example.animelib.R;
 import com.example.animelib.api.ApiService;
+import com.example.animelib.api.FastDns;
 import com.example.animelib.managers.AmbientLightManager;
 import com.example.animelib.managers.GesturesManager;
 import com.example.animelib.managers.TimecodeManager;
+import com.example.animelib.util.MediaCacheManager;
 import com.google.android.material.button.MaterialButton;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -45,7 +54,7 @@ public class PlayerPlaybackController {
     private static final String STREAM_USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36";
 
-    private static final ConnectionPool SHARED_STREAM_POOL = new ConnectionPool(8, 2, TimeUnit.MINUTES);
+    private static final ConnectionPool SHARED_STREAM_POOL = new ConnectionPool(12, 3, TimeUnit.MINUTES);
 
     public interface PlaybackCallback {
         Context getPlayerContext();
@@ -76,6 +85,7 @@ public class PlayerPlaybackController {
         this.context = context;
         this.playerView = playerView;
         this.httpDataSourceFactory = httpDataSourceFactory;
+        MediaCacheManager.warmUpAsync(context);
     }
 
     public void setCallback(PlaybackCallback callback) {
@@ -90,8 +100,11 @@ public class PlayerPlaybackController {
         if (streamingOkHttpClient == null) {
             streamingOkHttpClient = new OkHttpClient.Builder()
                     .connectionPool(SHARED_STREAM_POOL)
-                    .connectTimeout(8, TimeUnit.SECONDS)
+                    .dispatcher(FastDns.createDispatcher(64, 16))
+                    .dns(FastDns.INSTANCE)
+                    .connectTimeout(6, TimeUnit.SECONDS)
                     .readTimeout(12, TimeUnit.SECONDS)
+                    .writeTimeout(8, TimeUnit.SECONDS)
                     .followRedirects(true)
                     .followSslRedirects(true)
                     .retryOnConnectionFailure(true)
@@ -162,28 +175,70 @@ public class PlayerPlaybackController {
         };
     }
 
-    private MediaSource buildMediaSourceForUrl(Context playerContext, String videoUrl, MediaItem itemToPlay) {
+    static boolean isHlsStreamUrl(String videoUrl) {
+        if (videoUrl == null || videoUrl.isEmpty()) return false;
+        String lower = videoUrl.toLowerCase(Locale.ROOT);
+        return lower.contains(".m3u8")
+                || lower.contains(":hls:")
+                || (ApiService.isKodikStreamUrl(videoUrl) && !lower.endsWith(".mp4"));
+    }
+
+    private static boolean isLocalOrContentUri(String videoUrl) {
+        if (videoUrl == null) return false;
+        return videoUrl.startsWith("file://")
+                || videoUrl.startsWith("content://")
+                || videoUrl.startsWith("/");
+    }
+
+    public MediaSource buildMediaSourceForUrl(Context playerContext, String videoUrl, MediaItem itemToPlay) {
         HttpDataSource.Factory httpFactory = buildStreamHttpDataSourceFactory(videoUrl);
-        DataSource.Factory dsFactory = new DefaultDataSource.Factory(playerContext, httpFactory);
+        DataSource.Factory baseDsFactory = new DefaultDataSource.Factory(playerContext, httpFactory);
         LoadErrorHandlingPolicy errorPolicy = createStreamErrorHandlingPolicy();
 
-        boolean isHls = videoUrl != null && (
-                videoUrl.contains(".m3u8")
-                        || videoUrl.contains(":hls:")
-                        || ApiService.isKodikStreamUrl(videoUrl) && !videoUrl.endsWith(".mp4")
-        );
+        boolean isLocal = isLocalOrContentUri(videoUrl);
+        boolean isHls = !isLocal && isHlsStreamUrl(videoUrl);
 
-        boolean hasExternalSubtitles = itemToPlay.localConfiguration != null
-                && !itemToPlay.localConfiguration.subtitleConfigurations.isEmpty();
+        List<MediaItem.SubtitleConfiguration> subtitleConfigs =
+                (itemToPlay.localConfiguration != null && itemToPlay.localConfiguration.subtitleConfigurations != null)
+                        ? itemToPlay.localConfiguration.subtitleConfigurations
+                        : java.util.Collections.emptyList();
+        boolean hasExternalSubtitles = !subtitleConfigs.isEmpty();
 
-        if (isHls && !hasExternalSubtitles) {
-            return new HlsMediaSource.Factory(dsFactory)
+        if (isHls) {
+            MediaItem.Builder videoItemBuilder = itemToPlay.buildUpon()
+                    .setSubtitleConfigurations(java.util.Collections.emptyList());
+            if (itemToPlay.localConfiguration == null || itemToPlay.localConfiguration.mimeType == null) {
+                videoItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8);
+            }
+            MediaSource hlsSource = new HlsMediaSource.Factory(baseDsFactory)
                     .setAllowChunklessPreparation(true)
                     .setLoadErrorHandlingPolicy(errorPolicy)
-                    .createMediaSource(itemToPlay);
+                    .createMediaSource(videoItemBuilder.build());
+
+            if (!hasExternalSubtitles) {
+                return hlsSource;
+            }
+
+            List<MediaSource> merged = new ArrayList<>(1 + subtitleConfigs.size());
+            merged.add(hlsSource);
+            SingleSampleMediaSource.Factory subFactory = new SingleSampleMediaSource.Factory(baseDsFactory)
+                    .setTreatLoadErrorsAsEndOfStream(true)
+                    .setLoadErrorHandlingPolicy(errorPolicy);
+            for (MediaItem.SubtitleConfiguration subConfig : subtitleConfigs) {
+                if (subConfig != null) {
+                    merged.add(subFactory.createMediaSource(subConfig, C.TIME_UNSET));
+                }
+            }
+            return new MergingMediaSource(merged.toArray(new MediaSource[0]));
         }
 
-        return new DefaultMediaSourceFactory(dsFactory)
+        // Для прогрессивного MP4 (AnimeLib CDN) используем неблокирующий дисковый кэш байтовых диапазонов —
+        // перемотки назад и повторные открытия серии/фрагментов работают мгновенно без повторной скачки.
+        DataSource.Factory effectiveDsFactory = isLocal
+                ? baseDsFactory
+                : MediaCacheManager.createNonBlockingCacheDataSourceFactory(playerContext, baseDsFactory);
+
+        return new DefaultMediaSourceFactory(effectiveDsFactory)
                 .setLoadErrorHandlingPolicy(errorPolicy)
                 .createMediaSource(itemToPlay);
     }
@@ -211,15 +266,16 @@ public class PlayerPlaybackController {
                     .setBufferDurationsMs(
                             15_000, // minBufferMs
                             50_000, // maxBufferMs
-                            1_000,  // bufferForPlaybackMs — ускоренный старт воспроизведения
-                            2_000   // bufferForPlaybackAfterRebufferMs
+                            500,    // bufferForPlaybackMs — быстрый первый кадр
+                            1_000   // bufferForPlaybackAfterRebufferMs — быстрое восстановление после перемотки
                     )
-                    .setBackBuffer(10_000, true)
+                    .setBackBuffer(25_000, true)
                     .setPrioritizeTimeOverSizeThresholds(true)
                     .build();
 
             ExoPlayer.Builder builder = new ExoPlayer.Builder(playerContext, rf)
                     .setLoadControl(loadControl)
+                    .setBandwidthMeter(DefaultBandwidthMeter.getSingletonInstance(playerContext))
                     .setSeekBackIncrementMs(10000)
                     .setSeekForwardIncrementMs(10000);
 

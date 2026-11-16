@@ -496,6 +496,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private int currentTheme = ThemeUtils.THEME_SYSTEM;
     private boolean isNewEpisodeSelection = true;
     private boolean autoPlayOnPrepare = true;
+    private final android.os.Handler nextEpisodePrefetchHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable nextEpisodePrefetchRunnable = null;
+    private String lastPrefetchedNextEpisodeKey = null;
 
     // Menu state
     // isMenuVisible is now managed by PlayersManager
@@ -1022,6 +1025,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 }
                 hideLoading();
                 updatePlayPauseAndLoadingState(false);
+                scheduleNextEpisodePrefetch();
             }
 
             @Override
@@ -1368,14 +1372,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     }
                 });
 
-        try {
-            android.webkit.WebView webView = new android.webkit.WebView(this);
-            webView.clearCache(true);
-            webView.clearHistory();
-            webView.destroy();
-        } catch (Exception e) {
-            Log.w("VideoPlayer", "Failed to clear WebView cache", e);
-        }
+        com.example.animelib.util.MediaCacheManager.warmUpAsync(this);
 
         if (playerSubtitlesController != null) {
             playerSubtitlesController.loadSettingsFromApi(apiService);
@@ -3973,6 +3970,12 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         Log.d("VideoPlayer", "Player selected, ready to start playback with startPosition=" + startPosition + "ms");
 
+        if (isPreferredQualityLoadedFromDb || isPreferredQualityChangedByUser) {
+            preferredQuality = com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(preferredQuality);
+            launchPlayerAfterQualityReady(playerData, restartGen, startPosition);
+            return;
+        }
+
         executor.execute(() -> {
             if (!isPreferredQualityLoadedFromDb && !isPreferredQualityChangedByUser) {
                 com.example.animelib.data.entity.PlayerPreferences prefs = apiService.loadPlayerPreferences();
@@ -3986,31 +3989,33 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 preferredQuality = com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(preferredQuality);
             }
 
-            safeRunOnUiThread(() -> {
-                if (restartGen != playbackRestartGeneration) {
-                    Log.d("VideoPlayer", "Ignoring stale playback restart task (gen=" + restartGen + ")");
-                    return;
-                }
-
-                if (!isPlayingDownloadedVideo() && playerData.getPlayer() != null && playerData.getTeam() != null && playerData.getTeam().getId() > 0) {
-                    apiService.savePlayerPreferences(playerData.getPlayer(), playerData.getTeam().getId());
-                }
-
-                refreshQualityUiState();
-
-                Log.d("VideoPlayer", "Starting player with position: " + startPosition + "ms, preferredQuality=" + preferredQuality + ", downloaded=" + isPlayingDownloadedVideo());
-
-                if (playerData.getPlayer() != null && "animelib".equalsIgnoreCase(playerData.getPlayer())) {
-                    handleAnimelibPlayer(playerData, startPosition);
-                } else if (playerData.getPlayer() != null && "kodik".equalsIgnoreCase(playerData.getPlayer())) {
-                    handleKodikPlayer(playerData, startPosition);
-                } else if (isPlayingDownloadedVideo()) {
-                    handleAnimelibPlayer(playerData, startPosition);
-                }
-
-                updateAnimeInfoHeaderFull();
-            });
+            safeRunOnUiThread(() -> launchPlayerAfterQualityReady(playerData, restartGen, startPosition));
         });
+    }
+
+    private void launchPlayerAfterQualityReady(EpisodeResponse.PlayerData playerData, int restartGen, long startPosition) {
+        if (restartGen != playbackRestartGeneration) {
+            Log.d("VideoPlayer", "Ignoring stale playback restart task (gen=" + restartGen + ")");
+            return;
+        }
+
+        if (!isPlayingDownloadedVideo() && playerData.getPlayer() != null && playerData.getTeam() != null && playerData.getTeam().getId() > 0) {
+            apiService.savePlayerPreferences(playerData.getPlayer(), playerData.getTeam().getId());
+        }
+
+        refreshQualityUiState();
+
+        Log.d("VideoPlayer", "Starting player with position: " + startPosition + "ms, preferredQuality=" + preferredQuality + ", downloaded=" + isPlayingDownloadedVideo());
+
+        if (playerData.getPlayer() != null && "animelib".equalsIgnoreCase(playerData.getPlayer())) {
+            handleAnimelibPlayer(playerData, startPosition);
+        } else if (playerData.getPlayer() != null && "kodik".equalsIgnoreCase(playerData.getPlayer())) {
+            handleKodikPlayer(playerData, startPosition);
+        } else if (isPlayingDownloadedVideo()) {
+            handleAnimelibPlayer(playerData, startPosition);
+        }
+
+        updateAnimeInfoHeaderFull();
     }
 
     private boolean tryStartDownloadedEpisodeImmediately(EpisodesListResponse.EpisodeItem episode, long initialBookmarkMs) {
@@ -4078,7 +4083,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
         // Auto-save bookmark for previous episode if applicable before switching
         autoSaveBookmark();
 
-        // Cancel any in-flight player loads from previous episode
+        // Cancel any in-flight player loads & prefetches from previous episode
+        cancelPendingNextEpisodePrefetch();
         if (playersManager != null) {
             playersManager.cancelPendingPlayerLoads();
         }
@@ -5284,15 +5290,17 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         ExoPlayer.Builder builder = new ExoPlayer.Builder(playerContext, rf)
                 .setLoadControl(loadControl)
+                .setBandwidthMeter(androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.getSingletonInstance(playerContext))
                 .setSeekBackIncrementMs(10000)
                 .setSeekForwardIncrementMs(10000);
 
         backgroundPlayer = builder.build();
         backgroundPlayer.setVolume(0f); // Mute background player while buffering
 
-        androidx.media3.datasource.HttpDataSource.Factory httpFactory;
+        MediaItem mediaItem = createMediaItemWithSubtitles(newVideoUrl);
+        androidx.media3.exoplayer.source.MediaSource mediaSource;
         if (playerPlaybackController != null) {
-            httpFactory = playerPlaybackController.buildStreamHttpDataSourceFactory(newVideoUrl);
+            mediaSource = playerPlaybackController.buildMediaSourceForUrl(playerContext, newVideoUrl, mediaItem);
         } else {
             androidx.media3.datasource.DefaultHttpDataSource.Factory fallbackFactory = new androidx.media3.datasource.DefaultHttpDataSource.Factory()
                     .setUserAgent("Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36")
@@ -5302,15 +5310,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
             if (apiService != null) {
                 fallbackFactory.setDefaultRequestProperties(apiService.getVideoRequestHeadersForUrl(newVideoUrl));
             }
-            httpFactory = fallbackFactory;
+            androidx.media3.datasource.DataSource.Factory dsFactory =
+                    new androidx.media3.datasource.DefaultDataSource.Factory(playerContext, fallbackFactory);
+            mediaSource = new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dsFactory).createMediaSource(mediaItem);
         }
-
-        androidx.media3.datasource.DataSource.Factory dsFactory = new androidx.media3.datasource.DefaultDataSource.Factory(playerContext, httpFactory);
-
-        MediaItem mediaItem = createMediaItemWithSubtitles(newVideoUrl);
-        androidx.media3.exoplayer.source.DefaultMediaSourceFactory mediaSourceFactory =
-                new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dsFactory);
-        androidx.media3.exoplayer.source.MediaSource mediaSource = mediaSourceFactory.createMediaSource(mediaItem);
 
         backgroundPlayer.setMediaSource(mediaSource);
 
@@ -5772,6 +5775,14 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 // For HLS, reinitialize the player with HLS support
                 Log.d("VideoPlayer", "Retrying with HLS player");
                 initializeHlsPlayer(newUrl);
+            } else if (playerPlaybackController != null) {
+                MediaItem mediaItem = createMediaItemWithSubtitles(newUrl);
+                player = playerPlaybackController.switchMediaSource(newUrl, mediaItem, 0L, true);
+                if (player != null) {
+                    setupSubtitlePlayerListener(player);
+                    applySubtitlesStateToPlayer();
+                    setupPlayerControlButtons();
+                }
             } else {
                 // For regular video, just change the media item
                 Log.d("VideoPlayer", "Retrying with regular player");
@@ -7466,6 +7477,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
         autoSaveBookmark();
 
         super.onDestroy();
+        cancelPendingNextEpisodePrefetch();
         stopViewProgressTracking();
         stopBufferingMonitoring();
 
@@ -7728,6 +7740,90 @@ public class VideoPlayerActivity extends AppCompatActivity {
         autoSaveBookmark();
 
         super.onBackPressed();
+    }
+
+    private void cancelPendingNextEpisodePrefetch() {
+        if (nextEpisodePrefetchRunnable != null) {
+            nextEpisodePrefetchHandler.removeCallbacks(nextEpisodePrefetchRunnable);
+            nextEpisodePrefetchRunnable = null;
+        }
+    }
+
+    private void scheduleNextEpisodePrefetch() {
+        cancelPendingNextEpisodePrefetch();
+        if (isOfflineMode || isFinishing() || isDestroyed()) {
+            return;
+        }
+        nextEpisodePrefetchRunnable = this::prefetchNextEpisodeStreams;
+        nextEpisodePrefetchHandler.postDelayed(nextEpisodePrefetchRunnable, 1_500L);
+    }
+
+    private void prefetchNextEpisodeStreams() {
+        if (isOfflineMode || isFinishing() || isDestroyed() || apiService == null || episodesManager == null) {
+            return;
+        }
+        EpisodesListResponse.EpisodeItem nextEp = episodesManager.getNextEpisode();
+        if (nextEp == null || nextEp.getId() <= 0) {
+            return;
+        }
+
+        EpisodeResponse.PlayerData activePlayer = playersManager != null ? playersManager.getCurrentPlayerData() : null;
+        final String targetPlayerName = activePlayer != null && activePlayer.getPlayer() != null ? activePlayer.getPlayer() : "";
+        final int targetTeamId = activePlayer != null && activePlayer.getTeam() != null ? activePlayer.getTeam().getId() : -1;
+        final String prefetchKey = nextEp.getId() + "_" + targetPlayerName + "_" + targetTeamId;
+        if (prefetchKey.equals(lastPrefetchedNextEpisodeKey)) {
+            return;
+        }
+        lastPrefetchedNextEpisodeKey = prefetchKey;
+
+        apiService.fetchEpisodeData(nextEp.getId(), new ApiService.EpisodeDataCallback() {
+            @Override
+            public void onEpisodeDataReceived(EpisodeResponse response) {
+                if (isFinishing() || isDestroyed() || response == null || response.getData() == null
+                        || response.getData().getPlayers() == null || response.getData().getPlayers().isEmpty()) {
+                    return;
+                }
+                List<EpisodeResponse.PlayerData> nextPlayers = response.getData().getPlayers();
+                EpisodeResponse.PlayerData match = null;
+                if (targetTeamId > 0) {
+                    for (EpisodeResponse.PlayerData pd : nextPlayers) {
+                        if (pd != null && pd.getTeam() != null && pd.getTeam().getId() == targetTeamId
+                                && pd.getPlayer() != null && pd.getPlayer().equalsIgnoreCase(targetPlayerName)) {
+                            match = pd;
+                            break;
+                        }
+                    }
+                    if (match == null) {
+                        for (EpisodeResponse.PlayerData pd : nextPlayers) {
+                            if (pd != null && pd.getTeam() != null && pd.getTeam().getId() == targetTeamId) {
+                                match = pd;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (match == null) {
+                    match = nextPlayers.get(0);
+                }
+                if (match != null && "kodik".equalsIgnoreCase(match.getPlayer())
+                        && match.getSrc() != null && !match.getSrc().trim().isEmpty()) {
+                    apiService.fetchKodikVideoLinks(match.getSrc().trim(), false, new ApiService.KodikVideoCallback() {
+                        @Override
+                        public void onKodikVideoReceived(KodikResponse kodikResponse) {
+                            Log.d("VideoPlayer", "Prefetched Kodik links for next episode ID: " + nextEp.getId());
+                        }
+
+                        @Override
+                        public void onError(String error) {
+                        }
+                    });
+                }
+            }
+
+            @Override
+            public void onError(String error) {
+            }
+        });
     }
 }
 

@@ -318,12 +318,12 @@ public class PlayerVideoResolverController {
                     }
                     // Автоматический повтор в обход кэша перед показом диалога ошибки пользователю
                     if (!forceRefresh) {
-                        Log.w(TAG, "Initial Kodik link resolution failed (" + error + "), retrying with forceRefresh...");
-                        retryHandler.postDelayed(() -> {
+                        Log.w(TAG, "Initial Kodik link resolution failed (" + error + "), retrying immediately with forceRefresh...");
+                        retryHandler.post(() -> {
                             if (requestToken == activeRequestToken.get()) {
                                 fetchKodikVideoLinks(normalizedSrc, seekToPosition, true);
                             }
-                        }, 250L);
+                        });
                         return;
                     }
 

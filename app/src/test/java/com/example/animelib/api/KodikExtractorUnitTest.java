@@ -234,4 +234,115 @@ public class KodikExtractorUnitTest {
         assertEquals("https://kodik.info/", kodikHeaders.get("Referer"));
         assertEquals("https://kodik.info", kodikHeaders.get("Origin"));
     }
+
+    @Test
+    public void testUnsignedLinkSkipsBlindFastPostAndSkipsJsBundleWhenFtorWorks() throws Exception {
+        KodikLinksExtractor.clearCachesForTesting();
+        String encoded720 = encodeKodikPayloadUrl("//cloud.kodik-storage.com/fast/720.mp4:hls:manifest.m3u8", 18);
+        java.util.List<String> requestedPaths = new java.util.ArrayList<>();
+
+        OkHttpClient mockClient = new OkHttpClient.Builder()
+                .addInterceptor(chain -> {
+                    Request req = chain.request();
+                    String path = req.url().encodedPath();
+                    requestedPaths.add(req.method() + " " + path);
+
+                    if (path.startsWith("/seria/")) {
+                        String html = "<html><head>"
+                                + "<script>var urlParams = '{\"d\":\"animelib.org\",\"d_sign\":\"sig_ok\",\"pd\":\"kodikplayer.com\",\"pd_sign\":\"pdsig_ok\"}';</script>"
+                                + "<script src=\"/assets/js/app.player_single.huge.js\"></script>"
+                                + "</head></html>";
+                        return new Response.Builder()
+                                .request(req)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .body(ResponseBody.create(html, MediaType.get("text/html")))
+                                .build();
+                    }
+
+                    if (path.contains("app.player_single")) {
+                        fail("Heavy player JS bundle must NOT be downloaded when cached /ftor succeeds");
+                    }
+
+                    if ("/ftor".equals(path) && "POST".equalsIgnoreCase(req.method())) {
+                        String json = "{\"links\":{\"720\":[{\"src\":\"" + encoded720 + "\",\"type\":\"application/x-mpegURL\"}]}}";
+                        return new Response.Builder()
+                                .request(req)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .body(ResponseBody.create(json, MediaType.get("application/json")))
+                                .build();
+                    }
+
+                    return new Response.Builder()
+                            .request(req)
+                            .protocol(Protocol.HTTP_1_1)
+                            .code(404)
+                            .message("Not Found")
+                            .body(ResponseBody.create("", MediaType.get("text/plain")))
+                            .build();
+                })
+                .build();
+
+        KodikLinksExtractor extractor = new KodikLinksExtractor(mockClient, new Gson());
+        KodikResponse res = extractor.getLinks("//kodik.info/seria/555666/cafebabe12/720p", false);
+
+        assertNotNull(res);
+        assertTrue(res.isSuccess());
+        // Exactly 2 RTTs total: GET /seria/... then POST /ftor (no blind /ftor POST before HTML, no JS bundle download)
+        assertEquals(2, requestedPaths.size());
+        assertTrue(requestedPaths.get(0).startsWith("GET /seria/"));
+        assertEquals("POST /ftor", requestedPaths.get(1));
+    }
+
+    @Test
+    public void testFailedPrimaryHostIsDeprioritizedAfterFailover() throws Exception {
+        KodikLinksExtractor.clearCachesForTesting();
+        String encoded720 = encodeKodikPayloadUrl("//cloud.kodik-storage.com/mirror/720.mp4:hls:manifest.m3u8", 18);
+        java.util.concurrent.atomic.AtomicInteger kodikInfoHits = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        OkHttpClient mockClient = new OkHttpClient.Builder()
+                .addInterceptor(chain -> {
+                    Request req = chain.request();
+                    if ("kodik.info".equalsIgnoreCase(req.url().host())) {
+                        kodikInfoHits.incrementAndGet();
+                        throw new IOException("Blocked by ISP");
+                    }
+                    if (req.url().encodedPath().startsWith("/seria/")) {
+                        String html = "<html><head><script>var urlParams = '{\"d\":\"animelib.org\",\"d_sign\":\"s1\",\"pd\":\"kodikplayer.com\",\"pd_sign\":\"s2\"}';</script></head></html>";
+                        return new Response.Builder()
+                                .request(req)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .body(ResponseBody.create(html, MediaType.get("text/html")))
+                                .build();
+                    }
+                    String json = "{\"links\":{\"720\":[{\"src\":\"" + encoded720 + "\",\"type\":\"application/x-mpegURL\"}]}}";
+                    return new Response.Builder()
+                            .request(req)
+                            .protocol(Protocol.HTTP_1_1)
+                            .code(200)
+                            .message("OK")
+                            .body(ResponseBody.create(json, MediaType.get("application/json")))
+                            .build();
+                })
+                .build();
+
+        KodikLinksExtractor extractor = new KodikLinksExtractor(mockClient, new Gson());
+        KodikResponse first = extractor.getLinks("//kodik.info/seria/1001/hash1/720p", false);
+        assertNotNull(first);
+        assertEquals(1, kodikInfoHits.get());
+
+        // Second request must go straight to kodikplayer.com without hitting dead kodik.info again
+        KodikResponse second = extractor.getLinks("//kodik.info/seria/1002/hash2/720p", false);
+        assertNotNull(second);
+        assertEquals(1, kodikInfoHits.get());
+
+        List<String> order = KodikLinksExtractor.buildCandidateHosts("kodik.info", false);
+        assertEquals("kodikplayer.com", order.get(0));
+        assertEquals("kodik.info", order.get(order.size() - 1));
+    }
 }

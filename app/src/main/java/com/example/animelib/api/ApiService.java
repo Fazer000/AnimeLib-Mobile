@@ -14,10 +14,13 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.Collections;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import okhttp3.Call;
 import okhttp3.Callback;
+import okhttp3.ConnectionPool;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -170,21 +173,45 @@ public class ApiService {
         }
     }
 
+    private static final ConnectionPool SHARED_API_POOL = new ConnectionPool(10, 3, TimeUnit.MINUTES);
+    private static final Map<String, String> KODIK_STREAM_HEADERS_IMMUTABLE;
+    static {
+        Map<String, String> h = new HashMap<>();
+        h.put("Referer", "https://kodik.info/");
+        h.put("Origin", "https://kodik.info");
+        h.put("User-Agent", "Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36");
+        h.put("Accept", "*/*");
+        h.put("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7");
+        h.put("Sec-Fetch-Dest", "empty");
+        h.put("Sec-Fetch-Mode", "cors");
+        h.put("Sec-Fetch-Site", "cross-site");
+        KODIK_STREAM_HEADERS_IMMUTABLE = Collections.unmodifiableMap(h);
+    }
+
+    private volatile String cachedVideoHeadersToken = null;
+    private volatile Map<String, String> cachedVideoHeadersMap = null;
+
     // Database manager for all DB operations
     private final com.example.animelib.data.DatabaseManager databaseManager;
 
     public ApiService(Context context) {
         this.context = context; // Сохраняем оригинальный context для runOnUiThread
         this.httpClient = new OkHttpClient.Builder()
-                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .connectionPool(SHARED_API_POOL)
+                .dispatcher(FastDns.createDispatcher(48, 12))
+                .dns(FastDns.INSTANCE)
+                .connectTimeout(8, TimeUnit.SECONDS)
+                .readTimeout(12, TimeUnit.SECONDS)
+                .writeTimeout(10, TimeUnit.SECONDS)
                 .followRedirects(true)
                 .followSslRedirects(true)
                 .retryOnConnectionFailure(true)
                 .build();
         this.shikimoriHttpClient = new OkHttpClient.Builder()
-                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+                .connectionPool(SHARED_API_POOL)
+                .dns(FastDns.INSTANCE)
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(20, TimeUnit.SECONDS)
                 .followRedirects(true)
                 .followSslRedirects(true)
                 .retryOnConnectionFailure(true)
@@ -192,7 +219,7 @@ public class ApiService {
         this.gson = new Gson();
         this.kodikLinksExtractor = new KodikLinksExtractor(this.httpClient, this.gson);
         this.executor = Executors.newSingleThreadExecutor();
-        this.kodikExecutor = Executors.newFixedThreadPool(3, r -> {
+        this.kodikExecutor = Executors.newFixedThreadPool(4, r -> {
             Thread t = new Thread(r, "kodik-extractor");
             t.setDaemon(true);
             return t;
@@ -272,14 +299,19 @@ public class ApiService {
      * Возвращает основные заголовки для видеозапросов (Referer, Authorization и базовые HTTP)
      */
     public Map<String, String> getVideoRequestHeaders() {
-        Map<String, String> headers = new HashMap<>();
-
         String token = getBearerToken();
-        if (token != null && !token.trim().isEmpty()) {
-            if (token.toLowerCase().startsWith("bearer ")) {
-                headers.put("Authorization", token);
+        String normalizedToken = token != null ? token.trim() : "";
+        Map<String, String> snapshot = cachedVideoHeadersMap;
+        if (snapshot != null && normalizedToken.equals(cachedVideoHeadersToken)) {
+            return snapshot;
+        }
+
+        Map<String, String> headers = new HashMap<>();
+        if (!normalizedToken.isEmpty()) {
+            if (normalizedToken.toLowerCase(java.util.Locale.ROOT).startsWith("bearer ")) {
+                headers.put("Authorization", normalizedToken);
             } else {
-                headers.put("Authorization", "Bearer " + token);
+                headers.put("Authorization", "Bearer " + normalizedToken);
             }
         }
 
@@ -294,7 +326,11 @@ public class ApiService {
         headers.put("sec-fetch-dest", "video");
         headers.put("sec-fetch-mode", "cors");
         headers.put("sec-fetch-site", "cross-site");
-        return headers;
+
+        Map<String, String> unmodifiable = Collections.unmodifiableMap(headers);
+        cachedVideoHeadersToken = normalizedToken;
+        cachedVideoHeadersMap = unmodifiable;
+        return unmodifiable;
     }
 
     /**
@@ -316,16 +352,7 @@ public class ApiService {
      * Заголовки для HLS/видеозапросов к CDN Kodik (без утечки Bearer-токена AnimeLib и с корректным Origin/Referer).
      */
     public static Map<String, String> buildKodikStreamHeaders() {
-        Map<String, String> headers = new HashMap<>();
-        headers.put("Referer", "https://kodik.info/");
-        headers.put("Origin", "https://kodik.info");
-        headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36");
-        headers.put("Accept", "*/*");
-        headers.put("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7");
-        headers.put("Sec-Fetch-Dest", "empty");
-        headers.put("Sec-Fetch-Mode", "cors");
-        headers.put("Sec-Fetch-Site", "cross-site");
-        return headers;
+        return KODIK_STREAM_HEADERS_IMMUTABLE;
     }
 
     /**
@@ -349,7 +376,6 @@ public class ApiService {
                 if (tokenStr.toLowerCase().startsWith("bearer ")) {
                     tokenStr = tokenStr.substring(7).trim();
                 }
-                Log.d("ApiService", "Using token from database");
                 return tokenStr;
             }
         } catch (Exception e) {
@@ -797,7 +823,7 @@ public class ApiService {
         }
     }
 
-    private static final long KODIK_CACHE_TTL_MS = 3 * 60 * 1000L;
+    private static final long KODIK_CACHE_TTL_MS = 8 * 60 * 1000L;
 
     /**
      * Инвалидирует кэш ссылок Kodik для заданного источника (используется при восстановлении после ошибки потока).
@@ -859,6 +885,9 @@ public class ApiService {
 
                 if (kodikResponse != null && kodikResponse.isSuccess()
                         && kodikResponse.getData() != null && !kodikResponse.getData().isEmpty()) {
+                    if (KODIK_LINKS_CACHE.size() > 64) {
+                        KODIK_LINKS_CACHE.clear();
+                    }
                     KODIK_LINKS_CACHE.put(cacheKey, new CachedResponse<>(kodikResponse));
                     dispatchKodikSuccess(pendingKey, kodikResponse);
                 } else {

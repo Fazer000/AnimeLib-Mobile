@@ -616,16 +616,10 @@ public class PlayersManager {
         EpisodeResponse.PlayerData preferredPlayer = findPreferredPlayer();
         if (preferredPlayer != null) {
             Log.d(TAG, "Auto-selecting preferred player: " + preferredPlayer.getPlayer());
-            // Добавляем небольшую задержку чтобы пользователь мог увидеть меню
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                onPlayerSelected(preferredPlayer);
-            }, 500);
+            onPlayerSelected(preferredPlayer);
         } else if (!allPlayers.isEmpty()) {
             Log.d(TAG, "No preferred player found, auto-selecting first available player");
-            EpisodeResponse.PlayerData firstPlayer = allPlayers.get(0);
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                onPlayerSelected(firstPlayer);
-            }, 500);
+            onPlayerSelected(allPlayers.get(0));
         } else {
             // Show menu for user to select player manually
             Log.d(TAG, "No players found, showing menu");

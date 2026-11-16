@@ -18,10 +18,26 @@ import java.io.File;
 public class MediaCacheManager {
     private static final String TAG = "MediaCacheManager";
     private static final long MAX_CACHE_SIZE = 300 * 1024 * 1024L; // 300 МБ кэша
-    private static SimpleCache simpleCache;
+    private static volatile SimpleCache simpleCache;
+    private static final java.util.concurrent.atomic.AtomicBoolean warmUpStarted =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    public static void warmUpAsync(Context context) {
+        if (context == null || simpleCache != null || !warmUpStarted.compareAndSet(false, true)) {
+            return;
+        }
+        final Context appContext = context.getApplicationContext();
+        Thread t = new Thread(() -> getCache(appContext), "media-cache-init");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    public static SimpleCache getCacheIfInitialized() {
+        return simpleCache;
+    }
 
     public static synchronized SimpleCache getCache(Context context) {
-        if (simpleCache == null) {
+        if (simpleCache == null && context != null) {
             try {
                 Context appContext = context.getApplicationContext();
                 File cacheDir = new File(appContext.getCacheDir(), "media_player_stream_cache");
@@ -37,6 +53,21 @@ public class MediaCacheManager {
             }
         }
         return simpleCache;
+    }
+
+    public static DataSource.Factory createNonBlockingCacheDataSourceFactory(
+            Context context,
+            DataSource.Factory upstreamDefaultFactory
+    ) {
+        SimpleCache cache = simpleCache;
+        if (cache == null) {
+            warmUpAsync(context);
+            return upstreamDefaultFactory;
+        }
+        return new CacheDataSource.Factory()
+                .setCache(cache)
+                .setUpstreamDataSourceFactory(upstreamDefaultFactory)
+                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR);
     }
 
     public static DataSource.Factory createCacheDataSourceFactory(Context context, DataSource.Factory upstreamFactory) {
@@ -60,5 +91,6 @@ public class MediaCacheManager {
             }
             simpleCache = null;
         }
+        warmUpStarted.set(false);
     }
 }

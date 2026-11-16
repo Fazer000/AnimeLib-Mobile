@@ -1,6 +1,0 @@
-{
-  "summary":  "Implementation plan for completely rewriting the ambient light (Ambilight) system from scratch. Solves border lines with organic elliptical dispersion, eliminates secondary ExoPlayer freezing via adaptive pitch speed sync, and smoothly handles side panel transformations without clipping.",
-  "updatedAt":  "2026-11-07T09:53:49.803551255Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}

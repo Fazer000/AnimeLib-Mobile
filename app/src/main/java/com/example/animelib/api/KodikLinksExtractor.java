@@ -28,8 +28,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import okhttp3.ConnectionPool;
 import okhttp3.Cookie;
 import okhttp3.CookieJar;
+import okhttp3.Dns;
 import okhttp3.FormBody;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
@@ -102,7 +104,10 @@ public class KodikLinksExtractor {
     private static volatile String cachedEndpoint = DEFAULT_ENDPOINT;
     private static volatile int cachedRotShift = DEFAULT_ROT_SHIFT;
     private static volatile String lastWorkingHost = null;
+    private static final long HOST_FAILURE_COOLDOWN_MS = 3 * 60 * 1000L;
     private static final Map<String, String> SCRIPT_ENDPOINT_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, Long> FAILED_HOSTS = new ConcurrentHashMap<>();
+    private static final ConnectionPool SHARED_EXTRACTOR_POOL = new ConnectionPool(8, 2, TimeUnit.MINUTES);
 
     private final OkHttpClient httpClient;
     private final Gson gson;
@@ -110,15 +115,28 @@ public class KodikLinksExtractor {
     public KodikLinksExtractor(OkHttpClient baseClient, Gson gson) {
         this.gson = gson != null ? gson : new Gson();
         OkHttpClient sourceClient = baseClient != null ? baseClient : new OkHttpClient();
-        this.httpClient = sourceClient.newBuilder()
-                .connectTimeout(6, TimeUnit.SECONDS)
-                .readTimeout(10, TimeUnit.SECONDS)
-                .writeTimeout(8, TimeUnit.SECONDS)
+        OkHttpClient.Builder builder = sourceClient.newBuilder()
+                .connectionPool(SHARED_EXTRACTOR_POOL)
+                .dispatcher(FastDns.createDispatcher(32, 12))
+                .connectTimeout(3500, TimeUnit.MILLISECONDS)
+                .readTimeout(6000, TimeUnit.MILLISECONDS)
+                .writeTimeout(5000, TimeUnit.MILLISECONDS)
                 .followRedirects(true)
                 .followSslRedirects(true)
                 .retryOnConnectionFailure(true)
-                .cookieJar(new InMemoryCookieJar())
-                .build();
+                .cookieJar(new InMemoryCookieJar());
+        if (sourceClient.dns() == Dns.SYSTEM) {
+            builder.dns(FastDns.INSTANCE);
+        }
+        this.httpClient = builder.build();
+    }
+
+    static void clearCachesForTesting() {
+        cachedEndpoint = DEFAULT_ENDPOINT;
+        cachedRotShift = DEFAULT_ROT_SHIFT;
+        lastWorkingHost = null;
+        SCRIPT_ENDPOINT_CACHE.clear();
+        FAILED_HOSTS.clear();
     }
 
     /**
@@ -160,24 +178,18 @@ public class KodikLinksExtractor {
                 KodikResponse response = extractFromHost(parsed, targetHost, forceRefresh);
                 if (response != null && response.isSuccess() && response.getData() != null && !response.getData().isEmpty()) {
                     lastWorkingHost = targetHost;
+                    FAILED_HOSTS.remove(targetHost);
                     return response;
                 }
+                markHostFailed(targetHost);
             } catch (IOException e) {
                 lastException = e;
+                markHostFailed(targetHost);
                 logWarn("Host " + targetHost + " failed: " + e.getMessage());
             } catch (Exception e) {
                 lastException = new IOException("Ошибка обработки ответа от " + targetHost + ": " + e.getMessage(), e);
+                markHostFailed(targetHost);
                 logWarn("Unexpected error on host " + targetHost + ": " + e.getMessage());
-            }
-
-            // Короткая пауза перед переключением на следующее зеркало
-            if (i < candidateHosts.size() - 1) {
-                try {
-                    Thread.sleep(120L);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
             }
         }
 
@@ -187,12 +199,31 @@ public class KodikLinksExtractor {
         throw new IOException("Kodik не вернул доступные видеоссылки ни с одного зеркала");
     }
 
+    private static void markHostFailed(String host) {
+        if (host != null && !host.isEmpty()) {
+            FAILED_HOSTS.put(host.toLowerCase(Locale.ROOT), System.currentTimeMillis());
+        }
+    }
+
+    private static boolean isHostRecentlyFailed(String host, long now) {
+        if (host == null || host.isEmpty()) return false;
+        Long failedAt = FAILED_HOSTS.get(host.toLowerCase(Locale.ROOT));
+        if (failedAt == null) return false;
+        if ((now - failedAt) < HOST_FAILURE_COOLDOWN_MS) {
+            return true;
+        }
+        FAILED_HOSTS.remove(host.toLowerCase(Locale.ROOT), failedAt);
+        return false;
+    }
+
     private KodikResponse extractFromHost(ParsedKodikLink parsed, String host, boolean forceRefresh) throws IOException {
         String iframeUrl = parsed.buildIframeUrl(host);
         String currentEndpoint = cachedEndpoint;
 
-        // 1. Быстрый путь (1 RTT): прямой запрос к текущему известному endpoint (пропускается при forceRefresh, чтобы гарантированно обновить d_sign/cookies/endpoint)
-        if (!forceRefresh) {
+        // 1. Быстрый путь (1 RTT): только если в URL уже есть подписанные d_sign/pd_sign.
+        //    Стандартные ссылки AnimeLib (без query-подписей) гарантированно отклоняются на /ftor без HTML-сессии,
+        //    поэтому сразу идём за iframe HTML без лишнего RTT и таймаута.
+        if (!forceRefresh && parsed.hasSignedParams()) {
             Map<String, String> fastParams = buildBaseFormParams(parsed, host);
             JsonObject fastPayload = requestVideoInfo(host, currentEndpoint, iframeUrl, fastParams, true);
             KodikResponse fastResponse = toValidResponse(fastPayload);
@@ -201,7 +232,8 @@ public class KodikLinksExtractor {
             }
         }
 
-        // 2. Полный путь: загружаем страницу iframe (получаем редирект-домен, cookies, подписи d_sign/pd_sign и JS-скрипт)
+        // 2. Полный путь: загружаем страницу iframe (получаем редирект-домен, cookies и подписи d_sign/pd_sign).
+        //    JS-бандл app.player_single.*.js НЕ скачивается заранее — только если кэшированный endpoint не сработает.
         IframeContext iframeCtx = fetchIframeContext(iframeUrl, host, parsed, forceRefresh);
         String effectiveHost = iframeCtx.effectiveHost;
         String effectiveEndpoint = iframeCtx.endpoint;
@@ -217,6 +249,31 @@ public class KodikLinksExtractor {
         if (fullResponse != null) {
             cachedEndpoint = effectiveEndpoint;
             return fullResponse;
+        }
+
+        // 2b. Ленивый fallback: если кэшированный endpoint не подошёл и endpoint ещё не искали в JS-бандле,
+        //     скачиваем JS-скрипт плеера, извлекаем актуальный endpoint и сразу делаем POST.
+        if (!iframeCtx.endpointResolvedFromScript && iframeCtx.playerScriptUrl != null) {
+            String scriptEndpoint = fetchEndpointFromPlayerScript(
+                    iframeCtx.playerScriptUrl,
+                    iframeCtx.effectiveIframeUrl,
+                    forceRefresh
+            );
+            if (scriptEndpoint != null && !scriptEndpoint.isEmpty() && !scriptEndpoint.equals(effectiveEndpoint)) {
+                effectiveEndpoint = scriptEndpoint;
+                JsonObject scriptPayload = requestVideoInfo(
+                        effectiveHost,
+                        effectiveEndpoint,
+                        iframeCtx.effectiveIframeUrl,
+                        iframeCtx.formParams,
+                        true
+                );
+                KodikResponse scriptResponse = toValidResponse(scriptPayload);
+                if (scriptResponse != null) {
+                    cachedEndpoint = effectiveEndpoint;
+                    return scriptResponse;
+                }
+            }
         }
 
         // 3. Fallback на GET-запрос (для старых/нестандартных нод Kodik)
@@ -261,17 +318,44 @@ public class KodikLinksExtractor {
                 ? response : null;
     }
 
-    private List<String> buildCandidateHosts(String primaryHost, boolean forceRefresh) {
-        Set<String> hosts = new LinkedHashSet<>();
-        if (primaryHost != null && !primaryHost.isEmpty()) {
-            hosts.add(primaryHost.toLowerCase(Locale.ROOT));
-        }
+    static List<String> buildCandidateHosts(String primaryHost, boolean forceRefresh) {
+        Set<String> allCandidates = new LinkedHashSet<>();
         String remembered = lastWorkingHost;
-        if (!forceRefresh && remembered != null && !remembered.isEmpty()) {
-            hosts.add(remembered.toLowerCase(Locale.ROOT));
+        String normalizedPrimary = (primaryHost != null && !primaryHost.isEmpty())
+                ? primaryHost.toLowerCase(Locale.ROOT) : null;
+        String normalizedRemembered = (remembered != null && !remembered.isEmpty())
+                ? remembered.toLowerCase(Locale.ROOT) : null;
+
+        if (!forceRefresh) {
+            // Сначала последнее заведомо рабочее зеркало (если провайдер режет kodik.info — мгновенно бьём в kodikplayer/aniqit)
+            if (normalizedRemembered != null) {
+                allCandidates.add(normalizedRemembered);
+            }
+            if (normalizedPrimary != null) {
+                allCandidates.add(normalizedPrimary);
+            }
+        } else {
+            if (normalizedPrimary != null) {
+                allCandidates.add(normalizedPrimary);
+            }
+            if (normalizedRemembered != null) {
+                allCandidates.add(normalizedRemembered);
+            }
         }
-        hosts.addAll(FALLBACK_HOSTS);
-        return new ArrayList<>(hosts);
+        allCandidates.addAll(FALLBACK_HOSTS);
+
+        long now = System.currentTimeMillis();
+        List<String> healthyHosts = new ArrayList<>(allCandidates.size());
+        List<String> failedHosts = new ArrayList<>();
+        for (String candidate : allCandidates) {
+            if (isHostRecentlyFailed(candidate, now)) {
+                failedHosts.add(candidate);
+            } else {
+                healthyHosts.add(candidate);
+            }
+        }
+        healthyHosts.addAll(failedHosts);
+        return healthyHosts;
     }
 
     private Map<String, String> buildBaseFormParams(ParsedKodikLink parsed, String host) {
@@ -440,14 +524,20 @@ public class KodikLinksExtractor {
 
         // Пробуем найти endpoint прямо в HTML
         String discoveredEndpoint = extractEndpointFromText(html);
+        String playerScriptUrl = null;
+        boolean endpointResolvedFromScript = discoveredEndpoint != null && !discoveredEndpoint.isEmpty();
 
-        // Если в HTML нет — извлекаем из подключенного JS-скрипта плеера (app.player_single.*.js / app.serial.*.js)
-        if (discoveredEndpoint == null) {
-            Matcher scriptMatcher = SCRIPT_SRC_PATTERN.matcher(html);
-            if (scriptMatcher.find()) {
-                String scriptPath = scriptMatcher.group(1);
-                String scriptUrl = resolveAgainstHost(scriptPath, effectiveHost);
-                discoveredEndpoint = fetchEndpointFromPlayerScript(scriptUrl, effectiveIframeUrl, forceRefresh);
+        // Если в HTML нет — смотрим лёгкий in-memory кэш скрипта, а сам 300KB-1MB бандл не качаем до ошибки POST
+        Matcher scriptMatcher = SCRIPT_SRC_PATTERN.matcher(html);
+        if (scriptMatcher.find()) {
+            String scriptPath = scriptMatcher.group(1);
+            playerScriptUrl = resolveAgainstHost(scriptPath, effectiveHost);
+            if (!endpointResolvedFromScript && !forceRefresh && playerScriptUrl != null && !playerScriptUrl.isEmpty()) {
+                String cachedScriptEp = SCRIPT_ENDPOINT_CACHE.get(playerScriptUrl);
+                if (cachedScriptEp != null && !cachedScriptEp.isEmpty()) {
+                    discoveredEndpoint = cachedScriptEp;
+                    endpointResolvedFromScript = true;
+                }
             }
         }
 
@@ -455,7 +545,14 @@ public class KodikLinksExtractor {
             discoveredEndpoint = cachedEndpoint != null ? cachedEndpoint : DEFAULT_ENDPOINT;
         }
 
-        return new IframeContext(effectiveHost, effectiveIframeUrl, discoveredEndpoint, params);
+        return new IframeContext(
+                effectiveHost,
+                effectiveIframeUrl,
+                discoveredEndpoint,
+                params,
+                playerScriptUrl,
+                endpointResolvedFromScript
+        );
     }
 
     private String fetchEndpointFromPlayerScript(String scriptUrl, String referer, boolean forceRefresh) {
@@ -838,6 +935,12 @@ public class KodikLinksExtractor {
             this.queryParams = queryParams;
         }
 
+        boolean hasSignedParams() {
+            String dSign = queryParams.get("d_sign");
+            String pdSign = queryParams.get("pd_sign");
+            return dSign != null && !dSign.isEmpty() && pdSign != null && !pdSign.isEmpty();
+        }
+
         String buildIframeUrl(String targetHost) {
             String base = "https://" + targetHost + "/" + type + "/" + id + "/" + hash + "/" + quality;
             if (rawQuery != null && !rawQuery.isEmpty() && targetHost.equalsIgnoreCase(host)) {
@@ -852,12 +955,23 @@ public class KodikLinksExtractor {
         final String effectiveIframeUrl;
         final String endpoint;
         final Map<String, String> formParams;
+        final String playerScriptUrl;
+        final boolean endpointResolvedFromScript;
 
-        IframeContext(String effectiveHost, String effectiveIframeUrl, String endpoint, Map<String, String> formParams) {
+        IframeContext(
+                String effectiveHost,
+                String effectiveIframeUrl,
+                String endpoint,
+                Map<String, String> formParams,
+                String playerScriptUrl,
+                boolean endpointResolvedFromScript
+        ) {
             this.effectiveHost = effectiveHost;
             this.effectiveIframeUrl = effectiveIframeUrl;
             this.endpoint = endpoint;
             this.formParams = formParams;
+            this.playerScriptUrl = playerScriptUrl;
+            this.endpointResolvedFromScript = endpointResolvedFromScript;
         }
     }
 
