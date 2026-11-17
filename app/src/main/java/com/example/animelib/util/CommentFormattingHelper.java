@@ -35,7 +35,6 @@ public class CommentFormattingHelper {
         @Override
         public void updateDrawState(TextPaint tp) {
             tp.bgColor = 0x20888888;
-            tp.setColor(0xFFAAAAAA);
             tp.setTextSkewX(-0.25f);
         }
     }

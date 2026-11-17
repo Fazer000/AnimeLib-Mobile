@@ -136,13 +136,7 @@ public class CommentHtmlProcessor {
     }
 
     public static int resolvePrimaryTextColor(Context context) {
-        if (context == null) return 0xFFFFFFFF;
-        TypedValue typedValue = new TypedValue();
-        if (context.getTheme() != null && context.getTheme().resolveAttribute(R.attr.primaryTextColor, typedValue, true)) {
-            return typedValue.resourceId != 0
-                    ? ContextCompat.getColor(context, typedValue.resourceId)
-                    : typedValue.data;
-        }
+        if (context == null) return 0xFF1E1B26;
         return ContextCompat.getColor(context, R.color.primary_text_color);
     }
 
@@ -292,7 +286,6 @@ public class CommentHtmlProcessor {
                 if (trimmed.length() > 0) {
                     SpannableStringBuilder styled = new SpannableStringBuilder(trimmed);
                     styled.setSpan(new StyleSpan(Typeface.ITALIC), 0, styled.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    styled.setSpan(new ForegroundColorSpan(primaryTextColor), 0, styled.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
                     out.add(ParsedBlock.quote(styled));
                 }
                 break;
@@ -477,9 +470,12 @@ public class CommentHtmlProcessor {
         container.removeAllViews();
         if (parsed == null) return;
 
+        Context targetContext = container.getContext() != null ? container.getContext() : context;
+        int resolvedTextColor = resolvePrimaryTextColor(targetContext);
+
         if (parsed.isSimple()) {
             if (parsed.simpleText.length() > 0) {
-                TextView tv = createTextView();
+                TextView tv = createTextView(targetContext, resolvedTextColor);
                 tv.setText(parsed.simpleText);
                 container.addView(tv);
             }
@@ -489,7 +485,7 @@ public class CommentHtmlProcessor {
         for (ParsedBlock block : parsed.blocks) {
             switch (block.type) {
                 case PARAGRAPH: {
-                    TextView textView = createTextView();
+                    TextView textView = createTextView(targetContext, resolvedTextColor);
                     textView.setText(block.text);
                     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -501,13 +497,13 @@ public class CommentHtmlProcessor {
                     break;
                 }
                 case QUOTE: {
-                    LinearLayout quoteContainer = new LinearLayout(context);
+                    LinearLayout quoteContainer = new LinearLayout(targetContext);
                     quoteContainer.setOrientation(LinearLayout.HORIZONTAL);
                     quoteContainer.setGravity(Gravity.TOP);
                     quoteContainer.setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8));
                     quoteContainer.setBackgroundResource(R.drawable.quote_background);
 
-                    ImageView quoteIcon = new ImageView(context);
+                    ImageView quoteIcon = new ImageView(targetContext);
                     quoteIcon.setImageResource(R.drawable.ic_quote_mark);
                     LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dpToPx(16), dpToPx(16));
                     iconParams.setMarginEnd(dpToPx(8));
@@ -515,7 +511,7 @@ public class CommentHtmlProcessor {
                     quoteIcon.setLayoutParams(iconParams);
                     quoteContainer.addView(quoteIcon);
 
-                    TextView textView = createTextView();
+                    TextView textView = createTextView(targetContext, resolvedTextColor);
                     textView.setText(block.text);
                     LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
                             0,
@@ -535,7 +531,7 @@ public class CommentHtmlProcessor {
                     break;
                 }
                 case CODE: {
-                    TextView textView = createTextView();
+                    TextView textView = createTextView(targetContext, resolvedTextColor);
                     textView.setBackgroundResource(R.drawable.code_block_background);
                     textView.setTypeface(Typeface.MONOSPACE);
                     textView.setTextSize(12);
@@ -551,7 +547,7 @@ public class CommentHtmlProcessor {
                     break;
                 }
                 case HEADING: {
-                    TextView textView = createTextView();
+                    TextView textView = createTextView(targetContext, resolvedTextColor);
                     textView.setTextSize(block.headingSizeSp);
                     textView.setTypeface(null, Typeface.BOLD);
                     textView.setText(block.text);
@@ -565,7 +561,7 @@ public class CommentHtmlProcessor {
                     break;
                 }
                 case LIST_ITEM: {
-                    TextView textView = createTextView();
+                    TextView textView = createTextView(targetContext, resolvedTextColor);
                     textView.setText(block.text);
                     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -577,7 +573,7 @@ public class CommentHtmlProcessor {
                     break;
                 }
                 case SPOILER: {
-                    SpoilerView spoilerView = new SpoilerView(context);
+                    SpoilerView spoilerView = new SpoilerView(targetContext);
                     spoilerView.setSpoilerData(block.spoilerTitle, block.text);
                     container.addView(spoilerView);
                     break;
@@ -598,11 +594,12 @@ public class CommentHtmlProcessor {
         renderParsedBlocks(parsed, container);
     }
 
-    private TextView createTextView() {
-        TextView textView = new TextView(context);
-        textView.setTextColor(primaryTextColor);
-        textView.setTextSize(13);
-        textView.setLineSpacing(dpToPx(2), 1.0f);
+    private TextView createTextView(Context targetContext, int textColor) {
+        TextView textView = new TextView(targetContext);
+        textView.setTextColor(textColor);
+        textView.setTextSize(13.5f);
+        textView.setLineSpacing(dpToPx(3), 1.0f);
+        textView.setIncludeFontPadding(false);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
