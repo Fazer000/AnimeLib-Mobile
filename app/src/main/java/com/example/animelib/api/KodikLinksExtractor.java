@@ -4,6 +4,7 @@ import android.util.Log;
 
 import com.example.animelib.models.KodikResponse;
 import com.example.animelib.util.AutoQualityHelper;
+import com.example.animelib.util.VpnNetworkHelper;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -60,7 +61,8 @@ public class KodikLinksExtractor {
             "kodikplayer.com",
             "aniqit.com",
             "kodik.info",
-            "kodik.cc"
+            "kodik.cc",
+            "kodik.biz"
     );
 
     private static final String USER_AGENT =
@@ -104,37 +106,56 @@ public class KodikLinksExtractor {
     private static volatile String cachedEndpoint = DEFAULT_ENDPOINT;
     private static volatile int cachedRotShift = DEFAULT_ROT_SHIFT;
     private static volatile String lastWorkingHost = null;
+    private static volatile boolean lastExtractionUsedDirectNetwork = false;
     private static final long HOST_FAILURE_COOLDOWN_MS = 3 * 60 * 1000L;
     private static final Map<String, String> SCRIPT_ENDPOINT_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, Long> FAILED_HOSTS = new ConcurrentHashMap<>();
     private static final ConnectionPool SHARED_EXTRACTOR_POOL = new ConnectionPool(8, 2, TimeUnit.MINUTES);
 
     private final OkHttpClient httpClient;
+    private final OkHttpClient directNonVpnHttpClient;
+    private final boolean hasCustomInterceptors;
     private final Gson gson;
 
     public KodikLinksExtractor(OkHttpClient baseClient, Gson gson) {
         this.gson = gson != null ? gson : new Gson();
         OkHttpClient sourceClient = baseClient != null ? baseClient : new OkHttpClient();
+        this.hasCustomInterceptors = !sourceClient.interceptors().isEmpty() || !sourceClient.networkInterceptors().isEmpty();
+        InMemoryCookieJar sharedCookieJar = new InMemoryCookieJar();
+
         OkHttpClient.Builder builder = sourceClient.newBuilder()
                 .connectionPool(SHARED_EXTRACTOR_POOL)
                 .dispatcher(FastDns.createDispatcher(32, 12))
-                .connectTimeout(3500, TimeUnit.MILLISECONDS)
-                .readTimeout(6000, TimeUnit.MILLISECONDS)
-                .writeTimeout(5000, TimeUnit.MILLISECONDS)
+                .connectTimeout(5500, TimeUnit.MILLISECONDS)
+                .readTimeout(9000, TimeUnit.MILLISECONDS)
+                .writeTimeout(6000, TimeUnit.MILLISECONDS)
                 .followRedirects(true)
                 .followSslRedirects(true)
                 .retryOnConnectionFailure(true)
-                .cookieJar(new InMemoryCookieJar());
+                .cookieJar(sharedCookieJar);
         if (sourceClient.dns() == Dns.SYSTEM) {
             builder.dns(FastDns.INSTANCE);
         }
         this.httpClient = builder.build();
+
+        this.directNonVpnHttpClient = this.httpClient.newBuilder()
+                .socketFactory(VpnNetworkHelper.createPhysicalNetworkSocketFactory())
+                .dns(VpnNetworkHelper.createPhysicalNetworkDns(FastDns.INSTANCE))
+                .connectTimeout(4500, TimeUnit.MILLISECONDS)
+                .readTimeout(8000, TimeUnit.MILLISECONDS)
+                .cookieJar(sharedCookieJar)
+                .build();
+    }
+
+    public static boolean didLastExtractionUseDirectNetwork() {
+        return lastExtractionUsedDirectNetwork;
     }
 
     static void clearCachesForTesting() {
         cachedEndpoint = DEFAULT_ENDPOINT;
         cachedRotShift = DEFAULT_ROT_SHIFT;
         lastWorkingHost = null;
+        lastExtractionUsedDirectNetwork = false;
         SCRIPT_ENDPOINT_CACHE.clear();
         FAILED_HOSTS.clear();
     }
@@ -169,15 +190,48 @@ public class KodikLinksExtractor {
             throw new IOException("Ссылка Kodik не распознана: " + kodikLink);
         }
 
+        if (forceRefresh) {
+            FastDns.INSTANCE.clearCache();
+        }
+
         List<String> candidateHosts = buildCandidateHosts(parsed.host, forceRefresh);
         IOException lastException = null;
 
+        boolean tryVpnBypassFirst = !hasCustomInterceptors
+                && VpnNetworkHelper.isVpnActive(null)
+                && VpnNetworkHelper.findPhysicalNonVpnNetwork(null) != null;
+
+        // 1. Если включён VPN и доступна физическая сеть (Wi-Fi / мобильная сеть),
+        //    сначала пробуем обойти VPN напрямую, так как Kodik блокирует зарубежные VPN IP.
+        if (tryVpnBypassFirst) {
+            for (int i = 0; i < candidateHosts.size(); i++) {
+                String targetHost = candidateHosts.get(i);
+                try {
+                    KodikResponse response = extractFromHost(directNonVpnHttpClient, parsed, targetHost, forceRefresh);
+                    if (response != null && response.isSuccess() && response.getData() != null && !response.getData().isEmpty()) {
+                        lastWorkingHost = targetHost;
+                        lastExtractionUsedDirectNetwork = true;
+                        FAILED_HOSTS.remove(targetHost);
+                        return response;
+                    }
+                } catch (IOException e) {
+                    lastException = e;
+                    logWarn("Direct non-VPN host " + targetHost + " failed: " + e.getMessage());
+                } catch (Exception e) {
+                    lastException = new IOException("Ошибка обработки ответа от " + targetHost + ": " + e.getMessage(), e);
+                    logWarn("Unexpected direct non-VPN error on host " + targetHost + ": " + e.getMessage());
+                }
+            }
+        }
+
+        // 2. Стандартный путь (или резервный, если обход VPN заблокирован системой/провайдером)
         for (int i = 0; i < candidateHosts.size(); i++) {
             String targetHost = candidateHosts.get(i);
             try {
-                KodikResponse response = extractFromHost(parsed, targetHost, forceRefresh);
+                KodikResponse response = extractFromHost(httpClient, parsed, targetHost, forceRefresh);
                 if (response != null && response.isSuccess() && response.getData() != null && !response.getData().isEmpty()) {
                     lastWorkingHost = targetHost;
+                    lastExtractionUsedDirectNetwork = false;
                     FAILED_HOSTS.remove(targetHost);
                     return response;
                 }
@@ -216,7 +270,7 @@ public class KodikLinksExtractor {
         return false;
     }
 
-    private KodikResponse extractFromHost(ParsedKodikLink parsed, String host, boolean forceRefresh) throws IOException {
+    private KodikResponse extractFromHost(OkHttpClient client, ParsedKodikLink parsed, String host, boolean forceRefresh) throws IOException {
         String iframeUrl = parsed.buildIframeUrl(host);
         String currentEndpoint = cachedEndpoint;
 
@@ -225,7 +279,7 @@ public class KodikLinksExtractor {
         //    поэтому сразу идём за iframe HTML без лишнего RTT и таймаута.
         if (!forceRefresh && parsed.hasSignedParams()) {
             Map<String, String> fastParams = buildBaseFormParams(parsed, host);
-            JsonObject fastPayload = requestVideoInfo(host, currentEndpoint, iframeUrl, fastParams, true);
+            JsonObject fastPayload = requestVideoInfo(client, host, currentEndpoint, iframeUrl, fastParams, true);
             KodikResponse fastResponse = toValidResponse(fastPayload);
             if (fastResponse != null) {
                 return fastResponse;
@@ -234,11 +288,12 @@ public class KodikLinksExtractor {
 
         // 2. Полный путь: загружаем страницу iframe (получаем редирект-домен, cookies и подписи d_sign/pd_sign).
         //    JS-бандл app.player_single.*.js НЕ скачивается заранее — только если кэшированный endpoint не сработает.
-        IframeContext iframeCtx = fetchIframeContext(iframeUrl, host, parsed, forceRefresh);
+        IframeContext iframeCtx = fetchIframeContext(client, iframeUrl, host, parsed, forceRefresh);
         String effectiveHost = iframeCtx.effectiveHost;
         String effectiveEndpoint = iframeCtx.endpoint;
 
         JsonObject fullPayload = requestVideoInfo(
+                client,
                 effectiveHost,
                 effectiveEndpoint,
                 iframeCtx.effectiveIframeUrl,
@@ -255,6 +310,7 @@ public class KodikLinksExtractor {
         //     скачиваем JS-скрипт плеера, извлекаем актуальный endpoint и сразу делаем POST.
         if (!iframeCtx.endpointResolvedFromScript && iframeCtx.playerScriptUrl != null) {
             String scriptEndpoint = fetchEndpointFromPlayerScript(
+                    client,
                     iframeCtx.playerScriptUrl,
                     iframeCtx.effectiveIframeUrl,
                     forceRefresh
@@ -262,6 +318,7 @@ public class KodikLinksExtractor {
             if (scriptEndpoint != null && !scriptEndpoint.isEmpty() && !scriptEndpoint.equals(effectiveEndpoint)) {
                 effectiveEndpoint = scriptEndpoint;
                 JsonObject scriptPayload = requestVideoInfo(
+                        client,
                         effectiveHost,
                         effectiveEndpoint,
                         iframeCtx.effectiveIframeUrl,
@@ -278,6 +335,7 @@ public class KodikLinksExtractor {
 
         // 3. Fallback на GET-запрос (для старых/нестандартных нод Kodik)
         JsonObject getPayload = requestVideoInfo(
+                client,
                 effectiveHost,
                 effectiveEndpoint,
                 iframeCtx.effectiveIframeUrl,
@@ -293,6 +351,7 @@ public class KodikLinksExtractor {
         // Если ни актуальный endpoint, ни DEFAULT_ENDPOINT не совпали — проверим DEFAULT_ENDPOINT с полными параметрами
         if (!DEFAULT_ENDPOINT.equals(effectiveEndpoint)) {
             JsonObject fallbackPayload = requestVideoInfo(
+                    client,
                     effectiveHost,
                     DEFAULT_ENDPOINT,
                     iframeCtx.effectiveIframeUrl,
@@ -385,6 +444,7 @@ public class KodikLinksExtractor {
      * Запрашивает информацию о видео (POST по протоколу плеера Kodik или GET в режиме совместимости).
      */
     private JsonObject requestVideoInfo(
+            OkHttpClient client,
             String host,
             String endpoint,
             String refererUrl,
@@ -433,7 +493,7 @@ public class KodikLinksExtractor {
             reqBuilder.url(urlBuilder.build()).get();
         }
 
-        try (Response response = httpClient.newCall(reqBuilder.build()).execute()) {
+        try (Response response = client.newCall(reqBuilder.build()).execute()) {
             if (!response.isSuccessful() || response.body() == null) {
                 logDebug("Video info HTTP " + response.code() + " (" + (usePost ? "POST" : "GET") + ") on " + baseUrl);
                 return null;
@@ -454,6 +514,7 @@ public class KodikLinksExtractor {
      * подписанные параметры urlParams / videoInfo и актуальный API endpoint из бандла плеера.
      */
     private IframeContext fetchIframeContext(
+            OkHttpClient client,
             String iframeUrl,
             String initialHost,
             ParsedKodikLink parsed,
@@ -471,7 +532,7 @@ public class KodikLinksExtractor {
         String effectiveHost = initialHost;
         String effectiveIframeUrl = iframeUrl;
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = client.newCall(request).execute()) {
             if (!response.isSuccessful() || response.body() == null) {
                 throw new IOException("Страница плеера Kodik вернула HTTP " + response.code());
             }
@@ -555,7 +616,7 @@ public class KodikLinksExtractor {
         );
     }
 
-    private String fetchEndpointFromPlayerScript(String scriptUrl, String referer, boolean forceRefresh) {
+    private String fetchEndpointFromPlayerScript(OkHttpClient client, String scriptUrl, String referer, boolean forceRefresh) {
         if (scriptUrl == null || scriptUrl.isEmpty()) {
             return null;
         }
@@ -573,7 +634,7 @@ public class KodikLinksExtractor {
                 .header("Accept", "*/*")
                 .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = client.newCall(request).execute()) {
             if (!response.isSuccessful() || response.body() == null) {
                 return null;
             }

@@ -77,6 +77,38 @@
         android:background="@drawable/bg_ignore_info_card"
         android:visibility="visible" />
 
+    <!-- VPN warning notice for Kodik -->
+    <LinearLayout
+        android:id="@+id/errorVpnWarningContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:padding="10dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_btn_ignore_danger"
+        android:visibility="visible">
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginEnd="8dp"
+            android:src="@drawable/ic_exclamation_mark"
+            app:tint="@color/dialog_danger_text"
+            android:contentDescription="@null" />
+
+        <TextView
+            android:id="@+id/errorVpnWarningText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Для работы плеера Kodik необходимо выключить VPN"
+            android:textColor="@color/dialog_danger_text"
+            android:textSize="12.5sp"
+            android:fontFamily="@font/open_sans_semibold"
+            android:lineSpacingExtra="1dp" />
+    </LinearLayout>
+
     <!-- Full technical log area -->
     <ScrollView
         android:id="@+id/errorLogScrollView"

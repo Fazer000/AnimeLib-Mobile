@@ -32,4 +32,17 @@ public class FastDnsUnitTest {
         assertEquals(first, second);
         assertEquals("Second lookup within TTL should hit in-memory cache", 1, resolverCalls.get());
     }
+
+    @Test
+    public void testParsesDohJsonResponseAddresses() {
+        String dohJson = "{\"Status\":0,\"Answer\":["
+                + "{\"name\":\"kodikplayer.com\",\"type\":5,\"TTL\":300,\"data\":\"alias.kodikplayer.com.\"},"
+                + "{\"name\":\"alias.kodikplayer.com\",\"type\":1,\"TTL\":60,\"data\":\"185.22.153.10\"},"
+                + "{\"name\":\"alias.kodikplayer.com\",\"type\":1,\"TTL\":60,\"data\":\"185.22.153.11\"}"
+                + "]}";
+        List<InetAddress> parsed = FastDns.parseDohJsonAddresses("kodikplayer.com", dohJson);
+        assertEquals(2, parsed.size());
+        assertEquals("185.22.153.10", parsed.get(0).getHostAddress());
+        assertEquals("185.22.153.11", parsed.get(1).getHostAddress());
+    }
 }

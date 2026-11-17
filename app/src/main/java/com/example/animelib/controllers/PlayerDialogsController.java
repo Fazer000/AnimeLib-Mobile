@@ -19,6 +19,7 @@ import com.example.animelib.settings.SettingsBottomSheet;
 import com.example.animelib.ui.DownloadsActivity;
 import com.example.animelib.ui.TitleWebViewBottomSheet;
 import com.example.animelib.util.CustomToast;
+import com.example.animelib.util.VpnNetworkHelper;
 import com.google.android.material.button.MaterialButton;
 
 import java.util.List;
@@ -82,6 +83,8 @@ public class PlayerDialogsController {
             TextView titleTv = dialogView.findViewById(R.id.errorTitleText);
             TextView messageTv = dialogView.findViewById(R.id.errorMessageText);
             TextView detailsTv = dialogView.findViewById(R.id.errorPlayerDetailsText);
+            View vpnWarningContainer = dialogView.findViewById(R.id.errorVpnWarningContainer);
+            TextView vpnWarningTv = dialogView.findViewById(R.id.errorVpnWarningText);
             TextView logTv = dialogView.findViewById(R.id.errorLogDetailsText);
             MaterialButton retryBtn = dialogView.findViewById(R.id.retryButton);
             MaterialButton goToDownloadsBtn = dialogView.findViewById(R.id.goToDownloadsButton);
@@ -102,6 +105,16 @@ public class PlayerDialogsController {
 
             if (messageTv != null) {
                 messageTv.setText(message != null ? message : "Произошла ошибка при загрузке видео.");
+            }
+
+            boolean vpnActive = VpnNetworkHelper.isVpnActive(activity);
+            if (vpnWarningContainer != null && vpnWarningTv != null) {
+                vpnWarningContainer.setVisibility(View.VISIBLE);
+                if (vpnActive) {
+                    vpnWarningTv.setText("Обнаружен включённый VPN. Для работы плеера Kodik необходимо выключить VPN.");
+                } else {
+                    vpnWarningTv.setText("Для работы плеера Kodik необходимо выключить VPN.");
+                }
             }
 
             PlayersManager pm = callback != null ? callback.getPlayersManager() : null;
@@ -128,6 +141,7 @@ public class PlayerDialogsController {
             fullLogBuilder.append("=== ANIME LIB ERROR LOG ===");
             fullLogBuilder.append("\nTitle: ").append(title != null ? title : "Ошибка");
             fullLogBuilder.append("\nMessage: ").append(message != null ? message : "Нет сообщения");
+            fullLogBuilder.append("\nVPN Active: ").append(vpnActive);
             if (playerDetailsBuilder.length() > 0) {
                 fullLogBuilder.append("\nDetails: ").append(playerDetailsBuilder);
             }

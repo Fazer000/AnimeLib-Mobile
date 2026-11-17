@@ -35,12 +35,14 @@ import androidx.media3.ui.PlayerView;
 import com.example.animelib.R;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.api.FastDns;
+import com.example.animelib.api.KodikLinksExtractor;
 import com.example.animelib.managers.AmbientLightManager;
 import com.example.animelib.managers.GesturesManager;
 import com.example.animelib.managers.TimecodeManager;
 import com.example.animelib.util.AutoQualityHelper;
 import com.example.animelib.util.MediaCacheManager;
 import com.example.animelib.util.SurroundRenderersFactory;
+import com.example.animelib.util.VpnNetworkHelper;
 import com.google.android.material.button.MaterialButton;
 
 import java.util.ArrayList;
@@ -92,6 +94,7 @@ public class PlayerPlaybackController {
     private final Handler watchdogHandler = new Handler(Looper.getMainLooper());
     private Runnable bufferingWatchdogRunnable = null;
     private OkHttpClient streamingOkHttpClient;
+    private OkHttpClient directNonVpnStreamingClient;
     private ExoPlayer player;
     private ExoPlayer backgroundPlayer;
     private boolean isSeamlessSwitching = false;
@@ -191,10 +194,24 @@ public class PlayerPlaybackController {
         return streamingOkHttpClient;
     }
 
+    private synchronized OkHttpClient getOrCreateDirectNonVpnStreamingClient() {
+        if (directNonVpnStreamingClient == null) {
+            directNonVpnStreamingClient = getOrCreateStreamingOkHttpClient().newBuilder()
+                    .socketFactory(VpnNetworkHelper.createPhysicalNetworkSocketFactory())
+                    .dns(VpnNetworkHelper.createPhysicalNetworkDns(FastDns.INSTANCE))
+                    .build();
+        }
+        return directNonVpnStreamingClient;
+    }
+
     public HttpDataSource.Factory buildStreamHttpDataSourceFactory(String targetUrl) {
-        OkHttpDataSource.Factory okFactory = new OkHttpDataSource.Factory(getOrCreateStreamingOkHttpClient())
+        boolean isKodik = ApiService.isKodikStreamUrl(targetUrl);
+        OkHttpClient activeClient = (isKodik && KodikLinksExtractor.didLastExtractionUseDirectNetwork())
+                ? getOrCreateDirectNonVpnStreamingClient()
+                : getOrCreateStreamingOkHttpClient();
+        OkHttpDataSource.Factory okFactory = new OkHttpDataSource.Factory(activeClient)
                 .setUserAgent(STREAM_USER_AGENT);
-        if (ApiService.isKodikStreamUrl(targetUrl)) {
+        if (isKodik) {
             okFactory.setDefaultRequestProperties(ApiService.buildKodikStreamHeaders());
         } else if (callback != null && callback.getApiService() != null) {
             Map<String, String> headers = callback.getApiService().getVideoRequestHeaders();
