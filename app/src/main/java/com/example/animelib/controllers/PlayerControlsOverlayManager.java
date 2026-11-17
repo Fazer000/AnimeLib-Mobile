@@ -53,6 +53,7 @@ public class PlayerControlsOverlayManager {
         PlayerCommentsController getCommentsController();
         PlayerNextEpisodeController getNextEpisodeController();
         boolean isOfflineMode();
+        boolean isPlayingDownloadedVideo();
         boolean isCommentsDisabledInPlayer();
         int getLongSkipDuration();
         boolean isAutoPlayEnabled();
@@ -262,7 +263,13 @@ public class PlayerControlsOverlayManager {
 
         if (!isPortrait) {
             if (ui.episodesMenuButton != null) ui.episodesMenuButton.setVisibility(visibility);
-            if (ui.menuToggleButton != null) ui.menuToggleButton.setVisibility(visibility);
+            if (ui.menuToggleButton != null) {
+                ui.menuToggleButton.setVisibility(visibility);
+                boolean isDownloaded = callback != null && (callback.isOfflineMode() || callback.isPlayingDownloadedVideo());
+                ui.menuToggleButton.setEnabled(true);
+                ui.menuToggleButton.setClickable(true);
+                ui.menuToggleButton.setAlpha(isDownloaded ? 0.3f : 1.0f);
+            }
             if (ui.commentsButton != null) {
                 ui.commentsButton.setVisibility(!commentsDisabled && visible ? View.VISIBLE : View.GONE);
             }

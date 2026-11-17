@@ -251,6 +251,10 @@ public class PlayersManager {
      * Показать меню плееров
      */
     public void showMenu() {
+        if (context instanceof com.example.animelib.VideoPlayerActivity
+                && ((com.example.animelib.VideoPlayerActivity) context).isPlayingDownloadedVideo()) {
+            return;
+        }
         boolean isPortrait = context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT;
         if (isPortrait) {
             showVoiceoverBottomSheet();
@@ -279,6 +283,10 @@ public class PlayersManager {
      * Показать BottomSheet с озвучками для портретного режима
      */
     public void showVoiceoverBottomSheet() {
+        if (context instanceof com.example.animelib.VideoPlayerActivity
+                && ((com.example.animelib.VideoPlayerActivity) context).isPlayingDownloadedVideo()) {
+            return;
+        }
         if (context instanceof com.example.animelib.VideoPlayerActivity) {
             ((com.example.animelib.VideoPlayerActivity) context).syncCurrentPlayerDataForDownloadedIfNeeded();
         }

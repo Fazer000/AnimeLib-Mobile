@@ -570,6 +570,20 @@ public class PlayerQualityController {
                     host.isPlayingDownloadedVideo()
             );
         }
+        runOnUi(() -> {
+            if (host == null) return;
+            boolean isDownloaded = host.isOfflineMode() || host.isPlayingDownloadedVideo();
+            PlayerUIBinder ui = host.getUiBinder();
+            if (ui != null && ui.menuToggleButton != null) {
+                ui.menuToggleButton.setEnabled(true);
+                ui.menuToggleButton.setClickable(true);
+                ui.menuToggleButton.setAlpha(isDownloaded ? 0.3f : 1.0f);
+            }
+            PlayerPortraitController portraitCtrl = host.getPortraitController();
+            if (portraitCtrl != null) {
+                portraitCtrl.updateVoiceoverButtonState();
+            }
+        });
     }
 
     public void onQualitySelectedFromSettings(String quality) {

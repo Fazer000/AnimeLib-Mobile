@@ -36,6 +36,7 @@ public class PlayerPanelsController {
         PlayersManager getPlayersManager();
         CommentsManager getCommentsManager();
         boolean isOfflineMode();
+        boolean isPlayingDownloadedVideo();
         int getStatusBarHeight();
         void updateAmbientPlayerTransform(float scale, float translationX, float translationY, boolean isCropped, float availRight);
         void setAmbientTransitionAnimating(boolean animating);
@@ -64,7 +65,7 @@ public class PlayerPanelsController {
     }
 
     public void openMenuPanel() {
-        if (callback.isOfflineMode()) return;
+        if (callback.isOfflineMode() || callback.isPlayingDownloadedVideo()) return;
         PlayerView pv = callback.getPlayerView();
         if (pv != null) {
             pv.hideController();

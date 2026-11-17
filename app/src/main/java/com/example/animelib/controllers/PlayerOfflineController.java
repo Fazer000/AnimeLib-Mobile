@@ -291,15 +291,19 @@ public class PlayerOfflineController {
         if (animeInfoCtrl != null) {
             animeInfoCtrl.hidePlaceholderAnimated();
         }
+        EpisodeResponse.PlayerData syntheticData = createSyntheticPlayerDataForDownloaded(downloadedEp);
+        playersManager.setCurrentPlayerData(syntheticData);
         playersManager.hideMenu();
         PlayerUIBinder ui = host.getUiBinder();
         if (ui != null && ui.menuLoadingOverlay != null) {
             ui.menuLoadingOverlay.setVisibility(View.GONE);
         }
+        if (ui != null && ui.menuToggleButton != null) {
+            ui.menuToggleButton.setEnabled(true);
+            ui.menuToggleButton.setClickable(true);
+            ui.menuToggleButton.setAlpha(0.3f);
+        }
         host.hideLoading();
-
-        EpisodeResponse.PlayerData syntheticData = createSyntheticPlayerDataForDownloaded(downloadedEp);
-        playersManager.setCurrentPlayerData(syntheticData);
 
         PlayerPortraitController portraitCtrl = host.getPortraitController();
         if (portraitCtrl != null) {
@@ -331,12 +335,22 @@ public class PlayerOfflineController {
         if (ui != null && ui.menuLoadingOverlay != null) {
             ui.menuLoadingOverlay.setVisibility(View.GONE);
         }
+        if (ui != null && ui.menuToggleButton != null) {
+            ui.menuToggleButton.setEnabled(true);
+            ui.menuToggleButton.setClickable(true);
+            ui.menuToggleButton.setAlpha(0.3f);
+        }
         host.hideLoading();
 
         EpisodeResponse.PlayerData synthetic = createSyntheticPlayerDataForDownloaded(downloadedEp);
         PlayersManager playersManager = host.getPlayersManager();
         if (playersManager != null) {
             playersManager.setCurrentPlayerData(synthetic);
+        }
+        PlayerPortraitController portraitCtrl = host.getPortraitController();
+        if (portraitCtrl != null) {
+            portraitCtrl.updateEpisodeHeaderQuick();
+            portraitCtrl.updatePortraitVoiceoverPlayerUI();
         }
         PlayerVideoResolverController resolverCtrl = host.getVideoResolverController();
         if (resolverCtrl != null) {
@@ -670,7 +684,8 @@ public class PlayerOfflineController {
             }
 
             if (ui.menuToggleButton != null) {
-                ui.menuToggleButton.setEnabled(false);
+                ui.menuToggleButton.setEnabled(true);
+                ui.menuToggleButton.setClickable(true);
                 ui.menuToggleButton.setAlpha(0.3f);
             }
 

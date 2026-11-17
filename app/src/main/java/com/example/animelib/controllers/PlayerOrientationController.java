@@ -63,6 +63,7 @@ public class PlayerOrientationController {
         VerticalGesturesManager getVerticalGesturesManager();
         TimecodeManager getTimecodeManager();
         boolean isOfflineMode();
+        boolean isPlayingDownloadedVideo();
         String getCurrentAnimeId();
         String getAnimeUrl();
     }
@@ -504,17 +505,19 @@ public class PlayerOrientationController {
                 }
             }
             if (episodesMenuBtn != null) episodesMenuBtn.setVisibility(isPortrait ? View.GONE : View.VISIBLE);
+            boolean isDownloadedPlayback = isOfflineMode || host.isPlayingDownloadedVideo();
             if (menuToggleBtn != null) {
                 menuToggleBtn.setVisibility(isPortrait ? View.GONE : View.VISIBLE);
-                if (isOfflineMode) {
-                    menuToggleBtn.setEnabled(false);
-                    menuToggleBtn.setAlpha(0.3f);
-                }
+                menuToggleBtn.setEnabled(true);
+                menuToggleBtn.setClickable(true);
+                menuToggleBtn.setAlpha(isDownloadedPlayback ? 0.3f : 1.0f);
             }
 
             PlayerPortraitController portraitCtrl = host.getPortraitController();
             if (isOfflineMode && portraitCtrl != null) {
                 portraitCtrl.applyOfflineButtonStates();
+            } else if (portraitCtrl != null) {
+                portraitCtrl.updateVoiceoverButtonState();
             }
 
             if (menuToggleFullscreenBtn != null) {

@@ -11,6 +11,7 @@ import androidx.annotation.Nullable;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 
+import android.content.Context;
 import com.example.animelib.R;
 import com.example.animelib.managers.EpisodesManager;
 import com.example.animelib.managers.GesturesManager;
@@ -19,6 +20,7 @@ import com.example.animelib.managers.RelatedTitlesManager;
 import com.example.animelib.managers.VerticalGesturesManager;
 import com.example.animelib.ui.DraggableSidePanel;
 import com.example.animelib.ui.M3LinearProgressIndicator;
+import com.example.animelib.util.CustomToast;
 import com.example.animelib.util.GesturePlaqueAnimationHelper;
 
 /**
@@ -30,6 +32,7 @@ public class PlayerGesturesCoordinator {
     private static final String TAG = "PlayerGesturesCoord";
 
     public interface GesturesHost {
+        @Nullable Context getContext();
         @Nullable ExoPlayer getPlayer();
         @Nullable PlayerView getPlayerView();
         @Nullable EpisodesManager getEpisodesManager();
@@ -39,6 +42,7 @@ public class PlayerGesturesCoordinator {
         @Nullable PlayerControlsOverlayManager getControlsOverlayManager();
         @Nullable PlayerUIBinder getUiBinder();
         boolean isOfflineMode();
+        boolean isPlayingDownloadedVideo();
         boolean isCommentsDisabledInPlayer();
     }
 
@@ -120,6 +124,13 @@ public class PlayerGesturesCoordinator {
 
                 @Override
                 public void onPlayersSwipeFromRight() {
+                    if (host.isOfflineMode() || host.isPlayingDownloadedVideo()) {
+                        Context ctx = host.getContext();
+                        if (ctx != null) {
+                            CustomToast.showInfo(ctx, "Выбор озвучки недоступен для скачанного файла");
+                        }
+                        return;
+                    }
                     PlayersManager pm = host.getPlayersManager();
                     if (pm != null) {
                         pm.showMenu();
@@ -152,7 +163,7 @@ public class PlayerGesturesCoordinator {
 
                 @Override
                 public void onPlayersDragProgress(float progress) {
-                    if (host.isOfflineMode()) return;
+                    if (host.isOfflineMode() || host.isPlayingDownloadedVideo()) return;
                     PlayerView pv = host.getPlayerView();
                     if (progress > 0 && pv != null) {
                         pv.hideController();
@@ -166,10 +177,10 @@ public class PlayerGesturesCoordinator {
 
                 @Override
                 public void onPanelDragComplete(GesturesManager.EdgeSwipeType type, boolean shouldOpen) {
-                    if (host.isOfflineMode()) return;
                     PlayerUIBinder ui = host.getUiBinder();
                     switch (type) {
                         case COMMENTS_RIGHT:
+                            if (host.isOfflineMode() || host.isCommentsDisabledInPlayer()) return;
                             if (ui != null && ui.commentsPanelContainer != null) {
                                 ui.commentsPanelContainer.completeDrag(shouldOpen);
                             }
@@ -179,6 +190,12 @@ public class PlayerGesturesCoordinator {
                             }
                             break;
                         case PLAYERS_RIGHT:
+                            if (host.isOfflineMode() || host.isPlayingDownloadedVideo()) {
+                                if (shouldOpen && host.getContext() != null) {
+                                    CustomToast.showInfo(host.getContext(), "Выбор озвучки недоступен для скачанного файла");
+                                }
+                                return;
+                            }
                             if (ui != null && ui.menuPanelContainer != null) {
                                 ui.menuPanelContainer.completeDrag(shouldOpen);
                             }

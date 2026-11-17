@@ -141,16 +141,19 @@ public class PlayerPortraitController {
         }
 
         if (portraitVoiceoverPlayerButton != null) {
-            portraitVoiceoverPlayerButton.setOnClickListener(v -> ItemAnimationUtils.animateItemClick(v, () -> {
-                if (host.isOfflineMode()) {
-                    CustomToast.showInfo(activity, "Выбор озвучки недоступен в офлайн режиме");
+            portraitVoiceoverPlayerButton.setOnClickListener(v -> {
+                if (isVoiceoverSelectionDisabled()) {
+                    CustomToast.showInfo(activity, "Выбор озвучки недоступен для скачанного файла");
                     return;
                 }
-                PlayersManager pm = host.getPlayersManager();
-                if (pm != null) {
-                    pm.toggleMenu();
-                }
-            }));
+                ItemAnimationUtils.animateItemClick(v, () -> {
+                    PlayersManager pm = host.getPlayersManager();
+                    if (pm != null) {
+                        pm.toggleMenu();
+                    }
+                });
+            });
+            updateVoiceoverButtonState();
         }
 
         ApiService apiService = host.getApiService();
@@ -286,6 +289,24 @@ public class PlayerPortraitController {
         }
     }
 
+    private boolean isVoiceoverSelectionDisabled() {
+        PlayerOfflineController offlineCtrl = host.getOfflineController();
+        return host.isOfflineMode() || (offlineCtrl != null && offlineCtrl.isPlayingDownloadedVideo());
+    }
+
+    public void updateVoiceoverButtonState() {
+        boolean isDisabled = isVoiceoverSelectionDisabled();
+        if (portraitVoiceoverPlayerButton != null) {
+            portraitVoiceoverPlayerButton.setEnabled(true);
+            portraitVoiceoverPlayerButton.setClickable(true);
+            portraitVoiceoverPlayerButton.setFocusable(true);
+            portraitVoiceoverPlayerButton.setAlpha(isDisabled ? 0.5f : 1.0f);
+        }
+        if (ivPortraitVoiceoverChevron != null) {
+            ivPortraitVoiceoverChevron.setVisibility(isDisabled ? View.GONE : View.VISIBLE);
+        }
+    }
+
     public void applyOfflineButtonStates() {
         if (portraitDownloadButton != null) {
             portraitDownloadButton.setEnabled(false);
@@ -299,15 +320,7 @@ public class PlayerPortraitController {
             portraitBookmarkButton.setFocusable(true);
             portraitBookmarkButton.setAlpha(1.0f);
         }
-        if (portraitVoiceoverPlayerButton != null) {
-            portraitVoiceoverPlayerButton.setEnabled(false);
-            portraitVoiceoverPlayerButton.setClickable(false);
-            portraitVoiceoverPlayerButton.setFocusable(false);
-            portraitVoiceoverPlayerButton.setAlpha(0.6f);
-        }
-        if (ivPortraitVoiceoverChevron != null) {
-            ivPortraitVoiceoverChevron.setVisibility(View.GONE);
-        }
+        updateVoiceoverButtonState();
         if (portraitDownloadProgressContainer != null) {
             portraitDownloadProgressContainer.setVisibility(View.GONE);
         }
@@ -433,6 +446,7 @@ public class PlayerPortraitController {
 
     public void updatePortraitVoiceoverPlayerUI() {
         host.safeRunOnUiThread(() -> {
+            updateVoiceoverButtonState();
             if (tvPortraitVoiceover == null || tvPortraitPlayer == null) return;
             PlayerOfflineController offlineCtrl = host.getOfflineController();
             DownloadedEpisodeEntity downloadedEp = offlineCtrl != null ? offlineCtrl.getDownloadedEpisodeForActive() : null;

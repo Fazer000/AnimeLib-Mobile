@@ -473,6 +473,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
 
             @Override
+            public boolean isPlayingDownloadedVideo() {
+                return VideoPlayerActivity.this.isPlayingDownloadedVideo();
+            }
+
+            @Override
             public int getStatusBarHeight() {
                 return playerOrientationController != null ? playerOrientationController.getStatusBarHeight() : 0;
             }
@@ -2698,6 +2703,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private PlayerGesturesCoordinator.GesturesHost createGesturesHost() {
         return new PlayerGesturesCoordinator.GesturesHost() {
             @Override
+            public Context getContext() {
+                return VideoPlayerActivity.this;
+            }
+
+            @Override
             public ExoPlayer getPlayer() {
                 return getActivePlayer();
             }
@@ -2740,6 +2750,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
             @Override
             public boolean isOfflineMode() {
                 return VideoPlayerActivity.this.isOfflineMode();
+            }
+
+            @Override
+            public boolean isPlayingDownloadedVideo() {
+                return VideoPlayerActivity.this.isPlayingDownloadedVideo();
             }
 
             @Override
@@ -2789,6 +2804,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
             @Override
             public boolean isOfflineMode() {
                 return VideoPlayerActivity.this.isOfflineMode();
+            }
+
+            @Override
+            public boolean isPlayingDownloadedVideo() {
+                return VideoPlayerActivity.this.isPlayingDownloadedVideo();
             }
 
             @Override
@@ -2886,7 +2906,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
             @Override
             public void togglePlayersMenu() {
-                if (!isOfflineMode() && playersManager != null) {
+                if (isOfflineMode() || isPlayingDownloadedVideo()) {
+                    CustomToast.showInfo(VideoPlayerActivity.this, "Выбор озвучки недоступен для скачанного файла");
+                    return;
+                }
+                if (playersManager != null) {
                     playersManager.toggleMenu();
                 }
             }
@@ -3189,6 +3213,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
             @Override
             public boolean isOfflineMode() {
                 return VideoPlayerActivity.this.isOfflineMode();
+            }
+
+            @Override
+            public boolean isPlayingDownloadedVideo() {
+                return VideoPlayerActivity.this.isPlayingDownloadedVideo();
             }
 
             @Override
