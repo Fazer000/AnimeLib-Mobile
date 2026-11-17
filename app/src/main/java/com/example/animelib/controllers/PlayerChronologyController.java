@@ -1,6 +1,8 @@
 package com.example.animelib.controllers;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 
@@ -16,6 +18,7 @@ import com.example.animelib.ui.FranchiseMapBottomSheet;
 public class PlayerChronologyController {
 
     private static final String TAG = "PlayerChronologyCtrl";
+    private static final long PRELOAD_DELAY_MS = 500L;
 
     public interface ChronologyCallback {
         Context getContext();
@@ -26,10 +29,12 @@ public class PlayerChronologyController {
     }
 
     private final ChronologyCallback callback;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private View btnOpenChronologyMap;
     private FranchiseResponse currentFranchiseResponse;
     private long currentShikimoriId = -1;
+    private Runnable pendingPreloadRunnable;
 
     public PlayerChronologyController(ChronologyCallback callback) {
         this.callback = callback;
@@ -52,7 +57,17 @@ public class PlayerChronologyController {
         }
     }
 
+    public void cancelPendingPreload() {
+        if (pendingPreloadRunnable != null) {
+            mainHandler.removeCallbacks(pendingPreloadRunnable);
+            pendingPreloadRunnable = null;
+        }
+    }
+
     public void loadChronologyForAnime(AnimeInfoResponse animeInfo) {
+        cancelPendingPreload();
+        currentFranchiseResponse = null;
+
         if (callback != null && callback.isOfflineMode()) {
             if (btnOpenChronologyMap != null) {
                 btnOpenChronologyMap.setEnabled(false);
@@ -98,26 +113,37 @@ public class PlayerChronologyController {
             return;
         }
 
-        // Preload franchise in background so when user taps "Карта", it opens instantly
-        ApiService apiService = callback != null ? callback.getApiService() : null;
-        if (apiService == null) return;
-
-        Log.d(TAG, "Preloading franchise data for Shikimori ID: " + shikimoriId);
-        apiService.getFranchise(shikimoriId, new ApiService.FranchiseCallback() {
-            @Override
-            public void onFranchiseReceived(FranchiseResponse response) {
-                currentFranchiseResponse = response;
-                Log.d(TAG, "Franchise preloaded successfully for ID: " + shikimoriId);
+        // Preload franchise in background with a slight delay so critical video playback starts first
+        final long targetShikimoriId = shikimoriId;
+        pendingPreloadRunnable = () -> {
+            pendingPreloadRunnable = null;
+            if (currentShikimoriId != targetShikimoriId || (callback != null && callback.isOfflineMode())) {
+                return;
             }
+            ApiService apiService = callback != null ? callback.getApiService() : null;
+            if (apiService == null) return;
 
-            @Override
-            public void onError(String error) {
-                Log.w(TAG, "Franchise background preload warning: " + error);
-            }
-        });
+            Log.d(TAG, "Preloading franchise data for Shikimori ID: " + targetShikimoriId);
+            apiService.getFranchise(targetShikimoriId, new ApiService.FranchiseCallback() {
+                @Override
+                public void onFranchiseReceived(FranchiseResponse response) {
+                    if (currentShikimoriId == targetShikimoriId) {
+                        currentFranchiseResponse = response;
+                    }
+                    Log.d(TAG, "Franchise preloaded successfully for ID: " + targetShikimoriId);
+                }
+
+                @Override
+                public void onError(String error) {
+                    Log.w(TAG, "Franchise background preload warning: " + error);
+                }
+            });
+        };
+        mainHandler.postDelayed(pendingPreloadRunnable, PRELOAD_DELAY_MS);
     }
 
     public void openChronologyMapSheet() {
+        cancelPendingPreload();
         if (callback == null) return;
         Context context = callback.getContext();
         if (context == null) return;

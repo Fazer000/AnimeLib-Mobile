@@ -767,21 +767,22 @@ public class EpisodesManager {
      */
     public void loadEpisodesWithBookmark(String animeId, String mediaSlug) {
         Log.d(TAG, "Loading episodes and bookmark for anime ID: " + animeId + ", mediaSlug: " + mediaSlug);
-        
-        // Загружаем эпизоды
+        this.animeBookmark = null;
+
+        // Загружаем эпизоды (Этап 1 критического пути запуска видео)
         loadEpisodes(animeId);
-        
-        // Загружаем закладку
-        if (mediaSlug != null && !mediaSlug.isEmpty()) {
+
+        // Загружаем закладку параллельно только если пользователь авторизован
+        if (mediaSlug != null && !mediaSlug.isEmpty() && apiService != null && apiService.isAuthorized()) {
             bookmarkManager.fetchAnimeBookmark(mediaSlug, new BookmarkManager.AnimeBookmarkCallback() {
                 @Override
                 public void onBookmarkReceived(com.example.animelib.models.AnimeBookmarkResponse response) {
                     safeRunOnUiThread(() -> {
                         if (response != null && response.getData() != null) {
                             animeBookmark = response.getData();
-                            Log.d(TAG, "Anime bookmark loaded: episode " + animeBookmark.getItemId() + 
+                            Log.d(TAG, "Anime bookmark loaded: episode " + animeBookmark.getItemId() +
                                        ", progress: " + animeBookmark.getProgress());
-                            
+
                             // Обновляем RecyclerView с информацией о закладке
                             updateEpisodesRecyclerView();
                             if (bookmarkLoadedListener != null) {
@@ -790,11 +791,10 @@ public class EpisodesManager {
                         }
                     });
                 }
-                
+
                 @Override
                 public void onError(String error) {
-                    Log.e(TAG, "Error loading anime bookmark: " + error);
-                    // Не критично, продолжаем без закладки
+                    Log.d(TAG, "Skipping/failed anime bookmark load: " + error);
                 }
             });
         }

@@ -1373,6 +1373,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
         if (playerPortraitController != null) {
             playerPortraitController.updatePortraitHeaderTitlesUI();
         }
+        if (playerChronologyController != null) {
+            playerChronologyController.cancelPendingPreload();
+        }
         if (playerCommentsController != null) {
             playerCommentsController.resetCommentsOnEpisodeChange(true);
         }
@@ -1436,6 +1439,12 @@ public class VideoPlayerActivity extends AppCompatActivity {
             playerAnimeInfoController.showSkeletons();
         }
 
+        // Этап 1 (Приоритет 1): Список эпизодов + единый запрос закладки (если авторизован) для быстрого старта видео
+        if (playerEpisodesController != null) {
+            playerEpisodesController.loadEpisodes(currentAnimeId, getIntent());
+        }
+
+        // Этап 1 (Приоритет 2): Метаданные тайтла (после получения запускает Этап 3: связанные тайтлы и предзагрузку хронологии)
         apiService.fetchAnimeInfo(animeSlug, new ApiService.AnimeInfoCallback() {
             @Override
             public void onAnimeInfoReceived(AnimeInfoResponse response) {
@@ -1463,17 +1472,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
                             }
                         });
                     }
+                    // Fallback: если метаданные не загрузились, всё равно подгружаем связанные тайтлы
+                    if (playerRelatedTitlesController != null && currentAnimeId != null && !isOfflineMode()) {
+                        playerRelatedTitlesController.loadRelatedTitles(currentAnimeId, animeUrl);
+                    }
                 });
             }
         });
-
-        if (playerRelatedTitlesController != null && !isOfflineMode()) {
-            playerRelatedTitlesController.loadRelatedTitles(currentAnimeId, animeUrl);
-        }
-        if (playerEpisodesController != null) {
-            playerEpisodesController.loadEpisodes(currentAnimeId, getIntent());
-        }
-        fetchAndApplyWatchStatus();
     }
 
     private void onEpisodeSelected(EpisodesListResponse.EpisodeItem episode, boolean autoPlayRequested) {
@@ -2252,6 +2257,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
         if (playerDownloadController != null) {
             playerDownloadController.cleanup();
             playerDownloadController = null;
+        }
+        if (playerChronologyController != null) {
+            playerChronologyController.cancelPendingPreload();
         }
         if (playerDialogsController != null) {
             playerDialogsController.dismissErrorDialog();

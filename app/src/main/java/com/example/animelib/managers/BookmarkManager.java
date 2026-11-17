@@ -216,12 +216,18 @@ public class BookmarkManager {
      * @param callback Колбэк для результата
      */
     public void fetchAnimeBookmark(String mediaSlug, AnimeBookmarkCallback callback) {
-        Log.d(TAG, "Fetching anime bookmark for mediaSlug: " + mediaSlug);
+        final String normalizedSlug = mediaSlug != null ? mediaSlug.trim() : null;
+        if (normalizedSlug == null || normalizedSlug.isEmpty()) {
+            if (callback != null) {
+                callback.onError("Empty mediaSlug");
+            }
+            return;
+        }
 
-        if (mediaSlug != null && bookmarkCache.containsKey(mediaSlug)) {
-            AnimeBookmarkResponse cached = bookmarkCache.get(mediaSlug);
+        if (bookmarkCache.containsKey(normalizedSlug)) {
+            AnimeBookmarkResponse cached = bookmarkCache.get(normalizedSlug);
             if (cached != null) {
-                Log.d(TAG, "Returning cached anime bookmark for: " + mediaSlug);
+                Log.d(TAG, "Returning cached anime bookmark for: " + normalizedSlug);
                 if (callback != null) {
                     callback.onBookmarkReceived(cached);
                 }
@@ -229,19 +235,19 @@ public class BookmarkManager {
             }
         }
 
-        if (apiService == null) {
-            Log.w(TAG, "ApiService is null, skipping bookmark fetch");
+        if (apiService == null || !apiService.isAuthorized()) {
             if (callback != null) {
-                callback.onError("ApiService is not available");
+                callback.onError("Not authorized or ApiService unavailable");
             }
             return;
         }
 
-        apiService.fetchAnimeBookmark(mediaSlug, new ApiService.AnimeBookmarkCallback() {
+        Log.d(TAG, "Fetching anime bookmark for mediaSlug: " + normalizedSlug);
+        apiService.fetchAnimeBookmark(normalizedSlug, new ApiService.AnimeBookmarkCallback() {
             @Override
             public void onBookmarkReceived(AnimeBookmarkResponse response) {
-                if (response != null && mediaSlug != null) {
-                    bookmarkCache.put(mediaSlug, response);
+                if (response != null) {
+                    bookmarkCache.put(normalizedSlug, response);
                 }
                 if (callback != null) {
                     callback.onBookmarkReceived(response);
@@ -250,7 +256,7 @@ public class BookmarkManager {
 
             @Override
             public void onError(String error) {
-                Log.e(TAG, "Error fetching anime bookmark: " + error);
+                Log.d(TAG, "Bookmark fetch finished without active bookmark: " + error);
                 if (callback != null) {
                     callback.onError(error);
                 }
@@ -293,6 +299,14 @@ public class BookmarkManager {
      */
     public void getLastEpisodeFromBookmark(String mediaSlug, java.util.List<EpisodesListResponse.EpisodeItem> episodesList,
                                          LastEpisodeCallback callback) {
+        if (episodesList == null || episodesList.isEmpty() || mediaSlug == null || mediaSlug.trim().isEmpty()
+                || apiService == null || !apiService.isAuthorized()) {
+            if (callback != null) {
+                callback.onNoBookmarkFound();
+            }
+            return;
+        }
+
         Log.d(TAG, "Getting last episode from bookmark for mediaSlug: " + mediaSlug);
 
         fetchAnimeBookmark(mediaSlug, new AnimeBookmarkCallback() {
@@ -301,12 +315,22 @@ public class BookmarkManager {
                 if (response != null && response.getData() != null) {
                     AnimeBookmarkResponse.BookmarkData bookmark = response.getData();
                     int bookmarkedEpisodeId = bookmark.getItemId();
+                    int bookmarkedEpisodeNumber = (bookmark.getMeta() != null) ? bookmark.getMeta().getItemNumber() : 0;
 
                     EpisodesListResponse.EpisodeItem foundEpisode = null;
                     for (EpisodesListResponse.EpisodeItem episode : episodesList) {
-                        if (episode.getId() == bookmarkedEpisodeId) {
+                        if (bookmarkedEpisodeId > 0 && episode.getId() == bookmarkedEpisodeId) {
                             foundEpisode = episode;
                             break;
+                        }
+                    }
+                    if (foundEpisode == null && bookmarkedEpisodeNumber > 0) {
+                        String targetNum = String.valueOf(bookmarkedEpisodeNumber);
+                        for (EpisodesListResponse.EpisodeItem episode : episodesList) {
+                            if (episode.getNumber() != null && targetNum.equals(episode.getNumber().trim())) {
+                                foundEpisode = episode;
+                                break;
+                            }
                         }
                     }
 
@@ -326,7 +350,7 @@ public class BookmarkManager {
 
             @Override
             public void onError(String error) {
-                Log.e(TAG, "Error getting bookmark: " + error);
+                Log.d(TAG, "No bookmark resolved: " + error);
                 callback.onNoBookmarkFound();
             }
         });

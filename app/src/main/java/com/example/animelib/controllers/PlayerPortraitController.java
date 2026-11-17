@@ -720,7 +720,12 @@ public class PlayerPortraitController {
 
         AnimeInfoResponse currentAnimeInfo = host.getCurrentAnimeInfo();
         if (currentAnimeInfo != null && currentAnimeInfo.getData() != null) {
-            displayAnimeInfo(currentAnimeInfo);
+            String rus = currentAnimeInfo.getData().getRus_name();
+            if (rus == null || rus.isEmpty()) rus = currentAnimeInfo.getData().getName();
+            if (rus != null && !rus.isEmpty() && animeTitleView != null) {
+                SkeletonHelper.hideSkeleton(animeTitleView, rus);
+            }
+            updatePortraitHeaderTitlesUI();
             return;
         }
 
@@ -829,7 +834,20 @@ public class PlayerPortraitController {
         host.markAnimeInfoLoaded();
 
         if (animeInfo == null || animeInfo.getData() == null) return;
+        boolean alreadyDisplayed = (host.getCurrentAnimeInfo() == animeInfo);
         host.setCurrentAnimeInfo(animeInfo);
+
+        String rus = animeInfo.getData().getRus_name();
+        if (rus == null || rus.isEmpty()) rus = animeInfo.getData().getName();
+        PlayerUIBinder ui = host.getUiBinder();
+        if (rus != null && !rus.isEmpty() && ui != null && ui.animeTitleView != null) {
+            SkeletonHelper.hideSkeleton(ui.animeTitleView, rus);
+            updatePortraitHeaderTitlesUI();
+        }
+
+        if (alreadyDisplayed) {
+            return;
+        }
 
         PlayerRelatedTitlesController relatedCtrl = host.getRelatedTitlesController();
         if (relatedCtrl != null) {
@@ -852,14 +870,6 @@ public class PlayerPortraitController {
         String currentAnimeId = host.getCurrentAnimeId();
         if (relatedCtrl != null && currentAnimeId != null && !host.isOfflineMode()) {
             relatedCtrl.loadRelatedTitles(currentAnimeId, host.getAnimeUrl());
-        }
-
-        String rus = animeInfo.getData().getRus_name();
-        if (rus == null || rus.isEmpty()) rus = animeInfo.getData().getName();
-        PlayerUIBinder ui = host.getUiBinder();
-        if (rus != null && !rus.isEmpty() && ui != null && ui.animeTitleView != null) {
-            SkeletonHelper.hideSkeleton(ui.animeTitleView, rus);
-            updatePortraitHeaderTitlesUI();
         }
     }
 }
