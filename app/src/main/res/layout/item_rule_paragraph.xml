@@ -3,9 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:paddingVertical="10dp"
-    android:paddingHorizontal="14dp"
-    android:background="@drawable/bg_comment_preview"
+    android:paddingVertical="2dp"
     android:layout_marginBottom="8dp">
 
     <TextView
@@ -14,7 +12,8 @@
         android:layout_height="wrap_content"
         android:textColor="@color/primary_text_color"
         android:textColorLink="?attr/secondaryColor"
-        android:textSize="13.5sp"
-        android:lineSpacingExtra="2dp" />
+        android:fontFamily="@font/open_sans"
+        android:textSize="14sp"
+        android:lineSpacingExtra="3dp" />
 
 </LinearLayout>

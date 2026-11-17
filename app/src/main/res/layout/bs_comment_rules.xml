@@ -33,20 +33,13 @@
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
-            <FrameLayout
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:background="@drawable/bg_rules_icon_circle"
-                android:layout_marginEnd="10dp">
-
-                <ImageView
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_toast_info"
-                    app:tint="?attr/secondaryColor"
-                    android:contentDescription="Rules" />
-            </FrameLayout>
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_marginEnd="10dp"
+                android:src="@drawable/ic_toast_info"
+                app:tint="?attr/secondaryColor"
+                android:contentDescription="Rules" />
 
             <TextView
                 android:id="@+id/tvRulesTitle"

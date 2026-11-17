@@ -50,17 +50,46 @@ public class QualityAdapter extends RecyclerView.Adapter<QualityAdapter.QualityV
         String quality = qualities.get(position);
         Context context = holder.itemView.getContext();
 
-        // 1. Grouped M3 background shape
+        // 1. Grouped M3 background shape (downloaded item is standalone single M3 item)
         int itemCount = getItemCount();
+        boolean isDownloaded = com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(quality);
         if (holder.itemContainer != null) {
-            if (itemCount == 1) {
+            float density = context.getResources().getDisplayMetrics().density;
+            int bottomMarginPx = Math.round(3 * density);
+
+            if (isDownloaded) {
                 holder.itemContainer.setBackgroundResource(R.drawable.bg_m3_item_single);
-            } else if (position == 0) {
-                holder.itemContainer.setBackgroundResource(R.drawable.bg_m3_item_top);
-            } else if (position == itemCount - 1) {
-                holder.itemContainer.setBackgroundResource(R.drawable.bg_m3_item_bottom);
+                if (position < itemCount - 1) {
+                    bottomMarginPx = Math.round(8 * density);
+                }
             } else {
-                holder.itemContainer.setBackgroundResource(R.drawable.bg_m3_item_middle);
+                boolean isFirstInGroup = (position == 0)
+                        || com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(qualities.get(position - 1));
+                boolean isLastInGroup = (position == itemCount - 1)
+                        || com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(qualities.get(position + 1));
+
+                if (isFirstInGroup && isLastInGroup) {
+                    holder.itemContainer.setBackgroundResource(R.drawable.bg_m3_item_single);
+                } else if (isFirstInGroup) {
+                    holder.itemContainer.setBackgroundResource(R.drawable.bg_m3_item_top);
+                } else if (isLastInGroup) {
+                    holder.itemContainer.setBackgroundResource(R.drawable.bg_m3_item_bottom);
+                } else {
+                    holder.itemContainer.setBackgroundResource(R.drawable.bg_m3_item_middle);
+                }
+
+                if (isLastInGroup && position < itemCount - 1) {
+                    bottomMarginPx = Math.round(8 * density);
+                }
+            }
+
+            ViewGroup.LayoutParams lp = holder.itemContainer.getLayoutParams();
+            if (lp instanceof ViewGroup.MarginLayoutParams) {
+                ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
+                if (mlp.bottomMargin != bottomMarginPx) {
+                    mlp.bottomMargin = bottomMarginPx;
+                    holder.itemContainer.setLayoutParams(mlp);
+                }
             }
         }
 

@@ -179,7 +179,16 @@ public class FranchiseChronologyBottomSheet extends FlexibleBottomSheetDialog {
                 });
             }
 
-            popupWindow.showAsDropDown(anchorView, 0, (int) (6 * density));
+            int[] location = new int[2];
+            anchorView.getLocationOnScreen(location);
+            int anchorX = location[0];
+            int screenWidth = context.getResources().getDisplayMetrics().widthPixels;
+            int rightMarginPx = (int) (16 * density);
+            int desiredRight = Math.min(anchorX + anchorView.getWidth(), screenWidth - rightMarginPx);
+            int targetX = Math.max(rightMarginPx, desiredRight - popupWidth);
+            int offsetX = targetX - anchorX;
+
+            popupWindow.showAsDropDown(anchorView, offsetX, (int) (6 * density));
         } catch (Exception e) {
             Log.e(TAG, "Error showing chronology sort popup", e);
         }

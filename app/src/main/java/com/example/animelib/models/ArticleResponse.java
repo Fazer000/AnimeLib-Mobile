@@ -55,6 +55,9 @@ public class ArticleResponse {
         @SerializedName("text")
         private String text;
 
+        @SerializedName("attrs")
+        private NodeAttrs attrs;
+
         @SerializedName("content")
         private List<Node> content;
 
@@ -63,8 +66,20 @@ public class ArticleResponse {
 
         public String getType() { return type; }
         public String getText() { return text; }
+        public NodeAttrs getAttrs() { return attrs; }
         public List<Node> getContent() { return content; }
         public List<Mark> getMarks() { return marks; }
+    }
+
+    public static class NodeAttrs {
+        @SerializedName("level")
+        private Integer level;
+
+        @SerializedName("start")
+        private Integer start;
+
+        public int getLevel() { return level != null ? level : 2; }
+        public int getStart() { return start != null ? start : 1; }
     }
 
     public static class Mark {

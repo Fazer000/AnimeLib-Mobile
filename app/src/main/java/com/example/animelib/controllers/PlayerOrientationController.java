@@ -613,8 +613,8 @@ public class PlayerOrientationController {
 
                     progressParams.topMargin = (int) (2 * density);
                     progressParams.bottomMargin = (int) (12 * density);
-                    progressParams.leftMargin = (int) (4 * density);
-                    progressParams.rightMargin = (int) (4 * density);
+                    progressParams.leftMargin = (int) (7 * density);
+                    progressParams.rightMargin = (int) (7 * density);
                 } else {
                     if (episodesManager != null && episodesManager.isEpisodesMenuVisible()) {
                         playersControlBarView.setTranslationY(0f);
@@ -629,8 +629,8 @@ public class PlayerOrientationController {
 
                     progressParams.topMargin = (int) (2 * density);
                     progressParams.bottomMargin = (int) (16 * density);
-                    progressParams.leftMargin = (int) (8 * density);
-                    progressParams.rightMargin = (int) (8 * density);
+                    progressParams.leftMargin = (int) (11 * density);
+                    progressParams.rightMargin = (int) (11 * density);
                 }
 
                 timeAndControlsContainer.setLayoutParams(timeAndControlsParams);

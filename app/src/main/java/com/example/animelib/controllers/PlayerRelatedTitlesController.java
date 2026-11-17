@@ -555,9 +555,10 @@ public class PlayerRelatedTitlesController {
 
         try {
             View popupView = android.view.LayoutInflater.from(context).inflate(R.layout.popup_related_filter, null);
+            int popupWidth = dpToPx(context, 165);
             android.widget.PopupWindow popupWindow = new android.widget.PopupWindow(
                     popupView,
-                    dpToPx(context, 165),
+                    popupWidth,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     true
             );
@@ -604,7 +605,16 @@ public class PlayerRelatedTitlesController {
                 applyRelatedFilter("ranobe", "Ранобэ");
             });
 
-            popupWindow.showAsDropDown(anchor, 0, dpToPx(context, 6));
+            int[] location = new int[2];
+            anchor.getLocationOnScreen(location);
+            int anchorX = location[0];
+            int screenWidth = context.getResources().getDisplayMetrics().widthPixels;
+            int rightMarginPx = dpToPx(context, 16);
+            int desiredRight = Math.min(anchorX + anchor.getWidth(), screenWidth - rightMarginPx);
+            int targetX = Math.max(rightMarginPx, desiredRight - popupWidth);
+            int offsetX = targetX - anchorX;
+
+            popupWindow.showAsDropDown(anchor, offsetX, dpToPx(context, 6));
         } catch (Exception e) {
             Log.e(TAG, "Error showing related filter popup", e);
         }
