@@ -278,7 +278,8 @@ public class CommentsApi {
                 Request.Builder reqBuilder = new Request.Builder()
                         .url(apiUrl)
                         .addHeader("Authorization", "Bearer " + core.getBearerToken())
-                        .addHeader("Referer", "https://v5.animelib.org/");
+                        .addHeader("Origin", core.resolveSiteUrl())
+                        .addHeader("Referer", core.getRefererUrl());
 
                 Request request = isEdit ? reqBuilder.put(body).build() : reqBuilder.post(body).build();
 
@@ -476,7 +477,8 @@ public class CommentsApi {
                 Request request = new Request.Builder()
                         .url(apiUrl)
                         .addHeader("Authorization", "Bearer " + core.getBearerToken())
-                        .addHeader("Referer", "https://v5.animelib.org/")
+                        .addHeader("Origin", core.resolveSiteUrl())
+                        .addHeader("Referer", core.getRefererUrl())
                         .post(core.createJsonRequestBody(requestBody.toString()))
                         .build();
 

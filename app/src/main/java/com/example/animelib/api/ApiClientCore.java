@@ -11,6 +11,7 @@ import com.example.animelib.R;
 import com.example.animelib.data.DatabaseManager;
 import com.example.animelib.data.entity.TokenEntity;
 import com.example.animelib.ui.VideoUrlHelper;
+import com.example.animelib.util.SiteUtils;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -44,7 +45,7 @@ import okhttp3.RequestBody;
 public class ApiClientCore {
     private static final String TAG = "ApiService";
 
-    public static final String API_BASE_CDNLIBS = "https://api.cdnlibs.org/api";
+    public static final String API_BASE_CDNLIBS = "https://hapi.hentaicdn.org/api";
     public static final String API_BASE_HAPI = "https://hapi.hentaicdn.org/api";
     public static final MediaType JSON_MEDIA_TYPE = MediaType.get("application/json; charset=utf-8");
 
@@ -221,22 +222,22 @@ public class ApiClientCore {
         return buildApiRequest(url, false);
     }
 
-    private String resolveSiteUrl() {
+    public String resolveSiteUrl() {
         long now = System.currentTimeMillis();
         String cached = cachedSiteUrl;
         if (cached != null && (now - cachedSiteUrlAtMs) < AUTH_META_CACHE_TTL_MS) {
             return cached;
         }
-        String siteUrl = databaseManager != null ? databaseManager.getSiteUrl() : null;
-        if (siteUrl == null || siteUrl.isEmpty()) {
-            siteUrl = "https://" + context.getString(R.string.site_url);
-        }
-        if (siteUrl.endsWith("/")) {
-            siteUrl = siteUrl.substring(0, siteUrl.length() - 1);
-        }
+        String rawSiteUrl = databaseManager != null ? databaseManager.getSiteUrl() : null;
+        boolean isOtherRegion = SiteUtils.isOtherRegion(rawSiteUrl, context);
+        String siteUrl = isOtherRegion ? "https://animelib.org" : "https://v5.animelib.org";
         cachedSiteUrl = siteUrl;
         cachedSiteUrlAtMs = now;
         return siteUrl;
+    }
+
+    public String getRefererUrl() {
+        return resolveSiteUrl() + "/";
     }
 
     private TokenEntity resolveTokenEntity() {
@@ -379,8 +380,10 @@ public class ApiClientCore {
     public Map<String, String> getVideoRequestHeaders() {
         String token = getBearerToken();
         String normalizedToken = token != null ? token.trim() : "";
+        String siteUrl = resolveSiteUrl();
+        String cacheKey = normalizedToken + "|" + siteUrl;
         Map<String, String> snapshot = cachedVideoHeadersMap;
-        if (snapshot != null && normalizedToken.equals(cachedVideoHeadersToken)) {
+        if (snapshot != null && cacheKey.equals(cachedVideoHeadersToken)) {
             return snapshot;
         }
 
@@ -389,8 +392,8 @@ public class ApiClientCore {
             headers.put("Authorization", "Bearer " + stripBearerPrefix(normalizedToken));
         }
 
-        headers.put("Referer", "https://animelib.org/");
-        headers.put("Origin", "https://animelib.org");
+        headers.put("Referer", siteUrl + "/");
+        headers.put("Origin", siteUrl);
         headers.put("User-Agent", USER_AGENT_MOBILE);
         headers.put("accept", "video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5");
         headers.put("accept-language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7");
@@ -402,7 +405,7 @@ public class ApiClientCore {
         headers.put("sec-fetch-site", "cross-site");
 
         Map<String, String> unmodifiable = Collections.unmodifiableMap(headers);
-        cachedVideoHeadersToken = normalizedToken;
+        cachedVideoHeadersToken = cacheKey;
         cachedVideoHeadersMap = unmodifiable;
         return unmodifiable;
     }

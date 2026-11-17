@@ -58,7 +58,7 @@ public class BookmarksApi {
             JsonObject requestBody = createBookmarkRequestBody(
                     mediaSlug, episodeId, teamId, translationType, playerName, episodeNumber, currentTimecode, statusId
             );
-            Request request = core.buildApiRequest(ApiClientCore.API_BASE_CDNLIBS + "/bookmarks")
+            Request request = core.buildApiRequest(ApiClientCore.API_BASE_HAPI + "/bookmarks")
                     .post(core.createJsonRequestBody(requestBody))
                     .build();
 
@@ -90,7 +90,7 @@ public class BookmarksApi {
                 JsonObject requestBody = createBookmarkRequestBody(
                         mediaSlug, episodeId, teamId, 2, "Animelib", episodeNumber, currentTimecode, statusId
                 );
-                Request request = core.buildApiRequest(ApiClientCore.API_BASE_CDNLIBS + "/bookmarks")
+                Request request = core.buildApiRequest(ApiClientCore.API_BASE_HAPI + "/bookmarks")
                         .post(core.createJsonRequestBody(requestBody))
                         .build();
 
@@ -146,7 +146,7 @@ public class BookmarksApi {
         core.safeExecute(() -> {
             try {
                 JsonObject requestBody = createWatchStatusRequestBody(mediaSlug.trim(), statusId);
-                Request request = core.buildApiRequest(ApiClientCore.API_BASE_CDNLIBS + "/bookmarks")
+                Request request = core.buildApiRequest(ApiClientCore.API_BASE_HAPI + "/bookmarks")
                         .post(core.createJsonRequestBody(requestBody))
                         .build();
 
@@ -197,7 +197,7 @@ public class BookmarksApi {
         }
         try {
             JsonObject requestBody = createWatchStatusRequestBody(mediaSlug.trim(), statusId);
-            Request request = core.buildApiRequest(ApiClientCore.API_BASE_CDNLIBS + "/bookmarks")
+            Request request = core.buildApiRequest(ApiClientCore.API_BASE_HAPI + "/bookmarks")
                     .post(core.createJsonRequestBody(requestBody))
                     .build();
 
@@ -289,7 +289,7 @@ public class BookmarksApi {
 
         core.safeExecute(() -> {
             try {
-                String apiUrl = ApiClientCore.API_BASE_CDNLIBS + "/anime/" + cacheKey + "/bookmark";
+                String apiUrl = ApiClientCore.API_BASE_HAPI + "/anime/" + cacheKey + "/bookmark";
                 Request request = core.buildApiRequest(apiUrl).build();
 
                 core.getHttpClient().newCall(request).enqueue(new Callback() {
@@ -350,7 +350,7 @@ public class BookmarksApi {
                     userId = ApiClientCore.extractUserIdFromToken(tokenEntity.getAccessToken());
                 }
 
-                String apiUrl = ApiClientCore.API_BASE_CDNLIBS + "/bookmarks?page=1&sort_by=name&sort_type=desc&status=21";
+                String apiUrl = ApiClientCore.API_BASE_HAPI + "/bookmarks?page=1&sort_by=name&sort_type=desc&status=21";
                 if (userId != null && !userId.trim().isEmpty()) {
                     apiUrl += "&user_id=" + userId.trim();
                 }

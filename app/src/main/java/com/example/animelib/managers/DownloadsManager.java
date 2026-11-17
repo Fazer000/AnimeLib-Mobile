@@ -3,6 +3,7 @@ package com.example.animelib.managers;
 import android.content.Context;
 import android.util.Log;
 
+import com.example.animelib.api.ApiClientCore;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.api.KodikLinksExtractor;
 import com.example.animelib.data.DatabaseManager;
@@ -13,6 +14,7 @@ import com.example.animelib.models.DownloadTask;
 import com.example.animelib.models.EpisodeResponse;
 import com.example.animelib.models.KodikResponse;
 import com.example.animelib.ui.VideoUrlHelper;
+import com.example.animelib.util.SiteUtils;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
@@ -862,12 +864,16 @@ public class DownloadsManager {
 
         // 2. Try ApiService HTTP request synchronously
         try {
-            String url = "https://api.cdnlibs.org/api/anime/" + task.getAnimeId() + "?fields[]=rate";
+            String rawSiteUrl = databaseManager != null ? databaseManager.getSiteUrl() : null;
+            boolean isOtherRegion = SiteUtils.isOtherRegion(rawSiteUrl, context);
+            String siteOrigin = isOtherRegion ? "https://animelib.org" : "https://v5.animelib.org";
+            String url = ApiClientCore.API_BASE_HAPI + "/anime/" + task.getAnimeId() + "?fields[]=rate";
             Request request = new Request.Builder()
                     .url(url)
                     .addHeader("Accept", "*/*")
                     .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36")
-                    .addHeader("Referer", "https://anilib.me/")
+                    .addHeader("Origin", siteOrigin)
+                    .addHeader("Referer", siteOrigin + "/")
                     .addHeader("Site-Id", "5")
                     .build();
             try (Response response = client.newCall(request).execute()) {

@@ -88,7 +88,7 @@ public class AnimeCatalogApi {
 
         core.safeExecute(() -> {
             try {
-                String apiUrl = ApiClientCore.API_BASE_CDNLIBS + "/anime/" + cacheKey + ANIME_INFO_FIELDS;
+                String apiUrl = ApiClientCore.API_BASE_HAPI + "/anime/" + cacheKey + ANIME_INFO_FIELDS;
                 Request request = core.buildApiRequest(apiUrl).build();
 
                 core.getHttpClient().newCall(request).enqueue(new Callback() {
@@ -170,7 +170,7 @@ public class AnimeCatalogApi {
         core.safeExecute(() -> {
             try {
                 String encodedQuery = URLEncoder.encode(trimmedQuery, "UTF-8");
-                String apiUrl = ApiClientCore.API_BASE_CDNLIBS + "/anime?fields[]=rate_avg&fields[]=rate&fields[]=releaseDate&q=" + encodedQuery;
+                String apiUrl = ApiClientCore.API_BASE_HAPI + "/anime?fields[]=rate_avg&fields[]=rate&fields[]=releaseDate&q=" + encodedQuery;
                 Request request = core.buildSearchApiRequest(apiUrl).build();
 
                 core.getHttpClient().newCall(request).enqueue(new Callback() {
@@ -217,7 +217,7 @@ public class AnimeCatalogApi {
         }
         try {
             String encodedQuery = URLEncoder.encode(query.trim(), "UTF-8");
-            String apiUrl = ApiClientCore.API_BASE_CDNLIBS + "/anime?fields[]=rate_avg&fields[]=rate&fields[]=releaseDate&q=" + encodedQuery;
+            String apiUrl = ApiClientCore.API_BASE_HAPI + "/anime?fields[]=rate_avg&fields[]=rate&fields[]=releaseDate&q=" + encodedQuery;
             Request request = core.buildSearchApiRequest(apiUrl).build();
 
             try (Response response = core.getHttpClient().newCall(request).execute()) {
@@ -267,7 +267,7 @@ public class AnimeCatalogApi {
 
         core.safeExecute(() -> {
             try {
-                String apiUrl = ApiClientCore.API_BASE_CDNLIBS + "/episodes?anime_id=" + cacheKey;
+                String apiUrl = ApiClientCore.API_BASE_HAPI + "/episodes?anime_id=" + cacheKey;
                 Request request = core.buildApiRequest(apiUrl).build();
 
                 core.getHttpClient().newCall(request).enqueue(new Callback() {
@@ -337,7 +337,7 @@ public class AnimeCatalogApi {
 
         core.safeExecute(() -> {
             try {
-                String apiUrl = ApiClientCore.API_BASE_CDNLIBS + "/episodes/" + episodeId;
+                String apiUrl = ApiClientCore.API_BASE_HAPI + "/episodes/" + episodeId;
                 Request request = core.buildApiRequest(apiUrl).build();
 
                 core.getHttpClient().newCall(request).enqueue(new Callback() {
@@ -510,7 +510,7 @@ public class AnimeCatalogApi {
 
         core.safeExecute(() -> {
             try {
-                String url = ApiClientCore.API_BASE_CDNLIBS + "/anime/" + cacheKey + "/relations";
+                String url = ApiClientCore.API_BASE_HAPI + "/anime/" + cacheKey + "/relations";
                 Request request = core.buildApiRequest(url).build();
 
                 core.getHttpClient().newCall(request).enqueue(new Callback() {
@@ -593,7 +593,7 @@ public class AnimeCatalogApi {
 
     public void checkApiForToast(ApiService.ToastCheckCallback callback) {
         core.safeExecute(() -> {
-            String apiUrl = ApiClientCore.API_BASE_CDNLIBS + "/";
+            String apiUrl = ApiClientCore.API_BASE_HAPI + "/";
             Request request = core.buildApiRequest(apiUrl).build();
 
             core.getHttpClient().newCall(request).enqueue(new Callback() {

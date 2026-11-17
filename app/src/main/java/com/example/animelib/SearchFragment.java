@@ -27,6 +27,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.animelib.adapters.SearchResultsAdapter;
+import com.example.animelib.api.ApiClientCore;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.models.SearchResponse;
 import com.google.android.material.tabs.TabLayout;
@@ -411,7 +412,7 @@ public class SearchFragment extends Fragment {
         Log.d(TAG, "Anime long clicked: " + item.getRusName() + " (slug_url: " + item.getSlugUrl() + ")");
         
         closeKeyboard();
-        String animeUrl = "https://api.cdnlibs.org/api/anime/" + item.getSlugUrl();
+        String animeUrl = ApiClientCore.API_BASE_HAPI + "/anime/" + item.getSlugUrl();
         
         if (getContext() != null) {
             VideoPlayerActivity.startFromAnimePage(getContext(), animeUrl);

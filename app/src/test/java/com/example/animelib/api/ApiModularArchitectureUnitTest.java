@@ -116,4 +116,10 @@ public class ApiModularArchitectureUnitTest {
         assertNull(cache.getValid(slugKey, 60_000L));
         assertNull(cache.getValid(idKey, 60_000L));
     }
+
+    @Test
+    public void apiClientCore_usesUnifiedHapiDomain() {
+        assertEquals("https://hapi.hentaicdn.org/api", ApiClientCore.API_BASE_HAPI);
+        assertEquals("https://hapi.hentaicdn.org/api", ApiClientCore.API_BASE_CDNLIBS);
+    }
 }
