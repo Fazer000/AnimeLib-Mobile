@@ -60,8 +60,8 @@ public class CommentsManager {
     private static final int PORTRAIT_VIEWPORT_REVEAL_THRESHOLD_DP = 1000;
     private static final int PORTRAIT_SCROLL_THRESHOLD_DP = 650;
     private static final int PORTRAIT_SCROLL_REVEAL_SIZE = 6;
-    private static final long POST_PLAYBACK_PORTRAIT_LOAD_DELAY_MS = 1200L;
-    private static final long FALLBACK_PORTRAIT_LOAD_DELAY_MS = 4500L;
+    private static final long POST_PLAYBACK_PORTRAIT_LOAD_DELAY_MS = 400L;
+    private static final long FALLBACK_PORTRAIT_LOAD_DELAY_MS = 3000L;
     private static final long STICKY_COALESCE_WAIT_MS = 320L;
     private static final long PAGINATION_ERROR_COOLDOWN_MS = 4000L;
 
@@ -175,7 +175,7 @@ public class CommentsManager {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable deferredPortraitLoadRunnable = () -> {
         if (!isOfflineMode && !isCommentsDisabledInPlayer() && isPortraitOrientation()) {
-            triggerInitialLoadIfNeeded(false);
+            triggerInitialLoadIfNeeded(true);
         }
     };
     private final Runnable panelOpenFallbackRunnable = () -> {
@@ -653,15 +653,13 @@ public class CommentsManager {
                     && (dataCoordinator.hasPreparedSnapshot() || !dataCoordinator.isPagesEmpty())) {
                 portraitAdapterNeedsSync = false;
                 applyCachedSnapshotOrPagesToAdapter(portraitCommentsAdapter);
-                hideLoadingOverlay(portraitCommentsLoadingOverlay);
                 updateEmptyCommentsState();
+                updatePortraitLoadingState();
             } else if (isLoadingComments && dataCoordinator.isPagesEmpty()) {
                 if (activeInitialLoadCoordinator != null) {
                     activeInitialLoadCoordinator.materializeRequested = true;
                 }
-                if (portraitCommentsAdapter == null || portraitCommentsAdapter.getCommentDisplayCount() == 0) {
-                    showLoadingOverlay(portraitCommentsLoadingOverlay);
-                }
+                updatePortraitLoadingState();
             } else if (!hasInitialCommentsLoadError
                     && (!isPortraitCommentsRequested || (dataCoordinator.isPagesEmpty() && !isLoadingComments && currentEpisode != null))) {
                 mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
@@ -1037,12 +1035,10 @@ public class CommentsManager {
             putParsedContentOnBothAdapters(snapshot.parsedContent);
 
             if (isPortraitOrientation()) {
-                boolean shouldMaterializePortrait = coord.materializeRequested || isPortraitMaterializeScrolled();
-                if (shouldMaterializePortrait && portraitCommentsAdapter != null) {
+                if (portraitCommentsAdapter != null) {
                     portraitAdapterNeedsSync = false;
                     portraitCommentsAdapter.applyPreparedSnapshot(snapshot, null);
                 } else {
-                    // Держим в RAM без раздувания View, пока пользователь смотрит видео наверху экрана
                     portraitAdapterNeedsSync = true;
                 }
                 landscapeAdapterNeedsSync = true;
@@ -1056,6 +1052,7 @@ public class CommentsManager {
                 portraitAdapterNeedsSync = true;
             }
 
+            updatePortraitLoadingState();
             updateEmptyCommentsState();
             if (dataCallback != null && responseCopy != null) {
                 dataCallback.onCommentsLoaded(allItems);
@@ -1102,7 +1099,10 @@ public class CommentsManager {
                     putParsedContentOnBothAdapters(updatedSnapshot.parsedContent);
 
                     if (isPortraitOrientation()) {
-                        if (!portraitAdapterNeedsSync && portraitCommentsAdapter != null && isPortraitMaterializeScrolled()) {
+                        if (!portraitAdapterNeedsSync && portraitCommentsAdapter != null) {
+                            portraitCommentsAdapter.applyPreparedSnapshot(updatedSnapshot, diff);
+                        } else if (portraitCommentsAdapter != null) {
+                            portraitAdapterNeedsSync = false;
                             portraitCommentsAdapter.applyPreparedSnapshot(updatedSnapshot, diff);
                         } else {
                             portraitAdapterNeedsSync = true;
@@ -1116,6 +1116,7 @@ public class CommentsManager {
                         }
                         portraitAdapterNeedsSync = true;
                     }
+                    updatePortraitLoadingState();
                     updateEmptyCommentsState();
                 });
             });
@@ -1165,13 +1166,11 @@ public class CommentsManager {
             if (portraitCommentsAdapter != null) portraitCommentsAdapter.setLoadingMore(false);
 
             boolean landscapeEmpty = (commentsAdapter == null || commentsAdapter.getCommentDisplayCount() == 0);
-            boolean portraitEmpty = (portraitCommentsAdapter == null || portraitCommentsAdapter.getCommentDisplayCount() == 0);
-            if (materializeInUi && !isPortrait && isCommentsVisible && landscapeEmpty) {
+            if ((materializeInUi || isCommentsVisible) && !isPortrait && isCommentsVisible && landscapeEmpty) {
                 showLoadingOverlay(commentsLoadingOverlay);
             }
-            boolean userViewingPortraitComments = isPortrait && (materializeInUi || isPortraitMaterializeScrolled());
-            if (userViewingPortraitComments && portraitEmpty) {
-                showLoadingOverlay(portraitCommentsLoadingOverlay);
+            if (isPortrait) {
+                updatePortraitLoadingState();
             }
         } else {
             // При бесконечном скролле показываем компактный спиннер внизу списка вместо перекрытия экрана
@@ -1402,6 +1401,7 @@ public class CommentsManager {
             hasComments = (portraitCommentsAdapter != null && portraitCommentsAdapter.hasAnySourceComments())
                     || (commentsAdapter != null && commentsAdapter.hasAnySourceComments());
         }
+        boolean hasLoadedAnyPage = !dataCoordinator.isPagesEmpty();
 
         if (!isOfflineMode && !isCommentsDisabledInPlayer() && !isLoadingComments) {
             if (hasInitialCommentsLoadError && !hasComments) {
@@ -1410,11 +1410,34 @@ public class CommentsManager {
                 return;
             }
             if (emptyCommentsText != null) {
-                emptyCommentsText.setVisibility(hasComments ? View.GONE : View.VISIBLE);
+                emptyCommentsText.setVisibility((hasLoadedAnyPage && !hasComments) ? View.VISIBLE : View.GONE);
             }
-            if (portraitEmptyCommentsText != null && isPortraitCommentsRequested) {
-                portraitEmptyCommentsText.setVisibility(hasComments ? View.GONE : View.VISIBLE);
+            if (portraitEmptyCommentsText != null) {
+                boolean showPortraitEmpty = hasLoadedAnyPage && !hasComments && !portraitAdapterNeedsSync;
+                portraitEmptyCommentsText.setVisibility(showPortraitEmpty ? View.VISIBLE : View.GONE);
             }
+        }
+    }
+
+    private void updatePortraitLoadingState() {
+        if (portraitCommentsLoadingOverlay == null) {
+            return;
+        }
+        if (isOfflineMode || isCommentsDisabledInPlayer() || hasInitialCommentsLoadError) {
+            hideLoadingOverlay(portraitCommentsLoadingOverlay);
+            return;
+        }
+        boolean hasMaterializedComments = portraitCommentsAdapter != null
+                && portraitCommentsAdapter.hasAnySourceComments();
+        boolean initialLoadCompletedEmpty = !isLoadingComments
+                && !dataCoordinator.isPagesEmpty()
+                && !portraitAdapterNeedsSync
+                && !hasMaterializedComments;
+
+        if (hasMaterializedComments || initialLoadCompletedEmpty) {
+            hideLoadingOverlay(portraitCommentsLoadingOverlay);
+        } else {
+            showLoadingOverlayImmediateIfHidden(portraitCommentsLoadingOverlay);
         }
     }
 
@@ -1422,19 +1445,23 @@ public class CommentsManager {
         if (isPlayerReadyForComments) return;
         isPlayerReadyForComments = true;
         if (!isOfflineMode && !isCommentsDisabledInPlayer() && isPortraitOrientation()
-                && isPortraitCommentsRequested && currentEpisode != null
+                && currentEpisode != null
                 && !hasInitialCommentsLoadError
                 && dataCoordinator.isPagesEmpty() && !isLoadingComments) {
+            isPortraitCommentsRequested = true;
             mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
             mainHandler.postDelayed(deferredPortraitLoadRunnable, POST_PLAYBACK_PORTRAIT_LOAD_DELAY_MS);
+            updatePortraitLoadingState();
         }
     }
 
     private void scheduleDeferredPortraitLoad() {
         mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
         if (isOfflineMode || isCommentsDisabledInPlayer() || currentEpisode == null) {
+            updatePortraitLoadingState();
             return;
         }
+        updatePortraitLoadingState();
         if (isPortraitMaterializeScrolled()) {
             triggerInitialLoadIfNeeded(true);
         } else {
@@ -1471,9 +1498,12 @@ public class CommentsManager {
             portraitCommentsAdapter.clearAll();
         }
 
-        hideLoadingOverlaysAndErrors();
+        hideLoadingOverlay(commentsLoadingOverlay);
+        if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
+        if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
         if (emptyCommentsText != null) emptyCommentsText.setVisibility(View.GONE);
         if (portraitEmptyCommentsText != null) portraitEmptyCommentsText.setVisibility(View.GONE);
+        updatePortraitLoadingState();
 
         if (reloadIfVisible && currentEpisode != null) {
             if (isPortraitOrientation() && wasPortraitRequested) {
@@ -1532,11 +1562,8 @@ public class CommentsManager {
 
             if (isPortrait) {
                 isPortraitCommentsRequested = true;
-                boolean materialize = isPortraitMaterializeScrolled();
-                if (materialize) {
-                    showLoadingOverlay(portraitCommentsLoadingOverlay);
-                }
-                loadCommentsPage(1, materialize);
+                updatePortraitLoadingState();
+                loadCommentsPage(1, true);
             } else if (wasLandscapeVisible) {
                 loadCommentsPage(1, true);
             }
@@ -1548,6 +1575,14 @@ public class CommentsManager {
                 || (this.currentEpisode != null && episode != null && this.currentEpisode.getId() != episode.getId());
         this.currentEpisode = episode;
         if (episodeChanged) {
+            mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
+            if (activeInitialLoadCoordinator != null
+                    && (episode == null || activeInitialLoadCoordinator.episodeId != episode.getId())) {
+                cancelActiveNetworkRequests();
+                requestGeneration++;
+                isLoadingComments = false;
+                dataCoordinator.clearAll(true);
+            }
             isPlayerReadyForComments = false;
             hasInitialCommentsLoadError = false;
             lastPaginationErrorTimeMs = 0L;
@@ -1561,6 +1596,8 @@ public class CommentsManager {
             } else if (!isPanelAnimatingOpen) {
                 loadCommentsPage(1, true);
             }
+        } else if (isPortraitOrientation()) {
+            updatePortraitLoadingState();
         }
     }
 
@@ -1697,16 +1734,15 @@ public class CommentsManager {
         updateSortButtonText();
         if (this.portraitCommentsRecyclerView != null && portraitAdapterNeedsSync
                 && (dataCoordinator.hasPreparedSnapshot() || !dataCoordinator.isPagesEmpty())) {
-            if (isPortraitMaterializeScrolled()) {
-                portraitAdapterNeedsSync = false;
-                applyCachedSnapshotOrPagesToAdapter(this.portraitCommentsAdapter);
-            }
+            portraitAdapterNeedsSync = false;
+            applyCachedSnapshotOrPagesToAdapter(this.portraitCommentsAdapter);
         }
         if (isOfflineMode) {
             applyOfflineViewsState();
             return;
         }
         applyCommentsDisabledState(isCommentsDisabledInPlayer());
+        updatePortraitLoadingState();
     }
 
     public void setOfflineMode(boolean offline) {
@@ -1802,6 +1838,7 @@ public class CommentsManager {
                 }
                 updateCommentsButtonVisibility(true);
             }
+            updatePortraitLoadingState();
         });
     }
 
@@ -1809,16 +1846,15 @@ public class CommentsManager {
         if (isOfflineMode || isCommentsDisabledInPlayer() || currentEpisode == null || hasInitialCommentsLoadError) return;
         if (portraitAdapterNeedsSync && portraitCommentsAdapter != null
                 && (dataCoordinator.hasPreparedSnapshot() || !dataCoordinator.isPagesEmpty())) {
-            if (materializeInUi || isPortraitMaterializeScrolled()) {
-                portraitAdapterNeedsSync = false;
-                applyCachedSnapshotOrPagesToAdapter(portraitCommentsAdapter);
-                updateEmptyCommentsState();
-            }
+            portraitAdapterNeedsSync = false;
+            applyCachedSnapshotOrPagesToAdapter(portraitCommentsAdapter);
+            updateEmptyCommentsState();
+            updatePortraitLoadingState();
             return;
         }
         if (!isLoadingComments && dataCoordinator.isPagesEmpty()
                 && (portraitCommentsAdapter == null || !portraitCommentsAdapter.hasAnySourceComments())) {
-            loadCommentsPage(1, materializeInUi);
+            loadCommentsPage(1, true);
         }
     }
 
@@ -1835,17 +1871,18 @@ public class CommentsManager {
 
         if (portraitAdapterNeedsSync && portraitCommentsAdapter != null
                 && (dataCoordinator.hasPreparedSnapshot() || !dataCoordinator.isPagesEmpty())) {
-            if (isPortraitMaterializeScrolled()) {
-                portraitAdapterNeedsSync = false;
-                applyCachedSnapshotOrPagesToAdapter(portraitCommentsAdapter);
-                updateEmptyCommentsState();
-            }
+            portraitAdapterNeedsSync = false;
+            applyCachedSnapshotOrPagesToAdapter(portraitCommentsAdapter);
+            updateEmptyCommentsState();
+            updatePortraitLoadingState();
             return;
         }
 
         if (currentEpisode != null && !isLoadingComments && !hasInitialCommentsLoadError && dataCoordinator.isPagesEmpty()
                 && (portraitCommentsAdapter == null || !portraitCommentsAdapter.hasAnySourceComments())) {
             scheduleDeferredPortraitLoad();
+        } else {
+            updatePortraitLoadingState();
         }
     }
 
@@ -2542,6 +2579,17 @@ public class CommentsManager {
             if (visibilityCallback != null) {
                 visibilityCallback.onCommentsVisibilityChanged(false);
             }
+        }
+    }
+
+    private void showLoadingOverlayImmediateIfHidden(View overlay) {
+        if (overlay == null) return;
+        overlay.animate().cancel();
+        if (overlay.getVisibility() != View.VISIBLE) {
+            overlay.setAlpha(1f);
+            overlay.setVisibility(View.VISIBLE);
+        } else if (overlay.getAlpha() < 0.99f) {
+            overlay.animate().alpha(1f).setDuration(140).start();
         }
     }
 

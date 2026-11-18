@@ -1207,6 +1207,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
                                             episodesManager.setCurrentEpisode(episode);
                                             if (playerCommentsController != null) {
                                                 playerCommentsController.setCurrentEpisode(episode);
+                                                if (!isOfflineMode() && getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT) {
+                                                    playerCommentsController.loadCommentsForPortraitIfNeeded();
+                                                }
                                             }
                                             if (playerPortraitController != null) {
                                                 playerPortraitController.updateEpisodeHeaderQuick();
