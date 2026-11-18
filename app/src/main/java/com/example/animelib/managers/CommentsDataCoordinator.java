@@ -1,5 +1,9 @@
 package com.example.animelib.managers;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.recyclerview.widget.DiffUtil;
+
 import com.example.animelib.adapters.CommentsAdapter;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.data.DatabaseManager;
@@ -8,13 +12,18 @@ import com.example.animelib.models.CommentsResponse;
 import com.example.animelib.util.CommentHtmlProcessor;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Координатор данных, HTML-предпарсинга и локальной синхронизации страниц комментариев.
+ * Координатор данных, фонового построения дерева комментариев, предпарсинга HTML
+ * и локальной синхронизации страниц без нагрузки на главный UI-поток.
  */
 public class CommentsDataCoordinator {
 
@@ -28,9 +37,68 @@ public class CommentsDataCoordinator {
         }
     }
 
+    /**
+     * Полностью подготовленный в фоне снимок дерева и плоского списка комментариев.
+     * Все поля неизменяемо собраны вне главного потока.
+     */
+    public static final class PreparedTreeSnapshot {
+        public final List<CommentsResponse.CommentItem> stickyRoots;
+        public final List<CommentsResponse.CommentItem> roots;
+        public final Map<Long, CommentsResponse.CommentItem> allById;
+        public final Map<Long, List<CommentsResponse.CommentItem>> childrenByParentId;
+        public final List<CommentsAdapter.DisplayItem> flatItems;
+        public final Map<Long, CommentHtmlProcessor.ParsedCommentContent> parsedContent;
+
+        public PreparedTreeSnapshot(List<CommentsResponse.CommentItem> stickyRoots,
+                                    List<CommentsResponse.CommentItem> roots,
+                                    Map<Long, CommentsResponse.CommentItem> allById,
+                                    Map<Long, List<CommentsResponse.CommentItem>> childrenByParentId,
+                                    List<CommentsAdapter.DisplayItem> flatItems,
+                                    Map<Long, CommentHtmlProcessor.ParsedCommentContent> parsedContent) {
+            this.stickyRoots = stickyRoots != null ? stickyRoots : Collections.emptyList();
+            this.roots = roots != null ? roots : Collections.emptyList();
+            this.allById = allById != null ? allById : Collections.emptyMap();
+            this.childrenByParentId = childrenByParentId != null ? childrenByParentId : Collections.emptyMap();
+            this.flatItems = flatItems != null ? flatItems : Collections.emptyList();
+            this.parsedContent = parsedContent != null ? parsedContent : Collections.emptyMap();
+        }
+
+        public boolean isEmpty() {
+            return stickyRoots.isEmpty() && roots.isEmpty();
+        }
+    }
+
+    /**
+     * Предподготовленный в фоне результат догрузки следующей страницы комментариев.
+     */
+    public static final class PreparedAppendBatch {
+        public final List<CommentsResponse.CommentItem> addedRoots;
+        public final List<CommentsResponse.CommentItem> addedReplies;
+        public final List<CommentsAdapter.DisplayItem> newDisplayItems;
+        public final Map<Long, CommentHtmlProcessor.ParsedCommentContent> parsedContent;
+        public final boolean requiresFullRebuild;
+        @Nullable
+        public final PreparedTreeSnapshot fullRebuildSnapshot;
+
+        public PreparedAppendBatch(List<CommentsResponse.CommentItem> addedRoots,
+                                   List<CommentsResponse.CommentItem> addedReplies,
+                                   List<CommentsAdapter.DisplayItem> newDisplayItems,
+                                   Map<Long, CommentHtmlProcessor.ParsedCommentContent> parsedContent,
+                                   boolean requiresFullRebuild,
+                                   @Nullable PreparedTreeSnapshot fullRebuildSnapshot) {
+            this.addedRoots = addedRoots != null ? addedRoots : Collections.emptyList();
+            this.addedReplies = addedReplies != null ? addedReplies : Collections.emptyList();
+            this.newDisplayItems = newDisplayItems != null ? newDisplayItems : Collections.emptyList();
+            this.parsedContent = parsedContent != null ? parsedContent : Collections.emptyMap();
+            this.requiresFullRebuild = requiresFullRebuild;
+            this.fullRebuildSnapshot = fullRebuildSnapshot;
+        }
+    }
+
     private final List<CommentsResponse.CommentItem> loadedStickyComments = new ArrayList<>();
     private final List<CommentsResponse> loadedPageResponses = new ArrayList<>();
     private final Map<Long, CommentHtmlProcessor.ParsedCommentContent> sharedParsedCache = new ConcurrentHashMap<>();
+    private volatile PreparedTreeSnapshot latestPreparedSnapshot;
 
     public List<CommentsResponse.CommentItem> getLoadedStickyComments() {
         return loadedStickyComments;
@@ -44,9 +112,23 @@ public class CommentsDataCoordinator {
         return sharedParsedCache;
     }
 
+    @Nullable
+    public PreparedTreeSnapshot getLatestPreparedSnapshot() {
+        return latestPreparedSnapshot;
+    }
+
+    public void setLatestPreparedSnapshot(@Nullable PreparedTreeSnapshot snapshot) {
+        this.latestPreparedSnapshot = snapshot;
+    }
+
+    public boolean hasPreparedSnapshot() {
+        return latestPreparedSnapshot != null;
+    }
+
     public void clearAll(boolean clearParsedCache) {
         loadedStickyComments.clear();
         loadedPageResponses.clear();
+        latestPreparedSnapshot = null;
         if (clearParsedCache) {
             sharedParsedCache.clear();
         }
@@ -101,6 +183,14 @@ public class CommentsDataCoordinator {
             List<CommentsResponse.CommentItem> items,
             int primaryColor,
             int purpleColor) {
+        return preParseCommentsBatchIntoCache(items, sharedParsedCache, primaryColor, purpleColor);
+    }
+
+    public static Map<Long, CommentHtmlProcessor.ParsedCommentContent> preParseCommentsBatchIntoCache(
+            List<CommentsResponse.CommentItem> items,
+            Map<Long, CommentHtmlProcessor.ParsedCommentContent> cache,
+            int primaryColor,
+            int purpleColor) {
         Map<Long, CommentHtmlProcessor.ParsedCommentContent> result = new HashMap<>();
         if (items == null || items.isEmpty()) return result;
 
@@ -108,13 +198,15 @@ public class CommentsDataCoordinator {
             if (item == null) continue;
             String html = item.getComment() != null ? item.getComment() : "";
             String key = CommentHtmlProcessor.computeSourceKey(html);
-            CommentHtmlProcessor.ParsedCommentContent existing = sharedParsedCache.get(item.getId());
+            CommentHtmlProcessor.ParsedCommentContent existing = cache != null ? cache.get(item.getId()) : null;
             if (existing != null && key.equals(existing.sourceHashKey)) {
                 result.put(item.getId(), existing);
             } else {
                 CommentHtmlProcessor.ParsedCommentContent parsed =
                         CommentHtmlProcessor.parseHtmlOffThread(html, primaryColor, purpleColor);
-                sharedParsedCache.put(item.getId(), parsed);
+                if (cache != null) {
+                    cache.put(item.getId(), parsed);
+                }
                 result.put(item.getId(), parsed);
             }
         }
@@ -141,6 +233,11 @@ public class CommentsDataCoordinator {
     public void syncCachedPagesIntoAdapter(CommentsAdapter targetAdapter, boolean prependRoot) {
         if (targetAdapter == null) return;
         targetAdapter.putParsedContentMap(sharedParsedCache);
+        PreparedTreeSnapshot snapshot = latestPreparedSnapshot;
+        if (snapshot != null && loadedPageResponses.size() <= 1) {
+            targetAdapter.applyPreparedSnapshot(snapshot, null);
+            return;
+        }
         if (loadedPageResponses.isEmpty()) {
             if (!loadedStickyComments.isEmpty()) {
                 targetAdapter.setStickyComments(loadedStickyComments);
@@ -150,8 +247,523 @@ public class CommentsDataCoordinator {
         targetAdapter.replacePagesOnRefresh(loadedStickyComments, loadedPageResponses, null, prependRoot);
     }
 
+    /**
+     * Полностью собирает и предпарсивает дерево комментариев в фоновом потоке.
+     */
+    public PreparedTreeSnapshot buildSnapshotOffThread(
+            List<CommentsResponse.CommentItem> stickyComments,
+            List<CommentsResponse> pages,
+            @Nullable CommentsResponse.CommentItem ensurePresentComment,
+            boolean prependRootIfMissing,
+            int repliesLimit,
+            Set<Long> expandedParentIds,
+            int primaryColor,
+            int purpleColor) {
+        List<CommentsResponse.CommentItem> allItemsToParse = new ArrayList<>();
+        if (stickyComments != null) {
+            for (CommentsResponse.CommentItem s : stickyComments) {
+                if (s != null) allItemsToParse.add(s);
+            }
+        }
+        if (pages != null) {
+            for (CommentsResponse page : pages) {
+                allItemsToParse.addAll(extractAllItems(page));
+            }
+        }
+        if (ensurePresentComment != null) {
+            allItemsToParse.add(ensurePresentComment);
+        }
+
+        Map<Long, CommentHtmlProcessor.ParsedCommentContent> parsedMap =
+                preParseCommentsBatchIntoCache(allItemsToParse, sharedParsedCache, primaryColor, purpleColor);
+
+        return compileSnapshot(
+                stickyComments,
+                pages,
+                ensurePresentComment,
+                prependRootIfMissing,
+                repliesLimit,
+                expandedParentIds,
+                parsedMap,
+                System.currentTimeMillis()
+        );
+    }
+
+    /**
+     * Предподготавливает в фоне следующую страницу для плавного добавления в конец адаптера.
+     */
+    public PreparedAppendBatch prepareAppendBatchOffThread(
+            CommentsResponse response,
+            Set<Long> existingCommentIds,
+            Map<Long, CommentsResponse.CommentItem> existingAllByIdSnapshot,
+            int repliesLimit,
+            Set<Long> expandedParentIds,
+            int primaryColor,
+            int purpleColor) {
+        List<CommentsResponse.CommentItem> allItems = extractAllItems(response);
+        Map<Long, CommentHtmlProcessor.ParsedCommentContent> parsedMap =
+                preParseCommentsBatchIntoCache(allItems, sharedParsedCache, primaryColor, purpleColor);
+
+        if (response == null || response.getData() == null) {
+            return new PreparedAppendBatch(
+                    Collections.emptyList(),
+                    Collections.emptyList(),
+                    Collections.emptyList(),
+                    parsedMap,
+                    false,
+                    null
+            );
+        }
+
+        long nowMs = System.currentTimeMillis();
+        Map<Long, CommentsResponse.CommentItem> workingAllById = existingAllByIdSnapshot != null
+                ? new HashMap<>(existingAllByIdSnapshot) : new HashMap<>();
+        Map<Long, List<CommentsResponse.CommentItem>> newChildrenMap = new HashMap<>();
+
+        List<CommentsResponse.CommentItem> newRoots = response.getData().getRoot();
+        List<CommentsResponse.CommentItem> addedRoots = new ArrayList<>();
+        Set<Long> addedRootIds = new HashSet<>();
+        if (newRoots != null) {
+            for (CommentsResponse.CommentItem r : newRoots) {
+                if (r == null || r.getId() <= 0) continue;
+                if ((existingCommentIds != null && existingCommentIds.contains(r.getId()))
+                        || workingAllById.containsKey(r.getId())) {
+                    continue;
+                }
+                workingAllById.put(r.getId(), r);
+                addedRoots.add(r);
+                addedRootIds.add(r.getId());
+            }
+        }
+
+        List<CommentsResponse.CommentItem> rawReplies = response.getData().getReplies();
+        List<CommentsResponse.CommentItem> addedReplies = new ArrayList<>();
+        boolean attachesToEarlierRoot = false;
+        if (rawReplies != null) {
+            for (CommentsResponse.CommentItem c : rawReplies) {
+                if (c == null || c.getId() <= 0) continue;
+                if ((existingCommentIds != null && existingCommentIds.contains(c.getId()))
+                        || workingAllById.containsKey(c.getId())) {
+                    continue;
+                }
+                workingAllById.put(c.getId(), c);
+                addedReplies.add(c);
+            }
+            for (CommentsResponse.CommentItem c : addedReplies) {
+                Long bucketKey = resolveBucketKey(c, workingAllById);
+                if (bucketKey != null) {
+                    if (!addedRootIds.contains(bucketKey) && !addedRepliesContainId(addedReplies, bucketKey)) {
+                        attachesToEarlierRoot = true;
+                    }
+                    List<CommentsResponse.CommentItem> list = newChildrenMap.get(bucketKey);
+                    if (list == null) {
+                        list = new ArrayList<>();
+                        newChildrenMap.put(bucketKey, list);
+                    }
+                    list.add(c);
+                }
+            }
+        }
+
+        if (addedRoots.isEmpty()) {
+            return new PreparedAppendBatch(
+                    addedRoots,
+                    addedReplies,
+                    Collections.emptyList(),
+                    parsedMap,
+                    !addedReplies.isEmpty() || attachesToEarlierRoot,
+                    null
+            );
+        }
+
+        List<CommentsAdapter.DisplayItem> newDisplayItems = new ArrayList<>(addedRoots.size() * 2);
+        for (CommentsResponse.CommentItem addedRoot : addedRoots) {
+            collectWithChildrenStatic(
+                    addedRoot,
+                    0,
+                    workingAllById,
+                    newChildrenMap,
+                    repliesLimit,
+                    expandedParentIds,
+                    nowMs,
+                    newDisplayItems
+            );
+        }
+
+        return new PreparedAppendBatch(
+                addedRoots,
+                addedReplies,
+                newDisplayItems,
+                parsedMap,
+                attachesToEarlierRoot,
+                null
+        );
+    }
+
+    private static boolean addedRepliesContainId(List<CommentsResponse.CommentItem> replies, long id) {
+        for (CommentsResponse.CommentItem item : replies) {
+            if (item != null && item.getId() == id) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Чистая сборка дерева и плоского списка DisplayItem (без побочных эффектов, безопасно для фонового потока).
+     */
+    public static PreparedTreeSnapshot compileSnapshot(
+            List<CommentsResponse.CommentItem> stickyComments,
+            List<CommentsResponse> pages,
+            @Nullable CommentsResponse.CommentItem ensurePresentComment,
+            boolean prependRootIfMissing,
+            int repliesLimit,
+            Set<Long> expandedParentIds,
+            Map<Long, CommentHtmlProcessor.ParsedCommentContent> parsedMap,
+            long nowMs) {
+        Map<Long, CommentsResponse.CommentItem> allById = new HashMap<>();
+        List<CommentsResponse.CommentItem> stickyRoots = new ArrayList<>();
+        List<CommentsResponse.CommentItem> roots = new ArrayList<>();
+        Map<Long, List<CommentsResponse.CommentItem>> childrenByParentId = new HashMap<>();
+
+        if (stickyComments != null) {
+            for (CommentsResponse.CommentItem s : stickyComments) {
+                if (s != null && s.getId() > 0 && !allById.containsKey(s.getId())) {
+                    s.setSticky(true);
+                    allById.put(s.getId(), s);
+                    stickyRoots.add(s);
+                }
+            }
+        }
+
+        if (pages != null) {
+            for (CommentsResponse response : pages) {
+                if (response == null || response.getData() == null) continue;
+                List<CommentsResponse.CommentItem> pageRoots = response.getData().getRoot();
+                if (pageRoots != null) {
+                    for (CommentsResponse.CommentItem r : pageRoots) {
+                        if (r == null || r.getId() <= 0) continue;
+                        if (allById.containsKey(r.getId())) {
+                            continue;
+                        }
+                        allById.put(r.getId(), r);
+                        roots.add(r);
+                    }
+                }
+                registerRepliesBatchStatic(response.getData().getReplies(), allById, childrenByParentId);
+            }
+        }
+
+        if (ensurePresentComment != null && ensurePresentComment.getId() > 0) {
+            boolean isReply = isReplyComment(ensurePresentComment);
+            if (!allById.containsKey(ensurePresentComment.getId())) {
+                if (!isReply
+                        || (ensurePresentComment.getRoot_id() != null && allById.containsKey(ensurePresentComment.getRoot_id()))
+                        || (ensurePresentComment.getParent_comment() != null && allById.containsKey(ensurePresentComment.getParent_comment()))) {
+                    allById.put(ensurePresentComment.getId(), ensurePresentComment);
+                    if (isReply) {
+                        attachReplyToParentMapStatic(ensurePresentComment, allById, childrenByParentId);
+                    } else if (prependRootIfMissing) {
+                        roots.add(0, ensurePresentComment);
+                    } else {
+                        roots.add(ensurePresentComment);
+                    }
+                }
+            }
+        }
+
+        List<CommentsAdapter.DisplayItem> flatItems = buildFlatListStatic(
+                stickyRoots,
+                roots,
+                allById,
+                childrenByParentId,
+                repliesLimit,
+                expandedParentIds,
+                nowMs
+        );
+
+        return new PreparedTreeSnapshot(
+                stickyRoots,
+                roots,
+                allById,
+                childrenByParentId,
+                flatItems,
+                parsedMap
+        );
+    }
+
+    public static List<CommentsAdapter.DisplayItem> buildFlatListStatic(
+            List<CommentsResponse.CommentItem> stickyRoots,
+            List<CommentsResponse.CommentItem> roots,
+            Map<Long, CommentsResponse.CommentItem> allById,
+            Map<Long, List<CommentsResponse.CommentItem>> childrenByParentId,
+            int repliesLimit,
+            Set<Long> expandedParentIds,
+            long nowMs) {
+        int estimatedSize = (stickyRoots != null ? stickyRoots.size() : 0)
+                + (roots != null ? roots.size() * 2 : 16);
+        List<CommentsAdapter.DisplayItem> out = new ArrayList<>(Math.max(16, estimatedSize));
+        if (stickyRoots != null) {
+            for (CommentsResponse.CommentItem sticky : stickyRoots) {
+                if (sticky != null) {
+                    collectWithChildrenStatic(sticky, 0, allById, childrenByParentId, repliesLimit, expandedParentIds, nowMs, out);
+                }
+            }
+        }
+        if (roots != null) {
+            for (CommentsResponse.CommentItem root : roots) {
+                if (root != null) {
+                    collectWithChildrenStatic(root, 0, allById, childrenByParentId, repliesLimit, expandedParentIds, nowMs, out);
+                }
+            }
+        }
+        return out;
+    }
+
+    public static void collectWithChildrenStatic(
+            CommentsResponse.CommentItem node,
+            int level,
+            Map<Long, CommentsResponse.CommentItem> allById,
+            Map<Long, List<CommentsResponse.CommentItem>> childrenByParentId,
+            int repliesLimit,
+            Set<Long> expandedParentIds,
+            long nowMs,
+            List<CommentsAdapter.DisplayItem> out) {
+        out.add(createEnrichedDisplayItem(node, level, allById, nowMs));
+        if (level >= 1) return;
+
+        List<CommentsResponse.CommentItem> allThreadReplies = new ArrayList<>();
+        Set<Long> visited = new HashSet<>();
+        visited.add(node.getId());
+        collectDescendantsFlatStatic(node.getId(), childrenByParentId, allThreadReplies, visited);
+
+        if (allThreadReplies.isEmpty()) return;
+
+        boolean isUnlimited = (repliesLimit == -1 || repliesLimit >= 11 || repliesLimit <= 0);
+        boolean isExpanded = expandedParentIds != null && expandedParentIds.contains(node.getId());
+        boolean showAll = isUnlimited || isExpanded || (allThreadReplies.size() <= repliesLimit);
+
+        if (showAll) {
+            for (CommentsResponse.CommentItem child : allThreadReplies) {
+                out.add(createEnrichedDisplayItem(child, 1, allById, nowMs));
+            }
+        } else {
+            int countToShow = Math.min(repliesLimit, allThreadReplies.size());
+            for (int i = 0; i < countToShow; i++) {
+                out.add(createEnrichedDisplayItem(allThreadReplies.get(i), 1, allById, nowMs));
+            }
+            int hiddenCount = allThreadReplies.size() - countToShow;
+            if (hiddenCount > 0) {
+                List<CommentsResponse.CommentItem> hidden = new ArrayList<>(
+                        allThreadReplies.subList(countToShow, allThreadReplies.size()));
+                out.add(new CommentsAdapter.DisplayItem(node.getId(), hiddenCount, hidden));
+            }
+        }
+    }
+
+    public static CommentsAdapter.DisplayItem createEnrichedDisplayItem(
+            CommentsResponse.CommentItem item,
+            int level,
+            Map<Long, CommentsResponse.CommentItem> allById,
+            long nowMs) {
+        String replyToUsername = null;
+        if (level > 0 && item != null && allById != null) {
+            Long parentId = item.getParent_comment() != null ? item.getParent_comment() : item.getRoot_id();
+            CommentsResponse.CommentItem parentComment = parentId != null ? allById.get(parentId) : null;
+            if (parentComment != null && parentComment.getUser() != null) {
+                replyToUsername = parentComment.getUser().getUsername();
+            }
+        }
+        String formattedDate = item != null
+                ? formatRelativeTime(item.getCreated_at_ts(), item.getCreated_at(), nowMs)
+                : "";
+        String sourceKey = item != null
+                ? CommentHtmlProcessor.computeSourceKey(item.getComment() != null ? item.getComment() : "")
+                : "0:0";
+        return new CommentsAdapter.DisplayItem(item, level, replyToUsername, formattedDate, sourceKey);
+    }
+
+    private static void collectDescendantsFlatStatic(
+            long parentId,
+            Map<Long, List<CommentsResponse.CommentItem>> childrenByParentId,
+            List<CommentsResponse.CommentItem> out,
+            Set<Long> visited) {
+        if (childrenByParentId == null) return;
+        List<CommentsResponse.CommentItem> kids = childrenByParentId.get(parentId);
+        if (kids == null || kids.isEmpty()) return;
+        for (CommentsResponse.CommentItem child : kids) {
+            if (child == null || !visited.add(child.getId())) continue;
+            out.add(child);
+            collectDescendantsFlatStatic(child.getId(), childrenByParentId, out, visited);
+        }
+    }
+
+    public static int registerRepliesBatchStatic(
+            List<CommentsResponse.CommentItem> replies,
+            Map<Long, CommentsResponse.CommentItem> allById,
+            Map<Long, List<CommentsResponse.CommentItem>> childrenByParentId) {
+        if (replies == null || replies.isEmpty()) return 0;
+        List<CommentsResponse.CommentItem> newlyAdded = new ArrayList<>();
+        for (CommentsResponse.CommentItem c : replies) {
+            if (c == null || c.getId() <= 0 || allById.containsKey(c.getId())) continue;
+            allById.put(c.getId(), c);
+            newlyAdded.add(c);
+        }
+        for (CommentsResponse.CommentItem c : newlyAdded) {
+            attachReplyToParentMapStatic(c, allById, childrenByParentId);
+        }
+        return newlyAdded.size();
+    }
+
+    public static void attachReplyToParentMapStatic(
+            CommentsResponse.CommentItem c,
+            Map<Long, CommentsResponse.CommentItem> allById,
+            Map<Long, List<CommentsResponse.CommentItem>> childrenByParentId) {
+        if (c == null) return;
+        Long bucketKey = resolveBucketKey(c, allById);
+        if (bucketKey == null) return;
+        List<CommentsResponse.CommentItem> list = childrenByParentId.get(bucketKey);
+        if (list == null) {
+            list = new ArrayList<>();
+            childrenByParentId.put(bucketKey, list);
+        }
+        for (CommentsResponse.CommentItem existing : list) {
+            if (existing != null && existing.getId() == c.getId()) {
+                return;
+            }
+        }
+        list.add(c);
+    }
+
+    @Nullable
+    private static Long resolveBucketKey(CommentsResponse.CommentItem c,
+                                        Map<Long, CommentsResponse.CommentItem> allById) {
+        Long parentId = c.getParent_comment();
+        Long rootId = c.getRoot_id();
+        if (parentId != null && parentId > 0 && allById.containsKey(parentId)) {
+            return parentId;
+        } else if (rootId != null && rootId > 0) {
+            return rootId;
+        } else if (parentId != null && parentId > 0) {
+            return parentId;
+        }
+        return null;
+    }
+
+    public static boolean isReplyComment(CommentsResponse.CommentItem comment) {
+        if (comment == null) return false;
+        return (comment.getParent_comment() != null && comment.getParent_comment() > 0)
+                || (comment.getRoot_id() != null && comment.getRoot_id() > 0)
+                || comment.getComment_level() > 0;
+    }
+
+    public static DiffUtil.DiffResult calculateDisplayDiff(
+            List<CommentsAdapter.DisplayItem> oldList,
+            List<CommentsAdapter.DisplayItem> newList) {
+        final List<CommentsAdapter.DisplayItem> safeOld = oldList != null ? oldList : Collections.emptyList();
+        final List<CommentsAdapter.DisplayItem> safeNew = newList != null ? newList : Collections.emptyList();
+        return DiffUtil.calculateDiff(new DiffUtil.Callback() {
+            @Override
+            public int getOldListSize() {
+                return safeOld.size();
+            }
+
+            @Override
+            public int getNewListSize() {
+                return safeNew.size();
+            }
+
+            @Override
+            public boolean areItemsTheSame(int oldItemPosition, int newItemPosition) {
+                CommentsAdapter.DisplayItem o = safeOld.get(oldItemPosition);
+                CommentsAdapter.DisplayItem n = safeNew.get(newItemPosition);
+                if (o.getType() != n.getType()) return false;
+                if (o.getType() == CommentsAdapter.DisplayItem.TYPE_SHOW_MORE) {
+                    return o.getParentId() == n.getParentId();
+                }
+                return o.getItem() != null && n.getItem() != null
+                        && o.getItem().getId() == n.getItem().getId();
+            }
+
+            @Override
+            public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
+                CommentsAdapter.DisplayItem o = safeOld.get(oldItemPosition);
+                CommentsAdapter.DisplayItem n = safeNew.get(newItemPosition);
+                if (o.getType() == CommentsAdapter.DisplayItem.TYPE_SHOW_MORE) {
+                    return o.getHiddenCount() == n.getHiddenCount();
+                }
+                CommentsResponse.CommentItem oi = o.getItem();
+                CommentsResponse.CommentItem ni = n.getItem();
+                if (oi == null || ni == null) return oi == ni;
+                if (o.getLevel() != n.getLevel()) return false;
+                if (oi.isSticky() != ni.isSticky()) return false;
+                if (!Objects.equals(o.getSourceHashKey(), n.getSourceHashKey())) return false;
+                int oldScore = oi.getVotes() != null ? (oi.getVotes().getUp() - oi.getVotes().getDown()) : 0;
+                int newScore = ni.getVotes() != null ? (ni.getVotes().getUp() - ni.getVotes().getDown()) : 0;
+                Object oldUserVote = oi.getVotes() != null ? oi.getVotes().getUser() : null;
+                Object newUserVote = ni.getVotes() != null ? ni.getVotes().getUser() : null;
+                return oldScore == newScore && Objects.equals(oldUserVote, newUserVote);
+            }
+        }, false);
+    }
+
+    public static String formatRelativeTime(long timestamp, String rawCreatedAt, long nowMs) {
+        if (timestamp > 0) {
+            if (timestamp < 10000000000L) {
+                timestamp *= 1000L;
+            }
+            long diff = nowMs - timestamp;
+            if (diff < 0) diff = 0;
+
+            long seconds = diff / 1000L;
+            long minutes = seconds / 60L;
+            long hours = minutes / 60L;
+            long days = hours / 24L;
+
+            if (days > 0) {
+                return days + " " + getDaysPlural((int) days) + " назад";
+            } else if (hours > 0) {
+                return hours + " " + getHoursPlural((int) hours) + " назад";
+            } else if (minutes > 0) {
+                return minutes + " " + getMinutesPlural((int) minutes) + " назад";
+            } else {
+                return "только что";
+            }
+        }
+        if (rawCreatedAt != null && !rawCreatedAt.isEmpty()) {
+            return rawCreatedAt;
+        }
+        return "";
+    }
+
+    private static String getDaysPlural(int n) {
+        int rem10 = n % 10;
+        int rem100 = n % 100;
+        if (rem100 >= 11 && rem100 <= 19) return "дней";
+        if (rem10 == 1) return "день";
+        if (rem10 >= 2 && rem10 <= 4) return "дня";
+        return "дней";
+    }
+
+    private static String getHoursPlural(int n) {
+        int rem10 = n % 10;
+        int rem100 = n % 100;
+        if (rem100 >= 11 && rem100 <= 19) return "часов";
+        if (rem10 == 1) return "час";
+        if (rem10 >= 2 && rem10 <= 4) return "часа";
+        return "часов";
+    }
+
+    private static String getMinutesPlural(int n) {
+        int rem10 = n % 10;
+        int rem100 = n % 100;
+        if (rem100 >= 11 && rem100 <= 19) return "минут";
+        if (rem10 == 1) return "минуту";
+        if (rem10 >= 2 && rem10 <= 4) return "минуты";
+        return "минут";
+    }
+
     public void removeCommentById(long commentId) {
         sharedParsedCache.remove(commentId);
+        latestPreparedSnapshot = null;
         for (int i = loadedStickyComments.size() - 1; i >= 0; i--) {
             if (loadedStickyComments.get(i).getId() == commentId) {
                 loadedStickyComments.remove(i);
@@ -311,6 +923,7 @@ public class CommentsDataCoordinator {
 
     public void upsertIntoLoadedPageResponses(CommentsResponse.CommentItem item, boolean prependRoot) {
         if (item == null || item.getId() <= 0) return;
+        latestPreparedSnapshot = null;
 
         for (CommentsResponse resp : loadedPageResponses) {
             if (resp == null || resp.getData() == null) continue;
@@ -343,9 +956,7 @@ public class CommentsDataCoordinator {
             loadedPageResponses.add(syntheticPage);
         }
 
-        boolean isReply = (item.getParent_comment() != null && item.getParent_comment() > 0)
-                || (item.getRoot_id() != null && item.getRoot_id() > 0)
-                || item.getComment_level() > 0;
+        boolean isReply = isReplyComment(item);
 
         if (isReply) {
             Long targetRoot = item.getRoot_id() != null && item.getRoot_id() > 0 ? item.getRoot_id() : item.getParent_comment();
@@ -379,6 +990,7 @@ public class CommentsDataCoordinator {
                                            boolean prevHasNextPage) {
         int currentPage = prevCurrentPage;
         boolean hasNextPage = prevHasNextPage;
+        latestPreparedSnapshot = null;
 
         if (targetPage == 1 && loadedPageResponses.size() <= 1) {
             loadedPageResponses.clear();

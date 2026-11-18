@@ -352,8 +352,16 @@ public class ApiService {
         commentsApi.fetchEpisodeComments(episodeId, sortType, page, forceRefresh, callback);
     }
 
+    public ApiClientCore.RequestHandle fetchEpisodeCommentsAsync(long episodeId, String sortType, int page, boolean forceRefresh, EpisodeCommentsCallback callback) {
+        return commentsApi.fetchEpisodeComments(episodeId, sortType, page, forceRefresh, true, callback);
+    }
+
     public void fetchStickyComments(long episodeId, StickyCommentsCallback callback) {
         commentsApi.fetchStickyComments(episodeId, callback);
+    }
+
+    public ApiClientCore.RequestHandle fetchStickyCommentsAsync(long episodeId, StickyCommentsCallback callback) {
+        return commentsApi.fetchStickyComments(episodeId, true, callback);
     }
 
     public void postComment(long episodeId, String rawCommentText, Long parentCommentId, Long rootId, int commentLevel, PostCommentCallback callback) {

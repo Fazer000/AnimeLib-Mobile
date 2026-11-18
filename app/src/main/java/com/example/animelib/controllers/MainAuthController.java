@@ -7,13 +7,13 @@ import android.webkit.WebView;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.example.animelib.VideoPlayerActivity;
+import com.example.animelib.api.ApiClientCore;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.data.DatabaseManager;
 import com.example.animelib.data.entity.TokenEntity;
 import com.example.animelib.models.TokenResponse;
 import com.example.animelib.ui.VideoUrlHelper;
 import com.example.animelib.util.CookieSyncManager;
-import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
 import android.os.Handler;
@@ -27,7 +27,11 @@ public class MainAuthController {
 
     private final Context context;
     private final DatabaseManager databaseManager;
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "main-auth-worker");
+        t.setDaemon(true);
+        return t;
+    });
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private long lastPlayerLaunchTimeMs = 0L;
 
@@ -107,8 +111,7 @@ public class MainAuthController {
             try {
                 if (authValue.startsWith("{") && authValue.endsWith("}")) {
                     CookieSyncManager.saveAuthJson(authValue);
-                    Gson gson = new Gson();
-                    TokenResponse tokenResponse = gson.fromJson(authValue, TokenResponse.class);
+                    TokenResponse tokenResponse = ApiClientCore.getSharedGson().fromJson(authValue, TokenResponse.class);
                     if (tokenResponse != null && tokenResponse.getToken() != null) {
                         saveTokensToDatabase(tokenResponse, authValue, callback);
                         Log.d("MainAuthController", "Successfully parsed and saved tokens");
@@ -252,8 +255,7 @@ public class MainAuthController {
         Log.d("MainAuthController", "Processing intercepted OAuth token response");
         executor.execute(() -> {
             try {
-                Gson gson = new Gson();
-                JsonObject json = gson.fromJson(jsonString, JsonObject.class);
+                JsonObject json = ApiClientCore.getSharedGson().fromJson(jsonString, JsonObject.class);
                 if (json == null || !json.has("access_token") || json.get("access_token").isJsonNull()) {
                     Log.w("MainAuthController", "Invalid OAuth response JSON or missing access_token");
                     return;
@@ -316,8 +318,7 @@ public class MainAuthController {
         Log.d("MainAuthController", "Processing intercepted Auth me response");
         executor.execute(() -> {
             try {
-                Gson gson = new Gson();
-                JsonObject json = gson.fromJson(jsonString, JsonObject.class);
+                JsonObject json = ApiClientCore.getSharedGson().fromJson(jsonString, JsonObject.class);
                 if (json == null || !json.has("data") || json.get("data").isJsonNull()) {
                     Log.w("MainAuthController", "Invalid Auth me JSON or missing data object");
                     return;

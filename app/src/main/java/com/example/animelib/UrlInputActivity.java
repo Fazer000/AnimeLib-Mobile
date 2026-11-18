@@ -56,7 +56,7 @@ public class UrlInputActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_url_input);
 
-        databaseManager = new DatabaseManager(this);
+        databaseManager = DatabaseManager.getInstance(this);
         viewModel = new ViewModelProvider(this).get(AppSettingsViewModel.class);
 
         loadAndApplyTheme();

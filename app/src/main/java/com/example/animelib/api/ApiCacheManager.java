@@ -123,6 +123,26 @@ public class ApiCacheManager {
             }
         }
 
+        /**
+         * Удаляет отменённый колбэк из очереди ожидания.
+         * @return true, если после удаления по ключу не осталось ни одного активного слушателя
+         */
+        public boolean detachPendingNotifier(K requestKey, CallbackNotifier<V> notifier) {
+            if (requestKey == null || notifier == null) return false;
+            synchronized (pending) {
+                List<CallbackNotifier<V>> list = pending.get(requestKey);
+                if (list == null) {
+                    return true;
+                }
+                list.remove(notifier);
+                if (list.isEmpty()) {
+                    pending.remove(requestKey);
+                    return true;
+                }
+                return false;
+            }
+        }
+
         public void dispatchSuccess(K requestKey, V result) {
             List<CallbackNotifier<V>> callbacks;
             synchronized (pending) {

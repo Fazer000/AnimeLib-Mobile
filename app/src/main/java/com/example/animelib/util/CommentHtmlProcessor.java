@@ -127,12 +127,26 @@ public class CommentHtmlProcessor {
     private final int primaryTextColor;
     private final int purpleColor;
     private final float density;
+    private final int dp2;
+    private final int dp4;
+    private final int dp6;
+    private final int dp8;
+    private final int dp10;
+    private final int dp12;
+    private final int dp16;
 
     public CommentHtmlProcessor(Context context) {
         this.context = context;
         this.density = context.getResources().getDisplayMetrics().density;
         this.primaryTextColor = resolvePrimaryTextColor(context);
         this.purpleColor = ContextCompat.getColor(context, R.color.purple_primary);
+        this.dp2 = dpToPx(2);
+        this.dp4 = dpToPx(4);
+        this.dp6 = dpToPx(6);
+        this.dp8 = dpToPx(8);
+        this.dp10 = dpToPx(10);
+        this.dp12 = dpToPx(12);
+        this.dp16 = dpToPx(16);
     }
 
     public static int resolvePrimaryTextColor(Context context) {
@@ -166,9 +180,14 @@ public class CommentHtmlProcessor {
                 || lower.contains("<h6");
     }
 
+    public static boolean containsHtmlTagOrEntity(String raw) {
+        if (raw == null || raw.isEmpty()) return false;
+        return raw.indexOf('<') >= 0 || raw.indexOf('&') >= 0;
+    }
+
     public static String normalizeHtmlWhitespace(String rawHtml) {
         if (rawHtml == null || rawHtml.isEmpty()) return "";
-        String s = rawHtml.replace("\\\"", "\"").trim();
+        String s = rawHtml.indexOf("\\\"") >= 0 ? rawHtml.replace("\\\"", "\"").trim() : rawHtml.trim();
         if (s.isEmpty()) return "";
         s = PATTERN_MULTI_NEWLINES.matcher(s).replaceAll("\n");
         s = PATTERN_WS_BEFORE_NEWLINE.matcher(s).replaceAll("\n");
@@ -187,9 +206,25 @@ public class CommentHtmlProcessor {
             return ParsedCommentContent.simple(key, "");
         }
 
+        // Fast path 1: чистый текст без HTML-тегов и сущностей — без Jsoup и без Html.fromHtml
+        if (!containsHtmlTagOrEntity(htmlContent)) {
+            String trimmed = normalizeHtmlWhitespace(htmlContent);
+            return ParsedCommentContent.simple(key, trimmed);
+        }
+
         String cleanedHtml = normalizeHtmlWhitespace(htmlContent);
         if (cleanedHtml.isEmpty()) {
             return ParsedCommentContent.simple(key, "");
+        }
+
+        // Fast path 2: одиночный абзац <p>...</p> без вложенных тегов и HTML-сущностей
+        if (cleanedHtml.length() >= 7
+                && (cleanedHtml.startsWith("<p>") || cleanedHtml.startsWith("<P>"))
+                && (cleanedHtml.endsWith("</p>") || cleanedHtml.endsWith("</P>"))) {
+            String inner = cleanedHtml.substring(3, cleanedHtml.length() - 4);
+            if (!containsHtmlTagOrEntity(inner)) {
+                return ParsedCommentContent.simple(key, inner.trim());
+            }
         }
 
         if (!containsBlockStructure(cleanedHtml)) {
@@ -491,7 +526,7 @@ public class CommentHtmlProcessor {
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT
                     );
-                    params.setMargins(0, dpToPx(2), 0, dpToPx(2));
+                    params.setMargins(0, dp2, 0, dp2);
                     textView.setLayoutParams(params);
                     container.addView(textView);
                     break;
@@ -500,14 +535,14 @@ public class CommentHtmlProcessor {
                     LinearLayout quoteContainer = new LinearLayout(targetContext);
                     quoteContainer.setOrientation(LinearLayout.HORIZONTAL);
                     quoteContainer.setGravity(Gravity.TOP);
-                    quoteContainer.setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8));
+                    quoteContainer.setPadding(dp12, dp8, dp12, dp8);
                     quoteContainer.setBackgroundResource(R.drawable.quote_background);
 
                     ImageView quoteIcon = new ImageView(targetContext);
                     quoteIcon.setImageResource(R.drawable.ic_quote_mark);
-                    LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dpToPx(16), dpToPx(16));
-                    iconParams.setMarginEnd(dpToPx(8));
-                    iconParams.topMargin = dpToPx(2);
+                    LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp16, dp16);
+                    iconParams.setMarginEnd(dp8);
+                    iconParams.topMargin = dp2;
                     quoteIcon.setLayoutParams(iconParams);
                     quoteContainer.addView(quoteIcon);
 
@@ -525,7 +560,7 @@ public class CommentHtmlProcessor {
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT
                     );
-                    containerParams.setMargins(0, dpToPx(6), 0, dpToPx(6));
+                    containerParams.setMargins(0, dp6, 0, dp6);
                     quoteContainer.setLayoutParams(containerParams);
                     container.addView(quoteContainer);
                     break;
@@ -535,13 +570,13 @@ public class CommentHtmlProcessor {
                     textView.setBackgroundResource(R.drawable.code_block_background);
                     textView.setTypeface(Typeface.MONOSPACE);
                     textView.setTextSize(12);
-                    textView.setPadding(dpToPx(10), dpToPx(8), dpToPx(10), dpToPx(8));
+                    textView.setPadding(dp10, dp8, dp10, dp8);
                     textView.setText(block.text);
                     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT
                     );
-                    params.setMargins(0, dpToPx(6), 0, dpToPx(6));
+                    params.setMargins(0, dp6, 0, dp6);
                     textView.setLayoutParams(params);
                     container.addView(textView);
                     break;
@@ -555,7 +590,7 @@ public class CommentHtmlProcessor {
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT
                     );
-                    params.setMargins(0, dpToPx(6), 0, dpToPx(4));
+                    params.setMargins(0, dp6, 0, dp4);
                     textView.setLayoutParams(params);
                     container.addView(textView);
                     break;
@@ -567,7 +602,7 @@ public class CommentHtmlProcessor {
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT
                     );
-                    params.setMargins(dpToPx(12), dpToPx(2), 0, dpToPx(2));
+                    params.setMargins(dp12, dp2, 0, dp2);
                     textView.setLayoutParams(params);
                     container.addView(textView);
                     break;
@@ -598,7 +633,7 @@ public class CommentHtmlProcessor {
         TextView textView = new TextView(targetContext);
         textView.setTextColor(textColor);
         textView.setTextSize(13.5f);
-        textView.setLineSpacing(dpToPx(3), 1.0f);
+        textView.setLineSpacing(dp2 + (density >= 1f ? Math.round(density) : 1), 1.0f);
         textView.setIncludeFontPadding(false);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,

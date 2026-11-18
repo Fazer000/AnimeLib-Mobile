@@ -1,6 +1,7 @@
 package com.example.animelib;
 
 import com.example.animelib.adapters.CommentsAdapter;
+import com.example.animelib.managers.CommentsDataCoordinator;
 import com.example.animelib.models.CommentsResponse;
 import com.example.animelib.util.CommentHtmlProcessor;
 import com.google.gson.Gson;
@@ -269,5 +270,68 @@ public class CommentsPaginationUnitTest {
         adapter.clearAll();
         assertNull(adapter.getActiveReplyCommentId());
         assertNull(adapter.getSubmittingReplyCommentId());
+    }
+
+    @Test
+    public void testPreparedSnapshotAndAppendBatchApplication() {
+        Gson gson = new Gson();
+        CommentsResponse page1 = gson.fromJson("{"
+                + "\"data\": {"
+                + "  \"root\": [{\"id\": 10, \"comment\": \"First\"}],"
+                + "  \"replies\": [{\"id\": 101, \"parent_comment\": 10, \"root_id\": 10, \"comment\": \"Reply 1\"}]"
+                + "},"
+                + "\"meta\": {\"page\": 1, \"has_next_page\": true}"
+                + "}", CommentsResponse.class);
+
+        CommentsDataCoordinator coordinator = new CommentsDataCoordinator();
+        CommentsDataCoordinator.PreparedTreeSnapshot snapshot = CommentsDataCoordinator.compileSnapshot(
+                Collections.emptyList(),
+                Collections.singletonList(page1),
+                null,
+                true,
+                3,
+                Collections.emptySet(),
+                Collections.emptyMap(),
+                System.currentTimeMillis()
+        );
+
+        CommentsAdapter adapter = new CommentsAdapter();
+        adapter.applyPreparedSnapshot(snapshot, null);
+        assertEquals(2, adapter.getCommentDisplayCount());
+        assertEquals(10L, adapter.getItemId(0));
+        assertEquals(101L, adapter.getItemId(1));
+
+        CommentsResponse page2 = gson.fromJson("{"
+                + "\"data\": {"
+                + "  \"root\": ["
+                + "    {\"id\": 10, \"comment\": \"Dup\"},"
+                + "    {\"id\": 12, \"comment\": \"Second root\"}"
+                + "  ],"
+                + "  \"replies\": ["
+                + "    {\"id\": 102, \"parent_comment\": 12, \"root_id\": 12, \"comment\": \"Reply 2\"}"
+                + "  ]"
+                + "},"
+                + "\"meta\": {\"page\": 2, \"has_next_page\": false}"
+                + "}", CommentsResponse.class);
+
+        CommentsDataCoordinator.PreparedAppendBatch batch = coordinator.prepareAppendBatchOffThread(
+                page2,
+                adapter.getLoadedCommentIdsSnapshot(),
+                adapter.getAllByIdSnapshot(),
+                adapter.getRepliesLimit(),
+                adapter.getExpandedParentIdsSnapshot(),
+                0xFFFFFFFF,
+                0xFF8B5CF6
+        );
+
+        assertEquals(1, batch.addedRoots.size());
+        assertEquals(1, batch.addedReplies.size());
+        assertFalse(batch.requiresFullRebuild);
+        assertEquals(2, batch.newDisplayItems.size());
+
+        adapter.applyPreparedAppendBatch(batch);
+        assertEquals(4, adapter.getCommentDisplayCount());
+        assertTrue(adapter.containsComment(12));
+        assertTrue(adapter.containsComment(102));
     }
 }

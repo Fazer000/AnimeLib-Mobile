@@ -99,10 +99,12 @@ public class DownloadService extends Service {
         }
     }
 
+    private final Object queueLock = new Object();
     private DownloadsManager downloadsManager;
     private NotificationManager notificationManager;
     private android.os.PowerManager.WakeLock wakeLock;
     private boolean cancelRequested;
+    private int queueGeneration = 0;
     private final List<DownloadTask> taskQueue = new ArrayList<>();
 
     public static void startQueue(Context context, ArrayList<DownloadTask> tasks) {
@@ -202,30 +204,36 @@ public class DownloadService extends Service {
 
         if (ACTION_CANCEL.equals(action)) {
             Log.d(TAG, "Cancel requested");
-            cancelRequested = true;
-            downloadsManager.cancel();
-            taskQueue.clear();
-            running = false;
-            releaseWakeLock();
-
             int completedCount = 0;
             int errorCount = 0;
-            synchronized (activeTaskItems) {
-                for (TaskProgressItem item : activeTaskItems) {
-                    if (item.status == TaskProgressItem.STATUS_COMPLETED) {
-                        completedCount++;
-                    } else if (item.status == TaskProgressItem.STATUS_ERROR) {
-                        errorCount++;
+            synchronized (queueLock) {
+                cancelRequested = true;
+                queueGeneration++;
+                taskQueue.clear();
+                running = false;
+                currentProgressItem = null;
+                synchronized (activeTaskItems) {
+                    for (TaskProgressItem item : activeTaskItems) {
+                        if (item.status == TaskProgressItem.STATUS_COMPLETED) {
+                            completedCount++;
+                        } else if (item.status == TaskProgressItem.STATUS_ERROR) {
+                            errorCount++;
+                        }
                     }
                 }
             }
+            if (downloadsManager != null) {
+                downloadsManager.cancel();
+            }
+            releaseWakeLock();
 
             showResultNotification("Скачивание остановлено", completedCount > 0 ?
                     ("Скачано серий: " + completedCount) : "Загрузка отменена");
             notifyQueueUpdated();
             stopAfterResult();
-            if (listener != null) {
-                listener.onFinished(completedCount, errorCount, true);
+            ProgressListener l = listener;
+            if (l != null) {
+                l.onFinished(completedCount, errorCount, true);
             }
             return START_NOT_STICKY;
         }
@@ -234,51 +242,63 @@ public class DownloadService extends Service {
             @SuppressWarnings("unchecked")
             ArrayList<DownloadTask> tasks = (ArrayList<DownloadTask>) intent.getSerializableExtra(EXTRA_TASKS);
             if (tasks != null && !tasks.isEmpty()) {
-                if (!running) {
-                    activeTaskItems.clear();
-                }
+                boolean shouldStartNext = false;
+                boolean hadNewTasks;
+                synchronized (queueLock) {
+                    if (!running) {
+                        activeTaskItems.clear();
+                    }
 
-                ArrayList<DownloadTask> newTasksToEnqueue = new ArrayList<>();
-                synchronized (activeTaskItems) {
-                    for (DownloadTask t : tasks) {
-                        boolean isDuplicate = false;
-                        for (TaskProgressItem existingItem : activeTaskItems) {
-                            if (existingItem.task != null && isSameEpisodeTask(existingItem.task, t)) {
-                                if (existingItem.status == TaskProgressItem.STATUS_WAITING ||
-                                    existingItem.status == TaskProgressItem.STATUS_DOWNLOADING ||
-                                    existingItem.status == TaskProgressItem.STATUS_COMPLETED) {
-                                    isDuplicate = true;
-                                    break;
+                    ArrayList<DownloadTask> newTasksToEnqueue = new ArrayList<>();
+                    synchronized (activeTaskItems) {
+                        for (DownloadTask t : tasks) {
+                            boolean isDuplicate = false;
+                            for (TaskProgressItem existingItem : activeTaskItems) {
+                                if (existingItem.task != null && isSameEpisodeTask(existingItem.task, t)) {
+                                    if (existingItem.status == TaskProgressItem.STATUS_WAITING ||
+                                        existingItem.status == TaskProgressItem.STATUS_DOWNLOADING ||
+                                        existingItem.status == TaskProgressItem.STATUS_COMPLETED) {
+                                        isDuplicate = true;
+                                        break;
+                                    }
                                 }
                             }
-                        }
-                        if (!isDuplicate) {
-                            for (DownloadTask queuedTask : taskQueue) {
-                                if (isSameEpisodeTask(queuedTask, t)) {
-                                    isDuplicate = true;
-                                    break;
+                            if (!isDuplicate) {
+                                for (DownloadTask queuedTask : taskQueue) {
+                                    if (isSameEpisodeTask(queuedTask, t)) {
+                                        isDuplicate = true;
+                                        break;
+                                    }
                                 }
                             }
+                            if (!isDuplicate) {
+                                newTasksToEnqueue.add(t);
+                                activeTaskItems.add(new TaskProgressItem(t));
+                            }
                         }
-                        if (!isDuplicate) {
-                            newTasksToEnqueue.add(t);
-                            activeTaskItems.add(new TaskProgressItem(t));
+                    }
+
+                    hadNewTasks = !newTasksToEnqueue.isEmpty();
+                    if (hadNewTasks) {
+                        taskQueue.addAll(newTasksToEnqueue);
+                        if (!running) {
+                            running = true;
+                            cancelRequested = false;
+                            queueGeneration++;
+                            totalTasks = activeTaskItems.size();
+                            currentTaskIndex = 0;
+                            shouldStartNext = true;
+                        } else {
+                            totalTasks = activeTaskItems.size();
                         }
                     }
                 }
 
-                if (!newTasksToEnqueue.isEmpty()) {
-                    taskQueue.addAll(newTasksToEnqueue);
+                if (hadNewTasks) {
                     acquireWakeLock();
                     startForegroundCompat(PROGRESS_NOTIFICATION_ID, buildProgressNotification("Подготовка к скачиванию...", 0));
-                    if (!running) {
-                        running = true;
-                        cancelRequested = false;
-                        totalTasks = activeTaskItems.size();
-                        currentTaskIndex = 0;
+                    if (shouldStartNext) {
                         startNextTask();
-                    } else {
-                        totalTasks = activeTaskItems.size();
                     }
                     notifyQueueUpdated();
                 } else {
@@ -292,6 +312,12 @@ public class DownloadService extends Service {
 
     private TaskProgressItem currentProgressItem;
 
+    private boolean isGenerationCurrent(int expectedGen) {
+        synchronized (queueLock) {
+            return expectedGen == queueGeneration && running && !cancelRequested;
+        }
+    }
+
     private void notifyQueueUpdated() {
         for (QueueProgressListener ql : queueProgressListeners) {
             try {
@@ -301,22 +327,71 @@ public class DownloadService extends Service {
     }
 
     private void startNextTask() {
-        if (cancelRequested || taskQueue.isEmpty()) {
-            running = false;
+        final DownloadTask task;
+        final TaskProgressItem capturedItem;
+        final int taskGeneration;
+        boolean shouldFinish = false;
+        boolean wasCancelledFinish = false;
+        int completedCount = 0;
+        int errorCount = 0;
 
-            int completedCount = 0;
-            int errorCount = 0;
-            synchronized (activeTaskItems) {
-                for (TaskProgressItem item : activeTaskItems) {
-                    if (item.status == TaskProgressItem.STATUS_COMPLETED) {
-                        completedCount++;
-                    } else if (item.status == TaskProgressItem.STATUS_ERROR) {
-                        errorCount++;
+        synchronized (queueLock) {
+            if (cancelRequested || taskQueue.isEmpty()) {
+                running = false;
+                currentProgressItem = null;
+                wasCancelledFinish = cancelRequested;
+                shouldFinish = true;
+                synchronized (activeTaskItems) {
+                    for (TaskProgressItem item : activeTaskItems) {
+                        if (item.status == TaskProgressItem.STATUS_COMPLETED) {
+                            completedCount++;
+                        } else if (item.status == TaskProgressItem.STATUS_ERROR) {
+                            errorCount++;
+                        }
+                    }
+                    activeTaskItems.clear();
+                }
+                task = null;
+                capturedItem = null;
+                taskGeneration = queueGeneration;
+            } else {
+                task = taskQueue.remove(0);
+                currentTaskIndex++;
+                currentTaskPercent = 0;
+                taskGeneration = queueGeneration;
+
+                TaskProgressItem matched = null;
+                synchronized (activeTaskItems) {
+                    for (TaskProgressItem item : activeTaskItems) {
+                        boolean isSameTask = (item.task == task) ||
+                                (item.task.getEpisodeId() == task.getEpisodeId() &&
+                                 java.util.Objects.equals(item.task.getTeamName(), task.getTeamName()) &&
+                                 java.util.Objects.equals(item.task.getQuality(), task.getQuality()));
+                        if (isSameTask && (item.status == TaskProgressItem.STATUS_WAITING || item.status == TaskProgressItem.STATUS_DOWNLOADING)) {
+                            item.status = TaskProgressItem.STATUS_DOWNLOADING;
+                            item.percent = 0;
+                            matched = item;
+                            break;
+                        }
+                    }
+                    if (matched == null) {
+                        for (TaskProgressItem item : activeTaskItems) {
+                            if (item.status == TaskProgressItem.STATUS_WAITING) {
+                                item.status = TaskProgressItem.STATUS_DOWNLOADING;
+                                item.percent = 0;
+                                matched = item;
+                                break;
+                            }
+                        }
                     }
                 }
+                currentProgressItem = matched;
+                capturedItem = matched;
             }
+        }
 
-            if (cancelRequested) {
+        if (shouldFinish) {
+            if (wasCancelledFinish) {
                 showResultNotification("Скачивание остановлено", completedCount > 0 ?
                         ("Скачано серий: " + completedCount) : "Загрузка отменена");
             } else if (errorCount > 0) {
@@ -332,47 +407,15 @@ public class DownloadService extends Service {
                         "Все выбранные серии (" + completedCount + ") успешно скачаны");
             }
 
-            synchronized (activeTaskItems) {
-                activeTaskItems.clear();
-            }
-
             notifyQueueUpdated();
             stopAfterResult();
-            if (listener != null) {
-                listener.onFinished(completedCount, errorCount, cancelRequested);
+            ProgressListener l = listener;
+            if (l != null) {
+                l.onFinished(completedCount, errorCount, wasCancelledFinish);
             }
             return;
         }
 
-        DownloadTask task = taskQueue.remove(0);
-        currentTaskIndex++;
-        currentTaskPercent = 0;
-
-        currentProgressItem = null;
-        synchronized (activeTaskItems) {
-            for (TaskProgressItem item : activeTaskItems) {
-                boolean isSameTask = (item.task == task) ||
-                        (item.task.getEpisodeId() == task.getEpisodeId() &&
-                         java.util.Objects.equals(item.task.getTeamName(), task.getTeamName()) &&
-                         java.util.Objects.equals(item.task.getQuality(), task.getQuality()));
-                if (isSameTask && (item.status == TaskProgressItem.STATUS_WAITING || item.status == TaskProgressItem.STATUS_DOWNLOADING)) {
-                    item.status = TaskProgressItem.STATUS_DOWNLOADING;
-                    item.percent = 0;
-                    currentProgressItem = item;
-                    break;
-                }
-            }
-            if (currentProgressItem == null) {
-                for (TaskProgressItem item : activeTaskItems) {
-                    if (item.status == TaskProgressItem.STATUS_WAITING) {
-                        item.status = TaskProgressItem.STATUS_DOWNLOADING;
-                        item.percent = 0;
-                        currentProgressItem = item;
-                        break;
-                    }
-                }
-            }
-        }
         notifyQueueUpdated();
 
         String taskTitle = (task.getAnimeTitle() != null ? task.getAnimeTitle() : "Аниме") + " - Серия " + task.getEpisodeNumber();
@@ -383,12 +426,17 @@ public class DownloadService extends Service {
         downloadsManager.downloadTask(task, new DownloadsManager.DownloadCallback() {
             @Override
             public void onProgress(int percent) {
+                if (!isGenerationCurrent(taskGeneration)) return;
                 currentTaskPercent = percent;
-                synchronized (activeTaskItems) {
-                    for (TaskProgressItem item : activeTaskItems) {
-                        if (item.status == TaskProgressItem.STATUS_DOWNLOADING) {
-                            item.percent = percent;
-                            break;
+                if (capturedItem != null) {
+                    capturedItem.percent = percent;
+                } else {
+                    synchronized (activeTaskItems) {
+                        for (TaskProgressItem item : activeTaskItems) {
+                            if (item.status == TaskProgressItem.STATUS_DOWNLOADING) {
+                                item.percent = percent;
+                                break;
+                            }
                         }
                     }
                 }
@@ -406,10 +454,11 @@ public class DownloadService extends Service {
 
             @Override
             public void onFinished(String localPath) {
+                if (!isGenerationCurrent(taskGeneration)) return;
                 Log.d(TAG, "Task finished: " + taskTitle);
-                if (currentProgressItem != null) {
-                    currentProgressItem.status = TaskProgressItem.STATUS_COMPLETED;
-                    currentProgressItem.percent = 100;
+                if (capturedItem != null) {
+                    capturedItem.status = TaskProgressItem.STATUS_COMPLETED;
+                    capturedItem.percent = 100;
                 }
                 notifyQueueUpdated();
                 startNextTask();
@@ -417,10 +466,11 @@ public class DownloadService extends Service {
 
             @Override
             public void onError(String message) {
+                if (!isGenerationCurrent(taskGeneration)) return;
                 Log.e(TAG, "Task error: " + message);
-                if (currentProgressItem != null) {
-                    currentProgressItem.status = TaskProgressItem.STATUS_ERROR;
-                    currentProgressItem.errorMessage = message;
+                if (capturedItem != null) {
+                    capturedItem.status = TaskProgressItem.STATUS_ERROR;
+                    capturedItem.errorMessage = message;
                 }
                 notifyQueueUpdated();
                 ProgressListener l = listener;
@@ -434,7 +484,13 @@ public class DownloadService extends Service {
 
     @Override
     public void onDestroy() {
-        running = false;
+        synchronized (queueLock) {
+            running = false;
+            cancelRequested = true;
+            queueGeneration++;
+            taskQueue.clear();
+            currentProgressItem = null;
+        }
         releaseWakeLock();
         if (downloadsManager != null) {
             downloadsManager.cleanup();

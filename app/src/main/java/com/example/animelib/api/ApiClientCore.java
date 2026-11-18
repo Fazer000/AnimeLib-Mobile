@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -119,6 +120,10 @@ public class ApiClientCore {
 
     public static OkHttpClient getSharedHttpClient() {
         return getOrCreateHttpClient();
+    }
+
+    public static Gson getSharedGson() {
+        return getOrCreateGson();
     }
 
     private static OkHttpClient getOrCreateHttpClient() {
@@ -688,6 +693,55 @@ public class ApiClientCore {
     }
 
     /**
+     * Лёгкий токен отмены для сетевых запросов (немедленно отменяет OkHttp Call и подавляет колбэк).
+     */
+    public static final class RequestHandle {
+        private final AtomicBoolean cancelled = new AtomicBoolean(false);
+        private volatile Call call;
+        private volatile Runnable detachAction;
+
+        public void attachCall(Call call) {
+            this.call = call;
+            if (cancelled.get() && call != null) {
+                try {
+                    call.cancel();
+                } catch (Exception ignored) {}
+            }
+        }
+
+        public void setDetachAction(Runnable action) {
+            this.detachAction = action;
+            if (cancelled.get() && action != null) {
+                try {
+                    action.run();
+                } catch (Exception ignored) {}
+            }
+        }
+
+        public boolean isCancelled() {
+            return cancelled.get();
+        }
+
+        public void cancel() {
+            if (cancelled.compareAndSet(false, true)) {
+                Runnable detach = this.detachAction;
+                if (detach != null) {
+                    try {
+                        detach.run();
+                    } catch (Exception ignored) {}
+                } else {
+                    Call c = this.call;
+                    if (c != null) {
+                        try {
+                            c.cancel();
+                        } catch (Exception ignored) {}
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Общий асинхронный GET-исполнитель для кэшируемых API-вызовов с дедупликацией in-flight
      * запросов через {@link ApiCacheManager.RequestCache} и fallback на устаревший кэш при HTTP 429.
      */
@@ -703,11 +757,70 @@ public class ApiClientCore {
             String httpErrorPrefix,
             String invalidFormatError,
             CachedResponseHandler<T> responseHandler) {
-        if (!cache.registerOrAttach(requestKey, notifier)) {
-            return;
+        executeCachedGetWithHandle(
+                cache,
+                requestKey,
+                staleFallbackKey,
+                apiUrl,
+                includeSiteId,
+                forceRefresh,
+                notifier,
+                networkErrorPrefix,
+                httpErrorPrefix,
+                invalidFormatError,
+                responseHandler
+        );
+    }
+
+    public <K, T> RequestHandle executeCachedGetWithHandle(
+            ApiCacheManager.RequestCache<K, T> cache,
+            K requestKey,
+            K staleFallbackKey,
+            String apiUrl,
+            boolean includeSiteId,
+            boolean forceRefresh,
+            ApiCacheManager.CallbackNotifier<T> notifier,
+            String networkErrorPrefix,
+            String httpErrorPrefix,
+            String invalidFormatError,
+            CachedResponseHandler<T> responseHandler) {
+        final RequestHandle handle = new RequestHandle();
+        final ApiCacheManager.CallbackNotifier<T> guardedNotifier = new ApiCacheManager.CallbackNotifier<T>() {
+            @Override
+            public void onSuccess(T data) {
+                if (!handle.isCancelled() && notifier != null) {
+                    notifier.onSuccess(data);
+                }
+            }
+
+            @Override
+            public void onError(String error) {
+                if (!handle.isCancelled() && notifier != null) {
+                    notifier.onError(error);
+                }
+            }
+        };
+
+        boolean shouldStartCall = cache.registerOrAttach(requestKey, guardedNotifier);
+        final Call[] callHolder = new Call[1];
+        handle.setDetachAction(() -> {
+            boolean noMoreListeners = cache.detachPendingNotifier(requestKey, guardedNotifier);
+            if (noMoreListeners && callHolder[0] != null) {
+                try {
+                    callHolder[0].cancel();
+                } catch (Exception ignored) {}
+            }
+        });
+
+        if (!shouldStartCall) {
+            return handle;
         }
 
         safeExecute(() -> {
+            if (handle.isCancelled()) {
+                cache.detachPendingNotifier(requestKey, guardedNotifier);
+                return;
+            }
             try {
                 Request.Builder reqBuilder = buildApiRequest(apiUrl, includeSiteId);
                 if (forceRefresh) {
@@ -715,18 +828,38 @@ public class ApiClientCore {
                     reqBuilder.header("Pragma", "no-cache");
                 }
                 Request request = reqBuilder.build();
+                Call call = httpClient.newCall(request);
+                callHolder[0] = call;
+                handle.attachCall(call);
+                if (handle.isCancelled()) {
+                    call.cancel();
+                    cache.detachPendingNotifier(requestKey, guardedNotifier);
+                    return;
+                }
 
-                httpClient.newCall(request).enqueue(new Callback() {
+                call.enqueue(new Callback() {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        if (call.isCanceled()) {
+                            cache.detachPendingNotifier(requestKey, guardedNotifier);
+                            return;
+                        }
                         cache.dispatchError(requestKey, networkErrorPrefix + e.getMessage());
                     }
 
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) {
                         try (response) {
+                            if (call.isCanceled()) {
+                                cache.detachPendingNotifier(requestKey, guardedNotifier);
+                                return;
+                            }
                             if (response.isSuccessful() && response.body() != null) {
                                 String responseBody = response.body().string();
+                                if (call.isCanceled()) {
+                                    cache.detachPendingNotifier(requestKey, guardedNotifier);
+                                    return;
+                                }
                                 T parsed = responseHandler.parseAndCache(responseBody);
                                 if (parsed != null) {
                                     cache.dispatchSuccess(requestKey, parsed);
@@ -743,6 +876,10 @@ public class ApiClientCore {
                                 }
                             }
                         } catch (Exception ex) {
+                            if (call.isCanceled()) {
+                                cache.detachPendingNotifier(requestKey, guardedNotifier);
+                                return;
+                            }
                             Log.e(TAG, "Error processing cached GET response for " + apiUrl, ex);
                             cache.dispatchError(requestKey, "Ошибка обработки: " + ex.getMessage());
                         }
@@ -753,6 +890,8 @@ public class ApiClientCore {
                 cache.dispatchError(requestKey, "Ошибка запроса: " + e.getMessage());
             }
         });
+
+        return handle;
     }
 
     public void shutdown() {

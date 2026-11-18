@@ -22,6 +22,7 @@ import com.example.animelib.data.entity.PendingSyncTaskEntity;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class OfflineSyncManager {
     private static final String TAG = "OfflineSyncManager";
@@ -32,13 +33,19 @@ public class OfflineSyncManager {
     private final DatabaseManager databaseManager;
     private final ApiService apiService;
     private final ExecutorService executor;
+    private final AtomicBoolean isSyncing = new AtomicBoolean(false);
+    private final AtomicBoolean pendingResync = new AtomicBoolean(false);
     private boolean isNetworkCallbackRegistered = false;
 
     private OfflineSyncManager(Context context) {
         this.context = context.getApplicationContext();
-        this.databaseManager = new DatabaseManager(this.context);
+        this.databaseManager = DatabaseManager.getInstance(this.context);
         this.apiService = new ApiService(this.context);
-        this.executor = Executors.newSingleThreadExecutor();
+        this.executor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "offline-sync-worker");
+            t.setDaemon(true);
+            return t;
+        });
         registerNetworkCallback();
     }
 
@@ -147,69 +154,84 @@ public class OfflineSyncManager {
     }
 
     public void syncPendingTasksNow() {
+        if (!isSyncing.compareAndSet(false, true)) {
+            pendingResync.set(true);
+            return;
+        }
         executor.execute(() -> {
-            if (!isNetworkAvailable(context)) {
-                Log.d(TAG, "syncPendingTasksNow called but network is not available");
-                return;
+            try {
+                do {
+                    pendingResync.set(false);
+                    runSyncPass();
+                } while (pendingResync.get() && isNetworkAvailable(context));
+            } finally {
+                isSyncing.set(false);
             }
+        });
+    }
 
-            Log.d(TAG, "syncPendingTasksNow running on background thread");
-            java.util.List<PendingSyncTaskEntity> tasks = databaseManager.getAllPendingSyncTasksSync();
-            if (tasks == null || tasks.isEmpty()) {
-                return;
-            }
+    private void runSyncPass() {
+        if (!isNetworkAvailable(context)) {
+            Log.d(TAG, "syncPendingTasksNow called but network is not available");
+            return;
+        }
 
-            long now = System.currentTimeMillis();
-            Log.d(TAG, "Processing " + tasks.size() + " pending tasks in syncPendingTasksNow");
-            for (PendingSyncTaskEntity task : tasks) {
-                if ("VIEW".equalsIgnoreCase(task.getTaskType())) {
-                    boolean success = false;
-                    try {
-                        success = apiService.markEpisodeViewedSync(task.getAnimeId(), task.getPlayerId());
-                    } catch (Exception e) {
-                        Log.e(TAG, "Error syncing VIEW task ID " + task.getId(), e);
-                    }
+        Log.d(TAG, "syncPendingTasksNow running on background thread");
+        java.util.List<PendingSyncTaskEntity> tasks = databaseManager.getAllPendingSyncTasksSync();
+        if (tasks == null || tasks.isEmpty()) {
+            return;
+        }
 
-                    if (success) {
+        long now = System.currentTimeMillis();
+        Log.d(TAG, "Processing " + tasks.size() + " pending tasks in syncPendingTasksNow");
+        for (PendingSyncTaskEntity task : tasks) {
+            if ("VIEW".equalsIgnoreCase(task.getTaskType())) {
+                boolean success = false;
+                try {
+                    success = apiService.markEpisodeViewedSync(task.getAnimeId(), task.getPlayerId());
+                } catch (Exception e) {
+                    Log.e(TAG, "Error syncing VIEW task ID " + task.getId(), e);
+                }
+
+                if (success) {
+                    databaseManager.deletePendingSyncTaskById(task.getId());
+                } else {
+                    task.setRetryCount(task.getRetryCount() + 1);
+                    databaseManager.updatePendingSyncTask(task);
+                }
+            } else if ("BOOKMARK".equalsIgnoreCase(task.getTaskType())) {
+                if (task.getMediaSlug() == null || task.getEpisodeId() <= 0
+                        || (task.getCreatedAt() > 0 && now - task.getCreatedAt() > MAX_BOOKMARK_TASK_AGE_MS)
+                        || task.getRetryCount() >= 5) {
+                    databaseManager.deletePendingSyncTaskById(task.getId());
+                    continue;
+                }
+                try {
+                    ApiService.BookmarkSaveResult res = apiService.addBookmarkSync(
+                            task.getMediaSlug(),
+                            task.getEpisodeId(),
+                            task.getTeamId(),
+                            2,
+                            "Animelib",
+                            task.getEpisodeNumber(),
+                            task.getTimecode(),
+                            task.getStatusId()
+                    );
+                    if (res.success || !res.retryable) {
                         databaseManager.deletePendingSyncTaskById(task.getId());
                     } else {
                         task.setRetryCount(task.getRetryCount() + 1);
                         databaseManager.updatePendingSyncTask(task);
                     }
-                } else if ("BOOKMARK".equalsIgnoreCase(task.getTaskType())) {
-                    if (task.getMediaSlug() == null || task.getEpisodeId() <= 0
-                            || (task.getCreatedAt() > 0 && now - task.getCreatedAt() > MAX_BOOKMARK_TASK_AGE_MS)
-                            || task.getRetryCount() >= 5) {
-                        databaseManager.deletePendingSyncTaskById(task.getId());
-                        continue;
-                    }
-                    try {
-                        ApiService.BookmarkSaveResult res = apiService.addBookmarkSync(
-                                task.getMediaSlug(),
-                                task.getEpisodeId(),
-                                task.getTeamId(),
-                                2,
-                                "Animelib",
-                                task.getEpisodeNumber(),
-                                task.getTimecode(),
-                                task.getStatusId()
-                        );
-                        if (res.success || !res.retryable) {
-                            databaseManager.deletePendingSyncTaskById(task.getId());
-                        } else {
-                            task.setRetryCount(task.getRetryCount() + 1);
-                            databaseManager.updatePendingSyncTask(task);
-                        }
-                    } catch (Exception e) {
-                        Log.e(TAG, "Error syncing BOOKMARK task ID " + task.getId(), e);
-                        task.setRetryCount(task.getRetryCount() + 1);
-                        databaseManager.updatePendingSyncTask(task);
-                    }
-                } else {
-                    databaseManager.deletePendingSyncTaskById(task.getId());
+                } catch (Exception e) {
+                    Log.e(TAG, "Error syncing BOOKMARK task ID " + task.getId(), e);
+                    task.setRetryCount(task.getRetryCount() + 1);
+                    databaseManager.updatePendingSyncTask(task);
                 }
+            } else {
+                databaseManager.deletePendingSyncTaskById(task.getId());
             }
-        });
+        }
     }
 
     public void scheduleWorkManagerSync() {

@@ -131,8 +131,14 @@ public class SearchFragment extends Fragment {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
-        if (searchHandler != null && searchRunnable != null) {
-            searchHandler.removeCallbacks(searchRunnable);
+        if (searchHandler != null) {
+            searchHandler.removeCallbacksAndMessages(null);
+        }
+        if (anixartImportBottomSheet != null) {
+            if (anixartImportBottomSheet.isShowing()) {
+                anixartImportBottomSheet.dismiss();
+            }
+            anixartImportBottomSheet = null;
         }
         closeKeyboard();
     }

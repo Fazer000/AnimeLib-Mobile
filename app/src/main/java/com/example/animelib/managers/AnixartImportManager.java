@@ -69,10 +69,15 @@ public class AnixartImportManager {
 
     private final ApiService apiService;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "anixart-import-worker");
+        t.setDaemon(true);
+        return t;
+    });
 
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
     private final AtomicBoolean isCancelled = new AtomicBoolean(false);
+    private volatile boolean isShutdown = false;
 
     public AnixartImportManager(Context context) {
         this.apiService = new ApiService(context.getApplicationContext());
@@ -89,6 +94,16 @@ public class AnixartImportManager {
         }
     }
 
+    public void shutdown() {
+        isShutdown = true;
+        isCancelled.set(true);
+        mainHandler.removeCallbacksAndMessages(null);
+        if (!executor.isShutdown()) {
+            executor.shutdownNow();
+        }
+        apiService.shutdown();
+    }
+
     /**
      * Нормализует название тайтла для надежного сравнения (удаляет знаки пунктуации, лишние пробелы, приводит к нижнему регистру)
      */
@@ -102,6 +117,7 @@ public class AnixartImportManager {
     }
 
     public void startImport(List<AnixartParser.AnixartEntry> entries, @NonNull ImportListener listener) {
+        if (isShutdown) return;
         if (entries == null || entries.isEmpty()) {
             listener.onFinished(0, 0, 0, 0, false, Collections.emptyList());
             return;
@@ -425,14 +441,20 @@ public class AnixartImportManager {
     }
 
     private void postProgress(ImportListener listener, int current, int total, ImportItemProgress item) {
-        mainHandler.post(() -> listener.onProgress(current, total, item));
+        if (!isShutdown) {
+            mainHandler.post(() -> listener.onProgress(current, total, item));
+        }
     }
 
     private void postLog(ImportListener listener, String message) {
-        mainHandler.post(() -> listener.onLog(message));
+        if (!isShutdown) {
+            mainHandler.post(() -> listener.onLog(message));
+        }
     }
 
     private void postFinished(ImportListener listener, int success, int alreadyExists, int notFound, int error, boolean cancelled, List<ImportItemProgress> problemItems) {
-        mainHandler.post(() -> listener.onFinished(success, alreadyExists, notFound, error, cancelled, problemItems));
+        if (!isShutdown) {
+            mainHandler.post(() -> listener.onFinished(success, alreadyExists, notFound, error, cancelled, problemItems));
+        }
     }
 }

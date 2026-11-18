@@ -477,4 +477,11 @@ public class AnixartImportBottomSheet extends FlexibleBottomSheetDialog {
             dismiss();
         }
     }
+
+    @Override
+    public void dismiss() {
+        importManager.shutdown();
+        apiService.shutdown();
+        super.dismiss();
+    }
 }

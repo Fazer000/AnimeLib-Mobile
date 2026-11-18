@@ -1587,297 +1587,39 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private void showSettingsDialog() {
         if (playerDialogsController == null) return;
 
-        playerDialogsController.showSettingsDialog(new PlayerDialogsController.SettingsDataProvider() {
-            @Override
-            public boolean isOfflineMode() {
-                return VideoPlayerActivity.this.isOfflineMode();
-            }
-
-            @Override
-            public boolean isPlayingDownloadedVideo() {
-                return VideoPlayerActivity.this.isPlayingDownloadedVideo();
-            }
-
-            @Override
-            public PlayersManager getPlayersManager() {
-                return playersManager;
-            }
-
-            @Override
-            public List<String> getAvailableQualities() {
-                if (playerOfflineController != null) {
-                    if (isOfflineMode()) {
-                        return playerOfflineController.getQualitiesWithDownloadedOption(new ArrayList<>());
+        playerDialogsController.showSettingsDialog(new com.example.animelib.controllers.PlayerSettingsBridge(
+                new com.example.animelib.controllers.PlayerSettingsBridge.Host() {
+                    @Override public Context getContext() { return VideoPlayerActivity.this; }
+                    @Override public boolean isOfflineMode() { return VideoPlayerActivity.this.isOfflineMode(); }
+                    @Override public boolean isPlayingDownloadedVideo() { return VideoPlayerActivity.this.isPlayingDownloadedVideo(); }
+                    @Override public ExoPlayer getActivePlayer() { return VideoPlayerActivity.this.getActivePlayer(); }
+                    @Override public ApiService getApiService() { return apiService; }
+                    @Override public PlayersManager getPlayersManager() { return playersManager; }
+                    @Override public AmbientLightManager getAmbientLightManager() { return ambientLightManager; }
+                    @Override public PlayerOfflineController getPlayerOfflineController() { return playerOfflineController; }
+                    @Override public PlayerQualityController getPlayerQualityController() { return playerQualityController; }
+                    @Override public PlayerFiltersController getPlayerFiltersController() { return playerFiltersController; }
+                    @Override public PlayerAudioController getPlayerAudioController() { return playerAudioController; }
+                    @Override public PlayerPlaybackController getPlayerPlaybackController() { return playerPlaybackController; }
+                    @Override public PlayerSubtitlesController getPlayerSubtitlesController() { return playerSubtitlesController; }
+                    @Override public boolean isEnableAmbientLight() { return enableAmbientLight; }
+                    @Override public void setEnableAmbientLight(boolean enabled) { enableAmbientLight = enabled; }
+                    @Override public boolean isAutoPlay() { return autoPlay; }
+                    @Override public void setAutoPlayAndPrepare(boolean enabled) {
+                        autoPlay = enabled;
+                        autoPlayOnPrepare = enabled;
                     }
-                    return playerOfflineController.getQualitiesWithDownloadedOption(playersManager.getAvailableQualities());
-                }
-                return playersManager.getAvailableQualities();
-            }
-
-            @Override
-            public String getPreferredQuality() {
-                return playerQualityController != null
-                        ? playerQualityController.getCurrentDisplayQualityForSettings() : "Авто";
-            }
-
-            @Override
-            public String getActivePlayingQuality() {
-                return playerQualityController != null
-                        ? playerQualityController.getEffectiveActiveQuality() : "";
-            }
-
-            @Override
-            public void onQualitySelected(String quality) {
-                if (playerQualityController != null) {
-                    playerQualityController.onQualitySelectedFromSettings(quality);
-                }
-            }
-
-            @Override
-            public float getPlaybackSpeed() {
-                ExoPlayer p = getActivePlayer();
-                return p != null ? p.getPlaybackParameters().speed : 1.0f;
-            }
-
-            @Override
-            public void onSpeedChanged(float speed) {
-                ExoPlayer p = getActivePlayer();
-                if (p != null) {
-                    p.setPlaybackSpeed(speed);
-                }
-            }
-
-            @Override
-            public boolean isEnable4K() {
-                return playerQualityController != null && playerQualityController.isEnable4K();
-            }
-
-            @Override
-            public void onEnable4KChanged(boolean enabled) {
-                if (playerQualityController == null) return;
-                playerQualityController.setEnable4K(enabled);
-                apiService.save4KSetting(enabled);
-                playersManager.setEnable4K(enabled);
-                if (!enabled && !isPlayingDownloadedVideo()
-                        && AutoQualityHelper.extractResolution(playerQualityController.getEffectiveActiveQuality()) >= 2160) {
-                    playerQualityController.setActivePlayingQuality(null);
-                    playerQualityController.switchToOnlineQualityStream(playerQualityController.getPreferredQuality(), "2160p");
-                }
-                playerQualityController.refreshQualityUiState();
-            }
-
-            @Override
-            public boolean isEnableAmbientLight() {
-                return enableAmbientLight;
-            }
-
-            @Override
-            public void onEnableAmbientLightChanged(boolean enabled) {
-                enableAmbientLight = enabled;
-                apiService.saveAmbientLightSetting(enabled);
-                if (ambientLightManager != null) {
-                    ambientLightManager.setEnabled(enabled);
-                }
-            }
-
-            @Override
-            public boolean isAutoPlay() {
-                return autoPlay;
-            }
-
-            @Override
-            public void onAutoPlayChanged(boolean enabled) {
-                autoPlay = enabled;
-                autoPlayOnPrepare = enabled;
-                apiService.saveAutoPlaySetting(enabled);
-            }
-
-            @Override
-            public int getLongSkipDuration() {
-                return longSkipDuration;
-            }
-
-            @Override
-            public void onLongSkipDurationChanged(int duration) {
-                longSkipDuration = duration;
-                apiService.saveLongSkipDurationSetting(duration);
-            }
-
-            @Override
-            public int getCurrentTheme() {
-                return currentTheme;
-            }
-
-            @Override
-            public void onThemeChanged(int themeMode) {
-                currentTheme = themeMode;
-                ThemeUtils.applyThemeToActivity(VideoPlayerActivity.this, themeMode);
-                setupFullscreen();
-                checkAndUpdateOrientation();
-                apiService.saveThemeSetting(themeMode);
-            }
-
-            @Override
-            public float[] getVideoFilters() {
-                return new float[]{
-                        playerFiltersController != null ? playerFiltersController.getFilterBrightness() : 0f,
-                        playerFiltersController != null ? playerFiltersController.getFilterContrast() : 100f,
-                        playerFiltersController != null ? playerFiltersController.getFilterSaturation() : 100f,
-                        playerFiltersController != null ? playerFiltersController.getFilterGamma() : 1.0f,
-                        playerFiltersController != null ? playerFiltersController.getFilterHue() : 0f
-                };
-            }
-
-            @Override
-            public void onVideoFiltersChanged(float b, float c, float s, float g, float h) {
-                if (playerFiltersController != null) {
-                    playerFiltersController.setFilters(b, c, s, g, h);
-                }
-                apiService.saveVideoFilters(b, c, s, g, h);
-            }
-
-            @Override
-            public boolean isSurround3DEnabled() {
-                return playerAudioController != null && playerAudioController.isEnableSurroundSound();
-            }
-
-            @Override
-            public int getSurroundMode() {
-                return playerAudioController != null ? playerAudioController.getSurroundMode() : 0;
-            }
-
-            @Override
-            public float getSurroundSpatialWidth() {
-                return playerAudioController != null ? playerAudioController.getSurroundSpatialWidth() : 1.0f;
-            }
-
-            @Override
-            public float getSurroundDialogueBoost() {
-                return playerAudioController != null ? playerAudioController.getSurroundDialogueBoost() : 1.0f;
-            }
-
-            @Override
-            public float getSurroundBassBoost() {
-                return playerAudioController != null ? playerAudioController.getSurroundBassBoost() : 1.0f;
-            }
-
-            @Override
-            public float getSurroundMidBoost() {
-                return playerAudioController != null ? playerAudioController.getSurroundMidBoost() : 1.0f;
-            }
-
-            @Override
-            public float getSurroundTrebleBoost() {
-                return playerAudioController != null ? playerAudioController.getSurroundTrebleBoost() : 1.0f;
-            }
-
-            @Override
-            public void onSurround3DChanged(boolean enabled, int mode, float spatialWidth, float dialogueBoost, float bassBoost, float trebleBoost) {
-                onSurround3DChanged(enabled, mode, spatialWidth, dialogueBoost, bassBoost, trebleBoost, 1.0f);
-            }
-
-            @Override
-            public void onSurround3DChanged(boolean enabled, int mode, float spatialWidth, float dialogueBoost, float bassBoost, float trebleBoost, float midBoost) {
-                if (playerAudioController != null) {
-                    playerAudioController.updateSettings(enabled, mode, spatialWidth, dialogueBoost, bassBoost, midBoost, trebleBoost, apiService);
-                }
-            }
-
-            @Override
-            public int getCurrentResizeMode() {
-                return playerPlaybackController != null
-                        ? playerPlaybackController.getCurrentResizeMode()
-                        : androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT;
-            }
-
-            @Override
-            public void onResizeModeChanged(int newMode) {
-                if (playerPlaybackController != null) {
-                    playerPlaybackController.setVideoResizeMode(newMode);
-                }
-                if (ambientLightManager != null) {
-                    ambientLightManager.updateBoundsFromPlayer();
-                }
-            }
-
-            @Override
-            public boolean isSubtitlesEnabled() {
-                return playerSubtitlesController != null && playerSubtitlesController.isSubtitlesEnabled();
-            }
-
-            @Override
-            public String getSubtitleFormat() {
-                return playerSubtitlesController != null ? playerSubtitlesController.getSubtitleFormat() : "ass";
-            }
-
-            @Override
-            public List<EpisodeResponse.SubtitleData> getSubtitles() {
-                return (playersManager != null && playersManager.getCurrentPlayerData() != null)
-                        ? playersManager.getCurrentPlayerData().getSubtitles() : null;
-            }
-
-            @Override
-            public void onSubtitleSettingsChanged(boolean enabled, String format) {
-                if (playerSubtitlesController != null) {
-                    playerSubtitlesController.updateSubtitleSettings(enabled, format);
-                }
-            }
-
-            @Override
-            public float getSubtitleTextSize() {
-                return playerSubtitlesController != null ? playerSubtitlesController.getSubtitleTextSize() : 18f;
-            }
-
-            @Override
-            public int getSubtitleTextColor() {
-                return playerSubtitlesController != null ? playerSubtitlesController.getSubtitleTextColor() : 0xFFFFFFFF;
-            }
-
-            @Override
-            public int getSubtitleBackgroundColor() {
-                return playerSubtitlesController != null ? playerSubtitlesController.getSubtitleBackgroundColor() : 0x00000000;
-            }
-
-            @Override
-            public int getSubtitleEdgeType() {
-                return playerSubtitlesController != null
-                        ? playerSubtitlesController.getSubtitleEdgeType() : CaptionStyleCompat.EDGE_TYPE_OUTLINE;
-            }
-
-            @Override
-            public int getSubtitleEdgeColor() {
-                return playerSubtitlesController != null ? playerSubtitlesController.getSubtitleEdgeColor() : 0xFF000000;
-            }
-
-            @Override
-            public void onSubtitleStyleSettingsChanged(float textSize, int textColor, int bgColor, int edgeType, int edgeColor) {
-                if (playerSubtitlesController != null) {
-                    playerSubtitlesController.updateSubtitleStyleSettings(textSize, textColor, bgColor, edgeType, edgeColor);
-                }
-            }
-
-            @Override
-            public String getCurrentVideoDomain() {
-                return playerQualityController != null
-                        ? playerQualityController.getCurrentVideoDomain() : com.example.animelib.ui.VideoUrlHelper.DOMAIN_MAIN;
-            }
-
-            @Override
-            public void onVideoDomainChanged(String domain) {
-                if (isPlayingDownloadedVideo()) {
-                    CustomToast.showWarning(VideoPlayerActivity.this, "Смена сервера недоступна для скачанного видео");
-                    return;
-                }
-                if (playerQualityController != null && !Objects.equals(playerQualityController.getCurrentVideoDomain(), domain)) {
-                    playerQualityController.setCurrentVideoDomain(domain);
-                    boolean isKodik = playersManager != null && playersManager.getCurrentPlayerData() != null
-                            && "kodik".equalsIgnoreCase(playersManager.getCurrentPlayerData().getPlayer());
-                    if (!isKodik && getActivePlayer() != null) {
-                        playerQualityController.restartPlayerWithNewQuality();
+                    @Override public int getLongSkipDuration() { return longSkipDuration; }
+                    @Override public void setLongSkipDuration(int duration) { longSkipDuration = duration; }
+                    @Override public int getCurrentTheme() { return currentTheme; }
+                    @Override public void applyThemeAndOrientation(int themeMode) {
+                        currentTheme = themeMode;
+                        ThemeUtils.applyThemeToActivity(VideoPlayerActivity.this, themeMode);
+                        setupFullscreen();
+                        checkAndUpdateOrientation();
                     }
                 }
-            }
-        });
+        ));
     }
 
     private void loadAndApplyTheme() {

@@ -98,4 +98,73 @@ public class CommentsDataCoordinatorUnitTest {
         );
         assertEquals("https://cdn.test/direct.jpg", teamWithStringCover.getCoverUrl());
     }
+
+    @Test
+    public void testCoalescedSnapshotCompilationAndDeduplication() {
+        Gson gson = new Gson();
+        CommentsResponse page1 = gson.fromJson("{"
+                + "\"data\": {"
+                + "  \"root\": ["
+                + "    {\"id\": 10, \"comment\": \"Sticky duplicate\", \"user\": {\"id\": 1, \"username\": \"Alice\"}},"
+                + "    {\"id\": 20, \"comment\": \"<p>Normal root</p>\", \"user\": {\"id\": 2, \"username\": \"Bob\"}}"
+                + "  ],"
+                + "  \"replies\": ["
+                + "    {\"id\": 201, \"parent_comment\": 20, \"root_id\": 20, \"comment_level\": 1, \"comment\": \"Nested reply\", \"user\": {\"id\": 3, \"username\": \"Eve\"}}"
+                + "  ]"
+                + "}"
+                + "}", CommentsResponse.class);
+
+        CommentsResponse.CommentItem sticky = new CommentsResponse.CommentItem();
+        sticky.setId(10);
+        sticky.setComment("Sticky duplicate");
+
+        CommentsDataCoordinator.PreparedTreeSnapshot snapshot = CommentsDataCoordinator.compileSnapshot(
+                java.util.Collections.singletonList(sticky),
+                java.util.Collections.singletonList(page1),
+                null,
+                true,
+                3,
+                java.util.Collections.emptySet(),
+                java.util.Collections.emptyMap(),
+                System.currentTimeMillis()
+        );
+
+        assertEquals(1, snapshot.stickyRoots.size());
+        assertEquals(1, snapshot.roots.size());
+        assertEquals(20L, snapshot.roots.get(0).getId());
+        // 1 sticky + 1 normal root + 1 reply = 3
+        assertEquals(3, snapshot.flatItems.size());
+        assertTrue(snapshot.stickyRoots.get(0).isSticky());
+        assertEquals(0, snapshot.flatItems.get(0).getLevel());
+        assertEquals(1, snapshot.flatItems.get(2).getLevel());
+    }
+
+    @Test
+    public void testRequestHandleCancellationAndDetach() {
+        com.example.animelib.api.ApiClientCore.RequestHandle handle =
+                new com.example.animelib.api.ApiClientCore.RequestHandle();
+        final boolean[] detached = {false};
+        handle.setDetachAction(() -> detached[0] = true);
+        assertFalse(handle.isCancelled());
+        handle.cancel();
+        assertTrue(handle.isCancelled());
+        assertTrue(detached[0]);
+    }
+
+    @Test
+    public void testHtmlPlainTextAndSingleParagraphFastPaths() {
+        assertFalse(com.example.animelib.util.CommentHtmlProcessor.containsHtmlTagOrEntity("Просто обычный текст"));
+        assertTrue(com.example.animelib.util.CommentHtmlProcessor.containsHtmlTagOrEntity("<p>Текст</p>"));
+        assertTrue(com.example.animelib.util.CommentHtmlProcessor.containsHtmlTagOrEntity("A &amp; B"));
+
+        com.example.animelib.util.CommentHtmlProcessor.ParsedCommentContent plain =
+                com.example.animelib.util.CommentHtmlProcessor.parseHtmlOffThread("   Чистый   текст  ", 0xFFFFFFFF, 0xFF8B5CF6);
+        assertTrue(plain.isSimple());
+        assertEquals("Чистый текст", plain.simpleText.toString());
+
+        com.example.animelib.util.CommentHtmlProcessor.ParsedCommentContent singleParagraph =
+                com.example.animelib.util.CommentHtmlProcessor.parseHtmlOffThread("<p>Привет</p>", 0xFFFFFFFF, 0xFF8B5CF6);
+        assertTrue(singleParagraph.isSimple());
+        assertEquals("Привет", singleParagraph.simpleText.toString());
+    }
 }

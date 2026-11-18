@@ -28,13 +28,17 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
+import okhttp3.Call;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -65,9 +69,11 @@ public class DownloadsManager {
 
     // Кэш разрешенных ссылок на видео для избежания лишних API-запросов
     private final Map<String, String> resolvedUrlCache = new ConcurrentHashMap<>();
+    private final Object taskStateLock = new Object();
+    private final Set<Call> activeCalls = ConcurrentHashMap.newKeySet();
 
     private volatile boolean running;
-    private volatile boolean cancelled;
+    private volatile AtomicBoolean activeCancelFlag = new AtomicBoolean(false);
 
     public DownloadsManager(Context context) {
         this.context = context.getApplicationContext();
@@ -83,7 +89,7 @@ public class DownloadsManager {
                 .build();
         this.apiService = new ApiService(this.context);
         this.databaseManager = DatabaseManager.getInstance(this.context);
-        this.kodikExtractor = new KodikLinksExtractor(this.client, new Gson());
+        this.kodikExtractor = new KodikLinksExtractor(this.client, ApiClientCore.getSharedGson());
     }
 
     public boolean isRunning() {
@@ -91,22 +97,68 @@ public class DownloadsManager {
     }
 
     public void cancel() {
-        cancelled = true;
+        activeCancelFlag.set(true);
+        for (Call call : activeCalls) {
+            try {
+                call.cancel();
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private Call newTrackedCall(Request request, AtomicBoolean cancelFlag) throws IOException {
+        if (cancelFlag != null && cancelFlag.get()) {
+            throw new IOException("Скачивание отменено");
+        }
+        Call call = client.newCall(request);
+        activeCalls.add(call);
+        if (cancelFlag != null && cancelFlag.get()) {
+            activeCalls.remove(call);
+            call.cancel();
+            throw new IOException("Скачивание отменено");
+        }
+        return call;
+    }
+
+    private void sleepWithCancel(long millis, AtomicBoolean cancelFlag) {
+        long waited = 0L;
+        final long step = 100L;
+        try {
+            while (waited < millis && (cancelFlag == null || !cancelFlag.get())) {
+                Thread.sleep(Math.min(step, millis - waited));
+                waited += step;
+            }
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
      * Скачивает указанную задачу скачивания эпизода
      */
     public void downloadTask(DownloadTask task, DownloadCallback callback) {
-        if (running) {
-            callback.onError("Скачивание уже идёт");
+        if (task == null) {
+            if (callback != null) callback.onError("Пустая задача скачивания");
             return;
         }
-        running = true;
-        cancelled = false;
+        final AtomicBoolean taskCancelFlag;
+        synchronized (taskStateLock) {
+            if (running && !activeCancelFlag.get()) {
+                if (callback != null) {
+                    callback.onError("Скачивание уже идёт");
+                }
+                return;
+            }
+            taskCancelFlag = new AtomicBoolean(false);
+            activeCancelFlag = taskCancelFlag;
+            running = true;
+        }
 
         executor.execute(() -> {
-            resolveTaskTitleAndPosterIfNeeded(task);
+            if (taskCancelFlag.get()) {
+                finish(callback, taskCancelFlag, null, "Скачивание отменено");
+                return;
+            }
+            resolveTaskTitleAndPosterIfNeeded(task, taskCancelFlag);
             File outputFile = null;
             int maxRetries = 5;
             int attempt = 0;
@@ -114,7 +166,7 @@ public class DownloadsManager {
 
             String cacheKey = task.getEpisodeId() + "_" + task.getPlayerType() + "_" + task.getTeamName() + "_" + task.getQuality();
 
-            while (attempt < maxRetries && !cancelled) {
+            while (attempt < maxRetries && !taskCancelFlag.get()) {
                 attempt++;
                 try {
                     // 1. Извлекаем или берем из кэша ссылку на видео
@@ -122,14 +174,18 @@ public class DownloadsManager {
                     String videoUrl = resolvedUrlCache.get(cacheKey);
 
                     if (videoUrl == null || videoUrl.isEmpty()) {
-                        videoUrl = resolveVideoUrl(task, subtitles);
+                        videoUrl = resolveVideoUrl(task, subtitles, taskCancelFlag);
+                        if (taskCancelFlag.get()) {
+                            finish(callback, taskCancelFlag, null, "Скачивание отменено");
+                            return;
+                        }
                         if (videoUrl != null && !videoUrl.isEmpty()) {
                             resolvedUrlCache.put(cacheKey, videoUrl);
                         }
                     }
 
                     if (videoUrl == null || videoUrl.isEmpty()) {
-                        finish(callback, null, "Не удалось получить ссылку на видео для серии " + task.getEpisodeNumber());
+                        finish(callback, taskCancelFlag, null, "Не удалось получить ссылку на видео для серии " + task.getEpisodeNumber());
                         return;
                     }
 
@@ -156,23 +212,23 @@ public class DownloadsManager {
 
                     // 3. Выполняем скачивание (HLS .m3u8 или прямой MP4)
                     if (videoUrl.contains(".m3u8")) {
-                        downloadHlsStream(videoUrl, outputFile, callback);
+                        downloadHlsStream(videoUrl, outputFile, callback, taskCancelFlag);
                     } else {
-                        downloadDirectFile(videoUrl, outputFile, "https://animelib.me/", callback);
+                        downloadDirectFile(videoUrl, outputFile, "https://animelib.me/", callback, taskCancelFlag);
                     }
 
-                    if (cancelled) {
+                    if (taskCancelFlag.get()) {
                         if (outputFile.exists()) outputFile.delete();
-                        finish(callback, null, "Скачивание отменено");
+                        finish(callback, taskCancelFlag, null, "Скачивание отменено");
                         return;
                     }
 
                     // 3b. Скачиваем субтитры если они доступны
-                    downloadSubtitlesForTask(task, outputFile, subtitles);
+                    downloadSubtitlesForTask(outputFile, subtitles, taskCancelFlag);
 
                     // 4. Сохраняем информацию в базу данных Room
                     long now = System.currentTimeMillis();
-                    String localPosterPath = downloadAndSavePoster(task.getAnimeId(), task.getPosterUrl());
+                    String localPosterPath = downloadAndSavePoster(task.getAnimeId(), task.getPosterUrl(), taskCancelFlag);
                     DownloadedAnimeEntity animeEntity = new DownloadedAnimeEntity(
                             task.getAnimeId(),
                             task.getAnimeTitle() != null ? task.getAnimeTitle() : "Аниме #" + task.getAnimeId(),
@@ -200,7 +256,7 @@ public class DownloadsManager {
                     databaseManager.saveDownloadedEpisode(episodeEntity);
 
                     Log.d(TAG, "Successfully downloaded and stored episode: " + epId);
-                    finish(callback, outputFile.getAbsolutePath(), null);
+                    finish(callback, taskCancelFlag, outputFile.getAbsolutePath(), null);
                     return;
 
                 } catch (Exception e) {
@@ -212,20 +268,18 @@ public class DownloadsManager {
                         resolvedUrlCache.remove(cacheKey);
                     }
 
-                    if (cancelled) {
+                    if (taskCancelFlag.get()) {
                         if (outputFile != null && outputFile.exists()) outputFile.delete();
-                        finish(callback, null, "Скачивание отменено");
+                        finish(callback, taskCancelFlag, null, "Скачивание отменено");
                         return;
                     }
 
                     if (attempt < maxRetries) {
-                        try {
-                            if (lastError.contains("429") || lastError.contains("503")) {
-                                Thread.sleep(5000);
-                            } else {
-                                Thread.sleep(Math.min(1000L * (1 << attempt), 8000L));
-                            }
-                        } catch (InterruptedException ignored) {}
+                        if (lastError.contains("429") || lastError.contains("503")) {
+                            sleepWithCancel(5000L, taskCancelFlag);
+                        } else {
+                            sleepWithCancel(Math.min(1000L * (1 << attempt), 8000L), taskCancelFlag);
+                        }
                     }
                 }
             }
@@ -233,14 +287,24 @@ public class DownloadsManager {
             if (outputFile != null && outputFile.exists() && outputFile.length() == 0) {
                 outputFile.delete();
             }
-            finish(callback, null, lastError != null ? lastError : "Не удалось скачать после " + maxRetries + " попыток");
+            if (taskCancelFlag.get()) {
+                finish(callback, taskCancelFlag, null, "Скачивание отменено");
+            } else {
+                finish(callback, taskCancelFlag, null, lastError != null ? lastError : "Не удалось скачать после " + maxRetries + " попыток");
+            }
         });
     }
 
-    private String resolveVideoUrl(DownloadTask task, List<EpisodeResponse.SubtitleData> subtitlesOut) throws Exception {
-        final String[] resolvedUrl = new String[1];
-        final Exception[] error = new Exception[1];
+    private String resolveVideoUrl(DownloadTask task, List<EpisodeResponse.SubtitleData> subtitlesOut, AtomicBoolean cancelFlag) throws Exception {
+        if (cancelFlag != null && cancelFlag.get()) {
+            return null;
+        }
+        final AtomicReference<String> resolvedUrl = new AtomicReference<>();
+        final AtomicReference<Exception> error = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
+
+        final String taskPlayerType = task.getPlayerType();
+        final String taskTeamName = task.getTeamName();
 
         apiService.fetchEpisodeData(task.getEpisodeId(), new ApiService.EpisodeDataCallback() {
             @Override
@@ -249,9 +313,13 @@ public class DownloadsManager {
                     if (response != null && response.getData() != null && response.getData().getPlayers() != null) {
                         List<EpisodeResponse.PlayerData> players = response.getData().getPlayers();
                         for (EpisodeResponse.PlayerData p : players) {
-                            boolean matchPlayer = task.getPlayerType().equalsIgnoreCase(p.getPlayer());
+                            if (p == null) continue;
+                            boolean matchPlayer = taskPlayerType != null && p.getPlayer() != null
+                                    && taskPlayerType.equalsIgnoreCase(p.getPlayer());
                             boolean matchTeam = p.getTeam() != null &&
-                                    (p.getTeam().getId() == task.getTeamId() || task.getTeamName().equalsIgnoreCase(p.getTeam().getName()));
+                                    (p.getTeam().getId() == task.getTeamId()
+                                            || (taskTeamName != null && p.getTeam().getName() != null
+                                            && taskTeamName.equalsIgnoreCase(p.getTeam().getName())));
 
                             if (matchPlayer && matchTeam) {
                                 if (p.getSubtitles() != null && !p.getSubtitles().isEmpty() && subtitlesOut != null) {
@@ -273,7 +341,7 @@ public class DownloadsManager {
                                                 }
                                             }
                                             if (vq != null && vq.length > 0 && vq[0].getSrc() != null) {
-                                                resolvedUrl[0] = vq[0].getSrc();
+                                                resolvedUrl.set(vq[0].getSrc());
                                             }
                                         }
                                     }
@@ -281,14 +349,15 @@ public class DownloadsManager {
                                     // AnimeLib player
                                     if (p.getVideo() != null && p.getVideo().getQuality() != null) {
                                         String domain = p.getVideoDomain();
+                                        String qualityFilter = task.getQuality() != null ? task.getQuality() : "";
                                         for (EpisodeResponse.QualityData qd : p.getVideo().getQuality()) {
-                                            if (String.valueOf(qd.getQuality()).contains(task.getQuality())) {
-                                                resolvedUrl[0] = VideoUrlHelper.toAbsoluteVideoUrl(qd.getHref(), domain);
+                                            if (String.valueOf(qd.getQuality()).contains(qualityFilter)) {
+                                                resolvedUrl.set(VideoUrlHelper.toAbsoluteVideoUrl(qd.getHref(), domain));
                                                 break;
                                             }
                                         }
-                                        if (resolvedUrl[0] == null && !p.getVideo().getQuality().isEmpty()) {
-                                            resolvedUrl[0] = VideoUrlHelper.toAbsoluteVideoUrl(p.getVideo().getQuality().get(0).getHref(), domain);
+                                        if (resolvedUrl.get() == null && !p.getVideo().getQuality().isEmpty()) {
+                                            resolvedUrl.set(VideoUrlHelper.toAbsoluteVideoUrl(p.getVideo().getQuality().get(0).getHref(), domain));
                                         }
                                     }
                                 }
@@ -297,7 +366,7 @@ public class DownloadsManager {
                         }
                     }
                 } catch (Exception e) {
-                    error[0] = e;
+                    error.compareAndSet(null, e);
                 } finally {
                     latch.countDown();
                 }
@@ -305,28 +374,32 @@ public class DownloadsManager {
 
             @Override
             public void onError(String err) {
-                error[0] = new Exception(err);
+                error.compareAndSet(null, new Exception(err));
                 latch.countDown();
             }
         });
 
-        latch.await(20, TimeUnit.SECONDS);
-        if (error[0] != null) throw error[0];
+        boolean completed = latch.await(20, TimeUnit.SECONDS);
+        if (!completed) {
+            throw new IOException("Таймаут получения ссылки на видео");
+        }
+        if (error.get() != null) throw error.get();
 
-        if (resolvedUrl[0] != null && !resolvedUrl[0].isEmpty()) {
-            if (resolvedUrl[0].startsWith("//")) {
-                resolvedUrl[0] = "https:" + resolvedUrl[0];
-            } else if (resolvedUrl[0].startsWith("/")) {
-                resolvedUrl[0] = "https://kodik.info" + resolvedUrl[0];
-            } else if (!resolvedUrl[0].startsWith("http://") && !resolvedUrl[0].startsWith("https://")) {
-                resolvedUrl[0] = "https://" + resolvedUrl[0];
+        String url = resolvedUrl.get();
+        if (url != null && !url.isEmpty()) {
+            if (url.startsWith("//")) {
+                url = "https:" + url;
+            } else if (url.startsWith("/")) {
+                url = "https://kodik.info" + url;
+            } else if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                url = "https://" + url;
             }
         }
 
-        return resolvedUrl[0];
+        return url;
     }
 
-    private void downloadDirectFile(String url, File outputFile, String referer, DownloadCallback callback) throws IOException {
+    private void downloadDirectFile(String url, File outputFile, String referer, DownloadCallback callback, AtomicBoolean cancelFlag) throws IOException {
         long existingLength = outputFile.exists() ? outputFile.length() : 0;
         Request.Builder requestBuilder = new Request.Builder().url(url);
 
@@ -339,7 +412,8 @@ public class DownloadsManager {
             Log.d(TAG, "Requesting range bytes=" + existingLength + "- for resume");
         }
 
-        try (Response response = client.newCall(requestBuilder.build()).execute()) {
+        Call call = newTrackedCall(requestBuilder.build(), cancelFlag);
+        try (Response response = call.execute()) {
             int statusCode = response.code();
 
             // Обработка ошибки 416 (Range Not Satisfiable)
@@ -350,7 +424,7 @@ public class DownloadsManager {
                         long totalSize = Long.parseLong(contentRange.substring(contentRange.lastIndexOf("/") + 1).trim());
                         if (totalSize > 0 && existingLength >= totalSize) {
                             Log.d(TAG, "HTTP 416: File already completely downloaded (" + existingLength + "/" + totalSize + ")");
-                            mainHandler.post(() -> callback.onProgress(100));
+                            if (callback != null) mainHandler.post(() -> callback.onProgress(100));
                             return;
                         }
                     } catch (Exception ignored) {}
@@ -360,7 +434,7 @@ public class DownloadsManager {
                 if (outputFile.exists()) {
                     outputFile.delete();
                 }
-                downloadDirectFileFromStart(url, outputFile, referer, callback);
+                downloadDirectFileFromStart(url, outputFile, referer, callback, cancelFlag);
                 return;
             }
 
@@ -394,11 +468,11 @@ public class DownloadsManager {
                  FileOutputStream out = new FileOutputStream(outputFile, append)) {
                 int read;
                 while ((read = in.read(buffer)) != -1) {
-                    if (cancelled) return;
+                    if (cancelFlag.get()) return;
                     out.write(buffer, 0, read);
                     written += read;
 
-                    if (total > 0) {
+                    if (total > 0 && callback != null) {
                         int percent = (int) (written * 100 / total);
                         long now = System.currentTimeMillis();
                         if (percent != lastReportedPercent && (now - lastReportedTime > 300 || percent == 100)) {
@@ -410,18 +484,21 @@ public class DownloadsManager {
                     }
                 }
                 out.flush();
-                mainHandler.post(() -> callback.onProgress(100));
+                if (callback != null) mainHandler.post(() -> callback.onProgress(100));
             }
+        } finally {
+            activeCalls.remove(call);
         }
     }
 
-    private void downloadDirectFileFromStart(String url, File outputFile, String referer, DownloadCallback callback) throws IOException {
+    private void downloadDirectFileFromStart(String url, File outputFile, String referer, DownloadCallback callback, AtomicBoolean cancelFlag) throws IOException {
         Request.Builder requestBuilder = new Request.Builder().url(url);
         for (Map.Entry<String, String> header : VideoUrlHelper.getVideoHeaders(referer).entrySet()) {
             requestBuilder.header(header.getKey(), header.getValue());
         }
 
-        try (Response response = client.newCall(requestBuilder.build()).execute()) {
+        Call call = newTrackedCall(requestBuilder.build(), cancelFlag);
+        try (Response response = call.execute()) {
             if (!response.isSuccessful()) {
                 throw new IOException("HTTP " + response.code());
             }
@@ -440,11 +517,11 @@ public class DownloadsManager {
                  FileOutputStream out = new FileOutputStream(outputFile, false)) {
                 int read;
                 while ((read = in.read(buffer)) != -1) {
-                    if (cancelled) return;
+                    if (cancelFlag.get()) return;
                     out.write(buffer, 0, read);
                     written += read;
 
-                    if (total > 0) {
+                    if (total > 0 && callback != null) {
                         int percent = (int) (written * 100 / total);
                         long now = System.currentTimeMillis();
                         if (percent != lastReportedPercent && (now - lastReportedTime > 300 || percent == 100)) {
@@ -456,20 +533,25 @@ public class DownloadsManager {
                     }
                 }
                 out.flush();
-                mainHandler.post(() -> callback.onProgress(100));
+                if (callback != null) mainHandler.post(() -> callback.onProgress(100));
             }
+        } finally {
+            activeCalls.remove(call);
         }
     }
 
-    private void downloadHlsStream(String m3u8Url, File outputFile, DownloadCallback callback) throws IOException {
+    private void downloadHlsStream(String m3u8Url, File outputFile, DownloadCallback callback, AtomicBoolean cancelFlag) throws IOException {
         Log.d(TAG, "Fetching HLS master playlist: " + m3u8Url);
         Request request = new Request.Builder().url(m3u8Url).build();
         String playlistContent;
-        try (Response response = client.newCall(request).execute()) {
+        Call masterCall = newTrackedCall(request, cancelFlag);
+        try (Response response = masterCall.execute()) {
             if (!response.isSuccessful() || response.body() == null) {
                 throw new IOException("HTTP " + response.code() + " loading M3U8");
             }
             playlistContent = response.body().string();
+        } finally {
+            activeCalls.remove(masterCall);
         }
 
         String mediaPlaylistUrl = m3u8Url;
@@ -487,10 +569,13 @@ public class DownloadsManager {
                 mediaPlaylistUrl = bestSubUrl;
                 Log.d(TAG, "Selected sub-playlist URL: " + mediaPlaylistUrl);
                 Request subReq = new Request.Builder().url(mediaPlaylistUrl).build();
-                try (Response response = client.newCall(subReq).execute()) {
+                Call subCall = newTrackedCall(subReq, cancelFlag);
+                try (Response response = subCall.execute()) {
                     if (response.isSuccessful() && response.body() != null) {
                         playlistContent = response.body().string();
                     }
+                } finally {
+                    activeCalls.remove(subCall);
                 }
             }
         }
@@ -536,9 +621,13 @@ public class DownloadsManager {
             } catch (Exception ignored) {}
         }
 
-        ExecutorService segmentExecutor = Executors.newFixedThreadPool(MAX_HLS_THREADS);
+        ExecutorService segmentExecutor = Executors.newFixedThreadPool(MAX_HLS_THREADS, r -> {
+            Thread t = new Thread(r, "hls-segment-worker");
+            t.setDaemon(true);
+            return t;
+        });
         AtomicInteger completedCount = new AtomicInteger(0);
-        final IOException[] segError = new IOException[1];
+        AtomicReference<IOException> segError = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(totalSegments);
 
         long[] lastReportedTime = new long[1];
@@ -550,30 +639,32 @@ public class DownloadsManager {
 
             segmentExecutor.execute(() -> {
                 try {
-                    if (!cancelled && segError[0] == null) {
+                    if (!cancelFlag.get() && segError.get() == null) {
                         File segFile = new File(segsDir, String.format(java.util.Locale.US, "seg_%05d.ts", segIndex));
                         File tempSegFile = new File(segsDir, String.format(java.util.Locale.US, "seg_%05d.ts.tmp", segIndex));
 
                         if (!segFile.exists() || segFile.length() == 0) {
-                            downloadSingleSegmentWithRetry(segUrl, segFile, tempSegFile);
+                            downloadSingleSegmentWithRetry(segUrl, segFile, tempSegFile, cancelFlag);
                         }
 
                         int currentCompleted = completedCount.incrementAndGet();
                         int percent = (int) (currentCompleted * 100L / totalSegments);
                         long now = System.currentTimeMillis();
 
-                        synchronized (lastReportedPercent) {
-                            if (percent != lastReportedPercent[0] && (now - lastReportedTime[0] > 300 || percent == 100)) {
-                                lastReportedPercent[0] = percent;
-                                lastReportedTime[0] = now;
-                                int p = percent;
-                                mainHandler.post(() -> callback.onProgress(p));
+                        if (callback != null) {
+                            synchronized (lastReportedPercent) {
+                                if (percent != lastReportedPercent[0] && (now - lastReportedTime[0] > 300 || percent == 100)) {
+                                    lastReportedPercent[0] = percent;
+                                    lastReportedTime[0] = now;
+                                    int p = percent;
+                                    mainHandler.post(() -> callback.onProgress(p));
+                                }
                             }
                         }
                     }
                 } catch (IOException e) {
                     Log.w(TAG, "Failed downloading segment " + segIndex + ": " + e.getMessage());
-                    segError[0] = e;
+                    segError.compareAndSet(null, e);
                 } finally {
                     latch.countDown();
                 }
@@ -583,19 +674,20 @@ public class DownloadsManager {
         try {
             latch.await();
         } catch (InterruptedException e) {
-            cancelled = true;
+            Thread.currentThread().interrupt();
+            cancelFlag.set(true);
         } finally {
             segmentExecutor.shutdownNow();
         }
 
-        if (cancelled) return;
-        if (segError[0] != null) throw segError[0];
+        if (cancelFlag.get()) return;
+        if (segError.get() != null) throw segError.get();
 
         // Объединяем сегменты в итоговый outputFile
         byte[] buffer = new byte[BUFFER_SIZE];
         try (FileOutputStream out = new FileOutputStream(outputFile, false)) {
             for (int i = 0; i < totalSegments; i++) {
-                if (cancelled) {
+                if (cancelFlag.get()) {
                     if (outputFile.exists()) outputFile.delete();
                     return;
                 }
@@ -619,28 +711,29 @@ public class DownloadsManager {
         }
 
         com.example.animelib.util.FileUtils.deleteRecursively(segsDir);
-        mainHandler.post(() -> callback.onProgress(100));
+        if (callback != null) mainHandler.post(() -> callback.onProgress(100));
     }
 
-    private void downloadSingleSegmentWithRetry(String segUrl, File segFile, File tempSegFile) throws IOException {
+    private void downloadSingleSegmentWithRetry(String segUrl, File segFile, File tempSegFile, AtomicBoolean cancelFlag) throws IOException {
         int maxSegRetries = 3;
         IOException lastExc = null;
         byte[] buffer = new byte[BUFFER_SIZE];
 
         for (int attempt = 1; attempt <= maxSegRetries; attempt++) {
-            if (cancelled) return;
+            if (cancelFlag.get()) return;
             Request segReq = new Request.Builder()
                     .url(segUrl)
                     .header("User-Agent", VideoUrlHelper.getRandomUserAgent())
                     .build();
 
-            try (Response response = client.newCall(segReq).execute()) {
+            Call call = newTrackedCall(segReq, cancelFlag);
+            try (Response response = call.execute()) {
                 if (response.isSuccessful() && response.body() != null) {
                     try (InputStream in = response.body().byteStream();
                          FileOutputStream out = new FileOutputStream(tempSegFile)) {
                         int read;
                         while ((read = in.read(buffer)) != -1) {
-                            if (cancelled) {
+                            if (cancelFlag.get()) {
                                 tempSegFile.delete();
                                 return;
                             }
@@ -658,16 +751,16 @@ public class DownloadsManager {
                 }
             } catch (IOException e) {
                 lastExc = e;
+            } finally {
+                activeCalls.remove(call);
             }
 
             if (tempSegFile.exists()) {
                 tempSegFile.delete();
             }
 
-            if (attempt < maxSegRetries && !cancelled) {
-                try {
-                    Thread.sleep(300);
-                } catch (InterruptedException ignored) {}
+            if (attempt < maxSegRetries && !cancelFlag.get()) {
+                sleepWithCancel(300L, cancelFlag);
             }
         }
 
@@ -699,8 +792,13 @@ public class DownloadsManager {
         return relativeUrl;
     }
 
-    private void finish(DownloadCallback callback, String localPath, String error) {
-        running = false;
+    private void finish(DownloadCallback callback, AtomicBoolean taskCancelFlag, String localPath, String error) {
+        synchronized (taskStateLock) {
+            if (activeCancelFlag == taskCancelFlag) {
+                running = false;
+            }
+        }
+        if (callback == null) return;
         mainHandler.post(() -> {
             if (error != null) {
                 callback.onError(error);
@@ -710,7 +808,7 @@ public class DownloadsManager {
         });
     }
 
-    private void downloadSubtitlesForTask(DownloadTask task, File videoFile, List<EpisodeResponse.SubtitleData> subtitles) {
+    private void downloadSubtitlesForTask(File videoFile, List<EpisodeResponse.SubtitleData> subtitles, AtomicBoolean cancelFlag) {
         if (subtitles == null || subtitles.isEmpty() || videoFile == null) return;
         String baseName = videoFile.getAbsolutePath();
         int dotIdx = baseName.lastIndexOf('.');
@@ -719,6 +817,7 @@ public class DownloadsManager {
         }
 
         for (int i = 0; i < subtitles.size(); i++) {
+            if (cancelFlag.get()) return;
             EpisodeResponse.SubtitleData sub = subtitles.get(i);
             if (sub == null || sub.getSrc() == null || sub.getSrc().trim().isEmpty()) continue;
 
@@ -736,15 +835,18 @@ public class DownloadsManager {
                 url = "https://animelib.me" + (url.startsWith("/") ? "" : "/") + url;
             }
 
+            Call subCall = null;
             try {
                 Request request = new Request.Builder().url(url).build();
-                try (Response response = client.newCall(request).execute()) {
+                subCall = newTrackedCall(request, cancelFlag);
+                try (Response response = subCall.execute()) {
                     if (response.isSuccessful() && response.body() != null) {
                         try (InputStream is = response.body().byteStream();
                              FileOutputStream fos = new FileOutputStream(subFile)) {
                             byte[] buffer = new byte[8192];
                             int read;
                             while ((read = is.read(buffer)) != -1) {
+                                if (cancelFlag.get()) return;
                                 fos.write(buffer, 0, read);
                             }
                             fos.flush();
@@ -754,11 +856,17 @@ public class DownloadsManager {
                 }
             } catch (Exception e) {
                 Log.w(TAG, "Failed to download subtitle " + url + ": " + e.getMessage());
+            } finally {
+                if (subCall != null) activeCalls.remove(subCall);
             }
         }
     }
 
     public String downloadAndSavePoster(String animeId, String posterUrl) {
+        return downloadAndSavePoster(animeId, posterUrl, null);
+    }
+
+    private String downloadAndSavePoster(String animeId, String posterUrl, AtomicBoolean cancelFlag) {
         if (animeId == null || animeId.isEmpty()) return posterUrl;
         File internalDir = new File(context.getFilesDir(), "cached_posters");
         File internalPosterFile = new File(internalDir, animeId + ".jpg");
@@ -786,9 +894,11 @@ public class DownloadsManager {
             url = "https://animelib.me" + (url.startsWith("/") ? "" : "/") + url;
         }
 
+        Call posterCall = null;
         try {
             Request request = new Request.Builder().url(url).build();
-            try (Response response = client.newCall(request).execute()) {
+            posterCall = newTrackedCall(request, cancelFlag);
+            try (Response response = posterCall.execute()) {
                 if (response.isSuccessful() && response.body() != null) {
                     byte[] bytes = response.body().bytes();
                     if (bytes != null && bytes.length > 0) {
@@ -810,12 +920,15 @@ public class DownloadsManager {
             }
         } catch (Exception e) {
             Log.e(TAG, "Failed to download poster image: " + e.getMessage());
+        } finally {
+            if (posterCall != null) activeCalls.remove(posterCall);
         }
         return posterUrl;
     }
 
-    private void resolveTaskTitleAndPosterIfNeeded(DownloadTask task) {
+    private void resolveTaskTitleAndPosterIfNeeded(DownloadTask task, AtomicBoolean cancelFlag) {
         if (task == null || task.getAnimeId() == null) return;
+        if (cancelFlag != null && cancelFlag.get()) return;
 
         boolean titleIsPlaceholder = isPlaceholderTitle(task.getAnimeTitle());
         boolean posterIsPlaceholder = isPlaceholderUrl(task.getPosterUrl());
@@ -844,6 +957,7 @@ public class DownloadsManager {
         }
 
         // 2. Try ApiService HTTP request synchronously
+        Call metadataCall = null;
         try {
             String rawSiteUrl = databaseManager != null ? databaseManager.getSiteUrl() : null;
             boolean isOtherRegion = SiteUtils.isOtherRegion(rawSiteUrl, context);
@@ -857,10 +971,11 @@ public class DownloadsManager {
                     .addHeader("Referer", siteOrigin + "/")
                     .addHeader("Site-Id", "5")
                     .build();
-            try (Response response = client.newCall(request).execute()) {
+            metadataCall = newTrackedCall(request, cancelFlag);
+            try (Response response = metadataCall.execute()) {
                 if (response.isSuccessful() && response.body() != null) {
                     String jsonStr = response.body().string();
-                    JsonObject json = new Gson().fromJson(jsonStr, JsonObject.class);
+                    JsonObject json = ApiClientCore.getSharedGson().fromJson(jsonStr, JsonObject.class);
                     if (json != null && json.has("data")) {
                         JsonObject data = json.getAsJsonObject("data");
                         if (titleIsPlaceholder) {
@@ -893,6 +1008,8 @@ public class DownloadsManager {
             }
         } catch (Exception e) {
             Log.w(TAG, "Failed to resolve real anime title/poster for ID " + task.getAnimeId() + ": " + e.getMessage());
+        } finally {
+            if (metadataCall != null) activeCalls.remove(metadataCall);
         }
 
         if (!isPlaceholderTitle(task.getAnimeTitle()) || !isPlaceholderUrl(task.getPosterUrl())) {
@@ -929,7 +1046,8 @@ public class DownloadsManager {
     public void cleanup() {
         cancel();
         if (!executor.isShutdown()) {
-            executor.shutdown();
+            executor.shutdownNow();
         }
+        apiService.shutdown();
     }
 }

@@ -186,7 +186,7 @@ public class MainActivity extends AppCompatActivity {
 
         httpClient = ApiClientCore.getSharedHttpClient();
         executor = Executors.newSingleThreadExecutor();
-        gson = new Gson();
+        gson = ApiClientCore.getSharedGson();
 
         viewModel = new ViewModelProvider(this).get(AppSettingsViewModel.class);
         apiService = new ApiService(this);
@@ -774,7 +774,7 @@ public class MainActivity extends AppCompatActivity {
     public void showCustomSelectDialog(String dialogDataJson) {
         if (isFinishing() || isDestroyed()) return;
         try {
-            Gson gsonInstance = gson != null ? gson : new Gson();
+            Gson gsonInstance = gson != null ? gson : ApiClientCore.getSharedGson();
             SelectDialogData dialogData = gsonInstance.fromJson(dialogDataJson, SelectDialogData.class);
 
             if (dialogData == null || dialogData.options == null || dialogData.values == null) {
@@ -940,6 +940,12 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        if (anixartImportBottomSheet != null) {
+            if (anixartImportBottomSheet.isShowing()) {
+                anixartImportBottomSheet.dismiss();
+            }
+            anixartImportBottomSheet = null;
+        }
         if (webSplashController != null) {
             webSplashController.dismissImmediately();
         }

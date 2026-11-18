@@ -14,6 +14,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.lang.ref.WeakReference;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -29,7 +30,11 @@ public class JSInjectionsHandler {
     private static final Map<String, String> JS_CACHE = new ConcurrentHashMap<>();
     private static volatile String cachedStartBundle = null;
     private static volatile String cachedFinishBundle = null;
-    private static final ExecutorService PRELOAD_EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final ExecutorService PRELOAD_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "js-preload");
+        t.setDaemon(true);
+        return t;
+    });
 
     private static final String[] START_SCRIPTS = new String[] {
             "js/license-button-listener.js",
@@ -59,20 +64,22 @@ public class JSInjectionsHandler {
             "js/remove-slider-block.js"
     };
 
-    private final Context context;
+    private final Context appContext;
+    private final WeakReference<Context> contextRef;
 
     public interface OnPlayerButtonClickListener {
         void onPlayerButtonClicked(String buttonHref);
     }
 
-    private OnPlayerButtonClickListener onPlayerButtonClickListener;
+    private volatile OnPlayerButtonClickListener onPlayerButtonClickListener;
 
     public void setOnPlayerButtonClickListener(OnPlayerButtonClickListener listener) {
         this.onPlayerButtonClickListener = listener;
     }
 
     public JSInjectionsHandler(Context context) {
-        this.context = context;
+        this.appContext = context != null ? context.getApplicationContext() : null;
+        this.contextRef = new WeakReference<>(context);
         preloadAssetsAsync(context);
     }
 
@@ -133,7 +140,7 @@ public class JSInjectionsHandler {
         if (webView == null) return;
         String bundle = cachedStartBundle;
         if (bundle == null) {
-            ensureBundlesBuilt(context.getApplicationContext());
+            ensureBundlesBuilt(appContext);
             bundle = cachedStartBundle;
         }
         if (bundle != null && !bundle.isEmpty()) {
@@ -149,7 +156,7 @@ public class JSInjectionsHandler {
         if (webView == null) return;
         String bundle = cachedFinishBundle;
         if (bundle == null) {
-            ensureBundlesBuilt(context.getApplicationContext());
+            ensureBundlesBuilt(appContext);
             bundle = cachedFinishBundle;
         }
         if (bundle != null && !bundle.isEmpty()) {
@@ -236,13 +243,17 @@ public class JSInjectionsHandler {
 
     private void loadAndExecuteJS(WebView webView, String assetPath) {
         if (webView == null) return;
-        String jsCode = readAssetStatic(context.getApplicationContext(), assetPath);
+        String jsCode = readAssetStatic(appContext, assetPath);
         if (jsCode != null && !jsCode.isEmpty()) {
             webView.evaluateJavascript(jsCode, null);
         }
     }
     
     
+    private android.app.Activity getHostActivity() {
+        return getActivityFromContext(contextRef.get());
+    }
+
     private static android.app.Activity getActivityFromContext(Context ctx) {
         while (ctx instanceof android.content.ContextWrapper) {
             if (ctx instanceof android.app.Activity) {
@@ -267,11 +278,12 @@ public class JSInjectionsHandler {
                     return;
                 }
             }
-            if (onPlayerButtonClickListener != null) {
-                onPlayerButtonClickListener.onPlayerButtonClicked(buttonHref);
+            OnPlayerButtonClickListener listener = onPlayerButtonClickListener;
+            if (listener != null) {
+                listener.onPlayerButtonClicked(buttonHref);
                 return;
             }
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity != null) {
                 activity.runOnUiThread(() -> {
                     Log.d("PlayerHandler", "Getting auth token before starting VideoPlayerActivity for URL: " + buttonHref);
@@ -288,7 +300,7 @@ public class JSInjectionsHandler {
         
         @JavascriptInterface
         public void onThemeButtonClicked() {
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity != null) {
                 activity.runOnUiThread(() -> {
                     Log.d("PlayerHandler", "Theme button clicked, showing theme dialog");
@@ -303,7 +315,7 @@ public class JSInjectionsHandler {
 
         @JavascriptInterface
         public void onSiteLogoLongPressed() {
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity != null) {
                 activity.runOnUiThread(() -> {
                     Log.d("PlayerHandler", "Site logo long pressed, showing site selection BS");
@@ -318,7 +330,7 @@ public class JSInjectionsHandler {
         
         @JavascriptInterface
         public void showCustomSelectDialog(String dialogDataJson) {
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity != null) {
                 activity.runOnUiThread(() -> {
                     Log.d("PlayerHandler", "Custom select dialog requested with data: " + dialogDataJson);
@@ -333,7 +345,7 @@ public class JSInjectionsHandler {
         
         @JavascriptInterface
         public void updateSelectButton(String selectId, String selectedValue, String selectedText) {
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity != null) {
                 activity.runOnUiThread(() -> {
                     Log.d("PlayerHandler", "Updating select button: " + selectId + " = " + selectedText);
@@ -348,7 +360,7 @@ public class JSInjectionsHandler {
         
         @JavascriptInterface
         public void showDomainChangeSpinner() {
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity != null) {
                 activity.runOnUiThread(() -> {
                     Log.d("PlayerHandler", "Showing domain change spinner");
@@ -363,7 +375,7 @@ public class JSInjectionsHandler {
         
         @JavascriptInterface
         public void hideDomainChangeSpinner() {
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity != null) {
                 activity.runOnUiThread(() -> {
                     Log.d("PlayerHandler", "Hiding domain change spinner");
@@ -378,7 +390,7 @@ public class JSInjectionsHandler {
         
         @JavascriptInterface
         public void handleOnBackPressed() {
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity != null) {
                 activity.runOnUiThread(() -> {
                     Log.d("PlayerHandler", "Back button pressed from WebView");
@@ -398,22 +410,22 @@ public class JSInjectionsHandler {
 
         @JavascriptInterface
         public String getSavedAuthJson() {
-            return com.example.animelib.util.CookieSyncManager.getAuthJson(context);
+            return com.example.animelib.util.CookieSyncManager.getAuthJson(appContext);
         }
 
         @JavascriptInterface
         public void saveLatestViews(String latestViewsJson) {
-            com.example.animelib.util.LatestViewsManager.updateFromJS(context, latestViewsJson);
+            com.example.animelib.util.LatestViewsManager.updateFromJS(appContext, latestViewsJson);
         }
 
         @JavascriptInterface
         public String getLatestViewsJson() {
-            return com.example.animelib.util.LatestViewsManager.getLatestViewsJson(context);
+            return com.example.animelib.util.LatestViewsManager.getLatestViewsJson(appContext);
         }
 
         @JavascriptInterface
         public void getAuthFromLocalStorage() {
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity != null) {
                 activity.runOnUiThread(() -> {
                     Log.d("PlayerHandler", "Getting auth from localStorage");
@@ -429,7 +441,7 @@ public class JSInjectionsHandler {
         @JavascriptInterface
         public void clearAuthToken() {
             com.example.animelib.util.CookieSyncManager.clearAuthJson();
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity != null) {
                 activity.runOnUiThread(() -> {
                     Log.d("PlayerHandler", "Clearing auth token from WebView logout");
@@ -444,7 +456,7 @@ public class JSInjectionsHandler {
 
         @JavascriptInterface
         public void saveOAuthToken(String jsonString) {
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity != null) {
                 activity.runOnUiThread(() -> {
                     Log.d("PlayerHandler", "OAuth token response received from WebView");
@@ -459,7 +471,7 @@ public class JSInjectionsHandler {
 
         @JavascriptInterface
         public void saveAuthMeData(String jsonString) {
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity != null) {
                 activity.runOnUiThread(() -> {
                     Log.d("PlayerHandler", "Auth me response received from WebView");
@@ -474,7 +486,7 @@ public class JSInjectionsHandler {
         
         @JavascriptInterface
         public void onSearchButtonClicked() {
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity != null) {
                 activity.runOnUiThread(() -> {
                     Log.d("PlayerHandler", "Search button clicked from WebView");
@@ -489,7 +501,7 @@ public class JSInjectionsHandler {
 
         @JavascriptInterface
         public void onDownloadedButtonClicked() {
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity != null) {
                 activity.runOnUiThread(() -> {
                     Log.d("PlayerHandler", "Downloaded button clicked from WebView");
@@ -502,7 +514,7 @@ public class JSInjectionsHandler {
 
         @JavascriptInterface
         public void onAnixartImportButtonClicked() {
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity != null) {
                 activity.runOnUiThread(() -> {
                     Log.d("PlayerHandler", "Anixart import button clicked from WebView");
@@ -517,7 +529,7 @@ public class JSInjectionsHandler {
 
         @JavascriptInterface
         public void disallowInterceptTouch() {
-            android.app.Activity activity = getActivityFromContext(context);
+            android.app.Activity activity = getHostActivity();
             if (activity instanceof com.example.animelib.MainActivity) {
                 activity.runOnUiThread(() -> {
                     ((com.example.animelib.MainActivity) activity).disallowInterceptTouch();

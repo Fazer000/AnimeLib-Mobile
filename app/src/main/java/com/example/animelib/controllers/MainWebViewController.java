@@ -887,9 +887,13 @@ public class MainWebViewController {
     public void destroy() {
         isDestroyed = true;
         uiHandler.removeCallbacksAndMessages(null);
+        if (jsInjectionsHandler != null) {
+            jsInjectionsHandler.setOnPlayerButtonClickListener(null);
+        }
         if (webView != null) {
             try {
                 webView.stopLoading();
+                webView.removeJavascriptInterface("AndroidInterface");
                 if (webView.getParent() instanceof ViewGroup) {
                     ((ViewGroup) webView.getParent()).removeView(webView);
                 }

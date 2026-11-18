@@ -66,6 +66,12 @@ public class CommentsApi {
 
     public void fetchEpisodeComments(long episodeId, String sortType, int page, boolean forceRefresh,
                                      ApiService.EpisodeCommentsCallback callback) {
+        fetchEpisodeComments(episodeId, sortType, page, forceRefresh, false, callback);
+    }
+
+    public ApiClientCore.RequestHandle fetchEpisodeComments(long episodeId, String sortType, int page, boolean forceRefresh,
+                                                            boolean deliverOnWorkerThread,
+                                                            ApiService.EpisodeCommentsCallback callback) {
         final String cacheKey = episodeId + "_" + (sortType != null ? sortType : "best") + "_" + page;
 
         if (forceRefresh) {
@@ -73,14 +79,29 @@ public class CommentsApi {
         } else {
             CommentsResponse cached = ApiCacheManager.COMMENTS.getValid(cacheKey, COMMENTS_TTL_MS);
             if (cached != null) {
-                if (callback != null) core.safeRunOnUiThread(() -> callback.onCommentsReceived(cached));
-                return;
+                ApiClientCore.RequestHandle handle = new ApiClientCore.RequestHandle();
+                if (callback != null) {
+                    if (deliverOnWorkerThread) {
+                        core.safeExecute(() -> {
+                            if (!handle.isCancelled()) {
+                                callback.onCommentsReceived(cached);
+                            }
+                        });
+                    } else {
+                        core.safeRunOnUiThread(() -> {
+                            if (!handle.isCancelled()) {
+                                callback.onCommentsReceived(cached);
+                            }
+                        });
+                    }
+                }
+                return handle;
             }
         }
 
         final String requestKey = forceRefresh ? (cacheKey + "_force_" + System.nanoTime()) : cacheKey;
         String apiUrl = buildCommentsUrl(episodeId, sortType, page);
-        core.executeCachedGet(
+        return core.executeCachedGetWithHandle(
                 ApiCacheManager.COMMENTS,
                 requestKey,
                 cacheKey,
@@ -90,12 +111,22 @@ public class CommentsApi {
                 new ApiCacheManager.CallbackNotifier<CommentsResponse>() {
                     @Override
                     public void onSuccess(CommentsResponse data) {
-                        if (callback != null) core.safeRunOnUiThread(() -> callback.onCommentsReceived(data));
+                        if (callback == null) return;
+                        if (deliverOnWorkerThread) {
+                            callback.onCommentsReceived(data);
+                        } else {
+                            core.safeRunOnUiThread(() -> callback.onCommentsReceived(data));
+                        }
                     }
 
                     @Override
                     public void onError(String error) {
-                        if (callback != null) core.safeRunOnUiThread(() -> callback.onError(error));
+                        if (callback == null) return;
+                        if (deliverOnWorkerThread) {
+                            callback.onError(error);
+                        } else {
+                            core.safeRunOnUiThread(() -> callback.onError(error));
+                        }
                     }
                 },
                 "Ошибка сети: ",
@@ -112,14 +143,34 @@ public class CommentsApi {
     }
 
     public void fetchStickyComments(long episodeId, ApiService.StickyCommentsCallback callback) {
+        fetchStickyComments(episodeId, false, callback);
+    }
+
+    public ApiClientCore.RequestHandle fetchStickyComments(long episodeId, boolean deliverOnWorkerThread,
+                                                           ApiService.StickyCommentsCallback callback) {
         List<CommentsResponse.CommentItem> cached = ApiCacheManager.STICKY_COMMENTS.getValid(episodeId, STICKY_COMMENTS_TTL_MS);
         if (cached != null) {
-            if (callback != null) core.safeRunOnUiThread(() -> callback.onStickyCommentsReceived(cached));
-            return;
+            ApiClientCore.RequestHandle handle = new ApiClientCore.RequestHandle();
+            if (callback != null) {
+                if (deliverOnWorkerThread) {
+                    core.safeExecute(() -> {
+                        if (!handle.isCancelled()) {
+                            callback.onStickyCommentsReceived(cached);
+                        }
+                    });
+                } else {
+                    core.safeRunOnUiThread(() -> {
+                        if (!handle.isCancelled()) {
+                            callback.onStickyCommentsReceived(cached);
+                        }
+                    });
+                }
+            }
+            return handle;
         }
 
         String apiUrl = ApiClientCore.API_BASE_HAPI + "/comments/sticky?post_id=" + episodeId + "&post_type=episodes";
-        core.executeCachedGet(
+        return core.executeCachedGetWithHandle(
                 ApiCacheManager.STICKY_COMMENTS,
                 episodeId,
                 episodeId,
@@ -129,12 +180,22 @@ public class CommentsApi {
                 new ApiCacheManager.CallbackNotifier<List<CommentsResponse.CommentItem>>() {
                     @Override
                     public void onSuccess(List<CommentsResponse.CommentItem> data) {
-                        if (callback != null) core.safeRunOnUiThread(() -> callback.onStickyCommentsReceived(data));
+                        if (callback == null) return;
+                        if (deliverOnWorkerThread) {
+                            callback.onStickyCommentsReceived(data);
+                        } else {
+                            core.safeRunOnUiThread(() -> callback.onStickyCommentsReceived(data));
+                        }
                     }
 
                     @Override
                     public void onError(String error) {
-                        if (callback != null) core.safeRunOnUiThread(() -> callback.onError(error));
+                        if (callback == null) return;
+                        if (deliverOnWorkerThread) {
+                            callback.onError(error);
+                        } else {
+                            core.safeRunOnUiThread(() -> callback.onError(error));
+                        }
                     }
                 },
                 "Ошибка сети: ",

@@ -34,6 +34,9 @@ public interface DownloadedAnimeDao {
     @Query("SELECT * FROM downloaded_episodes WHERE animeId = :animeId ORDER BY CAST(episodeNumber AS INTEGER) ASC")
     List<DownloadedEpisodeEntity> getEpisodesForAnimeSync(String animeId);
 
+    @Query("SELECT * FROM downloaded_episodes ORDER BY CAST(episodeNumber AS INTEGER) ASC")
+    List<DownloadedEpisodeEntity> getAllEpisodesSync();
+
     @Query("SELECT * FROM downloaded_episodes WHERE id = :id LIMIT 1")
     DownloadedEpisodeEntity getEpisodeById(String id);
 

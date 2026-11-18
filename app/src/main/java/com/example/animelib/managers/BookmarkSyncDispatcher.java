@@ -94,7 +94,7 @@ public class BookmarkSyncDispatcher {
     private BookmarkSyncDispatcher(@NonNull Context context) {
         this.appContext = context.getApplicationContext() != null ? context.getApplicationContext() : context;
         this.appApiService = new ApiService(this.appContext);
-        this.appDatabaseManager = new DatabaseManager(this.appContext);
+        this.appDatabaseManager = DatabaseManager.getInstance(this.appContext);
         this.executor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "bookmark-sync-dispatcher");
             t.setPriority(Thread.NORM_PRIORITY);

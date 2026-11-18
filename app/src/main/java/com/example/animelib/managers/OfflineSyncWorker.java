@@ -25,7 +25,7 @@ public class OfflineSyncWorker extends Worker {
     public Result doWork() {
         Log.d(TAG, "Starting offline sync worker execution");
         Context context = getApplicationContext();
-        DatabaseManager dbManager = new DatabaseManager(context);
+        DatabaseManager dbManager = DatabaseManager.getInstance(context);
         ApiService apiService = new ApiService(context);
 
         List<PendingSyncTaskEntity> tasks = dbManager.getAllPendingSyncTasksSync();

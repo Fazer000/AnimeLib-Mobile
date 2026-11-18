@@ -7,6 +7,7 @@ import android.os.Bundle;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.example.animelib.data.DatabaseManager;
 import com.example.animelib.util.ImageLoader;
 
 import java.lang.ref.WeakReference;
@@ -20,6 +21,7 @@ public class AnimeLibApplication extends Application {
         super.onCreate();
         instance = this;
         ImageLoader.init(this);
+        DatabaseManager.getInstance(this).preloadCachesAsync();
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override
             public void onActivityCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState) {
