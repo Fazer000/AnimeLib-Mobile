@@ -849,32 +849,34 @@ public class DatabaseManager {
 
     public DownloadedEpisodeEntity findDownloadedEpisode(String animeId, int episodeId, String episodeNumber, String teamName) {
         if (animeId == null) return null;
+        String cleanTeam = teamName != null ? teamName.trim() : null;
+        boolean hasTeamFilter = cleanTeam != null && !cleanTeam.isEmpty();
         synchronized (downloadsCacheLock) {
             ensureDownloadsCacheLoadedLocked();
             if (episodeId != 0) {
-                DownloadedEpisodeEntity fallbackMatch = null;
-                boolean hasTeamFilter = teamName != null && !teamName.isEmpty();
                 for (DownloadedEpisodeEntity ep : cachedEpisodesById.values()) {
                     if (ep == null || !animeId.equals(ep.getAnimeId()) || ep.getEpisodeId() != episodeId) {
                         continue;
                     }
-                    if (hasTeamFilter && teamName.equals(ep.getTeamName())) {
+                    if (!hasTeamFilter) {
                         return copyDownloadedEpisode(ep);
                     }
-                    if (fallbackMatch == null) {
-                        fallbackMatch = ep;
+                    String epTeam = ep.getTeamName() != null ? ep.getTeamName().trim() : null;
+                    if (epTeam != null && cleanTeam.equalsIgnoreCase(epTeam)) {
+                        return copyDownloadedEpisode(ep);
                     }
                 }
-                if (fallbackMatch != null) {
-                    return copyDownloadedEpisode(fallbackMatch);
-                }
             }
-            if (episodeNumber != null && !episodeNumber.isEmpty() && teamName != null) {
+            if (episodeNumber != null && !episodeNumber.isEmpty()) {
                 for (DownloadedEpisodeEntity ep : cachedEpisodesById.values()) {
-                    if (ep != null
-                            && animeId.equals(ep.getAnimeId())
-                            && episodeNumber.equals(ep.getEpisodeNumber())
-                            && teamName.equals(ep.getTeamName())) {
+                    if (ep == null || !animeId.equals(ep.getAnimeId()) || !episodeNumber.equals(ep.getEpisodeNumber())) {
+                        continue;
+                    }
+                    if (!hasTeamFilter) {
+                        return copyDownloadedEpisode(ep);
+                    }
+                    String epTeam = ep.getTeamName() != null ? ep.getTeamName().trim() : null;
+                    if (epTeam != null && cleanTeam.equalsIgnoreCase(epTeam)) {
                         return copyDownloadedEpisode(ep);
                     }
                 }
@@ -889,13 +891,16 @@ public class DatabaseManager {
 
     public DownloadedEpisodeEntity findDownloadedEpisode(String animeId, String episodeNumber, String teamName) {
         if (animeId == null || episodeNumber == null || teamName == null) return null;
+        String cleanTeam = teamName.trim();
+        if (cleanTeam.isEmpty()) return null;
         synchronized (downloadsCacheLock) {
             ensureDownloadsCacheLoadedLocked();
             for (DownloadedEpisodeEntity ep : cachedEpisodesById.values()) {
                 if (ep != null
                         && animeId.equals(ep.getAnimeId())
                         && episodeNumber.equals(ep.getEpisodeNumber())
-                        && teamName.equals(ep.getTeamName())) {
+                        && ep.getTeamName() != null
+                        && cleanTeam.equalsIgnoreCase(ep.getTeamName().trim())) {
                     return copyDownloadedEpisode(ep);
                 }
             }
@@ -1055,6 +1060,15 @@ public class DatabaseManager {
         } catch (Exception e) {
             Log.e(TAG, "Failed to get pending sync tasks", e);
             return new java.util.ArrayList<>();
+        }
+    }
+
+    public com.example.animelib.data.entity.PendingSyncTaskEntity findPendingSyncTaskByIdSync(long id) {
+        try {
+            return db.pendingSyncTaskDao().findTaskByIdSync(id);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to find pending sync task id " + id, e);
+            return null;
         }
     }
 

@@ -505,12 +505,11 @@ public class PlayerOrientationController {
                 }
             }
             if (episodesMenuBtn != null) episodesMenuBtn.setVisibility(isPortrait ? View.GONE : View.VISIBLE);
-            boolean isDownloadedPlayback = isOfflineMode || host.isPlayingDownloadedVideo();
             if (menuToggleBtn != null) {
                 menuToggleBtn.setVisibility(isPortrait ? View.GONE : View.VISIBLE);
                 menuToggleBtn.setEnabled(true);
                 menuToggleBtn.setClickable(true);
-                menuToggleBtn.setAlpha(isDownloadedPlayback ? 0.3f : 1.0f);
+                menuToggleBtn.setAlpha(isOfflineMode ? 0.3f : 1.0f);
             }
 
             PlayerPortraitController portraitCtrl = host.getPortraitController();

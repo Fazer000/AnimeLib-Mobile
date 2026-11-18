@@ -141,6 +141,92 @@ public class PlayerOfflineController {
     }
 
     @Nullable
+    private String resolveCurrentAnimeId() {
+        Intent intent = host.getIntent();
+        String currentAnimeId = host.getCurrentAnimeId();
+        if (currentAnimeId != null && !currentAnimeId.isEmpty()) {
+            return currentAnimeId;
+        }
+        return intent != null ? intent.getStringExtra("EXTRA_ANIME_ID") : null;
+    }
+
+    private List<DownloadedEpisodeEntity> getValidDownloadedEpisodesForAnime(@Nullable String animeId) {
+        List<DownloadedEpisodeEntity> valid = new ArrayList<>();
+        if (animeId == null || animeId.isEmpty()) return valid;
+        DatabaseManager dbMgr = host.getDatabaseManager();
+        if (dbMgr == null && host.getApiService() != null) {
+            dbMgr = host.getApiService().getDatabaseManager();
+        }
+        if (dbMgr == null) return valid;
+        List<DownloadedEpisodeEntity> all = dbMgr.getEpisodesForAnimeSync(animeId);
+        if (all != null) {
+            for (DownloadedEpisodeEntity ep : all) {
+                if (hasValidDownloadedFile(ep)) {
+                    valid.add(ep);
+                }
+            }
+        }
+        return valid;
+    }
+
+    public List<DownloadedEpisodeEntity> getValidDownloadedEpisodesForCurrentAnime() {
+        return getValidDownloadedEpisodesForAnime(resolveCurrentAnimeId());
+    }
+
+    @Nullable
+    public DownloadedEpisodeEntity findDownloadedEpisodeForPlayer(@Nullable EpisodeResponse.PlayerData playerData) {
+        EpisodesManager episodesManager = host.getEpisodesManager();
+        EpisodesListResponse.EpisodeItem activeEp = episodesManager != null ? episodesManager.getCurrentEpisode() : null;
+        if (activeEp == null) return null;
+        List<DownloadedEpisodeEntity> valid = getValidDownloadedEpisodesForAnime(resolveCurrentAnimeId());
+        return PlayerDownloadController.findDownloadedEpisodeForVoiceover(valid, activeEp, playerData);
+    }
+
+    @Nullable
+    public DownloadedEpisodeEntity findDownloadedEpisodeForEpisodeStart(@Nullable EpisodesListResponse.EpisodeItem episode) {
+        if (episode == null) return null;
+        List<DownloadedEpisodeEntity> valid = getValidDownloadedEpisodesForAnime(resolveCurrentAnimeId());
+        PlayersManager pm = host.getPlayersManager();
+        EpisodeResponse.PlayerData currentPd = pm != null ? pm.getCurrentPlayerData() : null;
+        PlayerDownloadController downloadCtrl = host.getDownloadController();
+        if (downloadCtrl != null) {
+            return downloadCtrl.getDownloadedEpisodeForEpisodeStart(valid, episode, currentPd);
+        }
+        return PlayerDownloadController.findDownloadedEpisodeForVoiceover(valid, episode, currentPd);
+    }
+
+    @Nullable
+    public EpisodeResponse.PlayerData findExactOnlinePlayerForDownloaded(
+            List<EpisodeResponse.PlayerData> allPlayers,
+            @Nullable DownloadedEpisodeEntity downloadedEp) {
+        if (allPlayers == null || allPlayers.isEmpty() || downloadedEp == null) return null;
+        String targetTeam = downloadedEp.getTeamName() != null ? downloadedEp.getTeamName().trim() : "";
+        String targetType = downloadedEp.getPlayerType() != null ? downloadedEp.getPlayerType().trim() : "";
+        if (targetTeam.isEmpty()) return null;
+
+        if (!targetType.isEmpty()) {
+            for (EpisodeResponse.PlayerData p : allPlayers) {
+                if (p == null) continue;
+                String teamName = (p.getTeam() != null && p.getTeam().getName() != null)
+                        ? p.getTeam().getName().trim() : null;
+                if (teamName != null && targetTeam.equalsIgnoreCase(teamName)
+                        && p.getPlayer() != null && targetType.equalsIgnoreCase(p.getPlayer().trim())) {
+                    return p;
+                }
+            }
+        }
+        for (EpisodeResponse.PlayerData p : allPlayers) {
+            if (p == null) continue;
+            String teamName = (p.getTeam() != null && p.getTeam().getName() != null)
+                    ? p.getTeam().getName().trim() : null;
+            if (teamName != null && targetTeam.equalsIgnoreCase(teamName)) {
+                return p;
+            }
+        }
+        return null;
+    }
+
+    @Nullable
     public EpisodeResponse.PlayerData findMatchingOnlinePlayerForDownloaded(
             List<EpisodeResponse.PlayerData> allPlayers,
             @Nullable DownloadedEpisodeEntity downloadedEp) {
@@ -168,13 +254,10 @@ public class PlayerOfflineController {
             return true;
         }
         PlayerQualityController qualityCtrl = host.getQualityController();
-        String currentVideoUrl = qualityCtrl != null ? qualityCtrl.getCurrentVideoUrl() : null;
-        if (currentVideoUrl != null && (currentVideoUrl.startsWith("file:") || currentVideoUrl.startsWith("/"))) {
-            return true;
+        if (qualityCtrl == null || !qualityCtrl.isUsingDownloadedSource()) {
+            return false;
         }
-        return qualityCtrl != null
-                && qualityCtrl.isUsingDownloadedSource()
-                && hasValidDownloadedFile(getDownloadedEpisodeForActive());
+        return hasValidDownloadedFile(getDownloadedEpisodeForActive());
     }
 
     @Nullable
@@ -254,7 +337,7 @@ public class PlayerOfflineController {
             return false;
         }
         episodesManager.setCurrentEpisode(episode);
-        DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
+        DownloadedEpisodeEntity downloadedEp = findDownloadedEpisodeForEpisodeStart(episode);
         if (!hasValidDownloadedFile(downloadedEp)) {
             return false;
         }
@@ -301,7 +384,7 @@ public class PlayerOfflineController {
         if (ui != null && ui.menuToggleButton != null) {
             ui.menuToggleButton.setEnabled(true);
             ui.menuToggleButton.setClickable(true);
-            ui.menuToggleButton.setAlpha(0.3f);
+            ui.menuToggleButton.setAlpha(1.0f);
         }
         host.hideLoading();
 
@@ -324,6 +407,14 @@ public class PlayerOfflineController {
     public boolean handleOnlinePlayersErrorWithOfflineFallback() {
         DownloadedEpisodeEntity downloadedEp = getDownloadedEpisodeForActive();
         if (!hasValidDownloadedFile(downloadedEp)) {
+            EpisodesManager em = host.getEpisodesManager();
+            EpisodesListResponse.EpisodeItem activeEp = em != null ? em.getCurrentEpisode() : null;
+            if (activeEp != null) {
+                downloadedEp = PlayerDownloadController.findDownloadedEpisodeForVoiceover(
+                        getValidDownloadedEpisodesForAnime(resolveCurrentAnimeId()), activeEp, null);
+            }
+        }
+        if (!hasValidDownloadedFile(downloadedEp)) {
             return false;
         }
         PlayerQualityController qualityCtrl = host.getQualityController();
@@ -338,7 +429,7 @@ public class PlayerOfflineController {
         if (ui != null && ui.menuToggleButton != null) {
             ui.menuToggleButton.setEnabled(true);
             ui.menuToggleButton.setClickable(true);
-            ui.menuToggleButton.setAlpha(0.3f);
+            ui.menuToggleButton.setAlpha(1.0f);
         }
         host.hideLoading();
 
@@ -377,7 +468,7 @@ public class PlayerOfflineController {
                 if (playersManager.getAnimelibPlayers() != null) allPlayers.addAll(playersManager.getAnimelibPlayers());
                 if (playersManager.getKodikPlayers() != null) allPlayers.addAll(playersManager.getKodikPlayers());
 
-                EpisodeResponse.PlayerData matchedPlayer = findMatchingOnlinePlayerForDownloaded(allPlayers, downloadedEp);
+                EpisodeResponse.PlayerData matchedPlayer = findExactOnlinePlayerForDownloaded(allPlayers, downloadedEp);
                 if (matchedPlayer != null) {
                     playersManager.setCurrentPlayerData(matchedPlayer);
                 } else if (currentPD == null) {

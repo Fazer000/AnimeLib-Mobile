@@ -1762,7 +1762,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
         return playerPlaybackController != null ? playerPlaybackController.getPlayer() : null;
     }
 
-    private boolean isOfflineMode() {
+    public boolean isOfflineMode() {
         return playerOfflineController != null && playerOfflineController.isOfflineMode();
     }
 
@@ -2098,6 +2098,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     public EpisodesManager getEpisodesManager() {
         return episodesManager;
+    }
+
+    public List<com.example.animelib.data.entity.DownloadedEpisodeEntity> getValidDownloadedEpisodesForCurrentAnime() {
+        if (playerOfflineController != null) {
+            return playerOfflineController.getValidDownloadedEpisodesForCurrentAnime();
+        }
+        return java.util.Collections.emptyList();
     }
 
     public void updateEpisodeHeaderQuick() {
@@ -2646,8 +2653,8 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
             @Override
             public void togglePlayersMenu() {
-                if (isOfflineMode() || isPlayingDownloadedVideo()) {
-                    CustomToast.showInfo(VideoPlayerActivity.this, "Выбор озвучки недоступен для скачанного файла");
+                if (isOfflineMode()) {
+                    CustomToast.showInfo(VideoPlayerActivity.this, "Выбор озвучки недоступен в офлайн режиме");
                     return;
                 }
                 if (playersManager != null) {
@@ -2822,7 +2829,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
             public void onSeamlessSwitchCompleted(String newQuality, String newVideoUrl) {
                 if (playerQualityController != null) {
                     playerQualityController.setCurrentVideoUrl(newVideoUrl);
-                    if (AutoQualityHelper.isDownloadedQuality(newQuality)) {
+                    boolean switchedToLocal = AutoQualityHelper.isDownloadedQuality(newQuality)
+                            || (newVideoUrl != null && (newVideoUrl.startsWith("file:") || newVideoUrl.startsWith("/")));
+                    if (switchedToLocal) {
                         playerQualityController.setUsingDownloadedSource(true);
                         DownloadedEpisodeEntity dlEp = playerOfflineController != null
                                 ? playerOfflineController.getDownloadedEpisodeForActive() : null;

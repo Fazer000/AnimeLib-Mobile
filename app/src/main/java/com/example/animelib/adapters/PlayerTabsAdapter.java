@@ -13,6 +13,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.animelib.R;
 import com.example.animelib.data.DatabaseManager;
+import com.example.animelib.data.entity.DownloadedEpisodeEntity;
 import com.example.animelib.data.entity.TokenEntity;
 import com.example.animelib.models.EpisodeResponse;
 import com.example.animelib.models.EpisodesListResponse;
@@ -29,6 +30,8 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
     private List<EpisodeResponse.PlayerData> animelibPlayers;
     private List<EpisodeResponse.PlayerData> kodikPlayers;
     private EpisodeResponse.PlayerData currentPlayer;
+    private EpisodesListResponse.EpisodeItem currentEpisode;
+    private List<DownloadedEpisodeEntity> downloadedEpisodes;
     private final PlayerOptionsAdapter.OnPlayerSelectedListener playerListener;
     public static final String SORT_NAME_ASC = "name_asc";
     public static final String SORT_NAME_DESC = "name_desc";
@@ -45,9 +48,20 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
                            List<EpisodeResponse.PlayerData> kodikPlayers,
                            EpisodeResponse.PlayerData currentPlayer,
                            PlayerOptionsAdapter.OnPlayerSelectedListener playerListener) {
+        this(animelibPlayers, kodikPlayers, currentPlayer, null, null, playerListener);
+    }
+
+    public PlayerTabsAdapter(List<EpisodeResponse.PlayerData> animelibPlayers,
+                           List<EpisodeResponse.PlayerData> kodikPlayers,
+                           EpisodeResponse.PlayerData currentPlayer,
+                           EpisodesListResponse.EpisodeItem currentEpisode,
+                           List<DownloadedEpisodeEntity> downloadedEpisodes,
+                           PlayerOptionsAdapter.OnPlayerSelectedListener playerListener) {
         this.animelibPlayers = animelibPlayers;
         this.kodikPlayers = kodikPlayers;
         this.currentPlayer = currentPlayer;
+        this.currentEpisode = currentEpisode;
+        this.downloadedEpisodes = downloadedEpisodes;
         this.playerListener = playerListener;
         updateActiveTabs();
     }
@@ -56,17 +70,36 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
     public void updateData(List<EpisodeResponse.PlayerData> animelibPlayers,
                           List<EpisodeResponse.PlayerData> kodikPlayers,
                           EpisodeResponse.PlayerData currentPlayer) {
+        updateData(animelibPlayers, kodikPlayers, currentPlayer, this.currentEpisode, this.downloadedEpisodes);
+    }
+
+    @SuppressLint("NotifyDataSetChanged")
+    public void updateData(List<EpisodeResponse.PlayerData> animelibPlayers,
+                          List<EpisodeResponse.PlayerData> kodikPlayers,
+                          EpisodeResponse.PlayerData currentPlayer,
+                          EpisodesListResponse.EpisodeItem currentEpisode,
+                          List<DownloadedEpisodeEntity> downloadedEpisodes) {
         Log.d(TAG, "updateData called - AnimeLib: " + (animelibPlayers != null ? animelibPlayers.size() : "null") + 
               ", Kodik: " + (kodikPlayers != null ? kodikPlayers.size() : "null"));
         
         this.animelibPlayers = animelibPlayers;
         this.kodikPlayers = kodikPlayers;
         this.currentPlayer = currentPlayer;
+        this.currentEpisode = currentEpisode;
+        this.downloadedEpisodes = downloadedEpisodes;
         updateActiveTabs();
         
         Log.d(TAG, "Active tabs: " + (activeTabs != null ? activeTabs.size() : "null") + 
               ", items: " + (activeTabs != null ? activeTabs : "null"));
         
+        notifyDataSetChanged();
+    }
+
+    @SuppressLint("NotifyDataSetChanged")
+    public void updateDownloadedState(EpisodesListResponse.EpisodeItem currentEpisode,
+                                      List<DownloadedEpisodeEntity> downloadedEpisodes) {
+        this.currentEpisode = currentEpisode;
+        this.downloadedEpisodes = downloadedEpisodes;
         notifyDataSetChanged();
     }
     
@@ -270,9 +303,11 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
                 }
                 RecyclerView.Adapter<?> existing = holder.playersRecyclerView.getAdapter();
                 if (existing instanceof PlayerOptionsAdapter) {
-                    ((PlayerOptionsAdapter) existing).updatePlayers(processedPlayers, currentPlayer);
+                    ((PlayerOptionsAdapter) existing).updatePlayers(
+                            processedPlayers, currentPlayer, currentEpisode, downloadedEpisodes);
                 } else {
-                    PlayerOptionsAdapter adapter = new PlayerOptionsAdapter(processedPlayers, currentPlayer, playerListener);
+                    PlayerOptionsAdapter adapter = new PlayerOptionsAdapter(
+                            processedPlayers, currentPlayer, currentEpisode, downloadedEpisodes, playerListener);
                     holder.playersRecyclerView.setAdapter(adapter);
                 }
             }

@@ -14,6 +14,7 @@ import androidx.media3.common.Player;
 import com.example.animelib.R;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.data.DatabaseManager;
+import com.example.animelib.data.entity.DownloadedEpisodeEntity;
 import com.example.animelib.data.entity.OfflineBookmarkEntity;
 import com.example.animelib.managers.BookmarkManager;
 import com.example.animelib.managers.BookmarkSyncDispatcher;
@@ -316,25 +317,30 @@ public class PlayerProgressController {
 
             if (animeId != null && !animeId.trim().isEmpty() && dbMgr != null) {
                 final EpisodesListResponse.EpisodeItem savedEp = currentEpisode;
+                final String finalAnimeId = animeId.trim();
+                final DatabaseManager finalDbMgr = dbMgr;
                 dbMgr.saveOfflineBookmark(
-                        animeId,
+                        finalAnimeId,
                         savedEp.getId(),
                         savedEp.getNumber(),
                         timecode,
                         currentPosition,
-                        () -> callback.safeRunOnUiThread(() -> {
-                            autoBookmarkSaved = true;
-                            updateBookmarkButtonColor(true);
+                        () -> {
+                            syncOfflineBookmarkWithApiOrWorker(finalAnimeId, savedEp, timecode, finalDbMgr);
+                            callback.safeRunOnUiThread(() -> {
+                                autoBookmarkSaved = true;
+                                updateBookmarkButtonColor(true);
 
-                            AnimeBookmarkResponse.BookmarkData offlineBookmark = new AnimeBookmarkResponse.BookmarkData();
-                            offlineBookmark.setItemId(savedEp.getId());
-                            offlineBookmark.setProgress(timecode);
-                            if (em != null) {
-                                em.updateBookmarkInAdapter(offlineBookmark);
-                            }
+                                AnimeBookmarkResponse.BookmarkData offlineBookmark = new AnimeBookmarkResponse.BookmarkData();
+                                offlineBookmark.setItemId(savedEp.getId());
+                                offlineBookmark.setProgress(timecode);
+                                if (em != null) {
+                                    em.updateBookmarkInAdapter(offlineBookmark);
+                                }
 
-                            CustomToast.showSuccess(context, "Закладка сохранена (" + timecode + ")");
-                        }),
+                                CustomToast.showSuccess(context, "Закладка сохранена (" + timecode + ")");
+                            });
+                        },
                         () -> callback.safeRunOnUiThread(() -> {
                             updateBookmarkButtonColor(false);
                             CustomToast.showWarning(context, "Не удалось добавить закладку");
@@ -515,13 +521,19 @@ public class PlayerProgressController {
                 }
                 lastAutoSavedEpisodeId = currentEpisode.getId();
                 lastAutoSavedTimecode = timecode;
+                final EpisodesListResponse.EpisodeItem savedEp = currentEpisode;
+                final String finalAnimeId = animeId.trim();
+                final DatabaseManager finalDbMgr = dbMgr;
                 dbMgr.saveOfflineBookmark(
-                        animeId,
-                        currentEpisode.getId(),
-                        currentEpisode.getNumber(),
+                        finalAnimeId,
+                        savedEp.getId(),
+                        savedEp.getNumber(),
                         timecode,
                         safePosition,
-                        () -> autoBookmarkSaved = true,
+                        () -> {
+                            autoBookmarkSaved = true;
+                            syncOfflineBookmarkWithApiOrWorker(finalAnimeId, savedEp, timecode, finalDbMgr);
+                        },
                         () -> {
                             lastAutoSavedEpisodeId = -1;
                             lastAutoSavedTimecode = null;
@@ -599,6 +611,66 @@ public class PlayerProgressController {
                 },
                 false
         );
+    }
+
+    private void syncOfflineBookmarkWithApiOrWorker(String animeId,
+                                                    EpisodesListResponse.EpisodeItem episode,
+                                                    String timecode,
+                                                    DatabaseManager dbMgr) {
+        Context effectiveCtx = this.appContext != null ? this.appContext : this.context;
+        if (effectiveCtx == null || episode == null) {
+            return;
+        }
+        boolean authorized = (apiService != null && apiService.isAuthorized())
+                || BookmarkSyncDispatcher.getInstance(effectiveCtx).isAuthorized();
+        if (!authorized) {
+            return;
+        }
+
+        int parsedEpNumber = parseEpisodeNumber(episode.getNumber());
+        DownloadedEpisodeEntity downloadedEp = dbMgr != null
+                ? dbMgr.findDownloadedEpisode(animeId, episode.getId(), episode.getNumber(), null)
+                : null;
+        int realEpisodeId = (downloadedEp != null)
+                ? (downloadedEp.getEpisodeId() > 0 ? downloadedEp.getEpisodeId() : 0)
+                : (episode.getId() > 0 ? episode.getId() : 0);
+
+        String mediaSlug = callback != null ? callback.getMediaSlug() : null;
+        if (mediaSlug == null || mediaSlug.trim().isEmpty()) {
+            mediaSlug = lastValidMediaSlug;
+        }
+        Object statusId = currentWatchStatusId != null
+                ? currentWatchStatusId
+                : (callback != null ? callback.getCurrentWatchStatusId() : null);
+
+        OfflineSyncManager.getInstance(effectiveCtx).handleOfflinePlayerBookmark(
+                animeId,
+                mediaSlug,
+                realEpisodeId,
+                0,
+                parsedEpNumber,
+                timecode,
+                statusId
+        );
+    }
+
+    private static int parseEpisodeNumber(@Nullable String rawNumber) {
+        if (rawNumber == null || rawNumber.trim().isEmpty()) {
+            return 1;
+        }
+        try {
+            int parsed = Integer.parseInt(rawNumber.trim());
+            if (parsed > 0) return parsed;
+        } catch (NumberFormatException ignored) {
+            String digits = rawNumber.replaceAll("[^0-9]", "");
+            if (!digits.isEmpty()) {
+                try {
+                    int parsed = Integer.parseInt(digits);
+                    if (parsed > 0) return parsed;
+                } catch (NumberFormatException ignored2) {}
+            }
+        }
+        return 1;
     }
 
     private void showAutoSaveErrorToast(String message) {

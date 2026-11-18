@@ -310,6 +310,48 @@ public class BookmarksApi {
         );
     }
 
+    public AnimeBookmarkResponse fetchAnimeBookmarkSync(String mediaSlug) {
+        String cleaned = ApiClientCore.cleanUrlSegment(mediaSlug);
+        if (cleaned.isEmpty()) {
+            return null;
+        }
+        final String cacheKey = cleaned.toLowerCase(Locale.ROOT);
+        AnimeBookmarkResponse cached = ApiCacheManager.ANIME_BOOKMARK.getValid(cacheKey, BOOKMARK_CACHE_TTL_MS);
+        if (cached == null && cacheKey.contains("--")) {
+            String numericId = ApiClientCore.extractAnimeId(cacheKey);
+            if (numericId != null && !numericId.isEmpty()) {
+                cached = ApiCacheManager.ANIME_BOOKMARK.getValid(numericId, BOOKMARK_CACHE_TTL_MS);
+            }
+        }
+        if (cached != null) {
+            return cached;
+        }
+        if (!core.isAuthorized()) {
+            return null;
+        }
+        String apiUrl = ApiClientCore.API_BASE_HAPI + "/anime/" + cacheKey + "/bookmark";
+        try {
+            Request request = core.buildApiRequest(apiUrl, true).build();
+            try (Response response = core.getHttpClient().newCall(request).execute()) {
+                if (response.isSuccessful() && response.body() != null) {
+                    String body = response.body().string();
+                    AnimeBookmarkResponse bookmarkResponse = core.getGson().fromJson(body, AnimeBookmarkResponse.class);
+                    if (bookmarkResponse != null) {
+                        ApiCacheManager.ANIME_BOOKMARK.put(cacheKey, bookmarkResponse);
+                        String extractedId = ApiClientCore.extractAnimeId(cacheKey);
+                        if (extractedId != null && !extractedId.isEmpty()) {
+                            ApiCacheManager.ANIME_BOOKMARK.put(extractedId, bookmarkResponse);
+                        }
+                    }
+                    return bookmarkResponse;
+                }
+            }
+        } catch (Exception e) {
+            Log.d(TAG, "fetchAnimeBookmarkSync skipped for " + cacheKey + ": " + e.getMessage());
+        }
+        return null;
+    }
+
     public void fetchBookmarksList(ApiService.BookmarksListCallback callback) {
         core.safeExecute(() -> {
             try {

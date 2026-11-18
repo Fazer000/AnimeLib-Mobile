@@ -193,6 +193,22 @@ public class ApiService {
         }
     }
 
+    public static class AnimeInfoSyncResult {
+        public final boolean success;
+        public final boolean retryable;
+        public final int httpCode;
+        public final AnimeInfoResponse response;
+        public final String message;
+
+        public AnimeInfoSyncResult(boolean success, boolean retryable, int httpCode, AnimeInfoResponse response, String message) {
+            this.success = success;
+            this.retryable = retryable;
+            this.httpCode = httpCode;
+            this.response = response;
+            this.message = message;
+        }
+    }
+
     // ======================== Sub-services ========================
 
     private final ApiClientCore core;
@@ -267,6 +283,10 @@ public class ApiService {
         catalogApi.fetchAnimeInfo(animeSlugOrId, callback);
     }
 
+    public AnimeInfoSyncResult fetchAnimeInfoSync(String animeSlugOrId) {
+        return catalogApi.fetchAnimeInfoSync(animeSlugOrId);
+    }
+
     public void searchAnime(String query, SearchCallback callback) {
         catalogApi.searchAnime(query, callback);
     }
@@ -279,8 +299,16 @@ public class ApiService {
         catalogApi.fetchEpisodesList(animeId, callback);
     }
 
+    public EpisodesListResponse fetchEpisodesListSync(String animeId) {
+        return catalogApi.fetchEpisodesListSync(animeId);
+    }
+
     public void fetchEpisodeData(int episodeId, EpisodeDataCallback callback) {
         catalogApi.fetchEpisodeData(episodeId, callback);
+    }
+
+    public EpisodeResponse fetchEpisodeDataSync(int episodeId) {
+        return catalogApi.fetchEpisodeDataSync(episodeId);
     }
 
     public void loadAnimeFromUrl(String animeUrl, EpisodeDataCallback callback) {
@@ -420,6 +448,10 @@ public class ApiService {
 
     public void fetchAnimeBookmark(String mediaSlug, AnimeBookmarkCallback callback) {
         bookmarksApi.fetchAnimeBookmark(mediaSlug, callback);
+    }
+
+    public AnimeBookmarkResponse fetchAnimeBookmarkSync(String mediaSlug) {
+        return bookmarksApi.fetchAnimeBookmarkSync(mediaSlug);
     }
 
     public void fetchBookmarksList(BookmarksListCallback callback) {

@@ -78,12 +78,20 @@ public class BookmarkSyncDispatcher {
         ApiService.BookmarkSaveResult send(BookmarkRequest request);
     }
 
+    public interface OfflineTaskCleaner {
+        void clearPendingTasksForTitle(@NonNull String mediaSlug);
+    }
+
+    private static final Map<String, Long> latestOnlineBookmarkSavedAtByKey = new ConcurrentHashMap<>();
+
     private final Context appContext;
     private final ApiService appApiService;
     private final DatabaseManager appDatabaseManager;
     private final ExecutorService executor;
     private final Handler mainHandler;
     private final SyncBookmarkSender sender;
+    @Nullable
+    private final OfflineTaskCleaner offlineTaskCleaner;
 
     private final Object lock = new Object();
     private final Map<String, BookmarkRequest> queuedBySlug = new ConcurrentHashMap<>();
@@ -111,6 +119,7 @@ public class BookmarkSyncDispatcher {
                 req.timecode,
                 req.statusId
         );
+        this.offlineTaskCleaner = title -> OfflineSyncManager.getInstance(this.appContext).clearPendingBookmarkTasksForTitleBlocking(title);
     }
 
     // Конструктор для модульного тестирования без Android окружения
@@ -118,12 +127,21 @@ public class BookmarkSyncDispatcher {
                                   @NonNull ExecutorService executor,
                                   @Nullable Handler mainHandler,
                                   @NonNull SyncBookmarkSender sender) {
+        this(context, executor, mainHandler, sender, null);
+    }
+
+    public BookmarkSyncDispatcher(@Nullable Context context,
+                                  @NonNull ExecutorService executor,
+                                  @Nullable Handler mainHandler,
+                                  @NonNull SyncBookmarkSender sender,
+                                  @Nullable OfflineTaskCleaner offlineTaskCleaner) {
         this.appContext = context;
         this.appApiService = null;
         this.appDatabaseManager = null;
         this.executor = executor;
         this.mainHandler = mainHandler;
         this.sender = sender;
+        this.offlineTaskCleaner = offlineTaskCleaner;
     }
 
     public static BookmarkSyncDispatcher getInstance(@NonNull Context context) {
@@ -149,6 +167,40 @@ public class BookmarkSyncDispatcher {
         if (mediaSlug != null && !mediaSlug.trim().isEmpty()) {
             lastSavedSignatureBySlug.remove(mediaSlug.trim().toLowerCase());
         }
+    }
+
+    public static void recordOnlineBookmarkSaved(@Nullable String animeIdOrSlug, long savedAtMs) {
+        if (animeIdOrSlug == null) return;
+        String key = animeIdOrSlug.trim().toLowerCase(java.util.Locale.ROOT);
+        if (key.isEmpty()) return;
+        latestOnlineBookmarkSavedAtByKey.merge(key, savedAtMs, Math::max);
+        String numericId = OfflineSyncManager.extractNumericAnimeId(key);
+        if (numericId != null && !numericId.isEmpty()) {
+            latestOnlineBookmarkSavedAtByKey.merge(numericId, savedAtMs, Math::max);
+        }
+    }
+
+    public static boolean wasOnlineBookmarkSavedAfter(@Nullable String animeId,
+                                                      @Nullable String mediaSlug,
+                                                      long taskCreatedAtMs) {
+        if (hasSavedTimestampAfter(animeId, taskCreatedAtMs)) return true;
+        if (hasSavedTimestampAfter(mediaSlug, taskCreatedAtMs)) return true;
+        String numFromAnime = OfflineSyncManager.extractNumericAnimeId(animeId);
+        if (hasSavedTimestampAfter(numFromAnime, taskCreatedAtMs)) return true;
+        String numFromSlug = OfflineSyncManager.extractNumericAnimeId(mediaSlug);
+        return hasSavedTimestampAfter(numFromSlug, taskCreatedAtMs);
+    }
+
+    private static boolean hasSavedTimestampAfter(@Nullable String rawKey, long taskCreatedAtMs) {
+        if (rawKey == null) return false;
+        String key = rawKey.trim().toLowerCase(java.util.Locale.ROOT);
+        if (key.isEmpty()) return false;
+        Long savedAt = latestOnlineBookmarkSavedAtByKey.get(key);
+        return savedAt != null && savedAt > taskCreatedAtMs;
+    }
+
+    public static void clearOnlineBookmarkHistoryForTests() {
+        latestOnlineBookmarkSavedAtByKey.clear();
     }
 
     public void enqueueBookmark(@NonNull BookmarkRequest incoming) {
@@ -246,11 +298,14 @@ public class BookmarkSyncDispatcher {
 
             if (lastResult != null && lastResult.success) {
                 lastSavedSignatureBySlug.put(key, current.signature());
+                recordOnlineBookmarkSaved(current.mediaSlug, System.currentTimeMillis());
                 if (appApiService != null) {
                     appApiService.invalidateAnimeBookmarkCache(current.mediaSlug);
                 }
-                if (appContext != null) {
-                    OfflineSyncManager.getInstance(appContext).clearPendingBookmarkTasksForSlug(current.mediaSlug);
+                if (offlineTaskCleaner != null) {
+                    offlineTaskCleaner.clearPendingTasksForTitle(current.mediaSlug);
+                } else if (appContext != null) {
+                    OfflineSyncManager.getInstance(appContext).clearPendingBookmarkTasksForTitleBlocking(current.mediaSlug);
                 }
 
                 if (current.showSuccessToast) {
@@ -279,18 +334,7 @@ public class BookmarkSyncDispatcher {
         String rawErr = lastResult != null ? lastResult.message : null;
         String friendlyError = formatBookmarkErrorToast(rawErr);
 
-        // Если сбой временный (пропал интернет на выходе из плеера) — ставим задачу в OfflineSyncManager
-        if (lastResult != null && lastResult.retryable && appContext != null) {
-            OfflineSyncManager.getInstance(appContext).saveOrReplacePendingBookmarkTask(
-                    current.mediaSlug,
-                    current.episodeId,
-                    current.teamId,
-                    current.episodeNumber,
-                    current.timecode,
-                    current.statusId
-            );
-        }
-
+        // В онлайн-плеере (в том числе при просмотре скачанного эпизода) закладки идут напрямую через API без OfflineSyncWorker.
         // Всегда показываем Toast при ошибке добавления закладки (с защитой от спама при автосохранении)
         boolean shouldShowToast = current.showSuccessToast || shouldShowAutoErrorToast(key);
         if (shouldShowToast) {

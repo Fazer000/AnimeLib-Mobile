@@ -262,7 +262,21 @@ public class PlayerQualityController {
     }
 
     public void onUserManualVoiceoverSelected(EpisodeResponse.PlayerData playerData) {
-        isUsingDownloadedSource = false;
+        PlayerOfflineController offlineCtrl = host != null ? host.getOfflineController() : null;
+        DownloadedEpisodeEntity downloadedEp = offlineCtrl != null
+                ? offlineCtrl.findDownloadedEpisodeForPlayer(playerData)
+                : null;
+        if (downloadedEp != null) {
+            isUsingDownloadedSource = true;
+            activePlayingQuality = AutoQualityHelper.normalizeResolutionLabel(downloadedEp.getQuality());
+        } else {
+            isUsingDownloadedSource = false;
+            activePlayingQuality = null;
+            if (AutoQualityHelper.isDownloadedQuality(preferredQuality)) {
+                preferredQuality = AutoQualityHelper.sanitizeSavedOnlineQuality(preferredQuality);
+            }
+        }
+        refreshQualityUiState();
     }
 
     @Nullable
@@ -572,12 +586,12 @@ public class PlayerQualityController {
         }
         runOnUi(() -> {
             if (host == null) return;
-            boolean isDownloaded = host.isOfflineMode() || host.isPlayingDownloadedVideo();
+            boolean isOffline = host.isOfflineMode();
             PlayerUIBinder ui = host.getUiBinder();
             if (ui != null && ui.menuToggleButton != null) {
                 ui.menuToggleButton.setEnabled(true);
                 ui.menuToggleButton.setClickable(true);
-                ui.menuToggleButton.setAlpha(isDownloaded ? 0.3f : 1.0f);
+                ui.menuToggleButton.setAlpha(isOffline ? 0.3f : 1.0f);
             }
             PlayerPortraitController portraitCtrl = host.getPortraitController();
             if (portraitCtrl != null) {

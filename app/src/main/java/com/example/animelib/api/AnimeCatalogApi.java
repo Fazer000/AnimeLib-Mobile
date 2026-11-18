@@ -117,6 +117,62 @@ public class AnimeCatalogApi {
         );
     }
 
+    public ApiService.AnimeInfoSyncResult fetchAnimeInfoSync(String animeSlugOrId) {
+        String cleaned = ApiClientCore.cleanUrlSegment(animeSlugOrId);
+        if (cleaned.isEmpty()) {
+            return new ApiService.AnimeInfoSyncResult(false, false, 0, null, "Пустой slug или ID");
+        }
+
+        final String cacheKey = cleaned.toLowerCase(Locale.ROOT);
+        AnimeInfoResponse cached = ApiCacheManager.ANIME_INFO.getValid(cacheKey, ANIME_INFO_TTL_MS);
+        if (cached == null && cacheKey.contains("--")) {
+            String numericId = ApiClientCore.extractAnimeId(cacheKey);
+            if (numericId != null && !numericId.isEmpty()) {
+                cached = ApiCacheManager.ANIME_INFO.getValid(numericId, ANIME_INFO_TTL_MS);
+            }
+        }
+        if (cached != null && cached.getData() != null) {
+            return new ApiService.AnimeInfoSyncResult(true, false, 200, cached, null);
+        }
+
+        String apiUrl = ApiClientCore.API_BASE_HAPI + "/anime/" + cacheKey + ANIME_INFO_FIELDS;
+        try {
+            Request request = core.buildApiRequest(apiUrl, true).build();
+            try (Response response = core.getHttpClient().newCall(request).execute()) {
+                int code = response.code();
+                String body = response.body() != null ? response.body().string() : "";
+                if (response.isSuccessful()) {
+                    AnimeInfoResponse info = core.getGson().fromJson(body, AnimeInfoResponse.class);
+                    if (info != null && info.getData() != null) {
+                        ApiCacheManager.ANIME_INFO.put(cacheKey, info);
+                        int id = info.getData().getId();
+                        if (id > 0) {
+                            ApiCacheManager.ANIME_INFO.put(String.valueOf(id), info);
+                        }
+                        String slugUrl = info.getData().getSlug_url();
+                        if (slugUrl != null && !slugUrl.trim().isEmpty()) {
+                            ApiCacheManager.ANIME_INFO.put(slugUrl.trim().toLowerCase(Locale.ROOT), info);
+                        }
+                        String extractedId = ApiClientCore.extractAnimeId(cacheKey);
+                        if (extractedId != null && !extractedId.isEmpty()) {
+                            ApiCacheManager.ANIME_INFO.put(extractedId, info);
+                        }
+                        return new ApiService.AnimeInfoSyncResult(true, false, code, info, null);
+                    }
+                    return new ApiService.AnimeInfoSyncResult(false, false, code, null, "Пустой ответ anime info");
+                }
+                boolean retryable = (code == 408 || code == 429 || code >= 500);
+                return new ApiService.AnimeInfoSyncResult(false, retryable, code, null, "HTTP " + code);
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "fetchAnimeInfoSync network failure", e);
+            return new ApiService.AnimeInfoSyncResult(false, true, 0, null, "Ошибка сети: " + e.getMessage());
+        } catch (Exception e) {
+            Log.e(TAG, "fetchAnimeInfoSync unexpected failure", e);
+            return new ApiService.AnimeInfoSyncResult(false, false, 0, null, "Ошибка: " + e.getMessage());
+        }
+    }
+
     public void searchAnime(String query, ApiService.SearchCallback callback) {
         if (query == null || query.trim().isEmpty()) {
             if (callback != null) callback.onError("Пустой поисковый запрос");
@@ -246,6 +302,34 @@ public class AnimeCatalogApi {
         );
     }
 
+    public EpisodesListResponse fetchEpisodesListSync(String animeId) {
+        if (animeId == null || animeId.trim().isEmpty()) {
+            return null;
+        }
+        final String cacheKey = animeId.trim();
+        EpisodesListResponse cached = ApiCacheManager.EPISODES_LIST.getValid(cacheKey, EPISODES_LIST_TTL_MS);
+        if (cached != null) {
+            return cached;
+        }
+        String apiUrl = ApiClientCore.API_BASE_HAPI + "/episodes?anime_id=" + cacheKey;
+        try {
+            Request request = core.buildApiRequest(apiUrl, true).build();
+            try (Response response = core.getHttpClient().newCall(request).execute()) {
+                if (response.isSuccessful() && response.body() != null) {
+                    String body = response.body().string();
+                    EpisodesListResponse episodesResponse = core.getGson().fromJson(body, EpisodesListResponse.class);
+                    if (episodesResponse != null && episodesResponse.getData() != null) {
+                        ApiCacheManager.EPISODES_LIST.put(cacheKey, episodesResponse);
+                        return episodesResponse;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "fetchEpisodesListSync failed for " + cacheKey + ": " + e.getMessage());
+        }
+        return null;
+    }
+
     public void fetchEpisodeData(int episodeId, ApiService.EpisodeDataCallback callback) {
         if (episodeId <= 0) {
             if (callback != null) callback.onError("Неверный ID эпизода");
@@ -289,6 +373,33 @@ public class AnimeCatalogApi {
                     return null;
                 }
         );
+    }
+
+    public EpisodeResponse fetchEpisodeDataSync(int episodeId) {
+        if (episodeId <= 0) {
+            return null;
+        }
+        EpisodeResponse cached = ApiCacheManager.EPISODE_DATA.getValid(episodeId, EPISODE_DATA_TTL_MS);
+        if (cached != null) {
+            return cached;
+        }
+        String apiUrl = ApiClientCore.API_BASE_HAPI + "/episodes/" + episodeId;
+        try {
+            Request request = core.buildApiRequest(apiUrl, true).build();
+            try (Response response = core.getHttpClient().newCall(request).execute()) {
+                if (response.isSuccessful() && response.body() != null) {
+                    String body = response.body().string();
+                    EpisodeResponse episodeResponse = core.getGson().fromJson(body, EpisodeResponse.class);
+                    if (episodeResponse != null && episodeResponse.getData() != null) {
+                        ApiCacheManager.EPISODE_DATA.put(episodeId, episodeResponse);
+                        return episodeResponse;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "fetchEpisodeDataSync failed for " + episodeId + ": " + e.getMessage());
+        }
+        return null;
     }
 
     public void loadAnimeFromUrl(String animeUrl, ApiService.EpisodeDataCallback callback) {

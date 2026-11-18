@@ -213,33 +213,88 @@ public class PlayerDownloadController {
         EpisodesListResponse.EpisodeItem activeEp = episodesManager.getCurrentEpisode();
         if (activeEp == null) return null;
 
-        int epId = activeEp.getId();
-        String epNum = activeEp.getNumber();
         EpisodeResponse.PlayerData currentPlayerData = playersManager != null ? playersManager.getCurrentPlayerData() : null;
-        String team = (currentPlayerData != null && currentPlayerData.getTeam() != null) ? currentPlayerData.getTeam().getName() : null;
+        return getDownloadedEpisodeForVoiceover(animeId, activeEp, currentPlayerData);
+    }
 
-        DownloadedEpisodeEntity downloaded = null;
-        if (epId != 0) {
-            downloaded = databaseManager.findDownloadedEpisode(animeId, epId, epNum, team);
+    public DownloadedEpisodeEntity getDownloadedEpisodeForVoiceover(
+            String animeId,
+            EpisodesListResponse.EpisodeItem episode,
+            EpisodeResponse.PlayerData playerData) {
+        if (databaseManager == null || animeId == null || episode == null) return null;
+        List<DownloadedEpisodeEntity> downloadedEps = databaseManager.getEpisodesForAnimeSync(animeId);
+        return findDownloadedEpisodeForVoiceover(downloadedEps, episode, playerData);
+    }
+
+    public DownloadedEpisodeEntity getDownloadedEpisodeForEpisodeStart(
+            List<DownloadedEpisodeEntity> validDownloadedEps,
+            EpisodesListResponse.EpisodeItem episode,
+            EpisodeResponse.PlayerData currentPlayerData) {
+        if (episode == null || validDownloadedEps == null || validDownloadedEps.isEmpty()) return null;
+        if (currentPlayerData != null) {
+            return findDownloadedEpisodeForVoiceover(validDownloadedEps, episode, currentPlayerData);
         }
-        if (downloaded == null && epNum != null) {
-            downloaded = databaseManager.findDownloadedEpisode(animeId, epNum, team);
+        return findDownloadedEpisodeForVoiceover(validDownloadedEps, episode, null);
+    }
+
+    public static DownloadedEpisodeEntity findDownloadedEpisodeForVoiceover(
+            List<DownloadedEpisodeEntity> downloadedEps,
+            EpisodesListResponse.EpisodeItem episode,
+            EpisodeResponse.PlayerData playerData) {
+        if (downloadedEps == null || downloadedEps.isEmpty() || episode == null) {
+            return null;
         }
-        if (downloaded == null && animeId != null) {
-            List<DownloadedEpisodeEntity> downloadedEps = databaseManager.getEpisodesForAnimeSync(animeId);
-            if (downloadedEps != null) {
-                for (DownloadedEpisodeEntity ep : downloadedEps) {
-                    if (epId != 0 && ep.getEpisodeId() == epId) {
-                        downloaded = ep;
-                        break;
-                    } else if (epNum != null && epNum.equals(ep.getEpisodeNumber())) {
-                        downloaded = ep;
-                        break;
-                    }
-                }
+
+        int epId = episode.getId();
+        String epNum = episode.getNumber();
+        List<DownloadedEpisodeEntity> episodeMatches = new ArrayList<>();
+        for (DownloadedEpisodeEntity ep : downloadedEps) {
+            if (ep == null || ep.getLocalFilePath() == null || ep.getLocalFilePath().trim().isEmpty()) {
+                continue;
+            }
+            boolean idMatch = epId != 0 && ep.getEpisodeId() == epId;
+            boolean numMatch = epNum != null && !epNum.isEmpty() && epNum.equals(ep.getEpisodeNumber());
+            if (idMatch || numMatch) {
+                episodeMatches.add(ep);
             }
         }
-        return downloaded;
+
+        if (episodeMatches.isEmpty()) {
+            return null;
+        }
+
+        if (playerData == null) {
+            return episodeMatches.get(0);
+        }
+
+        String targetTeam = (playerData.getTeam() != null && playerData.getTeam().getName() != null)
+                ? playerData.getTeam().getName().trim() : "";
+        String targetPlayerType = playerData.getPlayer() != null ? playerData.getPlayer().trim() : "";
+
+        if (!targetTeam.isEmpty()) {
+            for (DownloadedEpisodeEntity ep : episodeMatches) {
+                String epTeam = ep.getTeamName() != null ? ep.getTeamName().trim() : "";
+                String epType = ep.getPlayerType() != null ? ep.getPlayerType().trim() : "";
+                boolean typeCompatible = targetPlayerType.isEmpty() || epType.isEmpty()
+                        || targetPlayerType.equalsIgnoreCase(epType);
+                if (targetTeam.equalsIgnoreCase(epTeam) && typeCompatible) {
+                    return ep;
+                }
+            }
+            return null;
+        }
+
+        if (!targetPlayerType.isEmpty()) {
+            for (DownloadedEpisodeEntity ep : episodeMatches) {
+                String epType = ep.getPlayerType() != null ? ep.getPlayerType().trim() : "";
+                if (targetPlayerType.equalsIgnoreCase(epType)) {
+                    return ep;
+                }
+            }
+            return null;
+        }
+
+        return episodeMatches.get(0);
     }
 
     public static String formatDownloadedOptionLabel(DownloadedEpisodeEntity downloadedEp) {

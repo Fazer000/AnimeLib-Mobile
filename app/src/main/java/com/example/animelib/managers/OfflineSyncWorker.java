@@ -7,12 +7,6 @@ import androidx.annotation.NonNull;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 
-import com.example.animelib.api.ApiService;
-import com.example.animelib.data.DatabaseManager;
-import com.example.animelib.data.entity.PendingSyncTaskEntity;
-
-import java.util.List;
-
 public class OfflineSyncWorker extends Worker {
     private static final String TAG = "OfflineSyncWorker";
 
@@ -25,51 +19,15 @@ public class OfflineSyncWorker extends Worker {
     public Result doWork() {
         Log.d(TAG, "Starting offline sync worker execution");
         Context context = getApplicationContext();
-        DatabaseManager dbManager = DatabaseManager.getInstance(context);
-        ApiService apiService = new ApiService(context);
+        OfflineSyncManager syncManager = OfflineSyncManager.getInstance(context);
+        OfflineSyncManager.SyncPassResult result = syncManager.executeWorkerSyncBlocking();
 
-        List<PendingSyncTaskEntity> tasks = dbManager.getAllPendingSyncTasksSync();
-        if (tasks == null || tasks.isEmpty()) {
-            Log.d(TAG, "No pending tasks to process");
-            return Result.success();
-        }
-
-        Log.d(TAG, "Found " + tasks.size() + " pending tasks to sync");
-        boolean hasFailures = false;
-
-        for (PendingSyncTaskEntity task : tasks) {
-            if (!"VIEW".equalsIgnoreCase(task.getTaskType())) {
-                Log.d(TAG, "Dropping obsolete non-VIEW sync task ID " + task.getId());
-                dbManager.deletePendingSyncTaskById(task.getId());
-                continue;
-            }
-
-            boolean success = false;
-            try {
-                Log.d(TAG, "Processing VIEW task for animeId: " + task.getAnimeId() + ", playerId: " + task.getPlayerId());
-                success = apiService.markEpisodeViewedSync(task.getAnimeId(), task.getPlayerId());
-            } catch (Exception e) {
-                Log.e(TAG, "Exception processing task ID: " + task.getId(), e);
-                success = false;
-            }
-
-            if (success) {
-                Log.d(TAG, "Task ID " + task.getId() + " succeeded, removing from database");
-                dbManager.deletePendingSyncTaskById(task.getId());
-            } else {
-                Log.w(TAG, "Task ID " + task.getId() + " failed, incrementing retry count");
-                task.setRetryCount(task.getRetryCount() + 1);
-                dbManager.updatePendingSyncTask(task);
-                hasFailures = true;
-            }
-        }
-
-        if (hasFailures) {
-            Log.w(TAG, "Some tasks failed during sync, returning Result.retry()");
+        if (result.hasRetryableFailure) {
+            Log.w(TAG, "Some tasks failed with retryable error during sync, returning Result.retry()");
             return Result.retry();
         }
 
-        Log.d(TAG, "All tasks synced successfully");
+        Log.d(TAG, "Offline sync worker completed (processed=" + result.processedCount + ")");
         return Result.success();
     }
 }

@@ -51,6 +51,8 @@ public class PlayersManager {
     private View menuLoadingIndicator;
     private com.example.animelib.ui.VoiceoverBottomSheet voiceoverBottomSheet;
     private boolean isLoading = false;
+    private boolean isBackgroundLoading = false;
+    private int lastRequestedEpisodeId = -1;
 
     // Side panel UI
     private TabLayout tabLayout;
@@ -140,6 +142,8 @@ public class PlayersManager {
                         animelibPlayers,
                         kodikPlayers,
                         currentPlayerData,
+                        resolveCurrentEpisode(),
+                        resolveValidDownloadedEpisodes(),
                         this::onPlayerSelected
                 );
                 sidePanelViewPager.setAdapter(sidePanelTabsAdapter);
@@ -248,15 +252,60 @@ public class PlayersManager {
     /**
      * Показать меню плееров
      */
+    private int resolveCurrentEpisodeIdForLoad() {
+        if (lastRequestedEpisodeId > 0) {
+            return lastRequestedEpisodeId;
+        }
+        if (context instanceof com.example.animelib.VideoPlayerActivity) {
+            EpisodesManager em = ((com.example.animelib.VideoPlayerActivity) context).getEpisodesManager();
+            if (em != null && em.getCurrentEpisode() != null && em.getCurrentEpisode().getId() > 0) {
+                return em.getCurrentEpisode().getId();
+            }
+        }
+        return -1;
+    }
+
+    private com.example.animelib.models.EpisodesListResponse.EpisodeItem resolveCurrentEpisode() {
+        if (context instanceof com.example.animelib.VideoPlayerActivity) {
+            EpisodesManager em = ((com.example.animelib.VideoPlayerActivity) context).getEpisodesManager();
+            if (em != null) {
+                return em.getCurrentEpisode();
+            }
+        }
+        return null;
+    }
+
+    private List<com.example.animelib.data.entity.DownloadedEpisodeEntity> resolveValidDownloadedEpisodes() {
+        if (context instanceof com.example.animelib.VideoPlayerActivity) {
+            return ((com.example.animelib.VideoPlayerActivity) context).getValidDownloadedEpisodesForCurrentAnime();
+        }
+        return java.util.Collections.emptyList();
+    }
+
     public void showMenu() {
         if (context instanceof com.example.animelib.VideoPlayerActivity
-                && ((com.example.animelib.VideoPlayerActivity) context).isPlayingDownloadedVideo()) {
+                && ((com.example.animelib.VideoPlayerActivity) context).isOfflineMode()) {
             return;
+        }
+        if (context instanceof com.example.animelib.VideoPlayerActivity) {
+            ((com.example.animelib.VideoPlayerActivity) context).syncCurrentPlayerDataForDownloadedIfNeeded();
         }
         boolean isPortrait = context != null && context.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT;
         if (isPortrait) {
             showVoiceoverBottomSheet();
             return;
+        }
+
+        if (allPlayers.isEmpty()) {
+            if (isBackgroundLoading || isLoading) {
+                showLoading();
+            } else {
+                int epId = resolveCurrentEpisodeIdForLoad();
+                if (epId > 0) {
+                    showLoading();
+                    loadPlayersForEpisode(epId, false);
+                }
+            }
         }
 
         if (!isMenuVisible) {
@@ -282,11 +331,18 @@ public class PlayersManager {
      */
     public void showVoiceoverBottomSheet() {
         if (context instanceof com.example.animelib.VideoPlayerActivity
-                && ((com.example.animelib.VideoPlayerActivity) context).isPlayingDownloadedVideo()) {
+                && ((com.example.animelib.VideoPlayerActivity) context).isOfflineMode()) {
             return;
         }
         if (context instanceof com.example.animelib.VideoPlayerActivity) {
             ((com.example.animelib.VideoPlayerActivity) context).syncCurrentPlayerDataForDownloadedIfNeeded();
+        }
+
+        if (allPlayers.isEmpty() && !isLoading && !isBackgroundLoading) {
+            int epId = resolveCurrentEpisodeIdForLoad();
+            if (epId > 0) {
+                loadPlayersForEpisode(epId, false);
+            }
         }
 
         if (voiceoverBottomSheet != null && voiceoverBottomSheet.isShowing()) {
@@ -298,7 +354,7 @@ public class PlayersManager {
                 animelibPlayers,
                 kodikPlayers,
                 currentPlayerData,
-                isLoading,
+                isLoading || isBackgroundLoading,
                 this::onPlayerSelected,
                 () -> {
                     if (context instanceof com.example.animelib.VideoPlayerActivity) {
@@ -312,6 +368,8 @@ public class PlayersManager {
                     }
                 }
         );
+
+        voiceoverBottomSheet.setDownloadedContext(resolveCurrentEpisode(), resolveValidDownloadedEpisodes());
 
         voiceoverBottomSheet.setOnDismissListener(dialog -> {
             isMenuVisible = false;
@@ -331,6 +389,12 @@ public class PlayersManager {
     public void updateDownloadButtonState(boolean isDownloading) {
         if (voiceoverBottomSheet != null && voiceoverBottomSheet.isShowing()) {
             voiceoverBottomSheet.updateDownloadButtonState(isDownloading);
+            if (!isDownloading) {
+                voiceoverBottomSheet.setDownloadedContext(resolveCurrentEpisode(), resolveValidDownloadedEpisodes());
+            }
+        }
+        if (!isDownloading && sidePanelTabsAdapter != null && isMenuVisible) {
+            sidePanelTabsAdapter.updateDownloadedState(resolveCurrentEpisode(), resolveValidDownloadedEpisodes());
         }
     }
     
@@ -415,10 +479,14 @@ public class PlayersManager {
      */
     public void loadPlayersForEpisode(int episodeId, boolean triggerSelectionCallback) {
         final int requestGen = nextLoadRequestGeneration();
+        lastRequestedEpisodeId = episodeId;
         Log.d(TAG, "Loading players for episode ID: " + episodeId + " (gen=" + requestGen + ", triggerSelection=" + triggerSelectionCallback + ")");
         
         if (triggerSelectionCallback) {
+            isBackgroundLoading = false;
             showLoading();
+        } else {
+            isBackgroundLoading = true;
         }
         
         apiService.fetchEpisodeData(episodeId, new ApiService.EpisodeDataCallback() {
@@ -509,6 +577,7 @@ public class PlayersManager {
                             Log.d(TAG, "Ignoring stale UI player callback for episode ID: " + episodeId + " (gen=" + requestGen + ")");
                             return;
                         }
+                        isBackgroundLoading = false;
                         hideLoading();
 
                         if (!triggerSelectionCallback) {
@@ -567,11 +636,12 @@ public class PlayersManager {
                         if (!isCurrentLoadGeneration(requestGen)) {
                             return;
                         }
+                        isBackgroundLoading = false;
+                        hideLoading();
                         if (!triggerSelectionCallback) {
                             Log.w(TAG, "Background online players empty for downloaded episode ID: " + episodeId);
                             return;
                         }
-                        hideLoading();
                         Log.e(TAG, "No players found in response");
                         if (dataCallback != null) {
                             dataCallback.onPlayersError("Плееры не найдены");
@@ -587,11 +657,12 @@ public class PlayersManager {
                         Log.d(TAG, "Ignoring stale error callback for episode ID: " + episodeId + " (gen=" + requestGen + ")");
                         return;
                     }
+                    isBackgroundLoading = false;
+                    hideLoading();
                     if (!triggerSelectionCallback) {
                         Log.w(TAG, "Background online players load failed for downloaded episode: " + error);
                         return;
                     }
-                    hideLoading();
                     Log.e(TAG, "Error loading players: " + error);
                     
                     if (dataCallback != null) {
@@ -693,8 +764,12 @@ public class PlayersManager {
      * Обновление меню с данными плееров
      */
     public void updateMenuWithData() {
+        com.example.animelib.models.EpisodesListResponse.EpisodeItem currentEpisode = resolveCurrentEpisode();
+        List<com.example.animelib.data.entity.DownloadedEpisodeEntity> downloadedEpisodes = resolveValidDownloadedEpisodes();
+
         if (voiceoverBottomSheet != null && voiceoverBottomSheet.isShowing()) {
-            voiceoverBottomSheet.updateData(animelibPlayers, kodikPlayers, currentPlayerData);
+            voiceoverBottomSheet.updateData(animelibPlayers, kodikPlayers, currentPlayerData,
+                    currentEpisode, downloadedEpisodes);
         }
 
         boolean hasAnimelib = animelibPlayers != null && !animelibPlayers.isEmpty();
@@ -776,7 +851,8 @@ public class PlayersManager {
         }
 
         if (sidePanelTabsAdapter != null) {
-            sidePanelTabsAdapter.updateData(animelibPlayers, kodikPlayers, currentPlayerData);
+            sidePanelTabsAdapter.updateData(animelibPlayers, kodikPlayers, currentPlayerData,
+                    resolveCurrentEpisode(), resolveValidDownloadedEpisodes());
         }
 
         if (sidePanelViewPager != null) {
@@ -907,11 +983,14 @@ public class PlayersManager {
     public void setEnable4K(boolean enable4K) {
         this.enable4K = enable4K;
         Log.d(TAG, "4K setting updated: " + enable4K);
+        com.example.animelib.models.EpisodesListResponse.EpisodeItem currentEpisode = resolveCurrentEpisode();
+        List<com.example.animelib.data.entity.DownloadedEpisodeEntity> downloadedEpisodes = resolveValidDownloadedEpisodes();
         if (sidePanelTabsAdapter != null) {
-            sidePanelTabsAdapter.notifyDataSetChanged();
+            sidePanelTabsAdapter.updateDownloadedState(currentEpisode, downloadedEpisodes);
         }
         if (voiceoverBottomSheet != null && voiceoverBottomSheet.isShowing()) {
-            voiceoverBottomSheet.updateData(animelibPlayers, kodikPlayers, currentPlayerData);
+            voiceoverBottomSheet.updateData(animelibPlayers, kodikPlayers, currentPlayerData,
+                    currentEpisode, downloadedEpisodes);
         }
     }
     
@@ -1098,6 +1177,8 @@ public class PlayersManager {
     }
 
     public void cleanup() {
+        isBackgroundLoading = false;
+        lastRequestedEpisodeId = -1;
         allPlayers.clear();
         animelibPlayers.clear();
         kodikPlayers.clear();

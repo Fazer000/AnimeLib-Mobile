@@ -65,7 +65,7 @@ public class PlayerPanelsController {
     }
 
     public void openMenuPanel() {
-        if (callback.isOfflineMode() || callback.isPlayingDownloadedVideo()) return;
+        if (callback.isOfflineMode()) return;
         PlayerView pv = callback.getPlayerView();
         if (pv != null) {
             pv.hideController();

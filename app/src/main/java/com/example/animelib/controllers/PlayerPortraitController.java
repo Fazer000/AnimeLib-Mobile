@@ -147,7 +147,7 @@ public class PlayerPortraitController {
         if (portraitVoiceoverPlayerButton != null) {
             portraitVoiceoverPlayerButton.setOnClickListener(v -> {
                 if (isVoiceoverSelectionDisabled()) {
-                    CustomToast.showInfo(activity, "Выбор озвучки недоступен для скачанного файла");
+                    CustomToast.showInfo(activity, "Выбор озвучки недоступен в офлайн режиме");
                     return;
                 }
                 ItemAnimationUtils.animateItemClick(v, () -> {
@@ -289,8 +289,7 @@ public class PlayerPortraitController {
     }
 
     private boolean isVoiceoverSelectionDisabled() {
-        PlayerOfflineController offlineCtrl = host.getOfflineController();
-        return host.isOfflineMode() || (offlineCtrl != null && offlineCtrl.isPlayingDownloadedVideo());
+        return host.isOfflineMode();
     }
 
     public void updateVoiceoverButtonState() {

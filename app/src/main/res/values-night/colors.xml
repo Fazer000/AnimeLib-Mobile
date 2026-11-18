@@ -78,4 +78,9 @@
     <color name="dialog_ripple_color">#33FFFFFF</color>
     <color name="dialog_rules_num_bg">#36363C</color>
     <color name="dialog_rules_num_text">#FFFFFF</color>
+
+    <!-- Downloaded Voiceover Tag (Dark Override) -->
+    <color name="downloaded_tag_bg">#173525</color>
+    <color name="downloaded_tag_stroke">#065F46</color>
+    <color name="downloaded_tag_fg">#34D399</color>
 </resources>

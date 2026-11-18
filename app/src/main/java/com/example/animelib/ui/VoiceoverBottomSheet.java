@@ -16,7 +16,9 @@ import androidx.viewpager2.widget.ViewPager2;
 
 import com.example.animelib.R;
 import com.example.animelib.adapters.PlayerTabsAdapter;
+import com.example.animelib.data.entity.DownloadedEpisodeEntity;
 import com.example.animelib.models.EpisodeResponse;
+import com.example.animelib.models.EpisodesListResponse;
 import com.example.animelib.util.FloatingBottomSheetUtils;
 import com.example.animelib.util.FlexibleBottomSheetDialog;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
@@ -39,6 +41,8 @@ public class VoiceoverBottomSheet extends FlexibleBottomSheetDialog {
     private List<EpisodeResponse.PlayerData> animelibPlayers;
     private List<EpisodeResponse.PlayerData> kodikPlayers;
     private EpisodeResponse.PlayerData currentPlayerData;
+    private EpisodesListResponse.EpisodeItem currentEpisode;
+    private List<DownloadedEpisodeEntity> downloadedEpisodes;
     private boolean isLoading = false;
 
     private final OnPlayerSelectedListener selectionListener;
@@ -67,6 +71,15 @@ public class VoiceoverBottomSheet extends FlexibleBottomSheetDialog {
         this.isLoading = isLoading;
         this.selectionListener = selectionListener;
         this.downloadListener = downloadListener;
+    }
+
+    public void setDownloadedContext(EpisodesListResponse.EpisodeItem currentEpisode,
+                                     List<DownloadedEpisodeEntity> downloadedEpisodes) {
+        this.currentEpisode = currentEpisode;
+        this.downloadedEpisodes = downloadedEpisodes;
+        if (tabsAdapter != null) {
+            tabsAdapter.updateDownloadedState(currentEpisode, downloadedEpisodes);
+        }
     }
 
     @Override
@@ -192,6 +205,8 @@ public class VoiceoverBottomSheet extends FlexibleBottomSheetDialog {
                 animelibPlayers,
                 kodikPlayers,
                 currentPlayerData,
+                currentEpisode,
+                downloadedEpisodes,
                 playerData -> {
                     dismiss();
                     if (selectionListener != null) {
@@ -271,14 +286,25 @@ public class VoiceoverBottomSheet extends FlexibleBottomSheetDialog {
     public void updateData(List<EpisodeResponse.PlayerData> animelibPlayers,
                            List<EpisodeResponse.PlayerData> kodikPlayers,
                            EpisodeResponse.PlayerData currentPlayerData) {
+        updateData(animelibPlayers, kodikPlayers, currentPlayerData, this.currentEpisode, this.downloadedEpisodes);
+    }
+
+    public void updateData(List<EpisodeResponse.PlayerData> animelibPlayers,
+                           List<EpisodeResponse.PlayerData> kodikPlayers,
+                           EpisodeResponse.PlayerData currentPlayerData,
+                           EpisodesListResponse.EpisodeItem currentEpisode,
+                           List<DownloadedEpisodeEntity> downloadedEpisodes) {
         this.animelibPlayers = animelibPlayers != null ? animelibPlayers : new ArrayList<>();
         this.kodikPlayers = kodikPlayers != null ? kodikPlayers : new ArrayList<>();
         this.currentPlayerData = currentPlayerData;
+        this.currentEpisode = currentEpisode;
+        this.downloadedEpisodes = downloadedEpisodes;
 
         determineActiveTab();
 
         if (tabsAdapter != null) {
-            tabsAdapter.updateData(this.animelibPlayers, this.kodikPlayers, this.currentPlayerData);
+            tabsAdapter.updateData(this.animelibPlayers, this.kodikPlayers, this.currentPlayerData,
+                    this.currentEpisode, this.downloadedEpisodes);
         }
 
         if (viewPager != null) {

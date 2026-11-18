@@ -15,7 +15,10 @@ import androidx.media3.common.util.UnstableApi;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.animelib.R;
+import com.example.animelib.controllers.PlayerDownloadController;
+import com.example.animelib.data.entity.DownloadedEpisodeEntity;
 import com.example.animelib.models.EpisodeResponse;
+import com.example.animelib.models.EpisodesListResponse;
 import com.example.animelib.util.ImageLoader;
 
 import java.util.List;
@@ -25,6 +28,8 @@ public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdap
 
     private List<EpisodeResponse.PlayerData> players;
     private EpisodeResponse.PlayerData currentPlayer;
+    private EpisodesListResponse.EpisodeItem currentEpisode;
+    private List<DownloadedEpisodeEntity> downloadedEpisodes;
     private OnPlayerSelectedListener listener;
 
     public interface OnPlayerSelectedListener {
@@ -34,8 +39,18 @@ public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdap
     public PlayerOptionsAdapter(List<EpisodeResponse.PlayerData> players,
                                EpisodeResponse.PlayerData currentPlayer,
                                OnPlayerSelectedListener listener) {
+        this(players, currentPlayer, null, null, listener);
+    }
+
+    public PlayerOptionsAdapter(List<EpisodeResponse.PlayerData> players,
+                               EpisodeResponse.PlayerData currentPlayer,
+                               EpisodesListResponse.EpisodeItem currentEpisode,
+                               List<DownloadedEpisodeEntity> downloadedEpisodes,
+                               OnPlayerSelectedListener listener) {
         this.players = players;
         this.currentPlayer = currentPlayer;
+        this.currentEpisode = currentEpisode;
+        this.downloadedEpisodes = downloadedEpisodes;
         this.listener = listener;
         
         Log.d(TAG, "Constructor - players: " + (players != null ? players.size() : "null"));
@@ -49,9 +64,27 @@ public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdap
     }
 
     public void updatePlayers(List<EpisodeResponse.PlayerData> players, EpisodeResponse.PlayerData currentPlayer) {
+        updatePlayers(players, currentPlayer, this.currentEpisode, this.downloadedEpisodes);
+    }
+
+    public void updatePlayers(List<EpisodeResponse.PlayerData> players,
+                              EpisodeResponse.PlayerData currentPlayer,
+                              EpisodesListResponse.EpisodeItem currentEpisode,
+                              List<DownloadedEpisodeEntity> downloadedEpisodes) {
         this.players = players;
         this.currentPlayer = currentPlayer;
+        this.currentEpisode = currentEpisode;
+        this.downloadedEpisodes = downloadedEpisodes;
         notifyDataSetChanged();
+    }
+
+    public static boolean isVoiceoverDownloaded(EpisodeResponse.PlayerData player,
+                                                 EpisodesListResponse.EpisodeItem currentEpisode,
+                                                 List<DownloadedEpisodeEntity> downloadedEpisodes) {
+        if (player == null || currentEpisode == null || downloadedEpisodes == null || downloadedEpisodes.isEmpty()) {
+            return false;
+        }
+        return PlayerDownloadController.findDownloadedEpisodeForVoiceover(downloadedEpisodes, currentEpisode, player) != null;
     }
 
     @NonNull
@@ -137,6 +170,11 @@ public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdap
             holder.subTag.setVisibility(player.isSubtitles() ? View.VISIBLE : View.GONE);
         }
 
+        if (holder.downloadedTag != null) {
+            boolean isDownloaded = isVoiceoverDownloaded(player, currentEpisode, downloadedEpisodes);
+            holder.downloadedTag.setVisibility(isDownloaded ? View.VISIBLE : View.GONE);
+        }
+
         // Show current player indicator
         boolean isCurrentPlayer = false;
         if (currentPlayer != null && player != null) {
@@ -195,6 +233,7 @@ public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdap
         TextView fhdTag;
         TextView fourKTag;
         TextView subTag;
+        View downloadedTag;
         ImageView teamIcon;
 
         PlayerViewHolder(@NonNull View itemView) {
@@ -203,6 +242,7 @@ public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdap
             fhdTag = itemView.findViewById(R.id.fhdTag);
             fourKTag = itemView.findViewById(R.id.fourKTag);
             subTag = itemView.findViewById(R.id.subTag);
+            downloadedTag = itemView.findViewById(R.id.downloadedTag);
             teamIcon = itemView.findViewById(R.id.teamIcon);
         }
     }

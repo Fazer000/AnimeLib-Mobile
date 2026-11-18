@@ -50,6 +50,39 @@
             android:orientation="horizontal"
             android:gravity="center_vertical|end">
 
+            <LinearLayout
+                android:id="@+id/downloadedTag"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:background="@drawable/bg_downloaded_tag"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="2dp"
+                android:visibility="gone"
+                tools:visibility="visible">
+
+                <ImageView
+                    android:layout_width="11dp"
+                    android:layout_height="11dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_download"
+                    app:tint="@color/downloaded_tag_fg" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="3dp"
+                    android:fontFamily="@font/open_sans_semibold"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="@string/tag_downloaded"
+                    android:textColor="@color/downloaded_tag_fg"
+                    android:textSize="10.5sp" />
+
+            </LinearLayout>
+
             <TextView
                 android:id="@+id/subTag"
                 android:layout_width="wrap_content"
@@ -59,7 +92,7 @@
                 android:textSize="12sp"
                 android:textColor="@color/app_text_accent_blue"
                 android:visibility="gone"
-                android:layout_marginStart="8dp"/>
+                android:layout_marginStart="6dp"/>
 
             <TextView
                 android:id="@+id/fhdTag"
@@ -70,7 +103,7 @@
                 android:textSize="12sp"
                 android:textColor="@color/app_text_accent_blue"
                 android:visibility="visible"
-                android:layout_marginStart="8dp"/>
+                android:layout_marginStart="6dp"/>
 
             <TextView
                 android:id="@+id/fourKTag"
@@ -81,7 +114,7 @@
                 android:textSize="12sp"
                 android:textColor="@color/app_text_accent_blue"
                 android:visibility="gone"
-                android:layout_marginStart="8dp"/>
+                android:layout_marginStart="6dp"/>
 
         </LinearLayout>
 

@@ -21,6 +21,9 @@ public interface PendingSyncTaskDao {
     @Query("SELECT * FROM pending_sync_tasks WHERE taskType = 'VIEW' AND animeId = :animeId AND playerId = :playerId LIMIT 1")
     PendingSyncTaskEntity findViewTaskSync(String animeId, int playerId);
 
+    @Query("SELECT * FROM pending_sync_tasks WHERE id = :id LIMIT 1")
+    PendingSyncTaskEntity findTaskByIdSync(long id);
+
     @Update
     void updateTask(PendingSyncTaskEntity task);
 

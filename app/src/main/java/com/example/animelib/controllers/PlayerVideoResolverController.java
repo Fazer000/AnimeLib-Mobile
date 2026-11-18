@@ -221,18 +221,46 @@ public class PlayerVideoResolverController {
             String prefQuality = qualityCtrl != null ? qualityCtrl.getPreferredQuality() : provider.getPreferredQuality();
             String currentVideoUrl = qualityCtrl != null ? qualityCtrl.getCurrentVideoUrl() : null;
 
+            if (!isNew && provider.shouldPlayDownloadedFile() && qualityCtrl != null) {
+                DownloadedEpisodeEntity downloadedEp = provider.getDownloadedEpisodeForActive();
+                if (downloadedEp != null && downloadedEp.getLocalFilePath() != null) {
+                    File localFile = new File(downloadedEp.getLocalFilePath());
+                    if (localFile.exists() && localFile.length() > 0) {
+                        String localUrl = Uri.fromFile(localFile).toString();
+                        String downloadedLabel = PlayerDownloadController.formatDownloadedOptionLabel(downloadedEp);
+                        if (localUrl.equals(currentVideoUrl)) {
+                            if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
+                            qualityCtrl.refreshQualityUiState();
+                            host.onAnimeInfoHeaderFull();
+                            return;
+                        }
+                        qualityCtrl.setActivePlayingQuality(AutoQualityHelper.normalizeResolutionLabel(downloadedEp.getQuality()));
+                        qualityCtrl.refreshQualityUiState();
+                        if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
+                        host.onAnimeInfoHeaderFull();
+                        if (isCurrentlyPlaying) {
+                            qualityCtrl.switchQualitySeamlesslyInternal(downloadedLabel, prefQuality, localUrl);
+                        } else {
+                            qualityCtrl.setCurrentVideoUrl(localUrl);
+                            host.switchMediaSource(localUrl, currentPos, wasPlaying);
+                        }
+                        return;
+                    }
+                }
+            }
+
             if (!isNew && !provider.shouldPlayDownloadedFile() && qualityCtrl != null) {
                 if ("animelib".equalsIgnoreCase(playerData.getPlayer())) {
                     String newVideoUrl = qualityCtrl.resolveAnimelibUrl(playerData, prefQuality);
                     if (newVideoUrl != null && !newVideoUrl.equals(currentVideoUrl)) {
                         Log.d(TAG, "Seamlessly switching voiceover (Animelib)");
                         qualityCtrl.refreshQualityUiState();
+                        if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
+                        host.onAnimeInfoHeaderFull();
                         if (isCurrentlyPlaying) {
                             qualityCtrl.switchQualitySeamlesslyInternal(prefQuality, prefQuality, newVideoUrl);
                         } else {
                             qualityCtrl.setCurrentVideoUrl(newVideoUrl);
-                            if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
-                            host.onAnimeInfoHeaderFull();
                             host.switchMediaSource(newVideoUrl, currentPos, wasPlaying);
                         }
                         return;
@@ -268,12 +296,12 @@ public class PlayerVideoResolverController {
                                     String latestUrl = qualityCtrl.getCurrentVideoUrl();
                                     ExoPlayer livePlayer = playbackCtrl != null ? playbackCtrl.getPlayer() : null;
                                     if (newVideoUrl != null && !newVideoUrl.equals(latestUrl)) {
+                                        if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
+                                        host.onAnimeInfoHeaderFull();
                                         if (shouldBeSeamless && livePlayer != null && (livePlayer.isPlaying() || livePlayer.getPlaybackState() == Player.STATE_READY)) {
                                             qualityCtrl.switchQualitySeamlesslyInternal(prefQuality, prefQuality, newVideoUrl);
                                         } else {
                                             qualityCtrl.setCurrentVideoUrl(newVideoUrl);
-                                            if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
-                                            host.onAnimeInfoHeaderFull();
                                             host.switchMediaSource(newVideoUrl, posToRestore, playState);
                                         }
                                     } else {

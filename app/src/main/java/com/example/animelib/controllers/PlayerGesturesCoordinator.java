@@ -124,10 +124,10 @@ public class PlayerGesturesCoordinator {
 
                 @Override
                 public void onPlayersSwipeFromRight() {
-                    if (host.isOfflineMode() || host.isPlayingDownloadedVideo()) {
+                    if (host.isOfflineMode()) {
                         Context ctx = host.getContext();
                         if (ctx != null) {
-                            CustomToast.showInfo(ctx, "Выбор озвучки недоступен для скачанного файла");
+                            CustomToast.showInfo(ctx, "Выбор озвучки недоступен в офлайн режиме");
                         }
                         return;
                     }
@@ -163,7 +163,7 @@ public class PlayerGesturesCoordinator {
 
                 @Override
                 public void onPlayersDragProgress(float progress) {
-                    if (host.isOfflineMode() || host.isPlayingDownloadedVideo()) return;
+                    if (host.isOfflineMode()) return;
                     PlayerView pv = host.getPlayerView();
                     if (progress > 0 && pv != null) {
                         pv.hideController();
@@ -190,9 +190,9 @@ public class PlayerGesturesCoordinator {
                             }
                             break;
                         case PLAYERS_RIGHT:
-                            if (host.isOfflineMode() || host.isPlayingDownloadedVideo()) {
+                            if (host.isOfflineMode()) {
                                 if (shouldOpen && host.getContext() != null) {
-                                    CustomToast.showInfo(host.getContext(), "Выбор озвучки недоступен для скачанного файла");
+                                    CustomToast.showInfo(host.getContext(), "Выбор озвучки недоступен в офлайн режиме");
                                 }
                                 return;
                             }

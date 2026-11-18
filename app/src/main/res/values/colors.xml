@@ -165,4 +165,9 @@
     <color name="dialog_ripple_color">#1A000000</color>
     <color name="dialog_rules_num_bg">@color/purple_primary</color>
     <color name="dialog_rules_num_text">#FFFFFF</color>
+
+    <!-- Downloaded Voiceover Tag -->
+    <color name="downloaded_tag_bg">#ECFDF5</color>
+    <color name="downloaded_tag_stroke">#86EFAC</color>
+    <color name="downloaded_tag_fg">#047857</color>
 </resources>
