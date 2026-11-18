@@ -28,13 +28,13 @@ public interface DownloadedAnimeDao {
     @Query("SELECT * FROM downloaded_anime WHERE animeId = :animeId LIMIT 1")
     DownloadedAnimeEntity getAnimeByIdSync(String animeId);
 
-    @Query("SELECT * FROM downloaded_episodes WHERE animeId = :animeId ORDER BY CAST(episodeNumber AS INTEGER) ASC")
+    @Query("SELECT * FROM downloaded_episodes WHERE animeId = :animeId ORDER BY CAST(episodeNumber AS REAL) ASC, episodeId ASC")
     LiveData<List<DownloadedEpisodeEntity>> getEpisodesForAnimeLiveData(String animeId);
 
-    @Query("SELECT * FROM downloaded_episodes WHERE animeId = :animeId ORDER BY CAST(episodeNumber AS INTEGER) ASC")
+    @Query("SELECT * FROM downloaded_episodes WHERE animeId = :animeId ORDER BY CAST(episodeNumber AS REAL) ASC, episodeId ASC")
     List<DownloadedEpisodeEntity> getEpisodesForAnimeSync(String animeId);
 
-    @Query("SELECT * FROM downloaded_episodes ORDER BY CAST(episodeNumber AS INTEGER) ASC")
+    @Query("SELECT * FROM downloaded_episodes ORDER BY CAST(episodeNumber AS REAL) ASC, episodeId ASC")
     List<DownloadedEpisodeEntity> getAllEpisodesSync();
 
     @Query("SELECT * FROM downloaded_episodes WHERE id = :id LIMIT 1")

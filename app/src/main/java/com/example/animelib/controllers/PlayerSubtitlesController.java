@@ -277,12 +277,12 @@ public class PlayerSubtitlesController {
     }
 
     public MediaItem createMediaItemWithSubtitles(String videoUrl) {
-        cachedPlayResX = 0;
-        cachedPlayResY = 0;
-        clearNativeAssState();
-
         if (subtitlesEnabled) {
             loadPreferredAssSubtitleAsync(videoUrl);
+        } else {
+            cachedPlayResX = 0;
+            cachedPlayResY = 0;
+            clearNativeAssState();
         }
 
         MediaItem.Builder builder = new MediaItem.Builder().setUri(videoUrl);
@@ -396,16 +396,22 @@ public class PlayerSubtitlesController {
     }
 
     private void clearNativeAssState() {
-        assLoadGeneration.incrementAndGet();
+        final long clearGen = assLoadGeneration.incrementAndGet();
         activeAssScript = null;
         activeAssSourceKey = null;
         nativeAssActive = false;
-        mainHandler.post(() -> {
+        Runnable clearOverlay = () -> {
+            if (assLoadGeneration.get() != clearGen) return;
             if (assOverlayView != null) {
                 assOverlayView.setAssScript(null);
                 assOverlayView.setVisibility(View.GONE);
             }
-        });
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            clearOverlay.run();
+        } else {
+            mainHandler.post(clearOverlay);
+        }
     }
 
     private void loadPreferredAssSubtitleAsync() {
@@ -488,6 +494,7 @@ public class PlayerSubtitlesController {
             return;
         }
 
+        clearNativeAssState();
         final long gen = assLoadGeneration.incrementAndGet();
         assLoadExecutor.execute(() -> {
             try {
@@ -519,6 +526,7 @@ public class PlayerSubtitlesController {
             return;
         }
 
+        clearNativeAssState();
         final long gen = assLoadGeneration.incrementAndGet();
         final ApiService apiService = callback.getApiService();
         assLoadExecutor.execute(() -> {
@@ -674,18 +682,49 @@ public class PlayerSubtitlesController {
             public void onIsPlayingChanged(boolean isPlaying) {
                 if (assOverlayView != null && nativeAssActive) {
                     if (isPlaying) {
+                        if (assOverlayView.getVisibility() != View.VISIBLE) {
+                            assOverlayView.setVisibility(View.VISIBLE);
+                        }
                         assOverlayView.syncNow();
                         assOverlayView.startRenderLoop();
                     } else {
-                        assOverlayView.stopRenderLoop();
                         assOverlayView.syncNow();
                     }
                 }
             }
 
             @Override
+            public void onRenderedFirstFrame() {
+                if (nativeAssActive && assOverlayView != null) {
+                    if (assOverlayView.getVisibility() != View.VISIBLE) {
+                        assOverlayView.setVisibility(View.VISIBLE);
+                    }
+                    assOverlayView.syncNow();
+                } else if (subtitlesEnabled && !nativeAssActive) {
+                    ExoPlayer active = callback.getPlayer();
+                    if (active != null) {
+                        ensureTextTrackSelected(active, active.getCurrentTracks());
+                    }
+                }
+            }
+
+            @Override
             public void onPlaybackStateChanged(int playbackState) {
-                if (assOverlayView != null && nativeAssActive) {
+                if (playbackState == Player.STATE_READY) {
+                    if (nativeAssActive && assOverlayView != null) {
+                        if (assOverlayView.getVisibility() != View.VISIBLE) {
+                            assOverlayView.setVisibility(View.VISIBLE);
+                        }
+                        assOverlayView.syncNow();
+                    } else if (subtitlesEnabled && activeAssScript != null && !activeAssScript.isEmpty() && isAssSubtitleActive()) {
+                        applySubtitlesStateToPlayer();
+                    } else if (subtitlesEnabled && !nativeAssActive) {
+                        ExoPlayer active = callback.getPlayer();
+                        if (active != null) {
+                            ensureTextTrackSelected(active, active.getCurrentTracks());
+                        }
+                    }
+                } else if (assOverlayView != null && nativeAssActive) {
                     assOverlayView.syncNow();
                 }
             }
@@ -710,51 +749,7 @@ public class PlayerSubtitlesController {
             public void onTracksChanged(@NonNull Tracks tracks) {
                 ExoPlayer player = callback.getPlayer();
                 if (!subtitlesEnabled || player == null) return;
-
-                boolean hasSelectedTextTrack = false;
-                Tracks.Group preferredTextGroup = null;
-                Tracks.Group firstSupportedTextGroup = null;
-
-                for (Tracks.Group group : tracks.getGroups()) {
-                    if (group.getType() == C.TRACK_TYPE_TEXT && group.isSupported()) {
-                        if (group.isSelected()) {
-                            hasSelectedTextTrack = true;
-                            break;
-                        }
-                        if (firstSupportedTextGroup == null) {
-                            firstSupportedTextGroup = group;
-                        }
-                        for (int i = 0; i < group.length; i++) {
-                            Format format = group.getTrackFormat(i);
-                            String mime = format.sampleMimeType;
-                            if ("ass".equalsIgnoreCase(subtitleFormat) && MimeTypes.TEXT_SSA.equals(mime)) {
-                                preferredTextGroup = group;
-                                break;
-                            } else if (("vtt".equalsIgnoreCase(subtitleFormat) || "webvtt".equalsIgnoreCase(subtitleFormat))
-                                    && MimeTypes.TEXT_VTT.equals(mime)) {
-                                preferredTextGroup = group;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if (!hasSelectedTextTrack) {
-                    Tracks.Group targetGroup = preferredTextGroup != null ? preferredTextGroup : firstSupportedTextGroup;
-                    if (targetGroup != null) {
-                        Log.d(TAG, "Forcing selection of text track: " + targetGroup.getMediaTrackGroup());
-                        try {
-                            TrackSelectionParameters newParams = player.getTrackSelectionParameters()
-                                    .buildUpon()
-                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                                    .setOverrideForType(new TrackSelectionOverride(targetGroup.getMediaTrackGroup(), 0))
-                                    .build();
-                            player.setTrackSelectionParameters(newParams);
-                        } catch (Exception e) {
-                            Log.e(TAG, "Failed to force text track selection", e);
-                        }
-                    }
-                }
+                ensureTextTrackSelected(player, tracks);
             }
         };
 
@@ -768,24 +763,81 @@ public class PlayerSubtitlesController {
         }
     }
 
+    private void ensureTextTrackSelected(@NonNull ExoPlayer player, @Nullable Tracks tracks) {
+        if (!subtitlesEnabled || tracks == null) return;
+
+        boolean hasSelectedTextTrack = false;
+        Tracks.Group preferredTextGroup = null;
+        Tracks.Group firstSupportedTextGroup = null;
+
+        for (Tracks.Group group : tracks.getGroups()) {
+            if (group.getType() == C.TRACK_TYPE_TEXT && group.isSupported()) {
+                if (group.isSelected()) {
+                    hasSelectedTextTrack = true;
+                    break;
+                }
+                if (firstSupportedTextGroup == null) {
+                    firstSupportedTextGroup = group;
+                }
+                for (int i = 0; i < group.length; i++) {
+                    Format format = group.getTrackFormat(i);
+                    String mime = format.sampleMimeType;
+                    if ("ass".equalsIgnoreCase(subtitleFormat) && MimeTypes.TEXT_SSA.equals(mime)) {
+                        preferredTextGroup = group;
+                        break;
+                    } else if (("vtt".equalsIgnoreCase(subtitleFormat) || "webvtt".equalsIgnoreCase(subtitleFormat))
+                            && MimeTypes.TEXT_VTT.equals(mime)) {
+                        preferredTextGroup = group;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!hasSelectedTextTrack) {
+            Tracks.Group targetGroup = preferredTextGroup != null ? preferredTextGroup : firstSupportedTextGroup;
+            if (targetGroup != null) {
+                Log.d(TAG, "Forcing selection of text track: " + targetGroup.getMediaTrackGroup());
+                try {
+                    TrackSelectionParameters newParams = player.getTrackSelectionParameters()
+                            .buildUpon()
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                            .setOverrideForType(new TrackSelectionOverride(targetGroup.getMediaTrackGroup(), 0))
+                            .build();
+                    player.setTrackSelectionParameters(newParams);
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to force text track selection", e);
+                }
+            }
+        }
+    }
+
+    public void configureTrackSelectionForPlayer(@Nullable ExoPlayer targetPlayer) {
+        if (targetPlayer == null) return;
+        try {
+            TrackSelectionParameters.Builder builder = targetPlayer.getTrackSelectionParameters()
+                    .buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesEnabled);
+            if (subtitlesEnabled) {
+                builder.setPreferredTextLanguage("ru")
+                        .setPreferredTextRoleFlags(C.ROLE_FLAG_SUBTITLE)
+                        .setSelectUndeterminedTextLanguage(true);
+            }
+            targetPlayer.setTrackSelectionParameters(builder.build());
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to configure track selection for player", e);
+        }
+    }
+
     public void applySubtitlesStateToPlayer() {
         ExoPlayer player = callback.getPlayer();
         boolean isAssMode = isAssSubtitleActive();
         nativeAssActive = subtitlesEnabled && isAssMode && activeAssScript != null && !activeAssScript.isEmpty();
 
         if (player != null) {
-            try {
-                TrackSelectionParameters.Builder builder = player.getTrackSelectionParameters()
-                        .buildUpon()
-                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesEnabled);
-                if (subtitlesEnabled) {
-                    builder.setPreferredTextLanguage("ru")
-                            .setPreferredTextRoleFlags(C.ROLE_FLAG_SUBTITLE)
-                            .setSelectUndeterminedTextLanguage(true);
-                }
-                player.setTrackSelectionParameters(builder.build());
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to setTrackSelectionParameters for subtitles", e);
+            configureTrackSelectionForPlayer(player);
+            if (subtitlesEnabled && !nativeAssActive) {
+                ensureTextTrackSelected(player, player.getCurrentTracks());
             }
         }
 
@@ -796,12 +848,15 @@ public class PlayerSubtitlesController {
                 AssSubtitleOverlayView overlay = ensureAssOverlayView(playerView);
 
                 if (overlay != null) {
-                    overlay.setPlayer(player);
                     if (nativeAssActive) {
-                        overlay.setAssScript(activeAssScript);
                         overlay.setVisibility(View.VISIBLE);
+                        if (overlay.getAssScript() != activeAssScript) {
+                            overlay.setAssScript(activeAssScript);
+                        }
+                        overlay.setPlayer(player);
                         overlay.syncNow();
                     } else {
+                        overlay.setPlayer(player);
                         overlay.stopRenderLoop();
                         overlay.setVisibility(View.GONE);
                     }
@@ -844,6 +899,12 @@ public class PlayerSubtitlesController {
                         subtitleView.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleTextSize);
                     }
                     subtitleView.setBottomPaddingFraction(0.06f);
+                    if (player != null) {
+                        CueGroup currentCues = player.getCurrentCues();
+                        if (currentCues != null && currentCues.cues != null && !currentCues.cues.isEmpty()) {
+                            subtitleView.setCues(currentCues.cues);
+                        }
+                    }
                 }
             } catch (Exception e) {
                 Log.w(TAG, "Failed to style SubtitleView / AssSubtitleOverlayView", e);
@@ -854,8 +915,8 @@ public class PlayerSubtitlesController {
     public void reloadPlayerWithSubtitles() {
         ExoPlayer player = callback.getPlayer();
         if (player == null) return;
-        long currentPos = player.getCurrentPosition();
-        boolean wasPlaying = player.isPlaying();
+        long currentPos = Math.max(0L, player.getCurrentPosition());
+        boolean wasPlaying = player.getPlayWhenReady();
         String currentVideoUrl = callback.getCurrentVideoUrl();
 
         if (currentVideoUrl != null && !currentVideoUrl.isEmpty()) {

@@ -6,7 +6,7 @@
     <!-- Domain Selection Strings -->
     <string name="url_input_title">Выбор сервера / региона</string>
     <string name="url_input_subtitle">Выберите доступный домен для работы приложения:</string>
-    <string name="url_input_cis_title">Ссылка Для СНГ</string>
+    <string name="url_input_cis_title">СНГ</string>
     <string name="url_input_cis_url">v5.animelib.org</string>
     <string name="url_input_cis_details">AnimeLib: v5.animelib.org • MangaLib: mangalib.me • RanobeLib: ranobelib.me</string>
     <string name="url_input_other_title">Остальные страны</string>

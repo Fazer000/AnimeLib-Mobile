@@ -705,16 +705,8 @@ public class PlayerOfflineController {
             // Priority 4: Offline bookmark (only on first launch)
             OfflineBookmarkEntity offlineBookmark = databaseManager.getOfflineBookmarkSync(animeId);
             if (currentItem == null && isFirstOfflineLaunch && offlineBookmark != null) {
-                for (EpisodesListResponse.EpisodeItem item : episodeItems) {
-                    if (item.getNumber() != null && item.getNumber().equals(offlineBookmark.getEpisodeNumber())) {
-                        currentItem = item;
-                        break;
-                    }
-                    if (item.getId() == offlineBookmark.getEpisodeId()) {
-                        currentItem = item;
-                        break;
-                    }
-                }
+                currentItem = com.example.animelib.managers.BookmarkManager
+                        .resolveOfflineBookmarkedEpisode(offlineBookmark, episodeItems);
             }
 
             if (currentItem == null && !episodeItems.isEmpty()) {
@@ -737,9 +729,11 @@ public class PlayerOfflineController {
                         bmData.setProgress(offlineBookmark.getTimecode());
                         episodesManager.updateBookmarkInAdapter(bmData);
 
-                        boolean isCurrentBookmarked = finalCurrent != null &&
-                                (finalCurrent.getId() == offlineBookmark.getEpisodeId()
-                                        || (finalCurrent.getNumber() != null && finalCurrent.getNumber().equals(offlineBookmark.getEpisodeNumber())));
+                        boolean isCurrentBookmarked = finalCurrent != null && (
+                                (offlineBookmark.getEpisodeId() > 0 && finalCurrent.getId() == offlineBookmark.getEpisodeId())
+                                        || (offlineBookmark.getEpisodeNumber() != null && !offlineBookmark.getEpisodeNumber().trim().isEmpty()
+                                        && finalCurrent.getNumber() != null
+                                        && finalCurrent.getNumber().trim().equals(offlineBookmark.getEpisodeNumber().trim())));
 
                         if (progressCtrl != null) {
                             progressCtrl.updateBookmarkButtonColor(isCurrentBookmarked);

@@ -1081,12 +1081,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
 
             EpisodesListResponse.EpisodeItem curEp = episodesManager.getCurrentEpisode();
-            boolean isMatchingEpisode = curEp != null && (
-                    curEp.getId() == bookmarkData.getItemId()
-                            || (bookmarkData.getItemId() <= 0 && curEp.getNumber() != null
-                            && bookmarkData.getMeta() != null && bookmarkData.getMeta().getItemNumber() > 0
-                            && curEp.getNumber().equals(String.valueOf(bookmarkData.getMeta().getItemNumber())))
-            );
+            boolean isMatchingEpisode = BookmarkManager.isBookmarkForEpisode(bookmarkData, curEp);
             if (!isMatchingEpisode) return;
 
             if (playerProgressController != null) {
@@ -1170,20 +1165,26 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 if (episodes == null || episodes.isEmpty()) {
                     isEpisodeAndVoiceoversLoaded = true;
                     checkAndDismissSplashScreen();
+                    initializeMenuWithoutAutoPlay();
+                    return;
                 }
 
+                String rawUrl = getIntent() != null ? getIntent().getStringExtra("anime_url") : null;
+                if (rawUrl == null || rawUrl.isEmpty()) {
+                    rawUrl = getIntent() != null ? getIntent().getStringExtra(EXTRA_ANIME_URL) : null;
+                }
+                if (rawUrl == null || rawUrl.isEmpty()) {
+                    rawUrl = VideoPlayerActivity.this.animeUrl;
+                }
+                final String effectiveUrl = rawUrl;
+                final List<EpisodesListResponse.EpisodeItem> loadedEpisodes = new ArrayList<>(episodes);
+
                 if (currentAnimeId != null) {
-                    String rawUrl = getIntent() != null ? getIntent().getStringExtra("anime_url") : null;
-                    if (rawUrl == null || rawUrl.isEmpty()) {
-                        rawUrl = getIntent() != null ? getIntent().getStringExtra(EXTRA_ANIME_URL) : null;
-                    }
-                    if (rawUrl == null || rawUrl.isEmpty()) {
-                        rawUrl = VideoPlayerActivity.this.animeUrl;
-                    }
-                    String mediaSlug = rawUrl != null && !rawUrl.isEmpty() ? ApiService.extractMediaSlugFromUrl(rawUrl) : null;
+                    String mediaSlug = effectiveUrl != null && !effectiveUrl.isEmpty()
+                            ? ApiService.extractMediaSlugFromUrl(effectiveUrl) : null;
 
                     if (mediaSlug != null) {
-                        episodesManager.getBookmarkManager().getLastEpisodeFromBookmark(mediaSlug, episodes,
+                        episodesManager.getBookmarkManager().getLastEpisodeFromBookmark(mediaSlug, loadedEpisodes,
                                 new BookmarkManager.LastEpisodeCallback() {
                                     @Override
                                     public void onLastEpisodeFound(EpisodesListResponse.EpisodeItem episode, String progress) {
@@ -1192,55 +1193,20 @@ public class VideoPlayerActivity extends AppCompatActivity {
                                                 return;
                                             }
                                             long parsedBm = episodesManager.getBookmarkManager().parseTimecodeToMilliseconds(progress);
-                                            if (playerEpisodesController != null) {
-                                                playerEpisodesController.setNewEpisodeSelection(true);
-                                                playerEpisodesController.setBookmarkTimecode(parsedBm);
-                                            }
-                                            if (playerProgressController != null) {
-                                                playerProgressController.updateBookmarkButtonColor(true);
-                                            }
-                                            autoPlayOnPrepare = VideoPlayerActivity.this.autoPlay;
-                                            if (playerOfflineController != null
-                                                    && playerOfflineController.tryStartDownloadedEpisodeImmediately(episode, parsedBm)) {
-                                                return;
-                                            }
-                                            episodesManager.setCurrentEpisode(episode);
-                                            if (playerCommentsController != null) {
-                                                playerCommentsController.setCurrentEpisode(episode);
-                                                if (!isOfflineMode() && getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT) {
-                                                    playerCommentsController.loadCommentsForPortraitIfNeeded();
-                                                }
-                                            }
-                                            if (playerPortraitController != null) {
-                                                playerPortraitController.updateEpisodeHeaderQuick();
-                                            }
-                                            playersManager.loadPlayersForEpisode(episode.getId());
+                                            startResolvedBookmarkedEpisode(episode, parsedBm, null);
                                         });
                                     }
 
                                     @Override
                                     public void onNoBookmarkFound() {
-                                        safeRunOnUiThread(() -> {
-                                            if (playerEpisodesController != null && playerEpisodesController.hasUserSwitchedEpisode()) {
-                                                return;
-                                            }
-                                            String activeUrl = VideoPlayerActivity.this.animeUrl;
-                                            if (activeUrl != null && activeUrl.contains("episode=")) {
-                                                if (playerEpisodesController != null) {
-                                                    playerEpisodesController.fallbackToUrlDetection(getIntent());
-                                                }
-                                            } else if (playerEpisodesController != null) {
-                                                autoPlayOnPrepare = VideoPlayerActivity.this.autoPlay;
-                                                playerEpisodesController.loadFirstEpisode();
-                                            }
-                                        });
+                                        resolveEpisodeWhenNoOnlineBookmark(loadedEpisodes, effectiveUrl);
                                     }
                                 });
-                    } else if (playerEpisodesController != null) {
-                        playerEpisodesController.fallbackToUrlDetection(getIntent());
+                    } else {
+                        resolveEpisodeWhenNoOnlineBookmark(loadedEpisodes, effectiveUrl);
                     }
-                } else if (playerEpisodesController != null) {
-                    playerEpisodesController.fallbackToUrlDetection(getIntent());
+                } else {
+                    resolveEpisodeWhenNoOnlineBookmark(loadedEpisodes, effectiveUrl);
                 }
             }
 
@@ -1335,6 +1301,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         if (playerPlaybackController != null) {
             playerPlaybackController.stopCurrentPlayback();
+            playerPlaybackController.resetLastKnownValidPosition();
         }
 
         String localFilePath = intent.getStringExtra("EXTRA_LOCAL_FILE_PATH");
@@ -1356,6 +1323,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
         }
         if (playersManager != null) {
             playersManager.cancelPendingPlayerLoads();
+            playersManager.setCurrentPlayerData(null);
+        }
+        if (episodesManager != null) {
+            episodesManager.resetForNewAnime();
         }
         if (playerEpisodesController != null) {
             playerEpisodesController.resetForNewAnime();
@@ -1395,6 +1366,105 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 playerControlsOverlayManager.showLoading("Загрузка видео...");
             }
             loadAnimeFromUrl(animeUrl);
+        }
+    }
+
+    private void startResolvedBookmarkedEpisode(
+            EpisodesListResponse.EpisodeItem episode,
+            long bookmarkPositionMs,
+            @androidx.annotation.Nullable com.example.animelib.data.entity.OfflineBookmarkEntity localBookmark) {
+        if (episode == null || isFinishing() || isDestroyed()) return;
+        if (playerEpisodesController != null && playerEpisodesController.hasUserSwitchedEpisode()) {
+            return;
+        }
+        if (playerEpisodesController != null) {
+            playerEpisodesController.setNewEpisodeSelection(true);
+            playerEpisodesController.setBookmarkTimecode(Math.max(0L, bookmarkPositionMs));
+        }
+        if (localBookmark != null && episodesManager != null && episodesManager.getAnimeBookmark() == null) {
+            com.example.animelib.models.AnimeBookmarkResponse.BookmarkData bmData =
+                    new com.example.animelib.models.AnimeBookmarkResponse.BookmarkData();
+            bmData.setItemId(episode.getId());
+            bmData.setProgress(localBookmark.getTimecode());
+            episodesManager.updateBookmarkInAdapter(bmData);
+        }
+        if (playerProgressController != null) {
+            playerProgressController.updateBookmarkButtonColor(true);
+        }
+        autoPlayOnPrepare = VideoPlayerActivity.this.autoPlay;
+        if (playerOfflineController != null
+                && playerOfflineController.tryStartDownloadedEpisodeImmediately(episode, Math.max(0L, bookmarkPositionMs))) {
+            return;
+        }
+        episodesManager.setCurrentEpisode(episode);
+        if (playerCommentsController != null) {
+            playerCommentsController.setCurrentEpisode(episode);
+            if (!isOfflineMode() && getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT) {
+                playerCommentsController.loadCommentsForPortraitIfNeeded();
+            }
+        }
+        if (playerPortraitController != null) {
+            playerPortraitController.updateEpisodeHeaderQuick();
+        }
+        playersManager.loadPlayersForEpisode(episode.getId());
+    }
+
+    /**
+     * Разрешает стартовый эпизод, когда онлайн-закладка на тайтле отсутствует:
+     * 1) Проверяет сохранённую локальную закладку в БД.
+     * 2) Если закладки нет ни на тайтле, ни в БД — при явном ?episode= в URL берёт его,
+     *    иначе строго запускает первый эпизод (0-й объект в JSON).
+     */
+    private void resolveEpisodeWhenNoOnlineBookmark(
+            List<EpisodesListResponse.EpisodeItem> episodes,
+            @androidx.annotation.Nullable String effectiveUrl) {
+        final String expectedAnimeId = currentAnimeId;
+        if (databaseManager != null && expectedAnimeId != null && !expectedAnimeId.trim().isEmpty()
+                && executor != null && !executor.isShutdown()) {
+            executor.execute(() -> {
+                com.example.animelib.data.entity.OfflineBookmarkEntity dbBookmark = null;
+                try {
+                    dbBookmark = databaseManager.getOfflineBookmarkSync(expectedAnimeId);
+                } catch (Exception e) {
+                    Log.w(TAG, "Failed to query offline bookmark for animeId=" + expectedAnimeId, e);
+                }
+                final com.example.animelib.data.entity.OfflineBookmarkEntity resolvedDbBookmark = dbBookmark;
+                safeRunOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    if (!java.util.Objects.equals(expectedAnimeId, currentAnimeId)) return;
+                    if (playerEpisodesController != null && playerEpisodesController.hasUserSwitchedEpisode()) {
+                        return;
+                    }
+                    EpisodesListResponse.EpisodeItem dbEpisode =
+                            BookmarkManager.resolveOfflineBookmarkedEpisode(resolvedDbBookmark, episodes);
+                    if (dbEpisode != null && resolvedDbBookmark != null) {
+                        Log.d(TAG, "Restoring episode from local DB bookmark: " + dbEpisode.getNumber()
+                                + " (ID=" + dbEpisode.getId() + ", pos=" + resolvedDbBookmark.getPositionMs() + "ms)");
+                        startResolvedBookmarkedEpisode(dbEpisode, resolvedDbBookmark.getPositionMs(), resolvedDbBookmark);
+                    } else {
+                        selectInitialEpisodeWithoutBookmark(effectiveUrl);
+                    }
+                });
+            });
+        } else {
+            safeRunOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                if (playerEpisodesController != null && playerEpisodesController.hasUserSwitchedEpisode()) {
+                    return;
+                }
+                selectInitialEpisodeWithoutBookmark(effectiveUrl);
+            });
+        }
+    }
+
+    private void selectInitialEpisodeWithoutBookmark(@androidx.annotation.Nullable String effectiveUrl) {
+        if (playerEpisodesController == null) return;
+        autoPlayOnPrepare = VideoPlayerActivity.this.autoPlay;
+        String activeUrl = (effectiveUrl != null && !effectiveUrl.isEmpty()) ? effectiveUrl : VideoPlayerActivity.this.animeUrl;
+        if (activeUrl != null && activeUrl.contains("episode=")) {
+            playerEpisodesController.fallbackToUrlDetection(getIntent());
+        } else {
+            playerEpisodesController.loadFirstEpisode();
         }
     }
 
@@ -1505,6 +1575,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
         }
         if (playerPlaybackController != null) {
             playerPlaybackController.stopCurrentPlayback();
+            playerPlaybackController.resetLastKnownValidPosition();
         }
         if (playerQualityController != null) {
             playerQualityController.resetForNewEpisode();
@@ -1522,7 +1593,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         if (episodesManager != null && playerProgressController != null) {
             com.example.animelib.models.AnimeBookmarkResponse.BookmarkData bm = episodesManager.getAnimeBookmark();
-            if (bm != null && bm.getItemId() == episode.getId()) {
+            if (BookmarkManager.isBookmarkForEpisode(bm, episode)) {
                 playerProgressController.updateBookmarkButtonColor(true);
             }
         }
@@ -2736,6 +2807,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
 
             @Override
+            public void onPrepareBackgroundPlayer(@NonNull ExoPlayer backgroundPlayer) {
+                if (playerSubtitlesController != null) {
+                    playerSubtitlesController.configureTrackSelectionForPlayer(backgroundPlayer);
+                }
+            }
+
+            @Override
             public void onPlayerAttached(ExoPlayer attachedPlayer) {
                 if (playerSubtitlesController != null) {
                     playerSubtitlesController.setupSubtitlePlayerListener(attachedPlayer);
@@ -2868,6 +2946,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     playerControlsOverlayManager.setHasRenderedFirstFrame(true);
                     playerControlsOverlayManager.hideLoading();
                     playerControlsOverlayManager.updatePlayPauseAndLoadingState(true);
+                }
+                if (playerSubtitlesController != null) {
+                    playerSubtitlesController.applySubtitlesStateToPlayer();
                 }
                 if (playerPortraitController != null) {
                     playerPortraitController.updateEpisodeHeaderQuick();
@@ -3118,6 +3199,23 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 if (playerEpisodesController != null) {
                     playerEpisodesController.setSavedPlayerPosition(pos);
                 }
+            }
+
+            @Override
+            public long getFallbackResumePositionMs() {
+                if (playerEpisodesController != null) {
+                    long saved = playerEpisodesController.getSavedPlayerPosition();
+                    if (saved > 0) return saved;
+                    long bm = playerEpisodesController.getBookmarkTimecode();
+                    if (bm > 0) return bm;
+                }
+                if (playerProgressController != null && episodesManager != null
+                        && episodesManager.getCurrentEpisode() != null) {
+                    long lastValid = playerProgressController.getLastValidPositionMsForEpisode(
+                            episodesManager.getCurrentEpisode().getId());
+                    if (lastValid > 0) return lastValid;
+                }
+                return 0L;
             }
 
             @Override

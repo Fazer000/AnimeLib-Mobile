@@ -548,8 +548,9 @@
                 <!-- Иконка поиска -->
                 <ImageView
                     android:id="@+id/btnLandscapeEpisodeSearch"
-                    android:layout_width="38dp"
-                    android:layout_height="38dp"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:layout_gravity="center"
                     android:padding="9dp"
                     android:src="@drawable/ic_search"
                     app:tint="@color/white_color"
@@ -561,8 +562,9 @@
                 <!-- Числовой инпут прямо внутри фиксированной 38x38 кнопки -->
                 <EditText
                     android:id="@+id/etLandscapeEpisodeNumber"
-                    android:layout_width="38dp"
-                    android:layout_height="38dp"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:layout_gravity="center"
                     android:background="@null"
                     android:hint="№"
                     android:textColorHint="@color/player_item_inactive_text"

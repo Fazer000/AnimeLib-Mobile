@@ -272,10 +272,167 @@ public class BookmarkManager {
     }
 
     /**
+     * Проверяет, указывает ли онлайн-закладка на конкретный эпизод (а не просто на статус тайтла).
+     */
+    public static boolean hasExplicitEpisodeReference(@Nullable AnimeBookmarkResponse.BookmarkData bookmark) {
+        if (bookmark == null) return false;
+        if (bookmark.getItemId() > 0) return true;
+        if (bookmark.getItem() != null) {
+            if (bookmark.getItem().getId() > 0) return true;
+            String itemNum = bookmark.getItem().getNumber();
+            if (itemNum != null && !itemNum.trim().isEmpty()) return true;
+        }
+        return parseTimecodeToMillisecondsStatic(bookmark.getProgress()) > 0L;
+    }
+
+    public static long parseTimecodeToMillisecondsStatic(@Nullable String timecode) {
+        if (timecode == null || timecode.trim().isEmpty()) {
+            return 0L;
+        }
+        try {
+            String timeStr = timecode.trim();
+            String[] parts = timeStr.split(":");
+            if (parts.length == 2) {
+                int minutes = Integer.parseInt(parts[0].trim());
+                int seconds = Integer.parseInt(parts[1].trim());
+                return Math.max(0L, (minutes * 60L + seconds) * 1000L);
+            } else if (parts.length == 3) {
+                int hours = Integer.parseInt(parts[0].trim());
+                int minutes = Integer.parseInt(parts[1].trim());
+                int seconds = Integer.parseInt(parts[2].trim());
+                return Math.max(0L, (hours * 3600L + minutes * 60L + seconds) * 1000L);
+            } else if (parts.length == 1) {
+                double val = Double.parseDouble(parts[0].trim());
+                if (val <= 0) return 0L;
+                return val > 100000 ? (long) val : (long) (val * 1000.0);
+            }
+        } catch (NumberFormatException ignored) {
+        }
+        return 0L;
+    }
+
+    /**
+     * Находит эпизод из списка, соответствующий онлайн-закладке.
+     * Для закладок только со статусом (без item_id, item и progress) возвращает null,
+     * чтобы воспроизведение начиналось с первого (0-го в JSON) эпизода.
+     */
+    @Nullable
+    public static EpisodesListResponse.EpisodeItem resolveBookmarkedEpisode(
+            @Nullable AnimeBookmarkResponse.BookmarkData bookmark,
+            @Nullable java.util.List<EpisodesListResponse.EpisodeItem> episodesList) {
+        if (bookmark == null || episodesList == null || episodesList.isEmpty()) {
+            return null;
+        }
+        if (!hasExplicitEpisodeReference(bookmark)) {
+            return null;
+        }
+
+        int bookmarkedEpisodeId = bookmark.getItemId();
+        if (bookmarkedEpisodeId <= 0 && bookmark.getItem() != null) {
+            bookmarkedEpisodeId = bookmark.getItem().getId();
+        }
+
+        if (bookmarkedEpisodeId > 0) {
+            for (EpisodesListResponse.EpisodeItem episode : episodesList) {
+                if (episode != null && episode.getId() == bookmarkedEpisodeId) {
+                    return episode;
+                }
+            }
+        }
+
+        String targetNumber = null;
+        if (bookmark.getItem() != null && bookmark.getItem().getNumber() != null
+                && !bookmark.getItem().getNumber().trim().isEmpty()) {
+            targetNumber = bookmark.getItem().getNumber().trim();
+        } else if (bookmark.getMeta() != null && bookmark.getMeta().getItemNumber() > 0) {
+            targetNumber = String.valueOf(bookmark.getMeta().getItemNumber());
+        }
+
+        if (targetNumber != null) {
+            for (EpisodesListResponse.EpisodeItem episode : episodesList) {
+                if (episode != null && episode.getNumber() != null
+                        && targetNumber.equals(episode.getNumber().trim())) {
+                    return episode;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Находит эпизод из списка, соответствующий локальной закладке из БД.
+     */
+    @Nullable
+    public static EpisodesListResponse.EpisodeItem resolveOfflineBookmarkedEpisode(
+            @Nullable com.example.animelib.data.entity.OfflineBookmarkEntity offlineBookmark,
+            @Nullable java.util.List<EpisodesListResponse.EpisodeItem> episodesList) {
+        if (offlineBookmark == null || episodesList == null || episodesList.isEmpty()) {
+            return null;
+        }
+
+        int epId = offlineBookmark.getEpisodeId();
+        if (epId > 0) {
+            for (EpisodesListResponse.EpisodeItem episode : episodesList) {
+                if (episode != null && episode.getId() == epId) {
+                    return episode;
+                }
+            }
+        }
+
+        String epNumber = offlineBookmark.getEpisodeNumber();
+        if (epNumber != null && !epNumber.trim().isEmpty()) {
+            String trimmedTarget = epNumber.trim();
+            for (EpisodesListResponse.EpisodeItem episode : episodesList) {
+                if (episode != null && episode.getNumber() != null
+                        && trimmedTarget.equals(episode.getNumber().trim())) {
+                    return episode;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Проверяет, относится ли закладка к конкретному эпизоду.
+     */
+    public static boolean isBookmarkForEpisode(
+            @Nullable AnimeBookmarkResponse.BookmarkData bookmarkData,
+            @Nullable EpisodesListResponse.EpisodeItem episode) {
+        if (bookmarkData == null || episode == null || !hasExplicitEpisodeReference(bookmarkData)) {
+            return false;
+        }
+        int bookmarkEpisodeId = bookmarkData.getItemId();
+        if (bookmarkEpisodeId <= 0 && bookmarkData.getItem() != null) {
+            bookmarkEpisodeId = bookmarkData.getItem().getId();
+        }
+        if (bookmarkEpisodeId > 0) {
+            return episode.getId() == bookmarkEpisodeId;
+        }
+        String episodeNumber = episode.getNumber() != null ? episode.getNumber().trim() : null;
+        if (episodeNumber == null || episodeNumber.isEmpty()) {
+            return false;
+        }
+        if (bookmarkData.getItem() != null && bookmarkData.getItem().getNumber() != null
+                && !bookmarkData.getItem().getNumber().trim().isEmpty()) {
+            return episodeNumber.equals(bookmarkData.getItem().getNumber().trim());
+        }
+        return bookmarkData.getMeta() != null
+                && bookmarkData.getMeta().getItemNumber() > 0
+                && episodeNumber.equals(String.valueOf(bookmarkData.getMeta().getItemNumber()));
+    }
+
+    /**
      * Проверяет, есть ли закладка для указанного эпизода
      */
     public boolean hasBookmarkForEpisode(AnimeBookmarkResponse.BookmarkData bookmarkData, int episodeId) {
-        return bookmarkData != null && bookmarkData.getItemId() == episodeId;
+        if (bookmarkData == null || episodeId <= 0) return false;
+        int bookmarkEpId = bookmarkData.getItemId();
+        if (bookmarkEpId <= 0 && bookmarkData.getItem() != null) {
+            bookmarkEpId = bookmarkData.getItem().getId();
+        }
+        return bookmarkEpId > 0 && bookmarkEpId == episodeId;
     }
 
     /**
@@ -314,32 +471,14 @@ public class BookmarkManager {
             public void onBookmarkReceived(AnimeBookmarkResponse response) {
                 if (response != null && response.getData() != null) {
                     AnimeBookmarkResponse.BookmarkData bookmark = response.getData();
-                    int bookmarkedEpisodeId = bookmark.getItemId();
-                    int bookmarkedEpisodeNumber = (bookmark.getMeta() != null) ? bookmark.getMeta().getItemNumber() : 0;
-
-                    EpisodesListResponse.EpisodeItem foundEpisode = null;
-                    for (EpisodesListResponse.EpisodeItem episode : episodesList) {
-                        if (bookmarkedEpisodeId > 0 && episode.getId() == bookmarkedEpisodeId) {
-                            foundEpisode = episode;
-                            break;
-                        }
-                    }
-                    if (foundEpisode == null && bookmarkedEpisodeNumber > 0) {
-                        String targetNum = String.valueOf(bookmarkedEpisodeNumber);
-                        for (EpisodesListResponse.EpisodeItem episode : episodesList) {
-                            if (episode.getNumber() != null && targetNum.equals(episode.getNumber().trim())) {
-                                foundEpisode = episode;
-                                break;
-                            }
-                        }
-                    }
+                    EpisodesListResponse.EpisodeItem foundEpisode = resolveBookmarkedEpisode(bookmark, episodesList);
 
                     if (foundEpisode != null) {
                         Log.d(TAG, "Found bookmarked episode: " + foundEpisode.getNumber() +
                                    ", progress: " + bookmark.getProgress());
                         callback.onLastEpisodeFound(foundEpisode, bookmark.getProgress());
                     } else {
-                        Log.d(TAG, "Bookmarked episode not found in episodes list");
+                        Log.d(TAG, "Bookmarked episode not found in episodes list (or status-only bookmark)");
                         callback.onNoBookmarkFound();
                     }
                 } else {

@@ -7,6 +7,7 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 
+import androidx.annotation.Nullable;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.datasource.HttpDataSource;
@@ -203,12 +204,14 @@ public class PlayerVideoResolverController {
         boolean isCurrentlyPlaying = player != null && (player.isPlaying() || player.getPlaybackState() == Player.STATE_READY) && !isSeamless;
 
         long currentPos = 0;
-        boolean wasPlaying = true;
-        if (!isNew && player != null) {
-            currentPos = player.getCurrentPosition();
-            wasPlaying = player.getPlayWhenReady();
+        boolean wasPlaying = player != null ? player.getPlayWhenReady() : host.isAutoPlayEnabled();
+        if (!isNew) {
+            currentPos = resolvePositionForVoiceoverSwitch(player, playbackCtrl, epCtrl, progressCtrl);
             if (currentPos > 0 && epCtrl != null) {
                 epCtrl.setSavedPlayerPosition(currentPos);
+            }
+            if (currentPos > 0 && playbackCtrl != null) {
+                playbackCtrl.recordValidPositionMs(currentPos);
             }
         }
 
@@ -330,6 +333,29 @@ public class PlayerVideoResolverController {
         }
 
         stopCurrentPlaybackAndRestartVoiceover(playerData);
+    }
+
+    private long resolvePositionForVoiceoverSwitch(@Nullable ExoPlayer player,
+                                                   @Nullable PlayerPlaybackController playbackCtrl,
+                                                   @Nullable PlayerEpisodesController epCtrl,
+                                                   @Nullable PlayerProgressController progressCtrl) {
+        if (player != null) {
+            long live = player.getCurrentPosition();
+            if (live > 0) return live;
+        }
+        if (epCtrl != null && epCtrl.getSavedPlayerPosition() > 0) {
+            return epCtrl.getSavedPlayerPosition();
+        }
+        if (playbackCtrl != null) {
+            long recorded = playbackCtrl.resolveCurrentPlaybackPositionMs();
+            if (recorded > 0) return recorded;
+        }
+        EpisodesManager em = host != null ? host.getEpisodesManager() : null;
+        if (progressCtrl != null && em != null && em.getCurrentEpisode() != null) {
+            long fromProgress = progressCtrl.getLastValidPositionMsForEpisode(em.getCurrentEpisode().getId());
+            if (fromProgress > 0) return fromProgress;
+        }
+        return 0L;
     }
 
     public void stopCurrentPlaybackAndRestartVoiceover(EpisodeResponse.PlayerData playerData) {
@@ -662,10 +688,6 @@ public class PlayerVideoResolverController {
             if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
 
             provider.initializePlayer(seekToPosition);
-            ExoPlayer player = provider.getPlayer();
-            if (seekToPosition > 0 && player != null) {
-                player.seekTo(seekToPosition);
-            }
         } else {
             provider.showVideoErrorDialog("Видео недоступно", "У выбранной озвучки AnimeLib отсутствуют ссылки на видео.", () -> {
                 provider.onPlayerSelected(playerData);
@@ -689,10 +711,6 @@ public class PlayerVideoResolverController {
                     provider.onActiveQualityResolved(downloadedEp.getQuality());
                     applyTimecodesWithOfflineFallback(playerData, downloadedEp);
                     provider.initializePlayer(seekToPosition);
-                    ExoPlayer player = provider.getPlayer();
-                    if (seekToPosition > 0 && player != null) {
-                        player.seekTo(seekToPosition);
-                    }
                     return;
                 }
             }
@@ -798,10 +816,6 @@ public class PlayerVideoResolverController {
             provider.setCurrentVideoUrl(hlsUrl);
             provider.onActiveQualityResolved(effectiveQuality);
             provider.initializeHlsPlayer(hlsUrl, seekToPosition);
-            ExoPlayer player = provider.getPlayer();
-            if (seekToPosition > 0 && player != null) {
-                player.seekTo(seekToPosition);
-            }
         } else {
             provider.showVideoErrorDialog("HLS видео недоступно", "HLS ссылка для выбранного качества Kodik не найдена.", () -> {
                 if (activeKodikSrc != null && !activeKodikSrc.isEmpty()) {

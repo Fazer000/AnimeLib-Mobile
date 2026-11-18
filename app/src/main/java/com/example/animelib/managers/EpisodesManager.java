@@ -664,21 +664,25 @@ public class EpisodesManager {
         int visibility = shouldShow ? View.VISIBLE : View.GONE;
 
         // Проверяем, есть ли текущий эпизод
-        boolean hasCurrentEpisode = currentEpisode != null && currentEpisode.getNumber() != null;
+        boolean hasCurrentEpisode = currentEpisode != null;
 
         boolean isFirstEpisode = false;
         boolean isLastEpisode = false;
 
         if (hasCurrentEpisode && !episodes.isEmpty()) {
-            try {
-                int currentEpisodeNumber = Integer.parseInt(currentEpisode.getNumber());
-                int totalEpisodes = episodes.size();
-
-                isFirstEpisode = (currentEpisodeNumber == 1);
-                isLastEpisode = (currentEpisodeNumber == totalEpisodes);
-
-            } catch (NumberFormatException e) {
-                Log.e(TAG, "Error parsing episode number: " + currentEpisode.getNumber(), e);
+            int currentIndex = -1;
+            for (int i = 0; i < episodes.size(); i++) {
+                EpisodesListResponse.EpisodeItem ep = episodes.get(i);
+                if (ep == null) continue;
+                if ((ep.getId() > 0 && currentEpisode.getId() > 0 && ep.getId() == currentEpisode.getId())
+                        || (ep.getNumber() != null && Objects.equals(ep.getNumber(), currentEpisode.getNumber()))) {
+                    currentIndex = i;
+                    break;
+                }
+            }
+            if (currentIndex >= 0) {
+                isFirstEpisode = (currentIndex == 0);
+                isLastEpisode = (currentIndex == episodes.size() - 1);
             }
         }
 
@@ -699,8 +703,36 @@ public class EpisodesManager {
     }
 
     /**
+     * Полный сброс состояния эпизодов и закладки при переходе на другое аниме
+     */
+    @SuppressLint("NotifyDataSetChanged")
+    public void resetForNewAnime() {
+        currentEpisode = null;
+        animeBookmark = null;
+        episodes.clear();
+        hasInitialScrolledLandscape = false;
+        hasInitialScrolledPortrait = false;
+        safeRunOnUiThread(() -> {
+            if (episodesAdapter != null) {
+                episodesAdapter.setAnimeBookmark(null);
+                episodesAdapter.setCurrentEpisode(null);
+                episodesAdapter.notifyDataSetChanged();
+            }
+            if (portraitEpisodesAdapter != null) {
+                portraitEpisodesAdapter.setAnimeBookmark(null);
+                portraitEpisodesAdapter.setCurrentEpisode(null);
+                portraitEpisodesAdapter.notifyDataSetChanged();
+            }
+            updateEpisodesCount();
+            updateEpisodeNavigationButtonsVisibility();
+            updatePortraitSearchVisibility();
+        });
+    }
+
+    /**
      * Установка списка эпизодов вручную (например, для офлайн режима)
      */
+    @SuppressLint("NotifyDataSetChanged")
     public void setEpisodes(List<EpisodesListResponse.EpisodeItem> newEpisodes) {
         hasInitialScrolledLandscape = false;
         hasInitialScrolledPortrait = false;
@@ -709,6 +741,12 @@ public class EpisodesManager {
             episodes.addAll(newEpisodes);
         }
         updateEpisodesRecyclerView();
+        if (episodesAdapter != null) {
+            episodesAdapter.notifyDataSetChanged();
+        }
+        if (portraitEpisodesAdapter != null) {
+            portraitEpisodesAdapter.notifyDataSetChanged();
+        }
         updateEpisodesCount();
         updateEpisodeNavigationButtonsVisibility();
         if (episodesMenuButton != null) {
@@ -721,6 +759,7 @@ public class EpisodesManager {
     /**
      * Загрузка эпизодов
      */
+    @SuppressLint("NotifyDataSetChanged")
     public void loadEpisodes(String animeId) {
         hasInitialScrolledLandscape = false;
         hasInitialScrolledPortrait = false;
@@ -737,6 +776,12 @@ public class EpisodesManager {
                         Log.d(TAG, "Episodes loaded: " + episodes.size());
 
                         updateEpisodesRecyclerView();
+                        if (episodesAdapter != null) {
+                            episodesAdapter.notifyDataSetChanged();
+                        }
+                        if (portraitEpisodesAdapter != null) {
+                            portraitEpisodesAdapter.notifyDataSetChanged();
+                        }
                         updateEpisodesCount();
                         updateEpisodeNavigationButtonsVisibility();
 
@@ -820,9 +865,7 @@ public class EpisodesManager {
                 episodesAdapter.setCurrentEpisode(currentEpisode);
             }
             
-            if (animeBookmark != null) {
-                episodesAdapter.setAnimeBookmark(animeBookmark);
-            }
+            episodesAdapter.setAnimeBookmark(animeBookmark);
             
             if (isEpisodesMenuVisible && currentEpisode != null) {
                 scrollToCurrentEpisode();
@@ -841,9 +884,7 @@ public class EpisodesManager {
                 portraitEpisodesAdapter.setCurrentEpisode(currentEpisode);
             }
 
-            if (animeBookmark != null) {
-                portraitEpisodesAdapter.setAnimeBookmark(animeBookmark);
-            }
+            portraitEpisodesAdapter.setAnimeBookmark(animeBookmark);
 
             if (currentEpisode != null) {
                 scrollToCurrentEpisode();

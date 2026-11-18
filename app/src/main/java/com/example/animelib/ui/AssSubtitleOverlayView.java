@@ -74,13 +74,21 @@ public class AssSubtitleOverlayView extends View {
                 return;
             }
             updateForPosition(p.getCurrentPosition(), false);
-            if (p.isPlaying() && isAttachedToWindow()) {
+            if (shouldAnimate(p) && isAttachedToWindow()) {
                 postOnAnimation(this);
             } else {
                 isRunningLoop = false;
             }
         }
     };
+
+    private static boolean shouldAnimate(@Nullable ExoPlayer p) {
+        if (p == null) return false;
+        if (p.isPlaying()) return true;
+        int state = p.getPlaybackState();
+        return p.getPlayWhenReady() && (state == androidx.media3.common.Player.STATE_READY
+                || state == androidx.media3.common.Player.STATE_BUFFERING);
+    }
 
     public AssSubtitleOverlayView(Context context) {
         super(context);
@@ -115,7 +123,7 @@ public class AssSubtitleOverlayView extends View {
         if (player != null) {
             updateVideoSize(player.getVideoSize().width, player.getVideoSize().height);
             updateForPosition(player.getCurrentPosition(), true);
-            if (player.isPlaying()) {
+            if (shouldAnimate(player) && getVisibility() == VISIBLE) {
                 startRenderLoop();
             }
         } else {
@@ -135,7 +143,7 @@ public class AssSubtitleOverlayView extends View {
         if (player != null) {
             currentPositionMs = player.getCurrentPosition();
             updateForPosition(currentPositionMs, true);
-            if (player.isPlaying() && getVisibility() == VISIBLE) {
+            if (shouldAnimate(player) && getVisibility() == VISIBLE) {
                 startRenderLoop();
             }
         } else {
@@ -160,7 +168,7 @@ public class AssSubtitleOverlayView extends View {
         ExoPlayer p = player;
         if (p != null && script != null && getVisibility() == VISIBLE) {
             updateForPosition(p.getCurrentPosition(), true);
-            if (p.isPlaying()) {
+            if (shouldAnimate(p)) {
                 startRenderLoop();
             }
         }
@@ -183,6 +191,14 @@ public class AssSubtitleOverlayView extends View {
     }
 
     @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (getVisibility() == VISIBLE && script != null && player != null) {
+            syncNow();
+        }
+    }
+
+    @Override
     protected void onDetachedFromWindow() {
         stopRenderLoop();
         super.onDetachedFromWindow();
@@ -193,7 +209,7 @@ public class AssSubtitleOverlayView extends View {
         super.onVisibilityChanged(changedView, visibility);
         if (visibility != VISIBLE) {
             stopRenderLoop();
-        } else if (player != null && player.isPlaying() && script != null) {
+        } else if (player != null && script != null) {
             syncNow();
         }
     }

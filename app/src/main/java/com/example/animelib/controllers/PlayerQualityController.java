@@ -72,6 +72,7 @@ public class PlayerQualityController {
         void onAnimeInfoHeaderFull();
         void stopCurrentPlaybackAndRestartVoiceover(EpisodeResponse.PlayerData playerData);
         void setSavedPlayerPosition(long pos);
+        default long getFallbackResumePositionMs() { return 0L; }
         void safeRunOnUiThread(Runnable runnable);
     }
 
@@ -681,7 +682,7 @@ public class PlayerQualityController {
             } else {
                 EpisodesListResponse.EpisodeItem curEp = episodesManager != null ? episodesManager.getCurrentEpisode() : null;
                 if (curEp != null) {
-                    long pos = player != null ? Math.max(0L, player.getCurrentPosition()) : 0L;
+                    long pos = resolvePositionForSwitch();
                     host.setSavedPlayerPosition(pos);
                     playersManager.setCurrentPlayerData(null);
                     host.showLoading("Загрузка онлайн-источника...");
@@ -700,7 +701,7 @@ public class PlayerQualityController {
                 if (!kodikSrc.startsWith("http")) kodikSrc = "https:" + kodikSrc;
                 final String finalKodikSrc = kodikSrc;
                 final EpisodeResponse.PlayerData targetPd = currentPlayer;
-                final long posToRestore = player != null ? Math.max(0L, player.getCurrentPosition()) : 0L;
+                final long posToRestore = resolvePositionForSwitch();
                 final boolean wasPlaying = player == null || player.getPlayWhenReady();
                 final boolean isSeamless = playback != null && playback.isSeamlessSwitching();
                 final boolean shouldBeSeamless = player != null && (player.isPlaying() || player.getPlaybackState() == Player.STATE_READY) && !isSeamless;
@@ -788,7 +789,7 @@ public class PlayerQualityController {
         if (isCurrentlyPlaying && !newVideoUrl.equals(currentVideoUrl)) {
             switchQualitySeamlesslyInternal(targetLabel, preferredQuality, newVideoUrl);
         } else if (!newVideoUrl.equals(currentVideoUrl)) {
-            long currentPos = player != null ? player.getCurrentPosition() : 0;
+            long currentPos = resolvePositionForSwitch();
             boolean wasPlaying = player == null || player.getPlayWhenReady();
             currentVideoUrl = newVideoUrl;
             switchMediaSourceInternal(newVideoUrl, currentPos, wasPlaying);
@@ -796,6 +797,16 @@ public class PlayerQualityController {
         } else {
             refreshQualityUiState();
         }
+    }
+
+    private long resolvePositionForSwitch() {
+        if (host == null) return 0L;
+        PlayerPlaybackController playback = host.getPlaybackController();
+        if (playback != null) {
+            long pos = playback.resolveCurrentPlaybackPositionMs();
+            if (pos > 0) return pos;
+        }
+        return Math.max(0L, host.getFallbackResumePositionMs());
     }
 
     public void switchMediaSourceInternal(String newVideoUrl, long startPosition, boolean playWhenReady) {
@@ -838,6 +849,14 @@ public class PlayerQualityController {
         PlayerSubtitlesController subs = host.getSubtitlesController();
         TimecodeManager timecodeManager = host.getTimecodeManager();
 
+        // Capture position and playWhenReady BEFORE stopCurrentPlayback() clears media items
+        ExoPlayer playerBeforeStop = playback != null ? playback.getPlayer() : null;
+        long currentPosition = resolvePositionForSwitch();
+        boolean playWhenReady = playerBeforeStop == null || playerBeforeStop.getPlayWhenReady();
+        if (currentPosition > 0) {
+            host.setSavedPlayerPosition(currentPosition);
+        }
+
         if (playback != null) {
             playback.preservePlayerAspectRatio();
             playback.stopCurrentPlayback();
@@ -851,10 +870,6 @@ public class PlayerQualityController {
         if (currentPlayerData == null) {
             return;
         }
-
-        ExoPlayer player = playback != null ? playback.getPlayer() : null;
-        long currentPosition = player != null ? player.getCurrentPosition() : 0;
-        boolean playWhenReady = player != null && player.getPlayWhenReady();
 
         if (resolver != null) {
             resolver.incrementPlaybackRestartGeneration();

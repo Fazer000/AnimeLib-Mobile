@@ -83,6 +83,7 @@ public class PlayerPlaybackController {
         default void onIsPlayingChanged(boolean isPlaying) {}
         default void onEvents() {}
         default void onPlayerAttached(ExoPlayer player) {}
+        default void onPrepareBackgroundPlayer(@NonNull ExoPlayer backgroundPlayer) {}
         default void onSeamlessSwitchTimedOutOrFailed() {}
         default void onSeamlessSwitchCompleted(String newQuality, String newVideoUrl) {}
         default boolean isActivityFinishingOrDestroyed() { return false; }
@@ -104,6 +105,8 @@ public class PlayerPlaybackController {
     private float lastValidAspectRatio = 16f / 9f;
     private PlaybackCallback callback;
     private boolean isFirstFrameRendered = false;
+    private long lastKnownValidPositionMs = 0L;
+    private long pendingSeamlessStartPositionMs = 0L;
 
     public PlayerPlaybackController(Context context, PlayerView playerView, HttpDataSource.Factory httpDataSourceFactory) {
         this.context = context;
@@ -122,6 +125,41 @@ public class PlayerPlaybackController {
 
     public boolean isSeamlessSwitching() {
         return isSeamlessSwitching;
+    }
+
+    public long getLastKnownValidPositionMs() {
+        return lastKnownValidPositionMs;
+    }
+
+    public long resolveCurrentPlaybackPositionMs() {
+        if (player != null) {
+            long live = player.getCurrentPosition();
+            if (live > 0) {
+                lastKnownValidPositionMs = live;
+                return live;
+            }
+        }
+        return Math.max(pendingSeamlessStartPositionMs, lastKnownValidPositionMs);
+    }
+
+    public void recordValidPositionMs(long positionMs) {
+        if (positionMs > 0) {
+            lastKnownValidPositionMs = positionMs;
+        }
+    }
+
+    public void resetLastKnownValidPosition() {
+        lastKnownValidPositionMs = 0L;
+        pendingSeamlessStartPositionMs = 0L;
+    }
+
+    private void captureValidPositionFromPlayer() {
+        if (player != null) {
+            long pos = player.getCurrentPosition();
+            if (pos > 0) {
+                lastKnownValidPositionMs = pos;
+            }
+        }
     }
 
     public int getCurrentResizeMode() {
@@ -358,7 +396,11 @@ public class PlayerPlaybackController {
         MediaItem itemToPlay = mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl);
         MediaSource mediaSource = buildMediaSourceForUrl(playerContext, videoUrl, itemToPlay);
 
-        player.setMediaSource(mediaSource, Math.max(0L, startPosition));
+        long safeStart = Math.max(0L, startPosition);
+        if (safeStart > 0) {
+            lastKnownValidPositionMs = safeStart;
+        }
+        player.setMediaSource(mediaSource, safeStart);
 
         AmbientLightManager ambientLightManager = callback != null ? callback.getAmbientLightManager() : null;
         if (ambientLightManager != null) {
@@ -503,7 +545,11 @@ public class PlayerPlaybackController {
             ambientLightManager.setPlayer(player, itemToPlay, videoUrl);
         }
 
-        player.setMediaSource(mediaSource, Math.max(0L, startPosition));
+        long safeStart = Math.max(0L, startPosition);
+        if (safeStart > 0) {
+            lastKnownValidPositionMs = safeStart;
+        }
+        player.setMediaSource(mediaSource, safeStart);
 
         if (playWhenReady) {
             startBufferingWatchdog();
@@ -546,8 +592,16 @@ public class PlayerPlaybackController {
     }
 
     public void switchQualitySeamlessly(String newQuality, String oldQuality, String newVideoUrl, MediaItem mediaItem) {
+        long currentPosition = resolveCurrentPlaybackPositionMs();
+        float currentSpeed = player != null ? player.getPlaybackParameters().speed : 1.0f;
+        boolean wasPlaying = player == null || player.getPlayWhenReady();
+
         cleanupBackgroundPlayer();
         isSeamlessSwitching = true;
+        pendingSeamlessStartPositionMs = currentPosition;
+        if (currentPosition > 0) {
+            lastKnownValidPositionMs = currentPosition;
+        }
 
         Context playerContext = callback != null ? callback.getPlayerContext() : context;
         if (playerContext == null) playerContext = context;
@@ -567,15 +621,14 @@ public class PlayerPlaybackController {
         backgroundPlayer = builder.build();
         backgroundPlayer.setVolume(0f);
 
+        if (callback != null) {
+            callback.onPrepareBackgroundPlayer(backgroundPlayer);
+        }
+
         MediaItem itemToPlay = mediaItem != null ? mediaItem : MediaItem.fromUri(newVideoUrl);
         MediaSource mediaSource = buildMediaSourceForUrl(playerContext, newVideoUrl, itemToPlay);
-        backgroundPlayer.setMediaSource(mediaSource);
+        backgroundPlayer.setMediaSource(mediaSource, Math.max(0L, currentPosition));
 
-        long currentPosition = player != null ? player.getCurrentPosition() : 0;
-        float currentSpeed = player != null ? player.getPlaybackParameters().speed : 1.0f;
-        boolean wasPlaying = player != null && player.getPlayWhenReady();
-
-        backgroundPlayer.seekTo(currentPosition);
         backgroundPlayer.setPlaybackSpeed(currentSpeed);
         backgroundPlayer.setPlayWhenReady(true);
         backgroundPlayer.prepare();
@@ -650,7 +703,13 @@ public class PlayerPlaybackController {
         Log.d(TAG, "Background player READY! Performing seamless switch to " + newQuality);
 
         ExoPlayer oldPlayer = player;
-        long livePosition = oldPlayer != null ? oldPlayer.getCurrentPosition() : backgroundPlayer.getCurrentPosition();
+        long oldPos = oldPlayer != null ? oldPlayer.getCurrentPosition() : 0L;
+        long bgPos = backgroundPlayer.getCurrentPosition();
+        long fallbackPos = Math.max(pendingSeamlessStartPositionMs, lastKnownValidPositionMs);
+        long livePosition = oldPos > 0 ? oldPos : (bgPos > 0 ? bgPos : fallbackPos);
+        if (livePosition > 0) {
+            lastKnownValidPositionMs = livePosition;
+        }
 
         if (playerView != null) {
             playerView.setPlayer(backgroundPlayer);
@@ -658,7 +717,7 @@ public class PlayerPlaybackController {
             setVideoResizeMode(currentResizeMode);
         }
 
-        if (Math.abs(livePosition - backgroundPlayer.getCurrentPosition()) > 1000) {
+        if (livePosition > 0 && Math.abs(livePosition - bgPos) > 1000) {
             backgroundPlayer.seekTo(livePosition);
         }
         backgroundPlayer.setVolume(1.0f);
@@ -667,6 +726,7 @@ public class PlayerPlaybackController {
         attachNewPlayer(backgroundPlayer);
         backgroundPlayer = null;
         isSeamlessSwitching = false;
+        pendingSeamlessStartPositionMs = 0L;
 
         PlayerAudioController audioController = callback != null ? callback.getPlayerAudioController() : null;
         if (audioController != null) {
@@ -694,6 +754,7 @@ public class PlayerPlaybackController {
     }
 
     public void stopCurrentPlayback() {
+        captureValidPositionFromPlayer();
         cancelBufferingWatchdog();
         cleanupBackgroundPlayer();
         if (player != null) {
@@ -756,6 +817,7 @@ public class PlayerPlaybackController {
 
             @Override
             public void onPlaybackStateChanged(int playbackState) {
+                captureValidPositionFromPlayer();
                 if (playbackState == Player.STATE_READY || playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
                     cancelBufferingWatchdog();
                 } else if (playbackState == Player.STATE_BUFFERING && player != null && player.getPlayWhenReady()) {
@@ -768,6 +830,11 @@ public class PlayerPlaybackController {
 
             @Override
             public void onPositionDiscontinuity(@NonNull Player.PositionInfo oldPosition, @NonNull Player.PositionInfo newPosition, int reason) {
+                if (newPosition.positionMs > 0) {
+                    lastKnownValidPositionMs = newPosition.positionMs;
+                } else if (oldPosition.positionMs > 0 && reason != Player.DISCONTINUITY_REASON_SEEK) {
+                    lastKnownValidPositionMs = oldPosition.positionMs;
+                }
                 if (callback != null) {
                     callback.onPositionDiscontinuity(reason);
                 }
@@ -775,6 +842,7 @@ public class PlayerPlaybackController {
 
             @Override
             public void onIsLoadingChanged(boolean isLoading) {
+                captureValidPositionFromPlayer();
                 if (callback != null) {
                     callback.onIsLoadingChanged(isLoading);
                 }
@@ -782,6 +850,7 @@ public class PlayerPlaybackController {
 
             @Override
             public void onIsPlayingChanged(boolean isPlaying) {
+                captureValidPositionFromPlayer();
                 if (callback != null) {
                     callback.onIsPlayingChanged(isPlaying);
                 }
@@ -789,6 +858,7 @@ public class PlayerPlaybackController {
 
             @Override
             public void onPlayerError(@NonNull PlaybackException error) {
+                captureValidPositionFromPlayer();
                 Log.e(TAG, "ExoPlayer error", error);
                 cancelBufferingWatchdog();
                 if (callback != null) {
@@ -798,6 +868,7 @@ public class PlayerPlaybackController {
 
             @Override
             public void onEvents(@NonNull Player p, @NonNull Player.Events events) {
+                captureValidPositionFromPlayer();
                 if (callback != null) {
                     callback.onEvents();
                 }

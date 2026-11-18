@@ -178,12 +178,8 @@ public class HorizontalEpisodesAdapter extends RecyclerView.Adapter<HorizontalEp
         }
         
         // Check if this episode has a bookmark
-        boolean hasBookmark = false;
-        String bookmarkProgress = null;
-        if (animeBookmark != null && animeBookmark.getItemId() == episode.getId()) {
-            hasBookmark = true;
-            bookmarkProgress = animeBookmark.getProgress();
-        }
+        boolean hasBookmark = com.example.animelib.managers.BookmarkManager.isBookmarkForEpisode(animeBookmark, episode);
+        String bookmarkProgress = hasBookmark ? animeBookmark.getProgress() : null;
 
         Context context = holder.itemView.getContext();
         // Show/hide bookmark icon

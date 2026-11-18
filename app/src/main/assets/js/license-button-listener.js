@@ -13,25 +13,55 @@
     }
 
     function extractAnimeRouteInfo(contextEl) {
+        var hrefContext = (window.location && window.location.href) ? window.location.href : '';
         var pathname = (window.location && window.location.pathname) ? window.location.pathname : '';
-        var m = pathname.match(/^((?:\/[a-z]{2})?\/anime\/([^\/?#]+))/i);
-        if (m) {
-            return { basePath: m[1], slug: m[2] };
+
+        // 1. Check window.location.href or pathname for /anime/{slug}
+        var matchHref = hrefContext.match(/((?:\/[a-z]{2})?\/anime\/([^\/?#]+))/i);
+        if (matchHref) {
+            return { basePath: matchHref[1], slug: matchHref[2] };
         }
-        var mDirect = pathname.match(/^((?:\/[a-z]{2})?\/(\d+--[^\/?#]+))/i);
-        if (mDirect) {
-            return { basePath: mDirect[1], slug: mDirect[2] };
+
+        var matchPath = pathname.match(/^((?:\/[a-z]{2})?\/anime\/([^\/?#]+))/i);
+        if (matchPath) {
+            return { basePath: matchPath[1], slug: matchPath[2] };
+        }
+
+        // 2. Check for numeric ID with slug pattern (e.g. 17744--shiguang-dailiren-anime) anywhere in href or pathname
+        var slugMatch = hrefContext.match(/(\d+--[^\/?#]+)/i) || pathname.match(/(\d+--[^\/?#]+)/i);
+        if (slugMatch) {
+            var s = slugMatch[1];
+            var idx = hrefContext.indexOf(s);
+            if (idx !== -1) {
+                var sub = hrefContext.substring(0, idx + s.length);
+                var protocolHostEnd = sub.indexOf('//');
+                var pathPart = protocolHostEnd !== -1 ? sub.substring(sub.indexOf('/', protocolHostEnd + 2) || 0) : sub;
+                if (pathPart.indexOf('/') !== 0) pathPart = '/' + pathPart;
+                return { basePath: pathPart, slug: s };
+            }
+            return { basePath: '/anime/' + s, slug: s };
         }
 
         if (contextEl && contextEl.closest) {
             var container = contextEl.closest('[class*="page"], main, body') || document;
-            var links = container.querySelectorAll ? container.querySelectorAll('a[href*="/anime/"]') : [];
+            var links = container.querySelectorAll ? container.querySelectorAll('a[href*="/anime/"], a[href*="--"]') : [];
             for (var i = 0; i < links.length; i++) {
                 var rawHref = links[i].getAttribute('href') || '';
-                var linkMatch = rawHref.match(/((?:\/[a-z]{2})?\/anime\/([^\/?#]+))/i);
-                if (linkMatch && linkMatch[2] !== 'watch') {
-                    return { basePath: linkMatch[1], slug: linkMatch[2] };
+                var linkMatch = rawHref.match(/((?:\/[a-z]{2})?\/anime\/([^\/?#]+))/i) || rawHref.match(/((?:\/[a-z]{2})?\/(\d+--[^\/?#]+))/i);
+                if (linkMatch && linkMatch[2] !== 'watch' && linkMatch[2] !== 'catalog') {
+                    var foundSlug = linkMatch[2] || linkMatch[3];
+                    return { basePath: linkMatch[1], slug: foundSlug };
                 }
+            }
+        }
+
+        var docLinks = document.querySelectorAll ? document.querySelectorAll('a[href*="/anime/"], a[href*="--"]') : [];
+        for (var j = 0; j < docLinks.length; j++) {
+            var rHref = docLinks[j].getAttribute('href') || '';
+            var dMatch = rHref.match(/((?:\/[a-z]{2})?\/anime\/([^\/?#]+))/i) || rHref.match(/((?:\/[a-z]{2})?\/(\d+--[^\/?#]+))/i);
+            if (dMatch && dMatch[2] !== 'watch' && dMatch[2] !== 'catalog') {
+                var dSlug = dMatch[2] || dMatch[3];
+                return { basePath: dMatch[1], slug: dSlug };
             }
         }
 
