@@ -185,28 +185,118 @@
                                 try { list = JSON.parse(existingStr); } catch(e) {}
                             }
                             if (!Array.isArray(list)) list = [];
+                            function isPlaceholderTitle(s) {
+                                if (!s || typeof s !== 'string') return true;
+                                var t = s.trim();
+                                if (!t || t === '-' || t === '—') return true;
+                                return /^(anime|аниме|загрузка\.{0,3}|аниме\s*#\d+|anime\s*#\d+)$/i.test(t);
+                            }
+                            function hasValidCover(c) {
+                                if (!c || typeof c !== 'object') return false;
+                                var vals = [c.default, c.md, c.thumbnail, c.filename];
+                                for (var i = 0; i < vals.length; i++) {
+                                    var v = vals[i];
+                                    if (typeof v === 'string') {
+                                        v = v.trim();
+                                        var low = v.toLowerCase();
+                                        if (v && low.indexOf('file://') !== 0 && low.indexOf('content://') !== 0 &&
+                                            low.indexOf('/data/') !== 0 && low.indexOf('/storage/') !== 0 &&
+                                            low.indexOf('/sdcard/') !== 0 && low.indexOf('placeholder') === -1) return true;
+                                    }
+                                }
+                                return false;
+                            }
+                            function extractNumericId(m) {
+                                if (!m) return 0;
+                                if (m.id && parseInt(m.id, 10) > 0) return parseInt(m.id, 10);
+                                var s = m.slug_url || m.slug || '';
+                                var match = String(s).match(/^(\d+)/);
+                                return match ? parseInt(match[1], 10) : 0;
+                            }
+                            function isSameMedia(a, b) {
+                                if (!a || !b) return false;
+                                var idA = extractNumericId(a), idB = extractNumericId(b);
+                                if (idA > 0 && idB > 0 && idA === idB) return true;
+                                var suA = (a.slug_url || '').toLowerCase(), suB = (b.slug_url || '').toLowerCase();
+                                if (suA && suB && suA !== 'anime' && suB !== 'anime' && suA === suB) return true;
+                                var sA = (a.slug || '').toLowerCase(), sB = (b.slug || '').toLowerCase();
+                                if (sA && sB && sA !== 'anime' && sB !== 'anime' && !/^\d+$/.test(sA) && sA === sB) return true;
+                                return false;
+                            }
+                            function mergeMedia(incoming, existing) {
+                                if (!existing) return incoming;
+                                var out = Object.assign({}, existing, incoming);
+                                var incCov = hasValidCover(incoming.cover);
+                                var exCov = hasValidCover(existing.cover);
+                                if (!incCov && exCov) {
+                                    out.cover = existing.cover;
+                                } else if (incCov && exCov) {
+                                    out.cover = Object.assign({}, existing.cover, incoming.cover);
+                                }
+                                var incId = (incoming.id && parseInt(incoming.id, 10) > 0) ? parseInt(incoming.id, 10) : 0;
+                                var exId = (existing.id && parseInt(existing.id, 10) > 0) ? parseInt(existing.id, 10) : 0;
+                                out.id = incId > 0 ? incId : (exId > 0 ? exId : extractNumericId(out));
+                                var incSu = incoming.slug_url || '', exSu = existing.slug_url || '';
+                                if (incSu.indexOf('--') === -1 && exSu.indexOf('--') !== -1) {
+                                    out.slug_url = exSu;
+                                } else if ((!incSu || incSu === 'anime') && exSu) {
+                                    out.slug_url = exSu;
+                                }
+                                var fSu = out.slug_url || '';
+                                if (fSu.indexOf('--') !== -1) {
+                                    out.slug = fSu.split('--').slice(1).join('--') || existing.slug || incoming.slug || '';
+                                } else if ((!incoming.slug || incoming.slug === 'anime' || /^\d+$/.test(incoming.slug)) &&
+                                           existing.slug && existing.slug !== 'anime' && !/^\d+$/.test(existing.slug)) {
+                                    out.slug = existing.slug;
+                                }
+                                ['name', 'rus_name', 'eng_name'].forEach(function(k) {
+                                    var incV = incoming[k] || '', exV = existing[k] || '';
+                                    if (exV && !isPlaceholderTitle(exV)) {
+                                        if (isPlaceholderTitle(incV) || (!incCov && exCov)) {
+                                            out[k] = exV;
+                                        }
+                                    } else if (isPlaceholderTitle(incV)) {
+                                        out[k] = '';
+                                    }
+                                });
+                                if (!out.site) out.site = 5;
+                                if (!out.model) out.model = 'anime';
+                                return out;
+                            }
                             var updated = false;
-                            newViews.forEach(function(newItem) {
-                                if (!newItem || !newItem.media) return;
-                                var idx = -1;
-                                for (var i = 0; i < list.length; i++) {
-                                    if (list[i] && list[i].media) {
-                                        if ((newItem.media.id && list[i].media.id === newItem.media.id) ||
-                                            (newItem.media.slug_url && list[i].media.slug_url === newItem.media.slug_url)) {
+                            if (Array.isArray(newViews)) {
+                                for (var k = newViews.length - 1; k >= 0; k--) {
+                                    var newItem = newViews[k];
+                                    if (!newItem || !newItem.media) continue;
+                                    var idx = -1;
+                                    for (var i = 0; i < list.length; i++) {
+                                        if (list[i] && list[i].media && isSameMedia(newItem.media, list[i].media)) {
                                             idx = i;
                                             break;
                                         }
                                     }
+                                    if (idx !== -1) {
+                                        var mergedEntry = Object.assign({}, list[idx], newItem);
+                                        mergedEntry.media = mergeMedia(newItem.media, list[idx].media);
+                                        if (mergedEntry.item && list[idx].item && !(mergedEntry.item.id > 0) &&
+                                            list[idx].item.id > 0 && mergedEntry.item.number === list[idx].item.number) {
+                                            mergedEntry.item.id = list[idx].item.id;
+                                            if (mergedEntry.meta && !(mergedEntry.meta.episode > 0)) {
+                                                mergedEntry.meta.episode = list[idx].item.id;
+                                            }
+                                        }
+                                        list[idx] = mergedEntry;
+                                        updated = true;
+                                    } else {
+                                        var cleanItem = Object.assign({}, newItem);
+                                        cleanItem.media = mergeMedia(newItem.media, null);
+                                        list.unshift(cleanItem);
+                                        updated = true;
+                                    }
                                 }
-                                if (idx !== -1) {
-                                    list[idx] = newItem;
-                                    updated = true;
-                                } else {
-                                    list.unshift(newItem);
-                                    updated = true;
-                                }
-                            });
+                            }
                             if (updated) {
+                                if (list.length > 50) list = list.slice(0, 50);
                                 localStorage.setItem('latest-views', JSON.stringify(list));
                                 console.log('[auth-handler] Restored/updated latest-views in localStorage');
                             }

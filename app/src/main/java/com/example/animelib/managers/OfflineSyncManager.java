@@ -24,6 +24,7 @@ import com.example.animelib.models.AnimeBookmarkResponse;
 import com.example.animelib.models.AnimeInfoResponse;
 import com.example.animelib.models.EpisodeResponse;
 import com.example.animelib.models.EpisodesListResponse;
+import com.example.animelib.util.LatestViewsManager;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -215,7 +216,8 @@ public class OfflineSyncManager {
             try {
                 if (isNetworkAvailable(this.context)) {
                     List<PendingSyncTaskEntity> pending = databaseManager.getAllPendingSyncTasksSync();
-                    if (pending != null && !pending.isEmpty()) {
+                    if ((pending != null && !pending.isEmpty())
+                            || LatestViewsManager.hasIncompleteEntries(this.context)) {
                         syncPendingTasksNow();
                     }
                 }
@@ -408,7 +410,11 @@ public class OfflineSyncManager {
 
     public SyncPassResult executeWorkerSyncBlocking() {
         synchronized (syncExecutionLock) {
-            return coordinator.runSyncPass();
+            SyncPassResult result = coordinator.runSyncPass();
+            if (isNetworkAvailable(context) && LatestViewsManager.hasIncompleteEntries(context)) {
+                LatestViewsManager.enrichIncompleteLatestViewsSync(context);
+            }
+            return result;
         }
     }
 
