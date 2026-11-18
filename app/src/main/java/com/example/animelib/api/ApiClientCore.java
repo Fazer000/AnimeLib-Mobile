@@ -7,7 +7,8 @@ import android.os.Looper;
 import android.util.Base64;
 import android.util.Log;
 
-import com.example.animelib.R;
+import androidx.annotation.NonNull;
+
 import com.example.animelib.data.DatabaseManager;
 import com.example.animelib.data.entity.TokenEntity;
 import com.example.animelib.ui.VideoUrlHelper;
@@ -19,6 +20,7 @@ import com.google.gson.JsonObject;
 
 import org.json.JSONObject;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -32,11 +34,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import okhttp3.Call;
+import okhttp3.Callback;
 import okhttp3.ConnectionPool;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
+import okhttp3.Response;
 
 /**
  * Ядро сетевого клиента API: общие пулы соединений, OkHttp-клиенты, авторизация,
@@ -79,6 +84,7 @@ public class ApiClientCore {
     private static volatile OkHttpClient sharedShikimoriClient;
     private static volatile Gson sharedGson;
     private static volatile ExecutorService sharedKodikExecutor;
+    private static volatile ExecutorService sharedApiExecutor;
 
     private final Context context;
     private final OkHttpClient httpClient;
@@ -107,12 +113,12 @@ public class ApiClientCore {
         this.gson = getOrCreateGson();
         this.kodikExecutor = getOrCreateKodikExecutor();
         this.kodikLinksExtractor = new KodikLinksExtractor(this.httpClient, this.gson);
-        this.executor = Executors.newFixedThreadPool(4, r -> {
-            Thread t = new Thread(r, "api-client-worker");
-            t.setDaemon(true);
-            return t;
-        });
-        this.databaseManager = new DatabaseManager(context.getApplicationContext());
+        this.executor = getOrCreateApiExecutor();
+        this.databaseManager = DatabaseManager.getInstance(context.getApplicationContext());
+    }
+
+    public static OkHttpClient getSharedHttpClient() {
+        return getOrCreateHttpClient();
     }
 
     private static OkHttpClient getOrCreateHttpClient() {
@@ -179,6 +185,21 @@ public class ApiClientCore {
             }
         }
         return sharedKodikExecutor;
+    }
+
+    private static ExecutorService getOrCreateApiExecutor() {
+        if (sharedApiExecutor == null || sharedApiExecutor.isShutdown()) {
+            synchronized (ApiClientCore.class) {
+                if (sharedApiExecutor == null || sharedApiExecutor.isShutdown()) {
+                    sharedApiExecutor = Executors.newFixedThreadPool(4, r -> {
+                        Thread t = new Thread(r, "api-client-worker");
+                        t.setDaemon(true);
+                        return t;
+                    });
+                }
+            }
+        }
+        return sharedApiExecutor;
     }
 
     public Context getContext() {
@@ -661,20 +682,81 @@ public class ApiClientCore {
         }
     }
 
-    public void shutdown() {
-        if (executor != null && !executor.isShutdown()) {
-            executor.shutdown();
+    @FunctionalInterface
+    public interface CachedResponseHandler<T> {
+        T parseAndCache(String responseBody) throws Exception;
+    }
+
+    /**
+     * Общий асинхронный GET-исполнитель для кэшируемых API-вызовов с дедупликацией in-flight
+     * запросов через {@link ApiCacheManager.RequestCache} и fallback на устаревший кэш при HTTP 429.
+     */
+    public <K, T> void executeCachedGet(
+            ApiCacheManager.RequestCache<K, T> cache,
+            K requestKey,
+            K staleFallbackKey,
+            String apiUrl,
+            boolean includeSiteId,
+            boolean forceRefresh,
+            ApiCacheManager.CallbackNotifier<T> notifier,
+            String networkErrorPrefix,
+            String httpErrorPrefix,
+            String invalidFormatError,
+            CachedResponseHandler<T> responseHandler) {
+        if (!cache.registerOrAttach(requestKey, notifier)) {
+            return;
+        }
+
+        safeExecute(() -> {
             try {
-                if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
-                    executor.shutdownNow();
+                Request.Builder reqBuilder = buildApiRequest(apiUrl, includeSiteId);
+                if (forceRefresh) {
+                    reqBuilder.header("Cache-Control", "no-cache, no-store, max-age=0");
+                    reqBuilder.header("Pragma", "no-cache");
                 }
-            } catch (InterruptedException e) {
-                executor.shutdownNow();
-                Thread.currentThread().interrupt();
+                Request request = reqBuilder.build();
+
+                httpClient.newCall(request).enqueue(new Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        cache.dispatchError(requestKey, networkErrorPrefix + e.getMessage());
+                    }
+
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) {
+                        try (response) {
+                            if (response.isSuccessful() && response.body() != null) {
+                                String responseBody = response.body().string();
+                                T parsed = responseHandler.parseAndCache(responseBody);
+                                if (parsed != null) {
+                                    cache.dispatchSuccess(requestKey, parsed);
+                                } else {
+                                    cache.dispatchError(requestKey, invalidFormatError);
+                                }
+                            } else {
+                                T stale = staleFallbackKey != null ? cache.getStale(staleFallbackKey) : null;
+                                if (response.code() == 429 && stale != null) {
+                                    Log.w(TAG, "HTTP 429 for key=" + staleFallbackKey + " — using stale cached data");
+                                    cache.dispatchSuccess(requestKey, stale);
+                                } else {
+                                    cache.dispatchError(requestKey, httpErrorPrefix + response.code());
+                                }
+                            }
+                        } catch (Exception ex) {
+                            Log.e(TAG, "Error processing cached GET response for " + apiUrl, ex);
+                            cache.dispatchError(requestKey, "Ошибка обработки: " + ex.getMessage());
+                        }
+                    }
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "Error executing cached GET for " + apiUrl, e);
+                cache.dispatchError(requestKey, "Ошибка запроса: " + e.getMessage());
             }
-        }
-        if (databaseManager != null) {
-            databaseManager.shutdown();
-        }
+        });
+    }
+
+    public void shutdown() {
+        // Shared daemon executors and DatabaseManager singleton stay alive across callers.
+        mainHandler.removeCallbacksAndMessages(null);
     }
 }

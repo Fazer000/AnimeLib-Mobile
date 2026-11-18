@@ -79,64 +79,36 @@ public class CommentsApi {
         }
 
         final String requestKey = forceRefresh ? (cacheKey + "_force_" + System.nanoTime()) : cacheKey;
-        boolean shouldStart = ApiCacheManager.COMMENTS.registerOrAttach(requestKey, new ApiCacheManager.CallbackNotifier<CommentsResponse>() {
-            @Override
-            public void onSuccess(CommentsResponse data) {
-                if (callback != null) core.safeRunOnUiThread(() -> callback.onCommentsReceived(data));
-            }
+        String apiUrl = buildCommentsUrl(episodeId, sortType, page);
+        core.executeCachedGet(
+                ApiCacheManager.COMMENTS,
+                requestKey,
+                cacheKey,
+                apiUrl,
+                true,
+                forceRefresh,
+                new ApiCacheManager.CallbackNotifier<CommentsResponse>() {
+                    @Override
+                    public void onSuccess(CommentsResponse data) {
+                        if (callback != null) core.safeRunOnUiThread(() -> callback.onCommentsReceived(data));
+                    }
 
-            @Override
-            public void onError(String error) {
-                if (callback != null) core.safeRunOnUiThread(() -> callback.onError(error));
-            }
-        });
-        if (!shouldStart) return;
-
-        core.safeExecute(() -> {
-            try {
-                String apiUrl = buildCommentsUrl(episodeId, sortType, page);
-                Request.Builder reqBuilder = core.buildApiRequest(apiUrl);
-                if (forceRefresh) {
-                    reqBuilder.header("Cache-Control", "no-cache, no-store, max-age=0");
-                    reqBuilder.header("Pragma", "no-cache");
+                    @Override
+                    public void onError(String error) {
+                        if (callback != null) core.safeRunOnUiThread(() -> callback.onError(error));
+                    }
+                },
+                "Ошибка сети: ",
+                "HTTP ",
+                "Ошибка парсинга",
+                body -> {
+                    CommentsResponse comments = core.getGson().fromJson(body, CommentsResponse.class);
+                    if (comments != null) {
+                        ApiCacheManager.COMMENTS.put(cacheKey, comments);
+                    }
+                    return comments;
                 }
-                Request request = reqBuilder.build();
-
-                core.getHttpClient().newCall(request).enqueue(new Callback() {
-                    @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        ApiCacheManager.COMMENTS.dispatchError(requestKey, "Ошибка сети: " + e.getMessage());
-                    }
-
-                    @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) {
-                        try (response) {
-                            if (response.isSuccessful() && response.body() != null) {
-                                String body = response.body().string();
-                                CommentsResponse comments = core.getGson().fromJson(body, CommentsResponse.class);
-                                if (comments != null) {
-                                    ApiCacheManager.COMMENTS.put(cacheKey, comments);
-                                    ApiCacheManager.COMMENTS.dispatchSuccess(requestKey, comments);
-                                } else {
-                                    ApiCacheManager.COMMENTS.dispatchError(requestKey, "Ошибка парсинга");
-                                }
-                            } else {
-                                CommentsResponse stale = ApiCacheManager.COMMENTS.getStale(cacheKey);
-                                if (response.code() == 429 && stale != null) {
-                                    ApiCacheManager.COMMENTS.dispatchSuccess(requestKey, stale);
-                                } else {
-                                    ApiCacheManager.COMMENTS.dispatchError(requestKey, "HTTP " + response.code());
-                                }
-                            }
-                        } catch (Exception ex) {
-                            ApiCacheManager.COMMENTS.dispatchError(requestKey, "Ошибка парсинга: " + ex.getMessage());
-                        }
-                    }
-                });
-            } catch (Exception e) {
-                ApiCacheManager.COMMENTS.dispatchError(requestKey, "Ошибка запроса: " + e.getMessage());
-            }
-        });
+        );
     }
 
     public void fetchStickyComments(long episodeId, ApiService.StickyCommentsCallback callback) {
@@ -146,62 +118,41 @@ public class CommentsApi {
             return;
         }
 
-        boolean shouldStart = ApiCacheManager.STICKY_COMMENTS.registerOrAttach(episodeId, new ApiCacheManager.CallbackNotifier<List<CommentsResponse.CommentItem>>() {
-            @Override
-            public void onSuccess(List<CommentsResponse.CommentItem> data) {
-                if (callback != null) core.safeRunOnUiThread(() -> callback.onStickyCommentsReceived(data));
-            }
-
-            @Override
-            public void onError(String error) {
-                if (callback != null) core.safeRunOnUiThread(() -> callback.onError(error));
-            }
-        });
-        if (!shouldStart) return;
-
-        core.safeExecute(() -> {
-            try {
-                String apiUrl = ApiClientCore.API_BASE_HAPI + "/comments/sticky?post_id=" + episodeId + "&post_type=episodes";
-                Request request = core.buildApiRequest(apiUrl).build();
-
-                core.getHttpClient().newCall(request).enqueue(new Callback() {
+        String apiUrl = ApiClientCore.API_BASE_HAPI + "/comments/sticky?post_id=" + episodeId + "&post_type=episodes";
+        core.executeCachedGet(
+                ApiCacheManager.STICKY_COMMENTS,
+                episodeId,
+                episodeId,
+                apiUrl,
+                true,
+                false,
+                new ApiCacheManager.CallbackNotifier<List<CommentsResponse.CommentItem>>() {
                     @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        ApiCacheManager.STICKY_COMMENTS.dispatchError(episodeId, "Ошибка сети: " + e.getMessage());
+                    public void onSuccess(List<CommentsResponse.CommentItem> data) {
+                        if (callback != null) core.safeRunOnUiThread(() -> callback.onStickyCommentsReceived(data));
                     }
 
                     @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) {
-                        try (response) {
-                            if (response.isSuccessful() && response.body() != null) {
-                                String body = response.body().string();
-                                StickyCommentsResponse stickyResp = core.getGson().fromJson(body, StickyCommentsResponse.class);
-                                List<CommentsResponse.CommentItem> list = (stickyResp != null && stickyResp.getData() != null)
-                                        ? stickyResp.getData() : new ArrayList<>();
-                                for (CommentsResponse.CommentItem item : list) {
-                                    if (item != null) {
-                                        item.setSticky(true);
-                                    }
-                                }
-                                ApiCacheManager.STICKY_COMMENTS.put(episodeId, list);
-                                ApiCacheManager.STICKY_COMMENTS.dispatchSuccess(episodeId, list);
-                            } else {
-                                List<CommentsResponse.CommentItem> stale = ApiCacheManager.STICKY_COMMENTS.getStale(episodeId);
-                                if (response.code() == 429 && stale != null) {
-                                    ApiCacheManager.STICKY_COMMENTS.dispatchSuccess(episodeId, stale);
-                                } else {
-                                    ApiCacheManager.STICKY_COMMENTS.dispatchError(episodeId, "HTTP " + response.code());
-                                }
-                            }
-                        } catch (Exception ex) {
-                            ApiCacheManager.STICKY_COMMENTS.dispatchError(episodeId, "Ошибка парсинга: " + ex.getMessage());
+                    public void onError(String error) {
+                        if (callback != null) core.safeRunOnUiThread(() -> callback.onError(error));
+                    }
+                },
+                "Ошибка сети: ",
+                "HTTP ",
+                "Ошибка парсинга",
+                body -> {
+                    StickyCommentsResponse stickyResp = core.getGson().fromJson(body, StickyCommentsResponse.class);
+                    List<CommentsResponse.CommentItem> list = (stickyResp != null && stickyResp.getData() != null)
+                            ? stickyResp.getData() : new ArrayList<>();
+                    for (CommentsResponse.CommentItem item : list) {
+                        if (item != null) {
+                            item.setSticky(true);
                         }
                     }
-                });
-            } catch (Exception e) {
-                ApiCacheManager.STICKY_COMMENTS.dispatchError(episodeId, "Ошибка запроса: " + e.getMessage());
-            }
-        });
+                    ApiCacheManager.STICKY_COMMENTS.put(episodeId, list);
+                    return list;
+                }
+        );
     }
 
     @NonNull
@@ -275,12 +226,7 @@ public class CommentsApi {
                 JsonObject requestBody = buildCommentPayload(episodeId, rawCommentText, parentCommentId, rootId, commentLevel);
                 RequestBody body = core.createJsonRequestBody(requestBody.toString());
 
-                Request.Builder reqBuilder = new Request.Builder()
-                        .url(apiUrl)
-                        .addHeader("Authorization", "Bearer " + core.getBearerToken())
-                        .addHeader("Origin", core.resolveSiteUrl())
-                        .addHeader("Referer", core.getRefererUrl());
-
+                Request.Builder reqBuilder = core.buildSearchApiRequest(apiUrl);
                 Request request = isEdit ? reqBuilder.put(body).build() : reqBuilder.post(body).build();
 
                 core.getHttpClient().newCall(request).enqueue(new Callback() {
@@ -474,11 +420,7 @@ public class CommentsApi {
                     requestBody.addProperty("comment", commentText.trim());
                 }
 
-                Request request = new Request.Builder()
-                        .url(apiUrl)
-                        .addHeader("Authorization", "Bearer " + core.getBearerToken())
-                        .addHeader("Origin", core.resolveSiteUrl())
-                        .addHeader("Referer", core.getRefererUrl())
+                Request request = core.buildSearchApiRequest(apiUrl)
                         .post(core.createJsonRequestBody(requestBody.toString()))
                         .build();
 

@@ -32,6 +32,7 @@ import com.example.animelib.data.entity.DownloadedAnimeEntity;
 import com.example.animelib.data.entity.DownloadedEpisodeEntity;
 import com.example.animelib.models.DownloadTask;
 import com.example.animelib.services.DownloadService;
+import com.example.animelib.api.ApiClientCore;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.models.AnimeInfoResponse;
 import com.example.animelib.util.CustomToast;
@@ -46,26 +47,26 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-
-import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 
 public class DownloadsActivity extends AppCompatActivity implements DownloadService.QueueProgressListener {
 
     private static final String TAG = "DownloadsActivity";
-    private static final OkHttpClient httpClient = new OkHttpClient();
 
+    private final ExecutorService backgroundExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "downloads-ui-worker");
+        t.setDaemon(true);
+        return t;
+    });
+    private volatile ApiService apiService;
     private DatabaseManager databaseManager;
 
     // Queue Section Views
@@ -184,7 +185,7 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
             }
         }
 
-        databaseManager = new DatabaseManager(this);
+        databaseManager = DatabaseManager.getInstance(this);
 
         View btnBack = findViewById(R.id.btnBack);
         if (btnBack != null) {
@@ -303,25 +304,32 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
             }
 
             // Ensure posters are cached locally & calculate sizes/episodes count
-            Executors.newSingleThreadExecutor().execute(() -> {
-                if (list != null) {
-                    for (DownloadedAnimeEntity anime : list) {
-                        ensureLocalPoster(anime);
-                        List<DownloadedEpisodeEntity> episodes = databaseManager.getEpisodesForAnimeSync(anime.getAnimeId());
-                        long totalBytes = 0;
-                        int epCount = 0;
-                        if (episodes != null) {
-                            epCount = episodes.size();
-                            for (DownloadedEpisodeEntity ep : episodes) {
-                                if (ep != null) totalBytes += ep.getFileSize();
+            if (!backgroundExecutor.isShutdown()) {
+                backgroundExecutor.execute(() -> {
+                    if (list != null) {
+                        for (DownloadedAnimeEntity anime : list) {
+                            if (isFinishing() || isDestroyed()) return;
+                            ensureLocalPoster(anime);
+                            List<DownloadedEpisodeEntity> episodes = databaseManager.getEpisodesForAnimeSync(anime.getAnimeId());
+                            long totalBytes = 0;
+                            int epCount = 0;
+                            if (episodes != null) {
+                                epCount = episodes.size();
+                                for (DownloadedEpisodeEntity ep : episodes) {
+                                    if (ep != null) totalBytes += ep.getFileSize();
+                                }
                             }
+                            animeSizesMap.put(anime.getAnimeId(), totalBytes);
+                            animeEpisodeCountsMap.put(anime.getAnimeId(), epCount);
                         }
-                        animeSizesMap.put(anime.getAnimeId(), totalBytes);
-                        animeEpisodeCountsMap.put(anime.getAnimeId(), epCount);
                     }
-                }
-                runOnUiThread(this::applyFilterAndSort);
-            });
+                    runOnUiThread(() -> {
+                        if (!isFinishing() && !isDestroyed()) {
+                            applyFilterAndSort();
+                        }
+                    });
+                });
+            }
         });
     }
 
@@ -502,8 +510,36 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
     }
 
     @Override
+    protected void onDestroy() {
+        backgroundExecutor.shutdownNow();
+        if (apiService != null) {
+            apiService.shutdown();
+            apiService = null;
+        }
+        super.onDestroy();
+    }
+
+    private ApiService getOrCreateApiService() {
+        ApiService local = apiService;
+        if (local == null) {
+            synchronized (this) {
+                local = apiService;
+                if (local == null) {
+                    local = new ApiService(getApplicationContext());
+                    apiService = local;
+                }
+            }
+        }
+        return local;
+    }
+
+    @Override
     public void onQueueUpdated() {
-        runOnUiThread(this::updateQueueSection);
+        runOnUiThread(() -> {
+            if (!isFinishing() && !isDestroyed()) {
+                updateQueueSection();
+            }
+        });
     }
 
     private void updateQueueSection() {
@@ -598,7 +634,9 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
             String path = internalPosterFile.getAbsolutePath();
             if (!path.equals(anime.getPosterUrl())) {
                 anime.setPosterUrl(path);
-                Executors.newSingleThreadExecutor().execute(() -> databaseManager.saveDownloadedAnime(anime));
+                if (!backgroundExecutor.isShutdown()) {
+                    backgroundExecutor.execute(() -> databaseManager.saveDownloadedAnime(anime));
+                }
             }
             return;
         }
@@ -607,7 +645,9 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
             String path = externalPosterFile.getAbsolutePath();
             if (!path.equals(anime.getPosterUrl())) {
                 anime.setPosterUrl(path);
-                Executors.newSingleThreadExecutor().execute(() -> databaseManager.saveDownloadedAnime(anime));
+                if (!backgroundExecutor.isShutdown()) {
+                    backgroundExecutor.execute(() -> databaseManager.saveDownloadedAnime(anime));
+                }
             }
             return;
         }
@@ -616,15 +656,16 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
         boolean needsTitle = anime.getTitle() == null || anime.getTitle().equals("Аниме") ||
                 anime.getTitle().equals("Загрузка") || anime.getTitle().startsWith("Аниме #");
 
-        Executors.newSingleThreadExecutor().execute(() -> {
+        if (backgroundExecutor.isShutdown()) return;
+        backgroundExecutor.execute(() -> {
             try {
+                if (isFinishing() || isDestroyed()) return;
                 String url = posterUrl;
                 if (needsTitle || url == null || url.trim().isEmpty() || !url.startsWith("http")) {
                     final String[] fetchedCover = new String[1];
                     final String[] fetchedTitle = new String[1];
                     CountDownLatch latch = new CountDownLatch(1);
-                    ApiService apiService = new ApiService(this);
-                    apiService.fetchAnimeInfo(anime.getAnimeId(), new ApiService.AnimeInfoCallback() {
+                    getOrCreateApiService().fetchAnimeInfo(anime.getAnimeId(), new ApiService.AnimeInfoCallback() {
                         @Override
                         public void onAnimeInfoReceived(AnimeInfoResponse response) {
                             if (response != null && response.getData() != null) {
@@ -653,7 +694,9 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
                         anime.setTitle(fetchedTitle[0]);
                         databaseManager.saveDownloadedAnime(anime);
                         runOnUiThread(() -> {
-                            if (animeAdapter != null) animeAdapter.notifyDataSetChanged();
+                            if (!isFinishing() && !isDestroyed() && animeAdapter != null) {
+                                animeAdapter.notifyDataSetChanged();
+                            }
                         });
                     }
                 }
@@ -663,7 +706,7 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
                     else if (!url.startsWith("http://") && !url.startsWith("https://")) url = "https://animelib.me" + (url.startsWith("/") ? "" : "/") + url;
 
                     Request request = new Request.Builder().url(url).build();
-                    try (Response response = httpClient.newCall(request).execute()) {
+                    try (Response response = ApiClientCore.getSharedHttpClient().newCall(request).execute()) {
                         if (response.isSuccessful() && response.body() != null) {
                             byte[] bytes = response.body().bytes();
                             if (bytes != null && bytes.length > 0) {
@@ -680,7 +723,7 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
                                 anime.setPosterUrl(internalPosterFile.getAbsolutePath());
                                 databaseManager.saveDownloadedAnime(anime);
                                 runOnUiThread(() -> {
-                                    if (animeAdapter != null) {
+                                    if (!isFinishing() && !isDestroyed() && animeAdapter != null) {
                                         animeAdapter.notifyDataSetChanged();
                                     }
                                 });
@@ -810,7 +853,8 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
         }
 
         private void playFirstEpisode(DownloadedAnimeEntity anime) {
-            Executors.newSingleThreadExecutor().execute(() -> {
+            if (backgroundExecutor.isShutdown()) return;
+            backgroundExecutor.execute(() -> {
                 List<DownloadedEpisodeEntity> episodes = databaseManager.getEpisodesForAnimeSync(anime.getAnimeId());
                 if (episodes != null && !episodes.isEmpty()) {
                     DownloadedEpisodeEntity ep = null;
@@ -836,6 +880,7 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
                     }
                     DownloadedEpisodeEntity finalEp = ep;
                     runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) return;
                         VideoPlayerActivity.startForOfflineEpisode(
                                 DownloadsActivity.this,
                                 finalEp.getLocalFilePath(),
@@ -846,7 +891,11 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
                         );
                     });
                 } else {
-                    runOnUiThread(() -> com.example.animelib.util.CustomToast.showInfo(DownloadsActivity.this, "Нет скачанных серий"));
+                    runOnUiThread(() -> {
+                        if (!isFinishing() && !isDestroyed()) {
+                            com.example.animelib.util.CustomToast.showInfo(DownloadsActivity.this, "Нет скачанных серий");
+                        }
+                    });
                 }
             });
         }

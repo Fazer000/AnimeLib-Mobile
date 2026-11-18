@@ -274,66 +274,40 @@ public class BookmarksApi {
             return;
         }
 
-        boolean shouldStart = ApiCacheManager.ANIME_BOOKMARK.registerOrAttach(cacheKey, new ApiCacheManager.CallbackNotifier<AnimeBookmarkResponse>() {
-            @Override
-            public void onSuccess(AnimeBookmarkResponse data) {
-                if (callback != null) core.safeRunOnUiThread(() -> callback.onBookmarkReceived(data));
-            }
-
-            @Override
-            public void onError(String error) {
-                if (callback != null) core.safeRunOnUiThread(() -> callback.onError(error));
-            }
-        });
-        if (!shouldStart) return;
-
-        core.safeExecute(() -> {
-            try {
-                String apiUrl = ApiClientCore.API_BASE_HAPI + "/anime/" + cacheKey + "/bookmark";
-                Request request = core.buildApiRequest(apiUrl).build();
-
-                core.getHttpClient().newCall(request).enqueue(new Callback() {
+        String apiUrl = ApiClientCore.API_BASE_HAPI + "/anime/" + cacheKey + "/bookmark";
+        core.executeCachedGet(
+                ApiCacheManager.ANIME_BOOKMARK,
+                cacheKey,
+                cacheKey,
+                apiUrl,
+                true,
+                false,
+                new ApiCacheManager.CallbackNotifier<AnimeBookmarkResponse>() {
                     @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        Log.e(TAG, "Anime bookmark request failed", e);
-                        ApiCacheManager.ANIME_BOOKMARK.dispatchError(cacheKey, "Ошибка сети: " + e.getMessage());
+                    public void onSuccess(AnimeBookmarkResponse data) {
+                        if (callback != null) core.safeRunOnUiThread(() -> callback.onBookmarkReceived(data));
                     }
 
                     @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) {
-                        try (response) {
-                            if (response.isSuccessful() && response.body() != null) {
-                                String responseBody = response.body().string();
-                                AnimeBookmarkResponse bookmarkResponse = core.getGson().fromJson(responseBody, AnimeBookmarkResponse.class);
-                                if (bookmarkResponse != null) {
-                                    ApiCacheManager.ANIME_BOOKMARK.put(cacheKey, bookmarkResponse);
-                                    String extractedId = ApiClientCore.extractAnimeId(cacheKey);
-                                    if (extractedId != null && !extractedId.isEmpty()) {
-                                        ApiCacheManager.ANIME_BOOKMARK.put(extractedId, bookmarkResponse);
-                                    }
-                                    ApiCacheManager.ANIME_BOOKMARK.dispatchSuccess(cacheKey, bookmarkResponse);
-                                } else {
-                                    ApiCacheManager.ANIME_BOOKMARK.dispatchError(cacheKey, "Неверный формат ответа закладки");
-                                }
-                            } else {
-                                AnimeBookmarkResponse stale = ApiCacheManager.ANIME_BOOKMARK.getStale(cacheKey);
-                                if (response.code() == 429 && stale != null) {
-                                    ApiCacheManager.ANIME_BOOKMARK.dispatchSuccess(cacheKey, stale);
-                                } else {
-                                    ApiCacheManager.ANIME_BOOKMARK.dispatchError(cacheKey, "Ошибка при получении закладки: " + response.code());
-                                }
-                            }
-                        } catch (Exception e) {
-                            Log.e(TAG, "Error processing anime bookmark response", e);
-                            ApiCacheManager.ANIME_BOOKMARK.dispatchError(cacheKey, "Ошибка обработки ответа: " + e.getMessage());
+                    public void onError(String error) {
+                        if (callback != null) core.safeRunOnUiThread(() -> callback.onError(error));
+                    }
+                },
+                "Ошибка сети: ",
+                "Ошибка при получении закладки: ",
+                "Неверный формат ответа закладки",
+                body -> {
+                    AnimeBookmarkResponse bookmarkResponse = core.getGson().fromJson(body, AnimeBookmarkResponse.class);
+                    if (bookmarkResponse != null) {
+                        ApiCacheManager.ANIME_BOOKMARK.put(cacheKey, bookmarkResponse);
+                        String extractedId = ApiClientCore.extractAnimeId(cacheKey);
+                        if (extractedId != null && !extractedId.isEmpty()) {
+                            ApiCacheManager.ANIME_BOOKMARK.put(extractedId, bookmarkResponse);
                         }
                     }
-                });
-            } catch (Exception e) {
-                Log.e(TAG, "Unexpected error while fetching anime bookmark", e);
-                ApiCacheManager.ANIME_BOOKMARK.dispatchError(cacheKey, "Неожиданная ошибка: " + e.getMessage());
-            }
-        });
+                    return bookmarkResponse;
+                }
+        );
     }
 
     public void fetchBookmarksList(ApiService.BookmarksListCallback callback) {

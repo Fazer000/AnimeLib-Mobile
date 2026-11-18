@@ -3,17 +3,13 @@ package com.example.animelib.ui;
 import android.app.Activity;
 import android.content.Context;
 import android.content.ContextWrapper;
-import android.content.Intent;
 import android.graphics.Bitmap;
-import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -36,6 +32,7 @@ import com.example.animelib.util.CookieSyncManager;
 import com.example.animelib.VideoPlayerActivity;
 import com.example.animelib.util.FlexibleBottomSheetDialog;
 import com.example.animelib.util.FloatingBottomSheetUtils;
+import com.example.animelib.util.WebViewHelper;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
 
 public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
@@ -104,6 +101,9 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
         }
 
         act.runOnUiThread(() -> {
+            if (act.isFinishing() || act.isDestroyed()) {
+                return;
+            }
             synchronized (TitleWebViewBottomSheet.this) {
                 if (isNavigatingToPlayer) {
                     Log.d(TAG, "Already navigating to player, ignoring duplicate request: " + rawUrl);
@@ -237,57 +237,13 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
             // Синхронизируем куки сети Lib перед загрузкой BottomSheet
             CookieSyncManager.syncAllCookies();
 
-            webViewTitle.addJavascriptInterface(new Object() {
-                @android.webkit.JavascriptInterface
-                public void setCookie(String name, String value, String domain) {
-                    CookieManager.getInstance().setCookie(domain, name + "=" + value);
-                    CookieSyncManager.copyCookieStringToAllDomains(name + "=" + value);
-                }
-
-                @android.webkit.JavascriptInterface
-                public String getCookie(String name, String domain) {
-                    String cookies = CookieManager.getInstance().getCookie(domain);
-                    if (cookies != null) {
-                        String[] cookieArray = cookies.split(";");
-                        for (String cookie : cookieArray) {
-                            String[] parts = cookie.trim().split("=");
-                            if (parts.length == 2 && parts[0].equals(name)) {
-                                return parts[1];
-                            }
-                        }
-                    }
-                    return null;
-                }
-            }, "CookieManager");
-
-            WebSettings webSettings = webViewTitle.getSettings();
-            webSettings.setJavaScriptEnabled(true);
-            webSettings.setJavaScriptCanOpenWindowsAutomatically(true);
-            webSettings.setDomStorageEnabled(true);
-            webSettings.setDatabaseEnabled(true);
-            webSettings.setCacheMode(WebSettings.LOAD_DEFAULT);
-            webSettings.setLoadWithOverviewMode(true);
-            webSettings.setUseWideViewPort(true);
-            webSettings.setBuiltInZoomControls(false);
-            webSettings.setDisplayZoomControls(false);
-            webSettings.setSupportZoom(false);
-            webSettings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-            webSettings.setAllowFileAccess(true);
-            webSettings.setAllowContentAccess(true);
-            webSettings.setLoadsImagesAutomatically(true);
-            webSettings.setMediaPlaybackRequiresUserGesture(false);
-            webSettings.setGeolocationEnabled(false);
-            webSettings.setSafeBrowsingEnabled(false);
-            webSettings.setOffscreenPreRaster(true);
-            webSettings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36");
-            try {
-                webSettings.setForceDark(WebSettings.FORCE_DARK_AUTO);
-            } catch (Exception ignored) {}
+            WebViewHelper.configureCommonSettings(webViewTitle, WebViewHelper.MOBILE_USER_AGENT);
+            webViewTitle.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
+            WebViewHelper.attachCookieBridge(webViewTitle);
 
             try {
                 webViewTitle.setBackgroundColor(com.example.animelib.util.ThemeUtils.getSiteHeaderColor(getContext(), targetUrl));
             } catch (Exception ignored) {}
-            webViewTitle.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
             webViewTitle.setOnTouchListener((v, event) -> {
                 int action = event.getActionMasked();
@@ -302,14 +258,6 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
                 }
                 return false;
             });
-
-            try {
-                CookieManager cookieManager = CookieManager.getInstance();
-                cookieManager.setAcceptCookie(true);
-                cookieManager.setAcceptThirdPartyCookies(webViewTitle, true);
-            } catch (Exception e) {
-                Log.w(TAG, "CookieManager setup failed: " + e.getMessage());
-            }
 
             webViewTitle.setWebViewClient(new WebViewClient() {
                 @Override
@@ -328,18 +276,8 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
                 private boolean handleUrlLoading(String url) {
                     if (url == null) return false;
 
-                    if (url.startsWith("intent://") || url.startsWith("tel:") || url.startsWith("mailto:") || url.startsWith("sms:") || url.startsWith("market:")) {
-                        try {
-                            Intent intent;
-                            if (url.startsWith("intent://")) {
-                                intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME);
-                            } else {
-                                intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                            }
-                            getContext().startActivity(intent);
-                        } catch (Exception e) {
-                            Log.e(TAG, "Failed to open external url: " + url, e);
-                        }
+                    if (WebViewHelper.isExternalScheme(url)) {
+                        WebViewHelper.handleExternalUrl(getContext(), url);
                         return true;
                     }
 
@@ -362,11 +300,7 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
                     if (layoutWebError != null) {
                         layoutWebError.setVisibility(View.GONE);
                     }
-                    if (JSInjectionsHandler.isIgnoredColorDomain(url)) {
-                        view.getSettings().setForceDark(WebSettings.FORCE_DARK_OFF);
-                    } else {
-                        view.getSettings().setForceDark(WebSettings.FORCE_DARK_AUTO);
-                    }
+                    WebViewHelper.applyForceDarkForUrl(view, url);
                     if (jsInjectionsHandler != null) {
                         jsInjectionsHandler.setupPlayerButtonListeners(view);
                         jsInjectionsHandler.setupBottomSheetInjections(view);
@@ -392,11 +326,7 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
                     CookieSyncManager.syncFromUrl(url);
                     CookieSyncManager.injectAuthLocalStorage(view);
                     com.example.animelib.util.LatestViewsManager.injectLatestViewsToWebView(view);
-                    if (JSInjectionsHandler.isIgnoredColorDomain(url)) {
-                        view.getSettings().setForceDark(WebSettings.FORCE_DARK_OFF);
-                    } else {
-                        view.getSettings().setForceDark(WebSettings.FORCE_DARK_AUTO);
-                    }
+                    WebViewHelper.applyForceDarkForUrl(view, url);
                     if (progressBarWeb != null) {
                         progressBarWeb.setVisibility(View.GONE);
                     }
@@ -439,6 +369,9 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
 
                 @Override
                 public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) {
+                    if (error != null) {
+                        Log.w(TAG, "WebView SSL error: primary=" + error.getPrimaryError() + ", url=" + error.getUrl());
+                    }
                     if (handler != null) {
                         handler.proceed();
                     }

@@ -41,6 +41,7 @@ import com.example.animelib.util.CookieSyncManager;
 import com.example.animelib.util.CustomToast;
 import com.example.animelib.util.LatestViewsManager;
 import com.example.animelib.util.ThemeUtils;
+import com.example.animelib.util.WebViewHelper;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.progressindicator.CircularProgressIndicator;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
@@ -57,12 +58,14 @@ import java.util.concurrent.Executors;
 public class MainWebViewController {
 
     private static final String TAG = "MainWebViewController";
-    private static final String USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
 
     private static final Map<String, String> NAVIGATION_HEADERS;
     private static final Set<String> WARMED_HOSTS = ConcurrentHashMap.newKeySet();
-    private static final ExecutorService IO_EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final ExecutorService IO_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "webview-io");
+        t.setDaemon(true);
+        return t;
+    });
     private static final java.util.regex.Pattern SPA_WATCH_PATTERN =
             java.util.regex.Pattern.compile("(?:/[a-z]{2})?/anime/[^/?#]+/watch(?:[/?#]|$)", java.util.regex.Pattern.CASE_INSENSITIVE);
 
@@ -168,44 +171,15 @@ public class MainWebViewController {
             webView.setBackgroundColor(ThemeUtils.getSiteHeaderColor(activity, null));
         } catch (Exception ignored) {}
 
+        WebViewHelper.configureCommonSettings(webView, WebViewHelper.MOBILE_USER_AGENT);
+
         WebSettings webSettings = webView.getSettings();
-
-        webSettings.setJavaScriptEnabled(true);
-        webSettings.setJavaScriptCanOpenWindowsAutomatically(true);
-        webSettings.setDomStorageEnabled(true);
-        webSettings.setDatabaseEnabled(true);
         webSettings.setCacheMode(isNetworkAvailable() ? WebSettings.LOAD_DEFAULT : WebSettings.LOAD_CACHE_ELSE_NETWORK);
-
-        webSettings.setLoadWithOverviewMode(true);
-        webSettings.setUseWideViewPort(true);
-        webSettings.setBuiltInZoomControls(false);
-        webSettings.setDisplayZoomControls(false);
-        webSettings.setSupportZoom(false);
-
         webSettings.setTextZoom(100);
         webSettings.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING);
-
-        webSettings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        webSettings.setAllowFileAccess(true);
-        webSettings.setAllowContentAccess(true);
-        webSettings.setAllowFileAccessFromFileURLs(false);
-        webSettings.setAllowUniversalAccessFromFileURLs(false);
-
-        webSettings.setMediaPlaybackRequiresUserGesture(false);
-        webSettings.setGeolocationEnabled(false);
-        webSettings.setUserAgentString(USER_AGENT);
         webSettings.setNeedInitialFocus(false);
-
-        webSettings.setLoadsImagesAutomatically(true);
         webSettings.setBlockNetworkImage(false);
         webSettings.setBlockNetworkLoads(false);
-        webSettings.setSafeBrowsingEnabled(false);
-        try {
-            webSettings.setForceDark(WebSettings.FORCE_DARK_AUTO);
-        } catch (Exception ignored) {}
-
-        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-        webSettings.setOffscreenPreRaster(true);
         WebView.setWebContentsDebuggingEnabled(false);
 
         webView.setScrollBarStyle(View.SCROLLBARS_OUTSIDE_OVERLAY);
@@ -220,38 +194,13 @@ public class MainWebViewController {
         webSettings.setDefaultFontSize(16);
         webSettings.setDefaultFixedFontSize(13);
 
-        CookieManager cookieManager = CookieManager.getInstance();
-        cookieManager.setAcceptCookie(true);
-        cookieManager.setAcceptThirdPartyCookies(webView, true);
-
         CookieSyncManager.warmUpAsync(activity);
 
         if (jsInjectionsHandler != null) {
             jsInjectionsHandler.addJavaScriptInterface(webView);
         }
 
-        webView.addJavascriptInterface(new Object() {
-            @android.webkit.JavascriptInterface
-            public void setCookie(String name, String value, String domain) {
-                CookieManager.getInstance().setCookie(domain, name + "=" + value);
-                CookieSyncManager.copyCookieStringToAllDomains(name + "=" + value);
-            }
-
-            @android.webkit.JavascriptInterface
-            public String getCookie(String name, String domain) {
-                String cookies = CookieManager.getInstance().getCookie(domain);
-                if (cookies != null) {
-                    String[] cookieArray = cookies.split(";");
-                    for (String cookie : cookieArray) {
-                        String[] parts = cookie.trim().split("=", 2);
-                        if (parts.length == 2 && parts[0].trim().equals(name)) {
-                            return parts[1].trim();
-                        }
-                    }
-                }
-                return null;
-            }
-        }, "CookieManager");
+        WebViewHelper.attachCookieBridge(webView);
 
         webView.setWebViewClient(new WebViewClient() {
             @OptIn(markerClass = UnstableApi.class)
@@ -260,14 +209,8 @@ public class MainWebViewController {
                 if (request == null || request.getUrl() == null) return false;
                 String url = request.getUrl().toString();
 
-                if (url.startsWith("intent://")) {
-                    handleIntentUrl(url);
-                    return true;
-                }
-
-                if (url.startsWith("tel:") || url.startsWith("mailto:") ||
-                        url.startsWith("sms:") || url.startsWith("market:")) {
-                    handleSpecialScheme(url);
+                if (WebViewHelper.isExternalScheme(url)) {
+                    WebViewHelper.handleExternalUrl(activity, url);
                     return true;
                 }
 
@@ -320,6 +263,9 @@ public class MainWebViewController {
 
             @Override
             public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) {
+                if (error != null) {
+                    Log.w(TAG, "WebView SSL error: primary=" + error.getPrimaryError() + ", url=" + error.getUrl());
+                }
                 if (handler != null) {
                     handler.proceed();
                 }
@@ -373,7 +319,7 @@ public class MainWebViewController {
                     ((MainActivity) activity).updateSystemBarColors(url);
                 }
 
-                applyForceDarkForUrl(view, url);
+                WebViewHelper.applyForceDarkForUrl(view, url);
                 CookieSyncManager.syncFromUrl(url);
                 CookieSyncManager.injectAuthLocalStorage(view);
 
@@ -413,7 +359,7 @@ public class MainWebViewController {
                 completeTopProgress();
                 isFirstLoad = false;
 
-                applyForceDarkForUrl(view, url);
+                WebViewHelper.applyForceDarkForUrl(view, url);
 
                 if (jsInjectionsHandler != null) {
                     jsInjectionsHandler.reinjectDomListeners(view);
@@ -558,18 +504,6 @@ public class MainWebViewController {
                 }
             }
         });
-    }
-
-    private void applyForceDarkForUrl(WebView view, String url) {
-        if (view == null) return;
-        try {
-            int targetMode = JSInjectionsHandler.isIgnoredColorDomain(url)
-                    ? WebSettings.FORCE_DARK_OFF
-                    : WebSettings.FORCE_DARK_AUTO;
-            if (view.getSettings().getForceDark() != targetMode) {
-                view.getSettings().setForceDark(targetMode);
-            }
-        } catch (Exception ignored) {}
     }
 
     private boolean isInitialSplashShowing() {
@@ -724,50 +658,6 @@ public class MainWebViewController {
         });
     }
 
-    private void handleIntentUrl(String url) {
-        try {
-            Intent intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME);
-            try {
-                activity.startActivity(intent);
-            } catch (android.content.ActivityNotFoundException e) {
-                String fallbackUrl = intent.getStringExtra("browser_fallback_url");
-                if (fallbackUrl != null) {
-                    try {
-                        Intent marketIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(fallbackUrl));
-                        activity.startActivity(marketIntent);
-                        return;
-                    } catch (Exception ex) {
-                        Log.e(TAG, "Failed to open fallback URL", ex);
-                    }
-                }
-                String packageName = intent.getPackage();
-                if (packageName != null) {
-                    try {
-                        Intent marketIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + packageName));
-                        activity.startActivity(marketIntent);
-                        return;
-                    } catch (Exception ex) {
-                        Log.e(TAG, "Failed to open Play Market", ex);
-                    }
-                }
-                CustomToast.showWarning(activity, "Не удалось открыть приложение");
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error parsing intent URL: " + url, e);
-            CustomToast.showWarning(activity, "Ошибка обработки ссылки");
-        }
-    }
-
-    private void handleSpecialScheme(String url) {
-        try {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-            activity.startActivity(intent);
-        } catch (Exception e) {
-            Log.e(TAG, "Error handling special scheme: " + url, e);
-            CustomToast.showWarning(activity, "Не удалось открыть ссылку");
-        }
-    }
-
     public void showCustomErrorPage(String failingUrl, String errorMsg) {
         showCustomErrorPage(failingUrl, null, errorMsg);
     }
@@ -778,6 +668,9 @@ public class MainWebViewController {
         }
 
         activity.runOnUiThread(() -> {
+            if (isDestroyed || activity.isFinishing() || activity.isDestroyed()) {
+                return;
+            }
             hideDomainChangeSpinner();
             completeTopProgress();
 
@@ -861,7 +754,7 @@ public class MainWebViewController {
 
     public void showDomainChangeSpinner() {
         activity.runOnUiThread(() -> {
-            if (isInitialSplashShowing()) {
+            if (isDestroyed || activity.isFinishing() || activity.isDestroyed() || isInitialSplashShowing()) {
                 return;
             }
             uiHandler.removeCallbacks(hideSpinnerRunnable);
@@ -883,6 +776,9 @@ public class MainWebViewController {
 
     public void hideDomainChangeSpinner() {
         activity.runOnUiThread(() -> {
+            if (isDestroyed || activity.isFinishing() || activity.isDestroyed()) {
+                return;
+            }
             uiHandler.removeCallbacks(hideSpinnerRunnable);
             if (spinner != null && spinner.getVisibility() == View.VISIBLE) {
                 spinner.animate().cancel();

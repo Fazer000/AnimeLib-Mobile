@@ -66,6 +66,15 @@ public class EpisodeResponse {
         }
     }
 
+    public static String parseFirstImageUrl(com.google.gson.JsonElement... elements) {
+        if (elements == null) return null;
+        for (com.google.gson.JsonElement el : elements) {
+            String url = parseImageUrl(el);
+            if (url != null) return url;
+        }
+        return null;
+    }
+
     public static String parseImageUrl(com.google.gson.JsonElement element) {
         if (element == null || element.isJsonNull()) return null;
         if (element.isJsonPrimitive()) {
@@ -245,16 +254,7 @@ public class EpisodeResponse {
                 String url = translationType.getCoverUrl();
                 if (url != null && !url.isEmpty()) return url;
             }
-            String url = parseImageUrl(cover);
-            if (url != null) return url;
-            url = parseImageUrl(picture);
-            if (url != null) return url;
-            url = parseImageUrl(avatar);
-            if (url != null) return url;
-            url = parseImageUrl(logo);
-            if (url != null) return url;
-            url = parseImageUrl(icon);
-            return url;
+            return parseFirstImageUrl(cover, picture, avatar, logo, icon);
         }
     }
 
@@ -290,18 +290,7 @@ public class EpisodeResponse {
         }
 
         public String getCoverUrl() {
-            String url = parseImageUrl(cover);
-            if (url != null) return url;
-            url = parseImageUrl(picture);
-            if (url != null) return url;
-            url = parseImageUrl(avatar);
-            if (url != null) return url;
-            url = parseImageUrl(logo);
-            if (url != null) return url;
-            url = parseImageUrl(icon);
-            if (url != null) return url;
-            url = parseImageUrl(image);
-            return url;
+            return parseFirstImageUrl(cover, picture, avatar, logo, icon, image);
         }
     }
 
@@ -355,22 +344,7 @@ public class EpisodeResponse {
         }
 
         public String getCoverUrl() {
-            String url = parseImageUrl(cover);
-            if (url != null) return url;
-            url = parseImageUrl(picture);
-            if (url != null) return url;
-            url = parseImageUrl(avatar);
-            if (url != null) return url;
-            url = parseImageUrl(logo);
-            if (url != null) return url;
-            url = parseImageUrl(icon);
-            if (url != null) return url;
-            url = parseImageUrl(image);
-            if (url != null) return url;
-            url = parseImageUrl(photo);
-            if (url != null) return url;
-            url = parseImageUrl(poster);
-            return url;
+            return parseFirstImageUrl(cover, picture, avatar, logo, icon, image, photo, poster);
         }
     }
 

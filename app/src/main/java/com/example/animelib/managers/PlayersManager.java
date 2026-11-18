@@ -60,7 +60,6 @@ public class PlayersManager {
     
     // Состояние меню
     private boolean isMenuVisible = false;
-    private float menuWidth;
     
     // Данные плееров
     private List<EpisodeResponse.PlayerData> allPlayers = new ArrayList<>();
@@ -102,7 +101,6 @@ public class PlayersManager {
      * Инициализация UI компонентов
      */
     public void initializeViews(LinearLayout slidingMenuPanel, ImageButton closeMenuButton,
-                                View dummy1, View dummy2,
                                 View menuOverlay, View menuLoadingOverlay, View menuLoadingIndicator) {
         this.slidingMenuPanel = slidingMenuPanel;
         this.closeMenuButton = closeMenuButton;
@@ -1045,10 +1043,6 @@ public class PlayersManager {
     }
     
     // Setters
-    public void setMenuWidth(float menuWidth) {
-        this.menuWidth = menuWidth;
-    }
-    
     public void setCurrentPlayerData(EpisodeResponse.PlayerData currentPlayerData) {
         this.currentPlayerData = currentPlayerData;
         updateMenuWithData();

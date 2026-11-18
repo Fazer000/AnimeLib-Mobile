@@ -44,6 +44,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
@@ -144,6 +145,11 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
 
     private ApiService apiService;
     private DatabaseManager databaseManager;
+    private final ExecutorService backgroundExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "download-bs-worker");
+        t.setDaemon(true);
+        return t;
+    });
 
     public static DownloadBottomSheet newInstance(String animeId, String animeTitle, String posterUrl,
                                                  List<EpisodesListResponse.EpisodeItem> episodeItems,
@@ -179,7 +185,7 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
 
         Context ctx = requireContext();
         apiService = new ApiService(ctx);
-        databaseManager = new DatabaseManager(ctx);
+        databaseManager = DatabaseManager.getInstance(ctx);
 
         // Header & Views init
         btnBsBack = view.findViewById(R.id.btnBsBack);
@@ -288,6 +294,16 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         if (getDialog() instanceof BottomSheetDialog) {
             com.example.animelib.util.FloatingBottomSheetUtils.applyFloatingToView((BottomSheetDialog) getDialog());
         }
+    }
+
+    @Override
+    public void onDestroy() {
+        backgroundExecutor.shutdownNow();
+        if (apiService != null) {
+            apiService.shutdown();
+            apiService = null;
+        }
+        super.onDestroy();
     }
 
     @Override
@@ -825,7 +841,8 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
 
     private void checkVoiceoverAvailability(VoiceoverOption option) {
         if (pbLoading != null) pbLoading.setVisibility(View.VISIBLE);
-        Executors.newSingleThreadExecutor().execute(() -> {
+        if (backgroundExecutor.isShutdown()) return;
+        backgroundExecutor.execute(() -> {
             List<DownloadService.TaskProgressItem> activeTasks = DownloadService.getActiveTaskItems();
 
             for (EpisodeCheckItem item : checkItems) {
@@ -853,8 +870,9 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
                 item.isChecked = item.isAvailable && !item.isAlreadyDownloaded && !item.isDownloading;
             }
 
-            if (getActivity() != null) {
+            if (isAdded() && getActivity() != null) {
                 getActivity().runOnUiThread(() -> {
+                    if (!isAdded()) return;
                     if (pbLoading != null) pbLoading.setVisibility(View.GONE);
                     if (episodeAdapter != null) episodeAdapter.notifyDataSetChanged();
                     updateDownloadButtonText();

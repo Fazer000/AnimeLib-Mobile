@@ -8,6 +8,7 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 
+import com.example.animelib.api.ApiClientCore;
 import com.example.animelib.models.UpdateInfo;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -86,7 +87,7 @@ public class UpdateManager {
         String currentVersion = getCurrentVersion(context);
         boolean allowBeta = isBetaUpdatesEnabled(context);
 
-        OkHttpClient httpClient = client != null ? client : new OkHttpClient();
+        OkHttpClient httpClient = client != null ? client : ApiClientCore.getSharedHttpClient();
         Request request = new Request.Builder()
                 .url(GITHUB_RELEASES_LIST_API)
                 .header("User-Agent", "AnimeLib-App")
@@ -103,94 +104,96 @@ public class UpdateManager {
 
             @Override
             public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                if (!response.isSuccessful()) {
-                    if (response.code() == 404) {
-                        fallbackToLatest(httpClient, currentVersion, callback);
-                    } else if (callback != null) {
-                        callback.onError("Ошибка GitHub API (HTTP " + response.code() + ")");
-                    }
-                    return;
-                }
-
-                try {
-                    String jsonStr = response.body() != null ? response.body().string() : null;
-                    if (jsonStr == null || jsonStr.isEmpty()) {
-                        if (callback != null) callback.onError("Пустой ответ от сервера");
-                        return;
-                    }
-
-                    JsonElement parsed = JsonParser.parseString(jsonStr);
-                    List<UpdateInfo> releases = new ArrayList<>();
-
-                    if (parsed.isJsonArray()) {
-                        JsonArray arr = parsed.getAsJsonArray();
-                        for (JsonElement item : arr) {
-                            if (item.isJsonObject()) {
-                                JsonObject obj = item.getAsJsonObject();
-                                if (obj.has("draft") && obj.get("draft").getAsBoolean()) {
-                                    continue;
-                                }
-                                UpdateInfo info = parseReleaseJsonObject(obj);
-                                if (info != null) {
-                                    releases.add(info);
-                                }
-                            }
-                        }
-                    } else if (parsed.isJsonObject()) {
-                        UpdateInfo info = parseReleaseJsonObject(parsed.getAsJsonObject());
-                        if (info != null) releases.add(info);
-                    }
-
-                    if (releases.isEmpty()) {
-                        if (callback != null) {
-                            callback.onUpdateCheckResult(false, null, currentVersion);
+                try (Response res = response) {
+                    if (!res.isSuccessful()) {
+                        if (res.code() == 404) {
+                            fallbackToLatest(httpClient, currentVersion, callback);
+                        } else if (callback != null) {
+                            callback.onError("Ошибка GitHub API (HTTP " + res.code() + ")");
                         }
                         return;
                     }
 
-                    UpdateInfo latestOverall = null;
-                    UpdateInfo latestStable = null;
-                    UpdateInfo latestBeta = null;
+                    try {
+                        String jsonStr = res.body() != null ? res.body().string() : null;
+                        if (jsonStr == null || jsonStr.isEmpty()) {
+                            if (callback != null) callback.onError("Пустой ответ от сервера");
+                            return;
+                        }
 
-                    for (UpdateInfo info : releases) {
-                        if (info.isBeta()) {
-                            if (latestBeta == null || compareVersions(info.getTagName(), latestBeta.getTagName()) > 0) {
-                                latestBeta = info;
+                        JsonElement parsed = JsonParser.parseString(jsonStr);
+                        List<UpdateInfo> releases = new ArrayList<>();
+
+                        if (parsed.isJsonArray()) {
+                            JsonArray arr = parsed.getAsJsonArray();
+                            for (JsonElement item : arr) {
+                                if (item.isJsonObject()) {
+                                    JsonObject obj = item.getAsJsonObject();
+                                    if (obj.has("draft") && obj.get("draft").getAsBoolean()) {
+                                        continue;
+                                    }
+                                    UpdateInfo info = parseReleaseJsonObject(obj);
+                                    if (info != null) {
+                                        releases.add(info);
+                                    }
+                                }
                             }
+                        } else if (parsed.isJsonObject()) {
+                            UpdateInfo info = parseReleaseJsonObject(parsed.getAsJsonObject());
+                            if (info != null) releases.add(info);
+                        }
+
+                        if (releases.isEmpty()) {
+                            if (callback != null) {
+                                callback.onUpdateCheckResult(false, null, currentVersion);
+                            }
+                            return;
+                        }
+
+                        UpdateInfo latestOverall = null;
+                        UpdateInfo latestStable = null;
+                        UpdateInfo latestBeta = null;
+
+                        for (UpdateInfo info : releases) {
+                            if (info.isBeta()) {
+                                if (latestBeta == null || compareVersions(info.getTagName(), latestBeta.getTagName()) > 0) {
+                                    latestBeta = info;
+                                }
+                            } else {
+                                if (latestStable == null || compareVersions(info.getTagName(), latestStable.getTagName()) > 0) {
+                                    latestStable = info;
+                                }
+                            }
+
+                            if (latestOverall == null || compareVersions(info.getTagName(), latestOverall.getTagName()) > 0) {
+                                latestOverall = info;
+                            }
+                        }
+
+                        cachedLatestStable = latestStable;
+                        cachedLatestBeta = latestBeta;
+
+                        UpdateInfo targetUpdate;
+                        if (allowBeta) {
+                            targetUpdate = latestOverall;
                         } else {
-                            if (latestStable == null || compareVersions(info.getTagName(), latestStable.getTagName()) > 0) {
-                                latestStable = info;
-                            }
+                            targetUpdate = latestStable;
                         }
 
-                        if (latestOverall == null || compareVersions(info.getTagName(), latestOverall.getTagName()) > 0) {
-                            latestOverall = info;
+                        if (targetUpdate != null && latestStable != null && targetUpdate != latestStable) {
+                            targetUpdate.setStableUpdateInfo(latestStable);
                         }
-                    }
 
-                    cachedLatestStable = latestStable;
-                    cachedLatestBeta = latestBeta;
+                        boolean hasUpdate = targetUpdate != null && isUpdateAvailable(currentVersion, targetUpdate.getTagName());
 
-                    UpdateInfo targetUpdate;
-                    if (allowBeta) {
-                        targetUpdate = latestOverall;
-                    } else {
-                        targetUpdate = latestStable;
-                    }
-
-                    if (targetUpdate != null && latestStable != null && targetUpdate != latestStable) {
-                        targetUpdate.setStableUpdateInfo(latestStable);
-                    }
-
-                    boolean hasUpdate = targetUpdate != null && isUpdateAvailable(currentVersion, targetUpdate.getTagName());
-
-                    if (callback != null) {
-                        callback.onUpdateCheckResult(hasUpdate, targetUpdate, currentVersion);
-                    }
-                } catch (Exception e) {
-                    Log.e(TAG, "Failed to parse releases response", e);
-                    if (callback != null) {
-                        callback.onError("Ошибка чтения данных обновления");
+                        if (callback != null) {
+                            callback.onUpdateCheckResult(hasUpdate, targetUpdate, currentVersion);
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "Failed to parse releases response", e);
+                        if (callback != null) {
+                            callback.onError("Ошибка чтения данных обновления");
+                        }
                     }
                 }
             }
@@ -214,40 +217,42 @@ public class UpdateManager {
 
             @Override
             public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                if (!response.isSuccessful()) {
-                    if (callback != null) {
-                        if (response.code() == 404) {
-                            callback.onUpdateCheckResult(false, null, currentVersion);
-                        } else {
-                            callback.onError("Ошибка GitHub API (HTTP " + response.code() + ")");
+                try (Response res = response) {
+                    if (!res.isSuccessful()) {
+                        if (callback != null) {
+                            if (res.code() == 404) {
+                                callback.onUpdateCheckResult(false, null, currentVersion);
+                            } else {
+                                callback.onError("Ошибка GitHub API (HTTP " + res.code() + ")");
+                            }
                         }
-                    }
-                    return;
-                }
-
-                try {
-                    String jsonStr = response.body() != null ? response.body().string() : null;
-                    if (jsonStr == null || jsonStr.isEmpty()) {
-                        if (callback != null) callback.onError("Пустой ответ от сервера");
                         return;
                     }
 
-                    JsonObject json = JsonParser.parseString(jsonStr).getAsJsonObject();
-                    UpdateInfo updateInfo = parseReleaseJsonObject(json);
-
-                    if (updateInfo != null) {
-                        cachedLatestStable = updateInfo;
-                        boolean hasUpdate = isUpdateAvailable(currentVersion, updateInfo.getTagName());
-                        if (callback != null) {
-                            callback.onUpdateCheckResult(hasUpdate, updateInfo, currentVersion);
+                    try {
+                        String jsonStr = res.body() != null ? res.body().string() : null;
+                        if (jsonStr == null || jsonStr.isEmpty()) {
+                            if (callback != null) callback.onError("Пустой ответ от сервера");
+                            return;
                         }
-                    } else if (callback != null) {
-                        callback.onUpdateCheckResult(false, null, currentVersion);
-                    }
-                } catch (Exception e) {
-                    Log.e(TAG, "Error in fallback release parse", e);
-                    if (callback != null) {
-                        callback.onError("Ошибка чтения данных обновления");
+
+                        JsonObject json = JsonParser.parseString(jsonStr).getAsJsonObject();
+                        UpdateInfo updateInfo = parseReleaseJsonObject(json);
+
+                        if (updateInfo != null) {
+                            cachedLatestStable = updateInfo;
+                            boolean hasUpdate = isUpdateAvailable(currentVersion, updateInfo.getTagName());
+                            if (callback != null) {
+                                callback.onUpdateCheckResult(hasUpdate, updateInfo, currentVersion);
+                            }
+                        } else if (callback != null) {
+                            callback.onUpdateCheckResult(false, null, currentVersion);
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error in fallback release parse", e);
+                        if (callback != null) {
+                            callback.onError("Ошибка чтения данных обновления");
+                        }
                     }
                 }
             }

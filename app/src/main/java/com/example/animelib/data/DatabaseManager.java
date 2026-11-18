@@ -3,21 +3,46 @@ package com.example.animelib.data;
 import android.content.Context;
 import android.util.Log;
 
+import com.example.animelib.data.entity.PlayerPreferences;
 import com.example.animelib.data.entity.TokenEntity;
-import com.example.animelib.models.EpisodesListResponse;
-import com.example.animelib.R;
+import com.example.animelib.util.AutoQualityHelper;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Менеджер для всех операций с базой данных Room
- * Выделен из ApiService для разделения ответственности
+ * Менеджер для всех операций с базой данных Room.
+ * Обеспечивает in-memory кэширование настроек и предпочтений плеера,
+ * а также безопасную запись через общий фоновый worker-поток.
  */
 public class DatabaseManager {
     private static final String TAG = "DatabaseManager";
     private static volatile TokenEntity cachedToken = null;
     private static volatile String cachedSiteUrl = null;
+
+    private static final Object appSettingsLock = new Object();
+    private static volatile AppSettings cachedAppSettings = null;
+    private static volatile boolean appSettingsLoaded = false;
+
+    private static final Object playerPrefsLock = new Object();
+    private static volatile PlayerPreferences cachedPlayerPreferences = null;
+    private static volatile boolean playerPreferencesLoaded = false;
+
+    @FunctionalInterface
+    private interface AppSettingsMutator {
+        void mutate(AppSettings settings);
+    }
+
+    @FunctionalInterface
+    private interface PlayerPrefsMutator {
+        void mutate(PlayerPreferences preferences);
+    }
+
+    private static final ExecutorService SHARED_DB_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "animelib-db-worker");
+        t.setDaemon(true);
+        return t;
+    });
 
     private final AppDatabase db;
     private final ExecutorService executor;
@@ -39,15 +64,11 @@ public class DatabaseManager {
     public DatabaseManager(Context context) {
         this.context = context.getApplicationContext();
         this.db = AppDatabase.getDatabase(this.context);
-        this.executor = Executors.newSingleThreadExecutor();
-        instance = this;
+        this.executor = SHARED_DB_EXECUTOR;
     }
-    
-    // ========== AppSettings операции ==========
 
-    /**
-     * Получает URL сайта из базы данных. Вызывать вне главного потока
-     */
+    // ========== AppSettings внутренний кэш и помощники ==========
+
     private static String normalizeSiteUrlValue(String rawUrl) {
         if (rawUrl == null || rawUrl.trim().isEmpty()) {
             return null;
@@ -61,6 +82,105 @@ public class DatabaseManager {
         }
         return url;
     }
+
+    private static AppSettings copyAppSettings(AppSettings src) {
+        AppSettings copy = new AppSettings();
+        if (src == null) {
+            copy.setId(1);
+            return copy;
+        }
+        copy.setId(src.getId() > 0 ? src.getId() : 1);
+        copy.setSiteUrl(src.getSiteUrl());
+        copy.setEnable4K(src.isEnable4K());
+        copy.setEnableAmbientLight(src.isEnableAmbientLight());
+        copy.setEnableSurroundSound(src.isEnableSurroundSound());
+        copy.setSurroundMode(src.getSurroundMode());
+        copy.setSurroundSpatialWidth(src.getSurroundSpatialWidth());
+        copy.setSurroundDialogueBoost(src.getSurroundDialogueBoost());
+        copy.setSurroundBassBoost(src.getSurroundBassBoost());
+        copy.setSurroundMidBoost(src.getSurroundMidBoost());
+        copy.setSurroundTrebleBoost(src.getSurroundTrebleBoost());
+        copy.setAutoPlay(src.isAutoPlay());
+        copy.setLongSkipDuration(src.getLongSkipDuration());
+        copy.setThemeMode(src.getThemeMode());
+        copy.setSubtitlesEnabled(src.isSubtitlesEnabled());
+        copy.setSubtitleFormat(src.getSubtitleFormat());
+        copy.setSubtitleTextSize(src.getSubtitleTextSize());
+        copy.setSubtitleTextColor(src.getSubtitleTextColor());
+        copy.setSubtitleBackgroundColor(src.getSubtitleBackgroundColor());
+        copy.setSubtitleEdgeType(src.getSubtitleEdgeType());
+        copy.setSubtitleEdgeColor(src.getSubtitleEdgeColor());
+        copy.setFilterBrightness(src.getFilterBrightness());
+        copy.setFilterContrast(src.getFilterContrast());
+        copy.setFilterSaturation(src.getFilterSaturation());
+        copy.setFilterGamma(src.getFilterGamma());
+        copy.setFilterHue(src.getFilterHue());
+        copy.setDisableCommentsInPlayer(src.isDisableCommentsInPlayer());
+        copy.setCommentRepliesLimit(src.getCommentRepliesLimit());
+        return copy;
+    }
+
+    private static PlayerPreferences copyPlayerPreferences(PlayerPreferences src) {
+        if (src == null) return null;
+        PlayerPreferences copy = new PlayerPreferences();
+        copy.setId(src.getId() > 0 ? src.getId() : 1);
+        copy.setPlayer(src.getPlayer());
+        copy.setTeamId(src.getTeamId());
+        copy.setPreferredQuality(src.getPreferredQuality());
+        return copy;
+    }
+
+    private AppSettings getOrLoadAppSettings() {
+        AppSettings cached = cachedAppSettings;
+        if (appSettingsLoaded && cached != null) {
+            return cached;
+        }
+        synchronized (appSettingsLock) {
+            if (appSettingsLoaded && cachedAppSettings != null) {
+                return cachedAppSettings;
+            }
+            AppSettings fromDb = null;
+            try {
+                fromDb = db.appSettingsDao().getSettingsSync();
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to load AppSettings from DB", e);
+            }
+            if (fromDb == null) {
+                fromDb = new AppSettings();
+                fromDb.setId(1);
+            } else if (fromDb.getId() <= 0) {
+                fromDb.setId(1);
+            }
+            cachedAppSettings = fromDb;
+            appSettingsLoaded = true;
+            String normalized = normalizeSiteUrlValue(fromDb.getSiteUrl());
+            if (normalized != null) {
+                cachedSiteUrl = normalized;
+            }
+            return fromDb;
+        }
+    }
+
+    private void updateAppSettings(AppSettingsMutator mutator, String logDesc) {
+        final AppSettings snapshot;
+        synchronized (appSettingsLock) {
+            AppSettings next = copyAppSettings(getOrLoadAppSettings());
+            mutator.mutate(next);
+            cachedAppSettings = next;
+            appSettingsLoaded = true;
+            snapshot = next;
+        }
+        executor.execute(() -> {
+            try {
+                db.appSettingsDao().upsert(snapshot);
+                Log.d(TAG, "Saved " + logDesc);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to save " + logDesc, e);
+            }
+        });
+    }
+
+    // ========== AppSettings операции ==========
 
     /**
      * Возвращает закэшированный в памяти URL сайта без обращения к SQLite (O(1), безопасно для UI-потока).
@@ -77,17 +197,11 @@ public class DatabaseManager {
         if (cached != null && !cached.isEmpty()) {
             return cached;
         }
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            if (settings != null) {
-                String normalized = normalizeSiteUrlValue(settings.getSiteUrl());
-                if (normalized != null) {
-                    cachedSiteUrl = normalized;
-                    return normalized;
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to get site URL from DB", e);
+        AppSettings settings = getOrLoadAppSettings();
+        String normalized = normalizeSiteUrlValue(settings.getSiteUrl());
+        if (normalized != null) {
+            cachedSiteUrl = normalized;
+            return normalized;
         }
         return null;
     }
@@ -100,140 +214,66 @@ public class DatabaseManager {
         if (normalized != null) {
             cachedSiteUrl = normalized;
         }
-        executor.execute(() -> {
-            try {
-                AppSettings settings = db.appSettingsDao().getSettingsSync();
-                if (settings == null) {
-                    settings = new AppSettings();
-                }
-                settings.setSiteUrl(normalized != null ? normalized : siteUrl);
-                db.appSettingsDao().upsert(settings);
-                Log.d(TAG, "Saved site URL: " + siteUrl);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save site URL", e);
-            }
-        });
+        String valueToPersist = normalized != null ? normalized : siteUrl;
+        updateAppSettings(settings -> settings.setSiteUrl(valueToPersist), "site URL: " + siteUrl);
     }
-    
+
     /**
      * Сохраняет настройку 4K
      */
     public void save4KSetting(boolean enable4K) {
-        executor.execute(() -> {
-            try {
-                AppSettings settings = db.appSettingsDao().getSettingsSync();
-                if (settings == null) {
-                    settings = new AppSettings();
-                }
-                settings.setEnable4K(enable4K);
-                db.appSettingsDao().upsert(settings);
-                Log.d(TAG, "Saved 4K setting: " + enable4K);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save 4K setting", e);
-            }
-        });
+        updateAppSettings(settings -> settings.setEnable4K(enable4K), "4K setting: " + enable4K);
     }
-    
+
     /**
      * Загружает настройку 4K
      */
     public boolean load4KSetting() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings != null && settings.isEnable4K();
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load 4K setting", e);
-            return false;
-        }
+        return getOrLoadAppSettings().isEnable4K();
     }
-    
+
     /**
      * Сохраняет настройку ambient light
      */
     public void saveAmbientLightSetting(boolean enableAmbientLight) {
-        executor.execute(() -> {
-            try {
-                AppSettings settings = db.appSettingsDao().getSettingsSync();
-                if (settings == null) {
-                    settings = new AppSettings();
-                }
-                settings.setEnableAmbientLight(enableAmbientLight);
-                db.appSettingsDao().upsert(settings);
-                Log.d(TAG, "Saved ambient light setting: " + enableAmbientLight);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save ambient light setting", e);
-            }
-        });
+        updateAppSettings(settings -> settings.setEnableAmbientLight(enableAmbientLight),
+                "ambient light setting: " + enableAmbientLight);
     }
-    
+
     /**
      * Загружает настройку ambient light
      */
     public boolean loadAmbientLightSetting() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings == null ? true : settings.isEnableAmbientLight();
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load ambient light setting", e);
-            return true;
-        }
+        return getOrLoadAppSettings().isEnableAmbientLight();
     }
 
     public void saveVideoFilters(float brightness, float contrast, float saturation, float gamma, float hue) {
-        executor.execute(() -> {
-            try {
-                AppSettings settings = db.appSettingsDao().getSettingsSync();
-                if (settings == null) {
-                    settings = new AppSettings();
-                }
-                settings.setFilterBrightness(brightness);
-                settings.setFilterContrast(contrast);
-                settings.setFilterSaturation(saturation);
-                settings.setFilterGamma(gamma);
-                settings.setFilterHue(hue);
-                db.appSettingsDao().upsert(settings);
-                Log.d(TAG, "Saved video filters settings");
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save video filters settings", e);
-            }
-        });
+        updateAppSettings(settings -> {
+            settings.setFilterBrightness(brightness);
+            settings.setFilterContrast(contrast);
+            settings.setFilterSaturation(saturation);
+            settings.setFilterGamma(gamma);
+            settings.setFilterHue(hue);
+        }, "video filters settings");
     }
 
     public float[] loadVideoFilters() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            if (settings != null) {
-                return new float[] {
-                    settings.getFilterBrightness(),
-                    settings.getFilterContrast(),
-                    settings.getFilterSaturation(),
-                    settings.getFilterGamma(),
-                    settings.getFilterHue()
-                };
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load video filters settings", e);
-        }
-        return new float[] { 0f, 100f, 100f, 1.0f, 0f };
+        AppSettings settings = getOrLoadAppSettings();
+        return new float[] {
+                settings.getFilterBrightness(),
+                settings.getFilterContrast(),
+                settings.getFilterSaturation(),
+                settings.getFilterGamma(),
+                settings.getFilterHue()
+        };
     }
 
     /**
      * Сохраняет настройку объемного звука 5.1
      */
     public void saveSurroundSoundSetting(boolean enableSurroundSound) {
-        executor.execute(() -> {
-            try {
-                AppSettings settings = db.appSettingsDao().getSettingsSync();
-                if (settings == null) {
-                    settings = new AppSettings();
-                }
-                settings.setEnableSurroundSound(enableSurroundSound);
-                db.appSettingsDao().upsert(settings);
-                Log.d(TAG, "Saved surround sound setting: " + enableSurroundSound);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save surround sound setting", e);
-            }
-        });
+        updateAppSettings(settings -> settings.setEnableSurroundSound(enableSurroundSound),
+                "surround sound setting: " + enableSurroundSound);
     }
 
     /**
@@ -244,393 +284,172 @@ public class DatabaseManager {
     }
 
     public void saveSurround3DSettings(int mode, float spatialWidth, float dialogueBoost, float bassBoost, float midBoost, float trebleBoost) {
-        executor.execute(() -> {
-            try {
-                AppSettings settings = db.appSettingsDao().getSettingsSync();
-                if (settings == null) {
-                    settings = new AppSettings();
-                }
-                settings.setSurroundMode(mode);
-                settings.setSurroundSpatialWidth(spatialWidth);
-                settings.setSurroundDialogueBoost(dialogueBoost);
-                settings.setSurroundBassBoost(bassBoost);
-                settings.setSurroundMidBoost(midBoost);
-                settings.setSurroundTrebleBoost(trebleBoost);
-                db.appSettingsDao().upsert(settings);
-                Log.d(TAG, "Saved 3D surround settings: mode=" + mode + ", width=" + spatialWidth + ", dialogue=" + dialogueBoost + ", bass=" + bassBoost + ", mid=" + midBoost + ", treble=" + trebleBoost);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save 3D surround settings", e);
-            }
-        });
+        updateAppSettings(settings -> {
+            settings.setSurroundMode(mode);
+            settings.setSurroundSpatialWidth(spatialWidth);
+            settings.setSurroundDialogueBoost(dialogueBoost);
+            settings.setSurroundBassBoost(bassBoost);
+            settings.setSurroundMidBoost(midBoost);
+            settings.setSurroundTrebleBoost(trebleBoost);
+        }, "3D surround settings: mode=" + mode + ", width=" + spatialWidth + ", dialogue=" + dialogueBoost
+                + ", bass=" + bassBoost + ", mid=" + midBoost + ", treble=" + trebleBoost);
     }
 
     /**
      * Загружает настройку объемного звука 5.1
      */
     public boolean loadSurroundSoundSetting() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings == null || settings.isEnableSurroundSound(); // Default true
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load surround sound setting", e);
-            return true;
-        }
+        return getOrLoadAppSettings().isEnableSurroundSound();
     }
 
     public int loadSurround3DMode() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings == null ? 0 : settings.getSurroundMode();
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load 3D surround mode", e);
-            return 0;
-        }
+        return getOrLoadAppSettings().getSurroundMode();
     }
 
     public float loadSurroundSpatialWidth() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings == null ? 1.0f : settings.getSurroundSpatialWidth();
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load 3D spatial width", e);
-            return 1.0f;
-        }
+        return getOrLoadAppSettings().getSurroundSpatialWidth();
     }
 
     public float loadSurroundDialogueBoost() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings == null ? 1.0f : settings.getSurroundDialogueBoost();
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load 3D dialogue boost", e);
-            return 1.0f;
-        }
+        return getOrLoadAppSettings().getSurroundDialogueBoost();
     }
 
     public float loadSurroundBassBoost() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings == null ? 1.0f : settings.getSurroundBassBoost();
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load 3D bass boost", e);
-            return 1.0f;
-        }
+        return getOrLoadAppSettings().getSurroundBassBoost();
     }
 
     public float loadSurroundMidBoost() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings == null ? 1.0f : settings.getSurroundMidBoost();
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load 3D mid boost", e);
-            return 1.0f;
-        }
+        return getOrLoadAppSettings().getSurroundMidBoost();
     }
 
     public float loadSurroundTrebleBoost() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings == null ? 1.0f : settings.getSurroundTrebleBoost();
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load 3D treble boost", e);
-            return 1.0f;
-        }
+        return getOrLoadAppSettings().getSurroundTrebleBoost();
     }
-    
+
     /**
      * Сохраняет настройку автовоспроизведения
      */
     public void saveAutoPlaySetting(boolean autoPlay) {
-        executor.execute(() -> {
-            try {
-                AppSettings settings = db.appSettingsDao().getSettingsSync();
-                if (settings == null) {
-                    settings = new AppSettings();
-                }
-                settings.setAutoPlay(autoPlay);
-                db.appSettingsDao().upsert(settings);
-                Log.d(TAG, "Saved autoPlay setting: " + autoPlay);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save autoPlay setting", e);
-            }
-        });
+        updateAppSettings(settings -> settings.setAutoPlay(autoPlay), "autoPlay setting: " + autoPlay);
     }
-    
+
     /**
      * Загружает настройку автовоспроизведения
      */
     public boolean loadAutoPlaySetting() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings != null && settings.isAutoPlay();
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load autoPlay setting", e);
-            return true; // Default to true
-        }
+        return getOrLoadAppSettings().isAutoPlay();
     }
-    
+
     /**
      * Сохраняет настройку длительности длинного пропуска
      */
     public void saveLongSkipDurationSetting(int duration) {
-        executor.execute(() -> {
-            try {
-                AppSettings settings = db.appSettingsDao().getSettingsSync();
-                if (settings == null) {
-                    settings = new AppSettings();
-                }
-                settings.setLongSkipDuration(duration);
-                db.appSettingsDao().upsert(settings);
-                Log.d(TAG, "Saved longSkipDuration setting: " + duration);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save longSkipDuration setting", e);
-            }
-        });
+        updateAppSettings(settings -> settings.setLongSkipDuration(duration),
+                "longSkipDuration setting: " + duration);
     }
-    
+
     /**
      * Загружает настройку длительности длинного пропуска
      */
     public int loadLongSkipDurationSetting() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings != null ? settings.getLongSkipDuration() : 85; // Default to 85 seconds
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load longSkipDuration setting", e);
-            return 85; // Default to 85 seconds
-        }
+        return getOrLoadAppSettings().getLongSkipDuration();
     }
-    
+
     /**
      * Сохраняет настройку темы
      */
     public void saveThemeSetting(int themeMode) {
-        executor.execute(() -> {
-            try {
-                AppSettings settings = db.appSettingsDao().getSettingsSync();
-                if (settings == null) {
-                    settings = new AppSettings();
-                }
-                settings.setThemeMode(themeMode);
-                db.appSettingsDao().upsert(settings);
-                Log.d(TAG, "Saved theme setting: " + themeMode);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save theme setting", e);
-            }
-        });
+        updateAppSettings(settings -> settings.setThemeMode(themeMode), "theme setting: " + themeMode);
     }
-    
+
     /**
      * Загружает настройку темы
      */
     public int loadThemeSetting() {
-
-        AppSettings settings = db.appSettingsDao().getSettingsSync();
-        return settings != null ? settings.getThemeMode() : 0; // Default to light theme (0)
+        return getOrLoadAppSettings().getThemeMode();
     }
 
     /**
      * Сохраняет настройку включения субтитров
      */
     public void saveSubtitlesEnabledSetting(boolean subtitlesEnabled) {
-        executor.execute(() -> {
-            try {
-                AppSettings settings = db.appSettingsDao().getSettingsSync();
-                if (settings == null) {
-                    settings = new AppSettings();
-                }
-                settings.setSubtitlesEnabled(subtitlesEnabled);
-                db.appSettingsDao().upsert(settings);
-                Log.d(TAG, "Saved subtitlesEnabled setting: " + subtitlesEnabled);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save subtitlesEnabled setting", e);
-            }
-        });
+        updateAppSettings(settings -> settings.setSubtitlesEnabled(subtitlesEnabled),
+                "subtitlesEnabled setting: " + subtitlesEnabled);
     }
 
     /**
      * Загружает настройку включения субтитров
      */
     public boolean loadSubtitlesEnabledSetting() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings == null || settings.isSubtitlesEnabled(); // Default to true
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load subtitlesEnabled setting", e);
-            return true;
-        }
+        return getOrLoadAppSettings().isSubtitlesEnabled();
     }
 
     /**
      * Сохраняет формат субтитров ("ass", "vtt", "auto")
      */
     public void saveSubtitleFormatSetting(String subtitleFormat) {
-        executor.execute(() -> {
-            try {
-                AppSettings settings = db.appSettingsDao().getSettingsSync();
-                if (settings == null) {
-                    settings = new AppSettings();
-                }
-                settings.setSubtitleFormat(subtitleFormat);
-                db.appSettingsDao().upsert(settings);
-                Log.d(TAG, "Saved subtitleFormat setting: " + subtitleFormat);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save subtitleFormat setting", e);
-            }
-        });
+        updateAppSettings(settings -> settings.setSubtitleFormat(subtitleFormat),
+                "subtitleFormat setting: " + subtitleFormat);
     }
 
     /**
      * Загружает формат субтитров
      */
     public String loadSubtitleFormatSetting() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings != null ? settings.getSubtitleFormat() : "ass"; // Default to "ass"
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load subtitleFormat setting", e);
-            return "ass";
-        }
+        return getOrLoadAppSettings().getSubtitleFormat();
     }
 
     public void saveSubtitleStyleSettings(float textSize, int textColor, int bgColor, int edgeType, int edgeColor) {
-        executor.execute(() -> {
-            try {
-                AppSettings settings = db.appSettingsDao().getSettingsSync();
-                if (settings == null) {
-                    settings = new AppSettings();
-                }
-                settings.setSubtitleTextSize(textSize);
-                settings.setSubtitleTextColor(textColor);
-                settings.setSubtitleBackgroundColor(bgColor);
-                settings.setSubtitleEdgeType(edgeType);
-                settings.setSubtitleEdgeColor(edgeColor);
-                db.appSettingsDao().upsert(settings);
-                Log.d(TAG, "Saved subtitle style settings: size=" + textSize + ", textColor=" + textColor + ", bgColor=" + bgColor + ", edgeType=" + edgeType);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save subtitle style settings", e);
-            }
-        });
+        updateAppSettings(settings -> {
+            settings.setSubtitleTextSize(textSize);
+            settings.setSubtitleTextColor(textColor);
+            settings.setSubtitleBackgroundColor(bgColor);
+            settings.setSubtitleEdgeType(edgeType);
+            settings.setSubtitleEdgeColor(edgeColor);
+        }, "subtitle style settings: size=" + textSize + ", textColor=" + textColor
+                + ", bgColor=" + bgColor + ", edgeType=" + edgeType);
     }
 
     public float loadSubtitleTextSizeSetting() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings != null ? settings.getSubtitleTextSize() : 18f;
-        } catch (Exception e) {
-            return 18f;
-        }
+        return getOrLoadAppSettings().getSubtitleTextSize();
     }
 
     public int loadSubtitleTextColorSetting() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings != null ? settings.getSubtitleTextColor() : 0xFFFFFFFF;
-        } catch (Exception e) {
-            return 0xFFFFFFFF;
-        }
+        return getOrLoadAppSettings().getSubtitleTextColor();
     }
 
     public int loadSubtitleBackgroundColorSetting() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings != null ? settings.getSubtitleBackgroundColor() : 0x00000000;
-        } catch (Exception e) {
-            return 0x00000000;
-        }
+        return getOrLoadAppSettings().getSubtitleBackgroundColor();
     }
 
     public int loadSubtitleEdgeTypeSetting() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings != null ? settings.getSubtitleEdgeType() : 1; // CaptionStyleCompat.EDGE_TYPE_OUTLINE
-        } catch (Exception e) {
-            return 1;
-        }
+        return getOrLoadAppSettings().getSubtitleEdgeType();
     }
 
     public int loadSubtitleEdgeColorSetting() {
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            return settings != null ? settings.getSubtitleEdgeColor() : 0xFF000000;
-        } catch (Exception e) {
-            return 0xFF000000;
-        }
+        return getOrLoadAppSettings().getSubtitleEdgeColor();
     }
 
-    private volatile Boolean cachedDisableCommentsInPlayer = null;
-    private volatile Integer cachedCommentRepliesLimit = null;
-
     public void saveDisableCommentsInPlayerSetting(boolean disable) {
-        cachedDisableCommentsInPlayer = disable;
-        executor.execute(() -> {
-            try {
-                AppSettings settings = db.appSettingsDao().getSettingsSync();
-                if (settings == null) {
-                    settings = new AppSettings();
-                }
-                settings.setDisableCommentsInPlayer(disable);
-                db.appSettingsDao().upsert(settings);
-                Log.d(TAG, "Saved disable comments in player setting: " + disable);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save disable comments in player setting", e);
-            }
-        });
+        updateAppSettings(settings -> settings.setDisableCommentsInPlayer(disable),
+                "disable comments in player setting: " + disable);
     }
 
     public boolean loadDisableCommentsInPlayerSetting() {
-        Boolean cached = cachedDisableCommentsInPlayer;
-        if (cached != null) {
-            return cached;
-        }
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            boolean val = settings != null && settings.isDisableCommentsInPlayer();
-            cachedDisableCommentsInPlayer = val;
-            return val;
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load disable comments in player setting", e);
-            cachedDisableCommentsInPlayer = false;
-            return false;
-        }
+        return getOrLoadAppSettings().isDisableCommentsInPlayer();
     }
 
     public void saveCommentRepliesLimitSetting(int limit) {
-        cachedCommentRepliesLimit = limit;
-        executor.execute(() -> {
-            try {
-                AppSettings settings = db.appSettingsDao().getSettingsSync();
-                if (settings == null) {
-                    settings = new AppSettings();
-                }
-                settings.setCommentRepliesLimit(limit);
-                db.appSettingsDao().upsert(settings);
-                Log.d(TAG, "Saved comment replies limit setting: " + limit);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save comment replies limit setting", e);
-            }
-        });
+        updateAppSettings(settings -> settings.setCommentRepliesLimit(limit),
+                "comment replies limit setting: " + limit);
     }
 
     public int loadCommentRepliesLimitSetting() {
-        Integer cached = cachedCommentRepliesLimit;
-        if (cached != null) {
-            return cached;
-        }
-        try {
-            AppSettings settings = db.appSettingsDao().getSettingsSync();
-            int val = settings != null ? settings.getCommentRepliesLimit() : 3;
-            cachedCommentRepliesLimit = val;
-            return val;
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load comment replies limit setting", e);
-            cachedCommentRepliesLimit = 3;
-            return 3;
-        }
+        return getOrLoadAppSettings().getCommentRepliesLimit();
     }
-    
+
     // ========== Token операции ==========
-    
+
     /**
      * Сохраняет токен в базу данных
      */
@@ -674,7 +493,7 @@ public class DatabaseManager {
             }
         });
     }
-    
+
     /**
      * Получает токен из базы данных
      */
@@ -693,7 +512,7 @@ public class DatabaseManager {
             return null;
         }
     }
-    
+
     /**
      * Проверяет есть ли токен в базе данных
      */
@@ -708,7 +527,7 @@ public class DatabaseManager {
             return false;
         }
     }
-    
+
     /**
      * Удаляет токен из базы данных
      */
@@ -723,134 +542,114 @@ public class DatabaseManager {
             }
         });
     }
-    
-    // ========== CurrentEpisode операции ==========
-    
+
     // ========== PlayerPreferences операции ==========
-    
+
+    private PlayerPreferences getOrLoadPlayerPreferencesLocked() {
+        if (playerPreferencesLoaded) {
+            return cachedPlayerPreferences;
+        }
+        PlayerPreferences prefs = null;
+        try {
+            prefs = db.playerPreferencesDao().getPreferencesSync();
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to load player preferences from DB", e);
+        }
+        if (prefs != null && prefs.getPreferredQuality() != null) {
+            String raw = prefs.getPreferredQuality();
+            String sanitized = AutoQualityHelper.sanitizeSavedOnlineQuality(raw);
+            prefs.setPreferredQuality(sanitized);
+            if (!sanitized.equals(raw)) {
+                final PlayerPreferences fixSnapshot = copyPlayerPreferences(prefs);
+                executor.execute(() -> {
+                    try {
+                        db.playerPreferencesDao().upsert(fixSnapshot);
+                        if (fixSnapshot.getId() > 0) {
+                            db.playerPreferencesDao().deleteDuplicatesExcept(fixSnapshot.getId());
+                        }
+                    } catch (Exception ignored) {}
+                });
+            }
+        }
+        cachedPlayerPreferences = prefs;
+        playerPreferencesLoaded = true;
+        return prefs;
+    }
+
+    private void updatePlayerPreferences(PlayerPrefsMutator mutator, String logDesc) {
+        final PlayerPreferences snapshot;
+        synchronized (playerPrefsLock) {
+            PlayerPreferences existing = getOrLoadPlayerPreferencesLocked();
+            PlayerPreferences next = existing != null ? copyPlayerPreferences(existing) : new PlayerPreferences();
+            if (next.getId() <= 0) {
+                next.setId(1);
+            } else if (next.getPreferredQuality() != null) {
+                next.setPreferredQuality(AutoQualityHelper.sanitizeSavedOnlineQuality(next.getPreferredQuality()));
+            }
+            mutator.mutate(next);
+            cachedPlayerPreferences = next;
+            playerPreferencesLoaded = true;
+            snapshot = next;
+        }
+        executor.execute(() -> {
+            try {
+                db.playerPreferencesDao().upsert(snapshot);
+                if (snapshot.getId() > 0) {
+                    db.playerPreferencesDao().deleteDuplicatesExcept(snapshot.getId());
+                }
+                Log.d(TAG, "Saved " + logDesc + ", quality=" + snapshot.getPreferredQuality());
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to save " + logDesc, e);
+            }
+        });
+    }
+
     /**
      * Сохраняет предпочтения по выбору плеера и озвучки, не перезаписывая сохранённое качество
      */
     public void savePlayerPreferences(String player, Integer teamId) {
-        executor.execute(() -> {
-            try {
-                com.example.animelib.data.entity.PlayerPreferences preferences =
-                    db.playerPreferencesDao().getPreferencesSync();
-
-                if (preferences == null) {
-                    preferences = new com.example.animelib.data.entity.PlayerPreferences();
-                    preferences.setId(1);
-                } else if (preferences.getPreferredQuality() != null) {
-                    preferences.setPreferredQuality(
-                        com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(preferences.getPreferredQuality())
-                    );
-                }
-
-                preferences.setPlayer(player);
-                preferences.setTeamId(teamId);
-
-                db.playerPreferencesDao().upsert(preferences);
-                if (preferences.getId() > 0) {
-                    db.playerPreferencesDao().deleteDuplicatesExcept(preferences.getId());
-                }
-                Log.d(TAG, "Saved player preferences: player=" + player + ", teamId=" + teamId
-                        + ", preservedQuality=" + preferences.getPreferredQuality());
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save player preferences", e);
-            }
-        });
+        updatePlayerPreferences(prefs -> {
+            prefs.setPlayer(player);
+            prefs.setTeamId(teamId);
+        }, "player preferences: player=" + player + ", teamId=" + teamId);
     }
 
     /**
      * Сохраняет глобальное предпочтение качества ("Авто", "1080p", "720p" и т.д.) независимо от озвучки/команды
      */
     public void savePreferredQuality(String preferredQuality) {
-        if (com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(preferredQuality)) {
+        if (AutoQualityHelper.isDownloadedQuality(preferredQuality)) {
             Log.d(TAG, "Ignoring downloaded quality in savePreferredQuality: " + preferredQuality);
             return;
         }
-        final String sanitized = com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(preferredQuality);
-        executor.execute(() -> {
-            try {
-                com.example.animelib.data.entity.PlayerPreferences preferences =
-                    db.playerPreferencesDao().getPreferencesSync();
-
-                if (preferences == null) {
-                    preferences = new com.example.animelib.data.entity.PlayerPreferences();
-                    preferences.setId(1);
-                }
-
-                preferences.setPreferredQuality(sanitized);
-                db.playerPreferencesDao().upsert(preferences);
-                if (preferences.getId() > 0) {
-                    db.playerPreferencesDao().deleteDuplicatesExcept(preferences.getId());
-                }
-                Log.d(TAG, "Saved global preferredQuality to DB: " + sanitized);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save preferred quality", e);
-            }
-        });
+        final String sanitized = AutoQualityHelper.sanitizeSavedOnlineQuality(preferredQuality);
+        updatePlayerPreferences(prefs -> prefs.setPreferredQuality(sanitized),
+                "global preferredQuality: " + sanitized);
     }
 
     /**
      * Сохраняет предпочтения по выбору плеера, озвучки и качества
      */
     public void savePlayerPreferences(String player, Integer teamId, String preferredQuality) {
-        executor.execute(() -> {
-            try {
-                com.example.animelib.data.entity.PlayerPreferences preferences =
-                    db.playerPreferencesDao().getPreferencesSync();
-
-                if (preferences == null) {
-                    preferences = new com.example.animelib.data.entity.PlayerPreferences();
-                    preferences.setId(1);
-                }
-
-                preferences.setPlayer(player);
-                preferences.setTeamId(teamId);
-                if (!com.example.animelib.util.AutoQualityHelper.isDownloadedQuality(preferredQuality)) {
-                    preferences.setPreferredQuality(
-                        com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(preferredQuality)
-                    );
-                }
-
-                db.playerPreferencesDao().upsert(preferences);
-                if (preferences.getId() > 0) {
-                    db.playerPreferencesDao().deleteDuplicatesExcept(preferences.getId());
-                }
-                Log.d(TAG, "Saved player preferences: player=" + player + ", teamId=" + teamId +
-                      ", quality=" + preferences.getPreferredQuality());
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save player preferences", e);
+        updatePlayerPreferences(prefs -> {
+            prefs.setPlayer(player);
+            prefs.setTeamId(teamId);
+            if (!AutoQualityHelper.isDownloadedQuality(preferredQuality)) {
+                prefs.setPreferredQuality(AutoQualityHelper.sanitizeSavedOnlineQuality(preferredQuality));
             }
-        });
+        }, "player preferences: player=" + player + ", teamId=" + teamId);
     }
 
     /**
      * Загружает предпочтения по выбору плеера, озвучки и качества
      */
-    public com.example.animelib.data.entity.PlayerPreferences loadPlayerPreferences() {
-        try {
-            com.example.animelib.data.entity.PlayerPreferences prefs = db.playerPreferencesDao().getPreferencesSync();
-            if (prefs != null) {
-                if (prefs.getPreferredQuality() != null) {
-                    String raw = prefs.getPreferredQuality();
-                    String sanitized = com.example.animelib.util.AutoQualityHelper.sanitizeSavedOnlineQuality(raw);
-                    prefs.setPreferredQuality(sanitized);
-                    if (!sanitized.equals(raw)) {
-                        savePreferredQuality(sanitized);
-                    }
-                }
-                Log.d(TAG, "Loaded player preferences: player=" + prefs.getPlayer()
-                        + ", teamId=" + prefs.getTeamId()
-                        + ", preferredQuality=" + prefs.getPreferredQuality());
-            } else {
-                Log.d(TAG, "No player preferences found in database");
-            }
-            return prefs;
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load player preferences", e);
-            return null;
+    public PlayerPreferences loadPlayerPreferences() {
+        PlayerPreferences cached = cachedPlayerPreferences;
+        if (playerPreferencesLoaded) {
+            return copyPlayerPreferences(cached);
+        }
+        synchronized (playerPrefsLock) {
+            return copyPlayerPreferences(getOrLoadPlayerPreferencesLocked());
         }
     }
 
@@ -927,15 +726,8 @@ public class DatabaseManager {
         executor.execute(() -> {
             try {
                 com.example.animelib.data.entity.DownloadedEpisodeEntity ep = db.downloadedAnimeDao().getEpisodeById(episodeId);
-                if (ep != null && ep.getLocalFilePath() != null) {
-                    java.io.File file = new java.io.File(ep.getLocalFilePath());
-                    if (file.exists()) {
-                        file.delete();
-                    }
-                    java.io.File segsDir = new java.io.File(file.getParentFile(), file.getName() + "_segs");
-                    if (segsDir.exists()) {
-                        deleteDir(segsDir);
-                    }
+                if (ep != null) {
+                    com.example.animelib.util.FileUtils.deleteDownloadedEpisodeFiles(ep.getLocalFilePath());
                 }
                 db.downloadedAnimeDao().deleteEpisodeById(episodeId);
                 int count = db.downloadedAnimeDao().getEpisodeCountForAnime(animeId);
@@ -953,15 +745,8 @@ public class DatabaseManager {
             try {
                 java.util.List<com.example.animelib.data.entity.DownloadedEpisodeEntity> episodes = db.downloadedAnimeDao().getEpisodesForAnimeSync(animeId);
                 for (com.example.animelib.data.entity.DownloadedEpisodeEntity ep : episodes) {
-                    if (ep.getLocalFilePath() != null) {
-                        java.io.File file = new java.io.File(ep.getLocalFilePath());
-                        if (file.exists()) {
-                            file.delete();
-                        }
-                        java.io.File segsDir = new java.io.File(file.getParentFile(), file.getName() + "_segs");
-                        if (segsDir.exists()) {
-                            deleteDir(segsDir);
-                        }
+                    if (ep != null) {
+                        com.example.animelib.util.FileUtils.deleteDownloadedEpisodeFiles(ep.getLocalFilePath());
                     }
                 }
                 db.downloadedAnimeDao().deleteEpisodesForAnime(animeId);
@@ -1071,25 +856,11 @@ public class DatabaseManager {
         }
     }
 
-    private void deleteDir(java.io.File dir) {
-        if (dir != null && dir.exists()) {
-            java.io.File[] files = dir.listFiles();
-            if (files != null) {
-                for (java.io.File f : files) {
-                    if (f.isDirectory()) deleteDir(f);
-                    else f.delete();
-                }
-            }
-            dir.delete();
-        }
-    }
-    
     /**
-     * Закрывает executor при завершении работы
+     * Закрывает executor при завершении работы.
+     * Используется общий фоновый поток БД на уровне процесса, поэтому shutdown безопасен для параллельных вызовов.
      */
     public void shutdown() {
-        if (executor != null && !executor.isShutdown()) {
-            executor.shutdown();
-        }
+        // Shared daemon executor stays alive across short-lived callers to prevent rejected tasks and thread leaks.
     }
 }

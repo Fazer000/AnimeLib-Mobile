@@ -1,30 +1,21 @@
 package com.example.animelib.managers;
 
 import android.app.Activity;
-import android.content.ClipData;
-import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.res.Configuration;
-import android.graphics.Color;
-import android.graphics.drawable.ColorDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Process;
 import android.text.Html;
 import android.util.Log;
-import android.view.LayoutInflater;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageButton;
-import android.widget.ImageView;
-import android.widget.PopupWindow;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.ContextCompat;
 import androidx.core.widget.NestedScrollView;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -35,21 +26,16 @@ import com.example.animelib.VideoPlayerActivity;
 import com.example.animelib.adapters.CommentsAdapter;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.data.DatabaseManager;
-import com.example.animelib.data.entity.TokenEntity;
 import com.example.animelib.models.CommentsResponse;
 import com.example.animelib.models.EpisodesListResponse;
-import com.example.animelib.settings.CommentSettingsBottomSheet;
-import com.example.animelib.ui.RulesBottomSheet;
 import com.example.animelib.util.CommentFormattingHelper;
 import com.example.animelib.util.CommentHtmlProcessor;
 import com.example.animelib.util.CommentKeyboardScrollHelper;
 import com.example.animelib.util.CustomToast;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -66,6 +52,7 @@ public class CommentsManager {
     private static final int PORTRAIT_SCROLL_THRESHOLD_DP = 650;
     private static final long POST_PLAYBACK_PORTRAIT_LOAD_DELAY_MS = 650L;
     private static final long FALLBACK_PORTRAIT_LOAD_DELAY_MS = 3800L;
+    private static final long PAGINATION_ERROR_COOLDOWN_MS = 4000L;
 
     // UI компоненты (Landscape / Side Panel)
     private View commentsPanel;
@@ -145,27 +132,24 @@ public class CommentsManager {
     private boolean isLoadingComments = false;
     private boolean hasInitialCommentsLoadError = false;
     private long lastPaginationErrorTimeMs = 0L;
-    private static final long PAGINATION_ERROR_COOLDOWN_MS = 4000L;
     private String commentsSortType = "desc";
     private int requestGeneration = 0;
     private boolean isPortraitCommentsRequested = false;
     private boolean isPlayerReadyForComments = false;
     private float cachedDensity = 0f;
-
-    // Кэш загруженных страниц и предварительно распарсенного HTML для мгновенной синхронизации между ориентациями
-    private final List<CommentsResponse.CommentItem> loadedStickyComments = new ArrayList<>();
-    private final List<CommentsResponse> loadedPageResponses = new ArrayList<>();
-    private final Map<Long, CommentHtmlProcessor.ParsedCommentContent> sharedParsedCache = new ConcurrentHashMap<>();
     private boolean landscapeAdapterNeedsSync = false;
     private boolean portraitAdapterNeedsSync = false;
     private boolean isPanelAnimatingOpen = false;
+
+    private final CommentsDataCoordinator dataCoordinator = new CommentsDataCoordinator();
+    private final CommentsModerationHelper moderationHelper;
 
     // Фоновый поток с пониженным приоритетом, чтобы парсинг Jsoup/HTML не конкурировал с декодером ExoPlayer
     private final ExecutorService commentsProcessingExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(() -> {
             try {
                 Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
-            } catch ( Throwable ignored) {}
+            } catch (Throwable ignored) {}
             r.run();
         }, "CommentsHtmlPreParser");
         t.setDaemon(true);
@@ -222,6 +206,65 @@ public class CommentsManager {
         }
         this.sharedCommentViewPool.setMaxRecycledViews(CommentsAdapter.DisplayItem.TYPE_COMMENT, 20);
         this.sharedCommentViewPool.setMaxRecycledViews(CommentsAdapter.DisplayItem.TYPE_SHOW_MORE, 8);
+        this.moderationHelper = new CommentsModerationHelper(context, apiService, new CommentsModerationHelper.Host() {
+            @Override
+            public void onSortSelected(String sortType) {
+                changeCommentsSort(sortType);
+            }
+
+            @Override
+            public void onEditCommentRequested(CommentsResponse.CommentItem comment) {
+                startEditMode(comment);
+            }
+
+            @Override
+            public void onCommentDeleted(long commentId) {
+                removeCommentFromMemoryAndAdapters(commentId);
+            }
+
+            @Override
+            public void onUserIgnoredSuccess() {
+                resetCommentsOnEpisodeChange(false);
+                loadCommentsPage(1);
+            }
+
+            @Override
+            public void onCommentsInPlayerToggledFromSettings(boolean disabled) {
+                applyCommentsDisabledState(disabled);
+                if (disabled) {
+                    if (isCommentsVisible) {
+                        hideCommentsPanel();
+                    }
+                    updateCommentsButtonVisibility(false);
+                } else {
+                    updateCommentsButtonVisibility(true);
+                    if (dataCoordinator.isPagesEmpty() && !isLoadingComments) {
+                        hasInitialCommentsLoadError = false;
+                        lastPaginationErrorTimeMs = 0L;
+                        isPortraitCommentsRequested = true;
+                        loadCommentsPage(1);
+                    } else {
+                        updateEmptyCommentsState();
+                    }
+                }
+                if (settingsCallback != null) {
+                    settingsCallback.onCommentsInPlayerToggled(disabled);
+                }
+            }
+
+            @Override
+            public void onRepliesLimitChangedFromSettings(int limit) {
+                updateRepliesLimit(limit);
+                if (settingsCallback != null) {
+                    settingsCallback.onRepliesLimitChanged(limit);
+                }
+            }
+
+            @Override
+            public void runOnUiThread(Runnable runnable) {
+                safeRunOnUiThread(runnable);
+            }
+        });
     }
 
     public void attachWindowRoot(View decorView) {
@@ -297,34 +340,19 @@ public class CommentsManager {
             btnCancelReply = commentsPanel.findViewById(R.id.btnCancelReply);
             CommentsAdapter.applySendButtonLoadingState(btnSendComment, sendCommentLoadingContainer, isSubmittingMainComment);
 
-            if (commentInputField != null) {
-                CommentFormattingHelper.attachFormattingTextWatcher(commentInputField);
-            }
+            bindCommentInputAndFormatting(
+                    commentInputField,
+                    btnSendComment,
+                    btnCancelReply,
+                    commentsPanel,
+                    R.id.btnFormatBold,
+                    R.id.btnFormatItalic,
+                    R.id.btnFormatUnderline,
+                    R.id.btnFormatStrike,
+                    R.id.btnFormatSpoiler,
+                    R.id.btnFormatQuote
+            );
 
-            View btnBold = commentsPanel.findViewById(R.id.btnFormatBold);
-            View btnItalic = commentsPanel.findViewById(R.id.btnFormatItalic);
-            View btnUnderline = commentsPanel.findViewById(R.id.btnFormatUnderline);
-            View btnStrike = commentsPanel.findViewById(R.id.btnFormatStrike);
-            View btnSpoiler = commentsPanel.findViewById(R.id.btnFormatSpoiler);
-            View btnQuote = commentsPanel.findViewById(R.id.btnFormatQuote);
-
-            if (btnBold != null) btnBold.setOnClickListener(v -> CommentFormattingHelper.applyFormat(commentInputField, CommentFormattingHelper.FormatType.BOLD));
-            if (btnItalic != null) btnItalic.setOnClickListener(v -> CommentFormattingHelper.applyFormat(commentInputField, CommentFormattingHelper.FormatType.ITALIC));
-            if (btnUnderline != null) btnUnderline.setOnClickListener(v -> CommentFormattingHelper.applyFormat(commentInputField, CommentFormattingHelper.FormatType.UNDERLINE));
-            if (btnStrike != null) btnStrike.setOnClickListener(v -> CommentFormattingHelper.applyFormat(commentInputField, CommentFormattingHelper.FormatType.STRIKE));
-            if (btnSpoiler != null) btnSpoiler.setOnClickListener(v -> CommentFormattingHelper.applyFormat(commentInputField, CommentFormattingHelper.FormatType.SPOILER));
-            if (btnQuote != null) btnQuote.setOnClickListener(v -> CommentFormattingHelper.applyFormat(commentInputField, CommentFormattingHelper.FormatType.QUOTE));
-
-            if (btnSendComment != null) {
-                btnSendComment.setOnClickListener(v -> sendCommentFromInput(commentInputField));
-            }
-            if (btnCancelReply != null) {
-                btnCancelReply.setOnClickListener(v -> {
-                    if (!isSubmittingComment) {
-                        cancelReplyMode();
-                    }
-                });
-            }
             View btnCommentRules = commentsPanel.findViewById(R.id.btnCommentRules);
             if (btnCommentRules != null) {
                 btnCommentRules.setOnClickListener(v -> showRulesDialog());
@@ -338,16 +366,6 @@ public class CommentsManager {
             btnLandscapeEnableComments = commentsPanel.findViewById(R.id.btnLandscapeEnableComments);
             if (btnLandscapeEnableComments != null) {
                 btnLandscapeEnableComments.setOnClickListener(v -> enableCommentsInPlayer());
-            }
-
-            if (commentInputField != null) {
-                commentInputField.setOnEditorActionListener((v, actionId, event) -> {
-                    if (actionId == EditorInfo.IME_ACTION_SEND) {
-                        sendCommentFromInput(commentInputField);
-                        return true;
-                    }
-                    return false;
-                });
             }
         }
 
@@ -370,6 +388,58 @@ public class CommentsManager {
                     }
                 }
         );
+    }
+
+    private void bindCommentInputAndFormatting(EditText inputField,
+                                               ImageButton sendButton,
+                                               ImageButton cancelReplyButton,
+                                               View formattingRoot,
+                                               int boldId,
+                                               int italicId,
+                                               int underlineId,
+                                               int strikeId,
+                                               int spoilerId,
+                                               int quoteId) {
+        if (inputField != null) {
+            CommentFormattingHelper.attachFormattingTextWatcher(inputField);
+            inputField.setOnEditorActionListener((v, actionId, event) -> {
+                if (actionId == EditorInfo.IME_ACTION_SEND) {
+                    sendCommentFromInput(inputField);
+                    return true;
+                }
+                return false;
+            });
+        }
+
+        if (formattingRoot != null && inputField != null) {
+            bindFormatButton(formattingRoot, boldId, inputField, CommentFormattingHelper.FormatType.BOLD);
+            bindFormatButton(formattingRoot, italicId, inputField, CommentFormattingHelper.FormatType.ITALIC);
+            bindFormatButton(formattingRoot, underlineId, inputField, CommentFormattingHelper.FormatType.UNDERLINE);
+            bindFormatButton(formattingRoot, strikeId, inputField, CommentFormattingHelper.FormatType.STRIKE);
+            bindFormatButton(formattingRoot, spoilerId, inputField, CommentFormattingHelper.FormatType.SPOILER);
+            bindFormatButton(formattingRoot, quoteId, inputField, CommentFormattingHelper.FormatType.QUOTE);
+        }
+
+        if (sendButton != null) {
+            sendButton.setOnClickListener(v -> sendCommentFromInput(inputField));
+        }
+        if (cancelReplyButton != null) {
+            cancelReplyButton.setOnClickListener(v -> {
+                if (!isSubmittingComment) {
+                    cancelReplyMode();
+                }
+            });
+        }
+    }
+
+    private static void bindFormatButton(View root,
+                                         int buttonId,
+                                         EditText targetInput,
+                                         CommentFormattingHelper.FormatType formatType) {
+        View btn = root.findViewById(buttonId);
+        if (btn != null) {
+            btn.setOnClickListener(v -> CommentFormattingHelper.applyFormat(targetInput, formatType));
+        }
     }
 
     private void initializePanelPosition() {
@@ -403,321 +473,19 @@ public class CommentsManager {
 
     public void showSortOptionsDialog(View anchorView) {
         View target = anchorView != null ? anchorView : commentsOptionsButton;
-        if (target == null || context == null) return;
-        if (!target.isAttachedToWindow()) return;
-        if (context instanceof Activity) {
-            Activity activity = (Activity) context;
-            if (activity.isFinishing() || activity.isDestroyed()) return;
-        }
-
-        try {
-            View popupView = LayoutInflater.from(context).inflate(R.layout.popup_comments_sort, null);
-
-            PopupWindow popupWindow = new PopupWindow(
-                    popupView,
-                    dpToPx(160),
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    true
-            );
-
-            popupWindow.setOutsideTouchable(true);
-            popupWindow.setFocusable(true);
-            popupWindow.setElevation(dpToPx(12));
-            popupWindow.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-
-            TextView itemNew = popupView.findViewById(R.id.item_sort_new);
-            TextView itemOld = popupView.findViewById(R.id.item_sort_old);
-            TextView itemPopular = popupView.findViewById(R.id.item_sort_popular);
-
-            if (itemNew != null) resetPopupItemStyle(itemNew);
-            if (itemOld != null) resetPopupItemStyle(itemOld);
-            if (itemPopular != null) resetPopupItemStyle(itemPopular);
-
-            if ("asc".equals(commentsSortType)) {
-                if (itemOld != null) setPopupItemSelectedStyle(itemOld);
-            } else if ("votes_up".equals(commentsSortType)) {
-                if (itemPopular != null) setPopupItemSelectedStyle(itemPopular);
-            } else {
-                if (itemNew != null) setPopupItemSelectedStyle(itemNew);
-            }
-
-            if (itemNew != null) {
-                itemNew.setOnClickListener(v -> {
-                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
-                    changeCommentsSort("desc");
-                });
-            }
-
-            if (itemOld != null) {
-                itemOld.setOnClickListener(v -> {
-                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
-                    changeCommentsSort("asc");
-                });
-            }
-
-            if (itemPopular != null) {
-                itemPopular.setOnClickListener(v -> {
-                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
-                    changeCommentsSort("votes_up");
-                });
-            }
-
-            popupWindow.showAsDropDown(target, 0, dpToPx(6));
-        } catch (Exception e) {
-            Log.e(TAG, "Error showing sort options popup", e);
-        }
+        moderationHelper.showSortOptionsDialog(target, commentsSortType);
     }
 
     public void showCommentActionsPopup(View anchorView, CommentsResponse.CommentItem comment) {
-        if (anchorView == null || comment == null || context == null) return;
-        if (!anchorView.isAttachedToWindow()) return;
-        if (context instanceof Activity) {
-            Activity activity = (Activity) context;
-            if (activity.isFinishing() || activity.isDestroyed()) return;
-        }
-
-        try {
-            View popupView = LayoutInflater.from(context).inflate(R.layout.popup_comment_actions, null);
-
-            PopupWindow popupWindow = new PopupWindow(
-                    popupView,
-                    dpToPx(200),
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    true
-            );
-
-            popupWindow.setOutsideTouchable(true);
-            popupWindow.setFocusable(true);
-            popupWindow.setElevation(dpToPx(12));
-            popupWindow.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-
-            View itemEdit = popupView.findViewById(R.id.item_comment_edit);
-            View itemDelete = popupView.findViewById(R.id.item_comment_delete);
-            View itemCopy = popupView.findViewById(R.id.item_comment_copy);
-            View itemReport = popupView.findViewById(R.id.item_comment_report);
-            View itemIgnore = popupView.findViewById(R.id.item_comment_ignore);
-
-            boolean isAuth = apiService != null && apiService.isAuthorized();
-            boolean isOwn = isOwnComment(comment);
-
-            if (itemCopy != null) {
-                itemCopy.setOnClickListener(v -> {
-                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
-                    try {
-                        ClipboardManager clipboard = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
-                        String rawComment = comment.getComment() != null ? comment.getComment() : "";
-                        String plainText = Html.fromHtml(rawComment, Html.FROM_HTML_MODE_LEGACY).toString().trim();
-                        ClipData clip = ClipData.newPlainText("Комментарий", plainText);
-                        if (clipboard != null) {
-                            clipboard.setPrimaryClip(clip);
-                            CustomToast.showSuccess(context, "Комментарий скопирован в буфер обмена");
-                        }
-                    } catch (Exception e) {
-                        Log.e(TAG, "Error copying comment", e);
-                    }
-                });
-            }
-
-            if (itemEdit != null) {
-                itemEdit.setVisibility(isOwn ? View.VISIBLE : View.GONE);
-                itemEdit.setOnClickListener(v -> {
-                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
-                    startEditMode(comment);
-                });
-            }
-
-            if (itemDelete != null) {
-                itemDelete.setVisibility(isOwn ? View.VISIBLE : View.GONE);
-                itemDelete.setOnClickListener(v -> {
-                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
-                    confirmAndDeleteComment(comment);
-                });
-            }
-
-            if (itemReport != null) {
-                itemReport.setOnClickListener(v -> {
-                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
-                    CustomToast.showSuccess(context, "Жалоба отправлена");
-                });
-            }
-
-            if (itemIgnore != null) {
-                boolean canIgnore = isAuth && !isOwn && comment.getUser() != null;
-                itemIgnore.setVisibility(canIgnore ? View.VISIBLE : View.GONE);
-                itemIgnore.setOnClickListener(v -> {
-                    try { popupWindow.dismiss(); } catch (Exception ignored) {}
-                    showIgnoreUserDialog(comment);
-                });
-            }
-
-            popupWindow.showAsDropDown(anchorView, 0, dpToPx(4));
-        } catch (Exception e) {
-            Log.e(TAG, "Error showing comment actions popup", e);
-        }
+        moderationHelper.showCommentActionsPopup(anchorView, comment);
     }
 
     public void showIgnoreUserDialog(CommentsResponse.CommentItem comment) {
-        if (comment == null || comment.getUser() == null || context == null) return;
-
-        try {
-            View dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_ignore_user, null);
-            ImageButton btnClose = dialogView.findViewById(R.id.btnCloseIgnoreDialog);
-            EditText etComment = dialogView.findViewById(R.id.etIgnoreComment);
-            View btnToggleInfo = dialogView.findViewById(R.id.btnToggleIgnoreInfo);
-            ImageView ivChevron = dialogView.findViewById(R.id.ivIgnoreInfoChevron);
-            View infoContent = dialogView.findViewById(R.id.ignoreInfoContentContainer);
-            View btnCancel = dialogView.findViewById(R.id.btnCancelIgnore);
-            View btnConfirm = dialogView.findViewById(R.id.btnConfirmIgnore);
-
-            if (btnToggleInfo != null && infoContent != null) {
-                btnToggleInfo.setOnClickListener(v -> {
-                    if (infoContent.getVisibility() == View.VISIBLE) {
-                        infoContent.setVisibility(View.GONE);
-                        if (ivChevron != null) ivChevron.setImageResource(R.drawable.ic_chevron_down);
-                    } else {
-                        infoContent.setVisibility(View.VISIBLE);
-                        if (ivChevron != null) ivChevron.setImageResource(R.drawable.ic_chevron_up);
-                    }
-                });
-            }
-
-            AlertDialog.Builder builder = new AlertDialog.Builder(context);
-            builder.setView(dialogView);
-            AlertDialog dialog = builder.create();
-
-            if (dialog.getWindow() != null) {
-                dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            }
-
-            if (btnClose != null) btnClose.setOnClickListener(v -> dialog.dismiss());
-            if (btnCancel != null) btnCancel.setOnClickListener(v -> dialog.dismiss());
-
-            if (btnConfirm != null) {
-                btnConfirm.setOnClickListener(v -> {
-                    String commentText = etComment != null && etComment.getText() != null
-                            ? etComment.getText().toString().trim() : "";
-
-                    long targetUserId = comment.getUser().getId();
-                    long sourceableId = 0;
-
-                    if (apiService != null) {
-                        String currentUserIdStr = apiService.getCurrentUserId();
-                        if (currentUserIdStr != null && !currentUserIdStr.trim().isEmpty()) {
-                            try {
-                                sourceableId = Long.parseLong(currentUserIdStr.trim());
-                            } catch (Exception ignored) {}
-                        }
-                    }
-
-                    if (sourceableId <= 0) {
-                        try {
-                            DatabaseManager db = apiService != null ? apiService.getDatabaseManager() : new DatabaseManager(context);
-                            if (db != null && db.getToken() != null) {
-                                String uId = db.getToken().getUserId();
-                                if (uId != null && !uId.trim().isEmpty()) {
-                                    sourceableId = Long.parseLong(uId.trim());
-                                }
-                            }
-                        } catch (Exception ignored) {}
-                    }
-
-                    if (sourceableId <= 0) {
-                        CustomToast.showWarning(context, "Не удалось определить ID пользователя");
-                        return;
-                    }
-
-                    dialog.dismiss();
-                    CustomToast.showInfo(context, "Добавление в игнор-лист...");
-
-                    if (apiService != null) {
-                        apiService.ignoreUser(sourceableId, targetUserId, commentText, new ApiService.IgnoreUserCallback() {
-                            @Override
-                            public void onSuccess(String message) {
-                                safeRunOnUiThread(() -> {
-                                    CustomToast.showSuccess(context, "Пользователь добавлен в игнор-лист");
-                                    if (apiService != null) {
-                                        apiService.invalidateAllCommentsCache();
-                                    }
-                                    resetCommentsOnEpisodeChange(false);
-                                    loadCommentsPage(1);
-                                });
-                            }
-
-                            @Override
-                            public void onError(String errorMsg) {
-                                safeRunOnUiThread(() -> CustomToast.showWarning(context, errorMsg));
-                            }
-                        });
-                    }
-                });
-            }
-
-            dialog.show();
-        } catch (Exception e) {
-            Log.e(TAG, "Error showing ignore user dialog", e);
-        }
+        moderationHelper.showIgnoreUserDialog(comment);
     }
 
     public void confirmAndDeleteComment(CommentsResponse.CommentItem comment) {
-        if (comment == null || context == null) return;
-
-        try {
-            View dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_delete_comment, null);
-            ImageButton btnClose = dialogView.findViewById(R.id.btnClose);
-            TextView tvCommentAuthor = dialogView.findViewById(R.id.tvCommentAuthor);
-            TextView tvCommentSnippet = dialogView.findViewById(R.id.tvCommentSnippet);
-            View commentPreviewContainer = dialogView.findViewById(R.id.commentPreviewContainer);
-            View btnCancel = dialogView.findViewById(R.id.btnCancel);
-            View btnDelete = dialogView.findViewById(R.id.btnDelete);
-
-            if (commentPreviewContainer != null && comment.getComment() != null && !comment.getComment().trim().isEmpty()) {
-                commentPreviewContainer.setVisibility(View.VISIBLE);
-                if (comment.getUser() != null && comment.getUser().getUsername() != null && tvCommentAuthor != null) {
-                    tvCommentAuthor.setText(comment.getUser().getUsername());
-                    tvCommentAuthor.setVisibility(View.VISIBLE);
-                }
-                if (tvCommentSnippet != null) {
-                    CharSequence cleanText = Html.fromHtml(comment.getComment(), Html.FROM_HTML_MODE_LEGACY);
-                    tvCommentSnippet.setText(cleanText.toString().trim());
-                }
-            }
-
-            AlertDialog.Builder builder = new AlertDialog.Builder(context);
-            builder.setView(dialogView);
-            AlertDialog dialog = builder.create();
-
-            if (dialog.getWindow() != null) {
-                dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            }
-
-            if (btnClose != null) btnClose.setOnClickListener(v -> dialog.dismiss());
-            if (btnCancel != null) btnCancel.setOnClickListener(v -> dialog.dismiss());
-            if (btnDelete != null) {
-                btnDelete.setOnClickListener(v -> {
-                    dialog.dismiss();
-                    if (apiService != null) {
-                        apiService.deleteComment(comment.getId(), new ApiService.DeleteCommentCallback() {
-                            @Override
-                            public void onSuccess() {
-                                safeRunOnUiThread(() -> {
-                                    CustomToast.showSuccess(context, "Комментарий удален");
-                                    removeCommentFromMemoryAndAdapters(comment.getId());
-                                });
-                            }
-
-                            @Override
-                            public void onError(String errorMsg) {
-                                safeRunOnUiThread(() -> CustomToast.showWarning(context, errorMsg));
-                            }
-                        });
-                    }
-                });
-            }
-
-            dialog.show();
-        } catch (Exception e) {
-            Log.e(TAG, "Error showing delete comment dialog", e);
-        }
+        moderationHelper.confirmAndDeleteComment(comment);
     }
 
     private void removeCommentFromMemoryAndAdapters(long commentId) {
@@ -728,23 +496,7 @@ public class CommentsManager {
                 apiService.invalidateAllCommentsCache();
             }
         }
-        sharedParsedCache.remove(commentId);
-        for (int i = loadedStickyComments.size() - 1; i >= 0; i--) {
-            if (loadedStickyComments.get(i).getId() == commentId) {
-                loadedStickyComments.remove(i);
-            }
-        }
-        for (CommentsResponse resp : loadedPageResponses) {
-            if (resp == null || resp.getData() == null) continue;
-            if (resp.getData().getRoot() != null) {
-                resp.getData().getRoot().removeIf(item -> item != null && item.getId() == commentId);
-            }
-            if (resp.getData().getReplies() != null) {
-                resp.getData().getReplies().removeIf(item -> item != null && (item.getId() == commentId
-                        || (item.getParent_comment() != null && item.getParent_comment() == commentId)
-                        || (item.getRoot_id() != null && item.getRoot_id() == commentId)));
-            }
-        }
+        dataCoordinator.removeCommentById(commentId);
         if (commentsAdapter != null) {
             commentsAdapter.removeComment(commentId);
         }
@@ -755,73 +507,7 @@ public class CommentsManager {
     }
 
     public boolean isOwnComment(CommentsResponse.CommentItem comment) {
-        if (comment == null || comment.getUser() == null) return false;
-        long commentUserId = comment.getUser().getId();
-        String commentUsername = comment.getUser().getUsername();
-
-        try {
-            DatabaseManager dbManager = null;
-            if (apiService != null && apiService.getDatabaseManager() != null) {
-                dbManager = apiService.getDatabaseManager();
-            } else if (context != null) {
-                dbManager = new DatabaseManager(context);
-            }
-
-            if (dbManager != null) {
-                TokenEntity token = dbManager.getToken();
-                if (token != null) {
-                    String savedUserId = token.getUserId();
-                    if (savedUserId != null && !savedUserId.trim().isEmpty()) {
-                        try {
-                            if (Long.parseLong(savedUserId.trim()) == commentUserId) {
-                                return true;
-                            }
-                        } catch (Exception ignored) {}
-                        if (savedUserId.trim().equalsIgnoreCase(String.valueOf(commentUserId))) {
-                            return true;
-                        }
-                    }
-
-                    if (token.getAccessToken() != null && !token.getAccessToken().trim().isEmpty()) {
-                        String extractedId = ApiService.extractUserIdFromToken(token.getAccessToken());
-                        if (extractedId != null && !extractedId.trim().isEmpty()) {
-                            try {
-                                if (Long.parseLong(extractedId.trim()) == commentUserId) {
-                                    return true;
-                                }
-                            } catch (Exception ignored) {}
-                            if (extractedId.trim().equalsIgnoreCase(String.valueOf(commentUserId))) {
-                                return true;
-                            }
-                        }
-                    }
-
-                    String savedUsername = token.getUsername();
-                    if (savedUsername != null && !savedUsername.trim().isEmpty()
-                            && commentUsername != null && !commentUsername.trim().isEmpty()) {
-                        if (savedUsername.trim().equalsIgnoreCase(commentUsername.trim())) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error checking if own comment", e);
-        }
-
-        return false;
-    }
-
-    private void resetPopupItemStyle(TextView textView) {
-        if (textView == null) return;
-        textView.setBackgroundColor(Color.TRANSPARENT);
-        textView.setTextColor(ContextCompat.getColor(context, R.color.accent_text_color));
-    }
-
-    private void setPopupItemSelectedStyle(TextView textView) {
-        if (textView == null) return;
-        textView.setBackgroundResource(R.drawable.bg_sort_popup_item_selected);
-        textView.setTextColor(ContextCompat.getColor(context, R.color.sort_popup_item_selected_text));
+        return moderationHelper.isOwnComment(comment);
     }
 
     private int dpToPx(int dp) {
@@ -832,16 +518,15 @@ public class CommentsManager {
         return (int) (dp * cachedDensity);
     }
 
-    private void setupCommentsRecyclerView() {
-        if (commentsRecyclerView == null) return;
-
-        commentsAdapter = new CommentsAdapter();
-        commentsAdapter.setCommentActionListener(new CommentsAdapter.CommentActionListener() {
+    private CommentsAdapter.CommentActionListener createCommentActionListener(boolean isPortrait) {
+        return new CommentsAdapter.CommentActionListener() {
             @Override
             public void onReplyClicked(CommentsResponse.CommentItem comment) {
                 Long targetId = comment != null ? comment.getId() : null;
-                if (portraitCommentsAdapter != null && portraitCommentsAdapter != commentsAdapter) {
-                    portraitCommentsAdapter.setActiveReplyCommentId(targetId);
+                CommentsAdapter peerAdapter = isPortrait ? commentsAdapter : portraitCommentsAdapter;
+                CommentsAdapter selfAdapter = isPortrait ? portraitCommentsAdapter : commentsAdapter;
+                if (peerAdapter != null && peerAdapter != selfAdapter) {
+                    peerAdapter.setActiveReplyCommentId(targetId);
                 }
                 cancelMainInputReplyMode();
                 keyboardScrollHelper.updateLandscapeMainInputVisibility();
@@ -849,8 +534,10 @@ public class CommentsManager {
 
             @Override
             public void onReplyCancelled(CommentsResponse.CommentItem comment) {
-                if (portraitCommentsAdapter != null && portraitCommentsAdapter != commentsAdapter) {
-                    portraitCommentsAdapter.setActiveReplyCommentId(null);
+                CommentsAdapter peerAdapter = isPortrait ? commentsAdapter : portraitCommentsAdapter;
+                CommentsAdapter selfAdapter = isPortrait ? portraitCommentsAdapter : commentsAdapter;
+                if (peerAdapter != null && peerAdapter != selfAdapter) {
+                    peerAdapter.setActiveReplyCommentId(null);
                 }
                 cancelMainInputReplyMode();
                 keyboardScrollHelper.updateLandscapeMainInputVisibility();
@@ -873,9 +560,16 @@ public class CommentsManager {
 
             @Override
             public void onInlineReplyInputBound(EditText inputField, View inlineReplyContainer) {
-                keyboardScrollHelper.attachInlineReplyInput(inputField, inlineReplyContainer, false);
+                keyboardScrollHelper.attachInlineReplyInput(inputField, inlineReplyContainer, isPortrait);
             }
-        });
+        };
+    }
+
+    private void setupCommentsRecyclerView() {
+        if (commentsRecyclerView == null) return;
+
+        commentsAdapter = new CommentsAdapter();
+        commentsAdapter.setCommentActionListener(createCommentActionListener(false));
 
         LinearLayoutManager layoutManager = new LinearLayoutManager(context);
         layoutManager.setInitialPrefetchItemCount(6);
@@ -939,7 +633,7 @@ public class CommentsManager {
 
         if (scrollY >= dpToPx(60)) {
             if (!hasInitialCommentsLoadError
-                    && (!isPortraitCommentsRequested || (loadedPageResponses.isEmpty() && !isLoadingComments && currentEpisode != null))) {
+                    && (!isPortraitCommentsRequested || (dataCoordinator.isPagesEmpty() && !isLoadingComments && currentEpisode != null))) {
                 mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
                 isPortraitCommentsRequested = true;
                 triggerInitialLoadIfNeeded();
@@ -1059,29 +753,17 @@ public class CommentsManager {
         }
         if (commentsAdapter == null) return;
 
-        if (landscapeAdapterNeedsSync && !loadedPageResponses.isEmpty()) {
+        if (landscapeAdapterNeedsSync && !dataCoordinator.isPagesEmpty()) {
             landscapeAdapterNeedsSync = false;
-            syncCachedPagesIntoAdapter(commentsAdapter);
+            dataCoordinator.syncCachedPagesIntoAdapter(commentsAdapter, !"asc".equals(commentsSortType));
             hideLoadingOverlay(commentsLoadingOverlay);
             updateEmptyCommentsState();
             return;
         }
 
-        if (!isLoadingComments && !hasInitialCommentsLoadError && !commentsAdapter.hasAnySourceComments() && loadedPageResponses.isEmpty()) {
+        if (!isLoadingComments && !hasInitialCommentsLoadError && !commentsAdapter.hasAnySourceComments() && dataCoordinator.isPagesEmpty()) {
             loadCommentsPage(1);
         }
-    }
-
-    private void syncCachedPagesIntoAdapter(CommentsAdapter targetAdapter) {
-        if (targetAdapter == null) return;
-        targetAdapter.putParsedContentMap(sharedParsedCache);
-        if (loadedPageResponses.isEmpty()) {
-            if (!loadedStickyComments.isEmpty()) {
-                targetAdapter.setStickyComments(loadedStickyComments);
-            }
-            return;
-        }
-        targetAdapter.replacePagesOnRefresh(loadedStickyComments, loadedPageResponses, null, !"asc".equals(commentsSortType));
     }
 
     public void forceHideCommentsPanel() {
@@ -1106,30 +788,6 @@ public class CommentsManager {
         if (visibilityCallback != null) {
             visibilityCallback.onCommentsVisibilityChanged(false);
         }
-    }
-
-    private Map<Long, CommentHtmlProcessor.ParsedCommentContent> preParseCommentsBatch(
-            List<CommentsResponse.CommentItem> items,
-            int primaryColor,
-            int purpleColor) {
-        Map<Long, CommentHtmlProcessor.ParsedCommentContent> result = new HashMap<>();
-        if (items == null || items.isEmpty()) return result;
-
-        for (CommentsResponse.CommentItem item : items) {
-            if (item == null) continue;
-            String html = item.getComment() != null ? item.getComment() : "";
-            String key = CommentHtmlProcessor.computeSourceKey(html);
-            CommentHtmlProcessor.ParsedCommentContent existing = sharedParsedCache.get(item.getId());
-            if (existing != null && key.equals(existing.sourceHashKey)) {
-                result.put(item.getId(), existing);
-            } else {
-                CommentHtmlProcessor.ParsedCommentContent parsed =
-                        CommentHtmlProcessor.parseHtmlOffThread(html, primaryColor, purpleColor);
-                sharedParsedCache.put(item.getId(), parsed);
-                result.put(item.getId(), parsed);
-            }
-        }
-        return result;
     }
 
     /**
@@ -1184,8 +842,7 @@ public class CommentsManager {
         final long episodeId = currentEpisode.getId();
 
         if (isInitialPage) {
-            loadedStickyComments.clear();
-            loadedPageResponses.clear();
+            dataCoordinator.clearAll(false);
 
             apiService.fetchStickyComments(episodeId, new ApiService.StickyCommentsCallback() {
                 @Override
@@ -1195,30 +852,24 @@ public class CommentsManager {
                     }
                     commentsProcessingExecutor.execute(() -> {
                         Map<Long, CommentHtmlProcessor.ParsedCommentContent> parsedSticky =
-                                preParseCommentsBatch(stickyComments, primaryTextColor, purpleColor);
+                                dataCoordinator.preParseCommentsBatch(stickyComments, primaryTextColor, purpleColor);
                         safeRunOnUiThread(() -> {
                             if (gen != requestGeneration || isOfflineMode) return;
-                            loadedStickyComments.clear();
-                            for (CommentsResponse.CommentItem item : stickyComments) {
-                                if (item != null) {
-                                    item.setSticky(true);
-                                    loadedStickyComments.add(item);
-                                }
-                            }
-                            if (commentsAdapter != null) commentsAdapter.putParsedContentMap(parsedSticky);
-                            if (portraitCommentsAdapter != null) portraitCommentsAdapter.putParsedContentMap(parsedSticky);
+                            dataCoordinator.setStickyComments(stickyComments);
+                            putParsedContentOnBothAdapters(parsedSticky);
 
                             // Если первая страница уже успела отрисоваться — добавим закреплённые сверху;
                             // иначе они войдут единым пакетом вместе с первой страницей без двойной перерисовки!
-                            if (!loadedPageResponses.isEmpty()) {
+                            if (!dataCoordinator.isPagesEmpty()) {
+                                List<CommentsResponse.CommentItem> stickyList = dataCoordinator.getLoadedStickyComments();
                                 if (isPortraitOrientation()) {
                                     if (portraitCommentsAdapter != null) {
-                                        portraitCommentsAdapter.setStickyComments(loadedStickyComments);
+                                        portraitCommentsAdapter.setStickyComments(stickyList);
                                     }
                                     landscapeAdapterNeedsSync = true;
                                 } else {
                                     if (isCommentsVisible && !isPanelAnimatingOpen && commentsAdapter != null) {
-                                        commentsAdapter.setStickyComments(loadedStickyComments);
+                                        commentsAdapter.setStickyComments(stickyList);
                                     } else {
                                         landscapeAdapterNeedsSync = true;
                                     }
@@ -1242,17 +893,9 @@ public class CommentsManager {
                     @Override
                     public void onCommentsReceived(CommentsResponse response) {
                         commentsProcessingExecutor.execute(() -> {
-                            List<CommentsResponse.CommentItem> allItems = new ArrayList<>();
-                            if (response != null && response.getData() != null) {
-                                if (response.getData().getRoot() != null) {
-                                    allItems.addAll(response.getData().getRoot());
-                                }
-                                if (response.getData().getReplies() != null) {
-                                    allItems.addAll(response.getData().getReplies());
-                                }
-                            }
+                            List<CommentsResponse.CommentItem> allItems = CommentsDataCoordinator.extractAllItems(response);
                             Map<Long, CommentHtmlProcessor.ParsedCommentContent> parsedMap =
-                                    preParseCommentsBatch(allItems, primaryTextColor, purpleColor);
+                                    dataCoordinator.preParseCommentsBatch(allItems, primaryTextColor, purpleColor);
 
                             safeRunOnUiThread(() -> {
                                 if (gen != requestGeneration) {
@@ -1260,24 +903,15 @@ public class CommentsManager {
                                 }
                                 isLoadingComments = false;
 
-                                if (commentsAdapter != null) {
-                                    commentsAdapter.putParsedContentMap(parsedMap);
-                                    commentsAdapter.setLoadingMore(false);
-                                }
-                                if (portraitCommentsAdapter != null) {
-                                    portraitCommentsAdapter.putParsedContentMap(parsedMap);
-                                    portraitCommentsAdapter.setLoadingMore(false);
-                                }
+                                putParsedContentOnBothAdapters(parsedMap);
+                                setLoadingMoreOnBothAdapters(false);
 
                                 if (isOfflineMode) {
                                     applyOfflineViewsState();
                                     return;
                                 }
 
-                                hideLoadingOverlay(commentsLoadingOverlay);
-                                hideLoadingOverlay(portraitCommentsLoadingOverlay);
-                                if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
-                                if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
+                                hideLoadingOverlaysAndErrors();
 
                                 if (response != null && response.getMeta() != null) {
                                     commentsHasNextPage = response.getMeta().isHas_next_page();
@@ -1295,16 +929,13 @@ public class CommentsManager {
                                 if (response != null) {
                                     hasInitialCommentsLoadError = false;
                                     lastPaginationErrorTimeMs = 0L;
-                                    if (isInitialPage) {
-                                        loadedPageResponses.clear();
-                                    }
-                                    loadedPageResponses.add(response);
+                                    dataCoordinator.recordLoadedPage(response, isInitialPage);
 
-                                    boolean portraitNow = isPortraitOrientation();
-                                    if (portraitNow) {
+                                    List<CommentsResponse.CommentItem> stickyList = dataCoordinator.getLoadedStickyComments();
+                                    if (isPortraitOrientation()) {
                                         if (portraitCommentsAdapter != null) {
                                             if (isInitialPage) {
-                                                portraitCommentsAdapter.setInitialComments(loadedStickyComments, response);
+                                                portraitCommentsAdapter.setInitialComments(stickyList, response);
                                             } else {
                                                 portraitCommentsAdapter.appendCommentsPage(response);
                                             }
@@ -1313,7 +944,7 @@ public class CommentsManager {
                                     } else {
                                         if (isCommentsVisible && !isPanelAnimatingOpen && commentsAdapter != null) {
                                             if (isInitialPage) {
-                                                commentsAdapter.setInitialComments(loadedStickyComments, response);
+                                                commentsAdapter.setInitialComments(stickyList, response);
                                             } else {
                                                 commentsAdapter.appendCommentsPage(response);
                                             }
@@ -1329,8 +960,8 @@ public class CommentsManager {
                                         dataCallback.onCommentsLoaded(allItems);
                                     }
                                 } else {
-                                    if (isInitialPage && loadedPageResponses.isEmpty()) {
-                                        loadedPageResponses.add(new CommentsResponse());
+                                    if (isInitialPage) {
+                                        dataCoordinator.addSyntheticEmptyPageIfNeeded();
                                     }
                                     updateEmptyCommentsState();
                                 }
@@ -1347,10 +978,9 @@ public class CommentsManager {
                             isLoadingComments = false;
                             hideLoadingOverlay(commentsLoadingOverlay);
                             hideLoadingOverlay(portraitCommentsLoadingOverlay);
-                            if (commentsAdapter != null) commentsAdapter.setLoadingMore(false);
-                            if (portraitCommentsAdapter != null) portraitCommentsAdapter.setLoadingMore(false);
+                            setLoadingMoreOnBothAdapters(false);
 
-                            boolean hasLoadedData = !loadedPageResponses.isEmpty()
+                            boolean hasLoadedData = !dataCoordinator.isPagesEmpty()
                                     || (portraitCommentsAdapter != null && portraitCommentsAdapter.hasAnySourceComments())
                                     || (commentsAdapter != null && commentsAdapter.hasAnySourceComments());
 
@@ -1385,19 +1015,33 @@ public class CommentsManager {
                 });
     }
 
-    private void updateEmptyCommentsState() {
-        boolean hasComments = !loadedStickyComments.isEmpty();
-        if (!hasComments) {
-            for (CommentsResponse resp : loadedPageResponses) {
-                if (resp != null && resp.getData() != null) {
-                    if ((resp.getData().getRoot() != null && !resp.getData().getRoot().isEmpty())
-                            || (resp.getData().getReplies() != null && !resp.getData().getReplies().isEmpty())) {
-                        hasComments = true;
-                        break;
-                    }
-                }
-            }
+    private void putParsedContentOnBothAdapters(Map<Long, CommentHtmlProcessor.ParsedCommentContent> parsedMap) {
+        if (commentsAdapter != null) {
+            commentsAdapter.putParsedContentMap(parsedMap);
         }
+        if (portraitCommentsAdapter != null) {
+            portraitCommentsAdapter.putParsedContentMap(parsedMap);
+        }
+    }
+
+    private void setLoadingMoreOnBothAdapters(boolean loading) {
+        if (commentsAdapter != null) {
+            commentsAdapter.setLoadingMore(loading);
+        }
+        if (portraitCommentsAdapter != null) {
+            portraitCommentsAdapter.setLoadingMore(loading);
+        }
+    }
+
+    private void hideLoadingOverlaysAndErrors() {
+        hideLoadingOverlay(commentsLoadingOverlay);
+        hideLoadingOverlay(portraitCommentsLoadingOverlay);
+        if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
+        if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
+    }
+
+    private void updateEmptyCommentsState() {
+        boolean hasComments = dataCoordinator.hasAnyComments();
         if (!hasComments) {
             hasComments = (portraitCommentsAdapter != null && portraitCommentsAdapter.hasAnySourceComments())
                     || (commentsAdapter != null && commentsAdapter.hasAnySourceComments());
@@ -1424,7 +1068,7 @@ public class CommentsManager {
         if (!isOfflineMode && !isCommentsDisabledInPlayer() && isPortraitOrientation()
                 && isPortraitCommentsRequested && currentEpisode != null
                 && !hasInitialCommentsLoadError
-                && loadedPageResponses.isEmpty() && !isLoadingComments) {
+                && dataCoordinator.isPagesEmpty() && !isLoadingComments) {
             mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
             mainHandler.postDelayed(deferredPortraitLoadRunnable, POST_PLAYBACK_PORTRAIT_LOAD_DELAY_MS);
         }
@@ -1462,9 +1106,7 @@ public class CommentsManager {
         }
         landscapeAdapterNeedsSync = false;
         portraitAdapterNeedsSync = false;
-        loadedStickyComments.clear();
-        loadedPageResponses.clear();
-        sharedParsedCache.clear();
+        dataCoordinator.clearAll(true);
 
         if (commentsAdapter != null) {
             commentsAdapter.clearAll();
@@ -1473,12 +1115,9 @@ public class CommentsManager {
             portraitCommentsAdapter.clearAll();
         }
 
-        hideLoadingOverlay(commentsLoadingOverlay);
-        hideLoadingOverlay(portraitCommentsLoadingOverlay);
+        hideLoadingOverlaysAndErrors();
         if (emptyCommentsText != null) emptyCommentsText.setVisibility(View.GONE);
         if (portraitEmptyCommentsText != null) portraitEmptyCommentsText.setVisibility(View.GONE);
-        if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
-        if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
 
         if (reloadIfVisible && currentEpisode != null) {
             if (isPortraitOrientation() && wasPortraitRequested) {
@@ -1521,8 +1160,7 @@ public class CommentsManager {
             lastPaginationErrorTimeMs = 0L;
             landscapeAdapterNeedsSync = false;
             portraitAdapterNeedsSync = false;
-            loadedStickyComments.clear();
-            loadedPageResponses.clear();
+            dataCoordinator.clearAll(false);
 
             if (commentsAdapter != null) {
                 commentsAdapter.clearAll();
@@ -1557,7 +1195,7 @@ public class CommentsManager {
 
         if (episode == null) return;
 
-        if (shouldLoadComments() && !hasInitialCommentsLoadError && loadedPageResponses.isEmpty() && !isLoadingComments) {
+        if (shouldLoadComments() && !hasInitialCommentsLoadError && dataCoordinator.isPagesEmpty() && !isLoadingComments) {
             if (isPortraitOrientation()) {
                 scheduleDeferredPortraitLoad();
             } else if (!isPanelAnimatingOpen) {
@@ -1616,46 +1254,7 @@ public class CommentsManager {
 
             this.portraitCommentsAdapter = new CommentsAdapter();
             this.portraitCommentsAdapter.setPortraitViewportMode(true);
-            this.portraitCommentsAdapter.setCommentActionListener(new CommentsAdapter.CommentActionListener() {
-                @Override
-                public void onReplyClicked(CommentsResponse.CommentItem comment) {
-                    Long targetId = comment != null ? comment.getId() : null;
-                    if (commentsAdapter != null && commentsAdapter != portraitCommentsAdapter) {
-                        commentsAdapter.setActiveReplyCommentId(targetId);
-                    }
-                    cancelMainInputReplyMode();
-                    keyboardScrollHelper.updateLandscapeMainInputVisibility();
-                }
-
-                @Override
-                public void onReplyCancelled(CommentsResponse.CommentItem comment) {
-                    if (commentsAdapter != null && commentsAdapter != portraitCommentsAdapter) {
-                        commentsAdapter.setActiveReplyCommentId(null);
-                    }
-                    cancelMainInputReplyMode();
-                    keyboardScrollHelper.updateLandscapeMainInputVisibility();
-                }
-
-                @Override
-                public void onSendInlineReply(CommentsResponse.CommentItem comment, CharSequence rawText, EditText inputField) {
-                    sendInlineReply(comment, rawText, inputField);
-                }
-
-                @Override
-                public void onVoteClicked(CommentsResponse.CommentItem comment, int targetVote) {
-                    voteOnComment(comment, targetVote);
-                }
-
-                @Override
-                public void onMoreActionsClicked(View anchorView, CommentsResponse.CommentItem comment) {
-                    showCommentActionsPopup(anchorView, comment);
-                }
-
-                @Override
-                public void onInlineReplyInputBound(EditText inputField, View inlineReplyContainer) {
-                    keyboardScrollHelper.attachInlineReplyInput(inputField, inlineReplyContainer, true);
-                }
-            });
+            this.portraitCommentsAdapter.setCommentActionListener(createCommentActionListener(true));
             this.portraitCommentsAdapter.setRepliesLimit(loadSavedRepliesLimit());
             this.portraitCommentsAdapter.setOnBatchCompletedListener(() -> {
                 if (!isPortraitOrientation() || isOfflineMode || isCommentsDisabledInPlayer()) return;
@@ -1671,9 +1270,9 @@ public class CommentsManager {
             });
             this.portraitCommentsRecyclerView.setAdapter(this.portraitCommentsAdapter);
 
-            if (portraitAdapterNeedsSync && !loadedPageResponses.isEmpty()) {
+            if (portraitAdapterNeedsSync && !dataCoordinator.isPagesEmpty()) {
                 portraitAdapterNeedsSync = false;
-                syncCachedPagesIntoAdapter(this.portraitCommentsAdapter);
+                dataCoordinator.syncCachedPagesIntoAdapter(this.portraitCommentsAdapter, !"asc".equals(commentsSortType));
             }
         }
 
@@ -1699,43 +1298,19 @@ public class CommentsManager {
             btnPortraitCancelReply = act.findViewById(R.id.btnPortraitCancelReply);
             CommentsAdapter.applySendButtonLoadingState(btnPortraitSendComment, portraitSendCommentLoadingContainer, isSubmittingMainComment);
 
-            if (portraitCommentInputField != null) {
-                CommentFormattingHelper.attachFormattingTextWatcher(portraitCommentInputField);
-            }
-
-            View btnPBold = act.findViewById(R.id.btnPortraitFormatBold);
-            View btnPItalic = act.findViewById(R.id.btnPortraitFormatItalic);
-            View btnPUnderline = act.findViewById(R.id.btnPortraitFormatUnderline);
-            View btnPStrike = act.findViewById(R.id.btnPortraitFormatStrike);
-            View btnPSpoiler = act.findViewById(R.id.btnPortraitFormatSpoiler);
-            View btnPQuote = act.findViewById(R.id.btnPortraitFormatQuote);
-
-            if (btnPBold != null) btnPBold.setOnClickListener(v -> CommentFormattingHelper.applyFormat(portraitCommentInputField, CommentFormattingHelper.FormatType.BOLD));
-            if (btnPItalic != null) btnPItalic.setOnClickListener(v -> CommentFormattingHelper.applyFormat(portraitCommentInputField, CommentFormattingHelper.FormatType.ITALIC));
-            if (btnPUnderline != null) btnPUnderline.setOnClickListener(v -> CommentFormattingHelper.applyFormat(portraitCommentInputField, CommentFormattingHelper.FormatType.UNDERLINE));
-            if (btnPStrike != null) btnPStrike.setOnClickListener(v -> CommentFormattingHelper.applyFormat(portraitCommentInputField, CommentFormattingHelper.FormatType.STRIKE));
-            if (btnPSpoiler != null) btnPSpoiler.setOnClickListener(v -> CommentFormattingHelper.applyFormat(portraitCommentInputField, CommentFormattingHelper.FormatType.SPOILER));
-            if (btnPQuote != null) btnPQuote.setOnClickListener(v -> CommentFormattingHelper.applyFormat(portraitCommentInputField, CommentFormattingHelper.FormatType.QUOTE));
-
-            if (btnPortraitSendComment != null) {
-                btnPortraitSendComment.setOnClickListener(v -> sendCommentFromInput(portraitCommentInputField));
-            }
-            if (btnPortraitCancelReply != null) {
-                btnPortraitCancelReply.setOnClickListener(v -> {
-                    if (!isSubmittingComment) {
-                        cancelReplyMode();
-                    }
-                });
-            }
-            if (portraitCommentInputField != null) {
-                portraitCommentInputField.setOnEditorActionListener((v, actionId, event) -> {
-                    if (actionId == EditorInfo.IME_ACTION_SEND) {
-                        sendCommentFromInput(portraitCommentInputField);
-                        return true;
-                    }
-                    return false;
-                });
-            }
+            View decorRoot = act.getWindow() != null ? act.getWindow().getDecorView() : null;
+            bindCommentInputAndFormatting(
+                    portraitCommentInputField,
+                    btnPortraitSendComment,
+                    btnPortraitCancelReply,
+                    decorRoot,
+                    R.id.btnPortraitFormatBold,
+                    R.id.btnPortraitFormatItalic,
+                    R.id.btnPortraitFormatUnderline,
+                    R.id.btnPortraitFormatStrike,
+                    R.id.btnPortraitFormatSpoiler,
+                    R.id.btnPortraitFormatQuote
+            );
 
             keyboardScrollHelper.bindPortraitViews(
                     portraitScrollView,
@@ -1779,24 +1354,10 @@ public class CommentsManager {
     public void applyOfflineViewsState() {
         if (isOfflineMode) {
             mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
-            if (commentsLoadingOverlay != null) commentsLoadingOverlay.setVisibility(View.GONE);
-            if (portraitCommentsLoadingOverlay != null) portraitCommentsLoadingOverlay.setVisibility(View.GONE);
-            if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
-            if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
+            hideLoadingOverlaysAndErrors();
             if (portraitOfflineCommentsNotice != null) portraitOfflineCommentsNotice.setVisibility(View.VISIBLE);
-            if (portraitCommentsHeader != null) portraitCommentsHeader.setVisibility(View.GONE);
-            if (portraitCommentInputContainer != null) portraitCommentInputContainer.setVisibility(View.GONE);
-            if (portraitCommentsRecyclerView != null) portraitCommentsRecyclerView.setVisibility(View.GONE);
+            setCommentsContainerChromeVisibility(View.GONE);
             if (portraitEmptyCommentsText != null) portraitEmptyCommentsText.setVisibility(View.GONE);
-            if (commentsRecyclerView != null) commentsRecyclerView.setVisibility(View.GONE);
-            if (commentsPanel != null) {
-                View panelInputContainer = commentsPanel.findViewById(R.id.commentInputContainer);
-                if (panelInputContainer != null) panelInputContainer.setVisibility(View.GONE);
-                View sortBtn = commentsPanel.findViewById(R.id.btnSortComments);
-                if (sortBtn != null) sortBtn.setVisibility(View.GONE);
-                View rulesBtn = commentsPanel.findViewById(R.id.btnCommentRules);
-                if (rulesBtn != null) rulesBtn.setVisibility(View.GONE);
-            }
             if (emptyCommentsText != null) {
                 emptyCommentsText.setText("Недоступно в офлайн режиме");
                 emptyCommentsText.setVisibility(View.VISIBLE);
@@ -1804,22 +1365,26 @@ public class CommentsManager {
             isLoadingComments = false;
         } else {
             if (portraitOfflineCommentsNotice != null) portraitOfflineCommentsNotice.setVisibility(View.GONE);
-            if (portraitCommentsHeader != null) portraitCommentsHeader.setVisibility(View.VISIBLE);
-            if (portraitCommentInputContainer != null) portraitCommentInputContainer.setVisibility(View.VISIBLE);
-            if (portraitCommentsRecyclerView != null) portraitCommentsRecyclerView.setVisibility(View.VISIBLE);
-            if (commentsRecyclerView != null) commentsRecyclerView.setVisibility(View.VISIBLE);
-            if (commentsPanel != null) {
-                View panelInputContainer = commentsPanel.findViewById(R.id.commentInputContainer);
-                if (panelInputContainer != null) panelInputContainer.setVisibility(View.VISIBLE);
-                View sortBtn = commentsPanel.findViewById(R.id.btnSortComments);
-                if (sortBtn != null) sortBtn.setVisibility(View.VISIBLE);
-                View rulesBtn = commentsPanel.findViewById(R.id.btnCommentRules);
-                if (rulesBtn != null) rulesBtn.setVisibility(View.VISIBLE);
-            }
+            setCommentsContainerChromeVisibility(View.VISIBLE);
             if (emptyCommentsText != null) {
                 emptyCommentsText.setText("Комментариев пока нет");
             }
             updateEmptyCommentsState();
+        }
+    }
+
+    private void setCommentsContainerChromeVisibility(int visibility) {
+        if (portraitCommentsHeader != null) portraitCommentsHeader.setVisibility(visibility);
+        if (portraitCommentInputContainer != null) portraitCommentInputContainer.setVisibility(visibility);
+        if (portraitCommentsRecyclerView != null) portraitCommentsRecyclerView.setVisibility(visibility);
+        if (commentsRecyclerView != null) commentsRecyclerView.setVisibility(visibility);
+        if (commentsPanel != null) {
+            View panelInput = commentsPanel.findViewById(R.id.commentInputContainer);
+            if (panelInput != null) panelInput.setVisibility(visibility);
+            View sortBtn = commentsPanel.findViewById(R.id.btnSortComments);
+            if (sortBtn != null) sortBtn.setVisibility(visibility);
+            View rulesBtn = commentsPanel.findViewById(R.id.btnCommentRules);
+            if (rulesBtn != null) rulesBtn.setVisibility(visibility);
         }
     }
 
@@ -1832,7 +1397,8 @@ public class CommentsManager {
         if (settingsCallback != null) {
             settingsCallback.onCommentsInPlayerToggled(false);
         }
-        if (loadedPageResponses.isEmpty() && !isLoadingComments) {
+        boolean prependRoot = !"asc".equals(commentsSortType);
+        if (dataCoordinator.isPagesEmpty() && !isLoadingComments) {
             hasInitialCommentsLoadError = false;
             lastPaginationErrorTimeMs = 0L;
             isPortraitCommentsRequested = true;
@@ -1840,10 +1406,10 @@ public class CommentsManager {
         } else {
             if (isPortraitOrientation() && portraitCommentsAdapter != null && portraitAdapterNeedsSync) {
                 portraitAdapterNeedsSync = false;
-                syncCachedPagesIntoAdapter(portraitCommentsAdapter);
+                dataCoordinator.syncCachedPagesIntoAdapter(portraitCommentsAdapter, prependRoot);
             } else if (!isPortraitOrientation() && commentsAdapter != null && landscapeAdapterNeedsSync) {
                 landscapeAdapterNeedsSync = false;
-                syncCachedPagesIntoAdapter(commentsAdapter);
+                dataCoordinator.syncCachedPagesIntoAdapter(commentsAdapter, prependRoot);
             }
             updateEmptyCommentsState();
         }
@@ -1854,43 +1420,17 @@ public class CommentsManager {
             if (disabled) {
                 mainHandler.removeCallbacks(deferredPortraitLoadRunnable);
                 if (portraitCommentsDisabledNotice != null) portraitCommentsDisabledNotice.setVisibility(View.VISIBLE);
-                if (portraitCommentsHeader != null) portraitCommentsHeader.setVisibility(View.GONE);
-                if (portraitCommentInputContainer != null) portraitCommentInputContainer.setVisibility(View.GONE);
-                if (portraitCommentsRecyclerView != null) portraitCommentsRecyclerView.setVisibility(View.GONE);
-                if (portraitEmptyCommentsText != null) portraitEmptyCommentsText.setVisibility(View.GONE);
-                if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
-                if (portraitCommentsLoadingOverlay != null) portraitCommentsLoadingOverlay.setVisibility(View.GONE);
-
                 if (landscapeCommentsDisabledNotice != null) landscapeCommentsDisabledNotice.setVisibility(View.VISIBLE);
-                if (commentsRecyclerView != null) commentsRecyclerView.setVisibility(View.GONE);
+                if (portraitEmptyCommentsText != null) portraitEmptyCommentsText.setVisibility(View.GONE);
                 if (emptyCommentsText != null) emptyCommentsText.setVisibility(View.GONE);
-                if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
-                if (commentsLoadingOverlay != null) commentsLoadingOverlay.setVisibility(View.GONE);
-                if (commentsPanel != null) {
-                    View panelInput = commentsPanel.findViewById(R.id.commentInputContainer);
-                    if (panelInput != null) panelInput.setVisibility(View.GONE);
-                    View sortBtn = commentsPanel.findViewById(R.id.btnSortComments);
-                    if (sortBtn != null) sortBtn.setVisibility(View.GONE);
-                    View rulesBtn = commentsPanel.findViewById(R.id.btnCommentRules);
-                    if (rulesBtn != null) rulesBtn.setVisibility(View.GONE);
-                }
+                hideLoadingOverlaysAndErrors();
+                setCommentsContainerChromeVisibility(View.GONE);
                 updateCommentsButtonVisibility(false);
             } else {
                 if (portraitCommentsDisabledNotice != null) portraitCommentsDisabledNotice.setVisibility(View.GONE);
                 if (landscapeCommentsDisabledNotice != null) landscapeCommentsDisabledNotice.setVisibility(View.GONE);
                 if (!isOfflineMode) {
-                    if (portraitCommentsHeader != null) portraitCommentsHeader.setVisibility(View.VISIBLE);
-                    if (portraitCommentInputContainer != null) portraitCommentInputContainer.setVisibility(View.VISIBLE);
-                    if (portraitCommentsRecyclerView != null) portraitCommentsRecyclerView.setVisibility(View.VISIBLE);
-                    if (commentsRecyclerView != null) commentsRecyclerView.setVisibility(View.VISIBLE);
-                    if (commentsPanel != null) {
-                        View panelInput = commentsPanel.findViewById(R.id.commentInputContainer);
-                        if (panelInput != null) panelInput.setVisibility(View.VISIBLE);
-                        View sortBtn = commentsPanel.findViewById(R.id.btnSortComments);
-                        if (sortBtn != null) sortBtn.setVisibility(View.VISIBLE);
-                        View rulesBtn = commentsPanel.findViewById(R.id.btnCommentRules);
-                        if (rulesBtn != null) rulesBtn.setVisibility(View.VISIBLE);
-                    }
+                    setCommentsContainerChromeVisibility(View.VISIBLE);
                     updateEmptyCommentsState();
                 }
                 updateCommentsButtonVisibility(true);
@@ -1900,13 +1440,13 @@ public class CommentsManager {
 
     private void triggerInitialLoadIfNeeded() {
         if (isOfflineMode || isCommentsDisabledInPlayer() || currentEpisode == null || hasInitialCommentsLoadError) return;
-        if (portraitAdapterNeedsSync && portraitCommentsAdapter != null && !loadedPageResponses.isEmpty()) {
+        if (portraitAdapterNeedsSync && portraitCommentsAdapter != null && !dataCoordinator.isPagesEmpty()) {
             portraitAdapterNeedsSync = false;
-            syncCachedPagesIntoAdapter(portraitCommentsAdapter);
+            dataCoordinator.syncCachedPagesIntoAdapter(portraitCommentsAdapter, !"asc".equals(commentsSortType));
             updateEmptyCommentsState();
             return;
         }
-        if (!isLoadingComments && loadedPageResponses.isEmpty()
+        if (!isLoadingComments && dataCoordinator.isPagesEmpty()
                 && (portraitCommentsAdapter == null || !portraitCommentsAdapter.hasAnySourceComments())) {
             loadCommentsPage(1);
         }
@@ -1923,14 +1463,14 @@ public class CommentsManager {
         }
         isPortraitCommentsRequested = true;
 
-        if (portraitAdapterNeedsSync && portraitCommentsAdapter != null && !loadedPageResponses.isEmpty()) {
+        if (portraitAdapterNeedsSync && portraitCommentsAdapter != null && !dataCoordinator.isPagesEmpty()) {
             portraitAdapterNeedsSync = false;
-            syncCachedPagesIntoAdapter(portraitCommentsAdapter);
+            dataCoordinator.syncCachedPagesIntoAdapter(portraitCommentsAdapter, !"asc".equals(commentsSortType));
             updateEmptyCommentsState();
             return;
         }
 
-        if (currentEpisode != null && !isLoadingComments && !hasInitialCommentsLoadError && loadedPageResponses.isEmpty()
+        if (currentEpisode != null && !isLoadingComments && !hasInitialCommentsLoadError && dataCoordinator.isPagesEmpty()
                 && (portraitCommentsAdapter == null || !portraitCommentsAdapter.hasAnySourceComments())) {
             scheduleDeferredPortraitLoad();
         }
@@ -1958,15 +1498,7 @@ public class CommentsManager {
                 ? comment.getUser().getUsername() : "пользователю";
 
         String replyText = "Ответ для @" + replyUsername;
-
-        if (replyBar != null && tvReplyToText != null) {
-            tvReplyToText.setText(replyText);
-            replyBar.setVisibility(View.VISIBLE);
-        }
-        if (portraitReplyBar != null && tvPortraitReplyToText != null) {
-            tvPortraitReplyToText.setText(replyText);
-            portraitReplyBar.setVisibility(View.VISIBLE);
-        }
+        showReplyBarsWithText(replyText);
     }
 
     public void startEditMode(CommentsResponse.CommentItem comment) {
@@ -1979,16 +1511,7 @@ public class CommentsManager {
             cleanText = Html.fromHtml(comment.getComment(), Html.FROM_HTML_MODE_LEGACY).toString().trim();
         }
 
-        String titleText = "Редактирование комментария";
-
-        if (replyBar != null && tvReplyToText != null) {
-            tvReplyToText.setText(titleText);
-            replyBar.setVisibility(View.VISIBLE);
-        }
-        if (portraitReplyBar != null && tvPortraitReplyToText != null) {
-            tvPortraitReplyToText.setText(titleText);
-            portraitReplyBar.setVisibility(View.VISIBLE);
-        }
+        showReplyBarsWithText("Редактирование комментария");
 
         if (commentInputField != null) {
             commentInputField.setText(cleanText);
@@ -2011,6 +1534,17 @@ public class CommentsManager {
                     imm.showSoftInput(targetInput, InputMethodManager.SHOW_IMPLICIT);
                 }
             } catch (Exception ignored) {}
+        }
+    }
+
+    private void showReplyBarsWithText(String titleText) {
+        if (replyBar != null && tvReplyToText != null) {
+            tvReplyToText.setText(titleText);
+            replyBar.setVisibility(View.VISIBLE);
+        }
+        if (portraitReplyBar != null && tvPortraitReplyToText != null) {
+            tvPortraitReplyToText.setText(titleText);
+            portraitReplyBar.setVisibility(View.VISIBLE);
         }
     }
 
@@ -2147,7 +1681,7 @@ public class CommentsManager {
                             itemToApply.setId(commentId);
                         }
                         if (editedComment == null || itemToApply.getComment() == null || itemToApply.getComment().trim().isEmpty()) {
-                            itemToApply.setComment(buildFallbackHtmlFromBBCode(text));
+                            itemToApply.setComment(CommentsDataCoordinator.buildFallbackHtmlFromBBCode(text));
                         }
                         handleCommentMutationSuccess(episodeId, itemToApply, text, parentId, rootId, level, true);
                     });
@@ -2264,19 +1798,27 @@ public class CommentsManager {
 
         boolean prependRoot = !"asc".equals(commentsSortType);
         if (mutatedComment != null && mutatedComment.getId() > 0) {
-            normalizeMutatedComment(mutatedComment, episodeId, submittedText, parentId, rootId, level);
+            dataCoordinator.normalizeMutatedComment(
+                    mutatedComment,
+                    episodeId,
+                    submittedText,
+                    parentId,
+                    rootId,
+                    level,
+                    moderationHelper.resolveDatabaseManager()
+            );
 
-            sharedParsedCache.remove(mutatedComment.getId());
+            dataCoordinator.removeParsed(mutatedComment.getId());
             int primaryTextColor = CommentHtmlProcessor.resolvePrimaryTextColor(context);
             int purpleColor = context != null ? ContextCompat.getColor(context, R.color.purple_primary) : 0xFF8B5CF6;
             CommentHtmlProcessor.ParsedCommentContent parsed = CommentHtmlProcessor.parseHtmlOffThread(
                     mutatedComment.getComment(), primaryTextColor, purpleColor);
-            sharedParsedCache.put(mutatedComment.getId(), parsed);
+            dataCoordinator.putSingleParsed(mutatedComment.getId(), parsed);
 
             Map<Long, CommentHtmlProcessor.ParsedCommentContent> singleMap = new HashMap<>();
             singleMap.put(mutatedComment.getId(), parsed);
 
-            upsertIntoLoadedPageResponses(mutatedComment, prependRoot);
+            dataCoordinator.upsertIntoLoadedPageResponses(mutatedComment, prependRoot);
 
             if (commentsAdapter != null) {
                 commentsAdapter.putParsedContentMap(singleMap);
@@ -2301,209 +1843,8 @@ public class CommentsManager {
             }
         }
 
-        int targetPage = findPageForMutationRefresh(mutatedComment, parentId, rootId, isEdit);
+        int targetPage = dataCoordinator.findPageForMutationRefresh(mutatedComment, parentId, rootId, isEdit);
         refreshCommentsPageFromServer(episodeId, targetPage, mutatedComment, isEdit, true);
-    }
-
-    private void normalizeMutatedComment(CommentsResponse.CommentItem item,
-                                         long episodeId,
-                                         String submittedText,
-                                         Long parentId,
-                                         Long rootId,
-                                         int level) {
-        if (item == null) return;
-        if (item.getRelation_id() <= 0) {
-            item.setRelation_id(episodeId);
-        }
-        if (item.getComment() == null || item.getComment().trim().isEmpty()) {
-            item.setComment(buildFallbackHtmlFromBBCode(submittedText));
-        }
-        if (parentId != null && parentId > 0) {
-            if (item.getParent_comment() == null || item.getParent_comment() <= 0) {
-                item.setParent_comment(parentId);
-            }
-            Long effectiveRoot = (rootId != null && rootId > 0) ? rootId : parentId;
-            if (item.getRoot_id() == null || item.getRoot_id() <= 0) {
-                item.setRoot_id(effectiveRoot);
-            }
-            if (item.getComment_level() <= 0) {
-                item.setComment_level(Math.max(1, level));
-            }
-        }
-        if (item.getCreated_at_ts() <= 0 && (item.getCreated_at() == null || item.getCreated_at().isEmpty())) {
-            item.setCreated_at_ts(System.currentTimeMillis() / 1000L);
-        }
-        if (item.getUser() == null) {
-            populateFallbackUserIfMissing(item);
-        }
-    }
-
-    private void populateFallbackUserIfMissing(CommentsResponse.CommentItem item) {
-        try {
-            DatabaseManager db = (apiService != null && apiService.getDatabaseManager() != null)
-                    ? apiService.getDatabaseManager()
-                    : (context != null ? new DatabaseManager(context) : null);
-            if (db == null) return;
-            TokenEntity token = db.getToken();
-            if (token == null) return;
-
-            CommentsResponse.User user = new CommentsResponse.User();
-            if (token.getUserId() != null && !token.getUserId().trim().isEmpty()) {
-                try {
-                    user.setId(Long.parseLong(token.getUserId().trim()));
-                } catch (Exception ignored) {}
-            }
-            if (token.getUsername() != null && !token.getUsername().trim().isEmpty()) {
-                user.setUsername(token.getUsername().trim());
-            }
-            if (user.getUsername() != null || user.getId() > 0) {
-                item.setUser(user);
-            }
-        } catch (Exception ignored) {}
-    }
-
-    private static String buildFallbackHtmlFromBBCode(String rawText) {
-        if (rawText == null || rawText.trim().isEmpty()) {
-            return "<p></p>";
-        }
-        String escaped = rawText
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;");
-        escaped = escaped
-                .replaceAll("(?is)\\[b\\]([\\s\\S]*?)\\[/b\\]", "<strong>$1</strong>")
-                .replaceAll("(?is)\\[i\\]([\\s\\S]*?)\\[/i\\]", "<em>$1</em>")
-                .replaceAll("(?is)\\[u\\]([\\s\\S]*?)\\[/u\\]", "<u>$1</u>")
-                .replaceAll("(?is)\\[s\\]([\\s\\S]*?)\\[/s\\]", "<s>$1</s>")
-                .replaceAll("(?is)\\[quote\\]([\\s\\S]*?)\\[/quote\\]", "<blockquote>$1</blockquote>")
-                .replaceAll("(?is)\\[spoiler(?:=([^\\]]+))?\\]([\\s\\S]*?)\\[/spoiler\\]",
-                        "<div class=\"spoiler-node\" data-spoiler-text=\"$1\"><div class=\"spoiler-node__text\">$2</div></div>");
-        String[] paragraphs = escaped.split("\\r?\\n");
-        StringBuilder sb = new StringBuilder();
-        for (String p : paragraphs) {
-            if (!p.trim().isEmpty()) {
-                sb.append("<p>").append(p).append("</p>");
-            }
-        }
-        return sb.length() > 0 ? sb.toString() : "<p>" + escaped + "</p>";
-    }
-
-    private int findPageForMutationRefresh(CommentsResponse.CommentItem mutatedComment,
-                                           Long parentId,
-                                           Long rootId,
-                                           boolean isEdit) {
-        if (!isEdit && (parentId == null || parentId <= 0)) {
-            return 1;
-        }
-        Long lookupRootId = (rootId != null && rootId > 0)
-                ? rootId
-                : ((parentId != null && parentId > 0) ? parentId
-                : (mutatedComment != null ? mutatedComment.getId() : null));
-        if (lookupRootId == null || lookupRootId <= 0 || loadedPageResponses.isEmpty()) {
-            return 1;
-        }
-        for (int i = 0; i < loadedPageResponses.size(); i++) {
-            CommentsResponse resp = loadedPageResponses.get(i);
-            if (responseContainsComment(resp, lookupRootId)) {
-                return i + 1;
-            }
-        }
-        return 1;
-    }
-
-    private static boolean responseContainsComment(CommentsResponse resp, long commentId) {
-        if (resp == null || resp.getData() == null || commentId <= 0) return false;
-        if (resp.getData().getRoot() != null) {
-            for (CommentsResponse.CommentItem r : resp.getData().getRoot()) {
-                if (r != null && r.getId() == commentId) return true;
-            }
-        }
-        if (resp.getData().getReplies() != null) {
-            for (CommentsResponse.CommentItem c : resp.getData().getReplies()) {
-                if (c != null && c.getId() == commentId) return true;
-            }
-        }
-        return false;
-    }
-
-    private void upsertIntoLoadedPageResponses(CommentsResponse.CommentItem item, boolean prependRoot) {
-        if (item == null || item.getId() <= 0) return;
-
-        for (CommentsResponse resp : loadedPageResponses) {
-            if (resp == null || resp.getData() == null) continue;
-            if (resp.getData().getRoot() != null) {
-                for (int i = 0; i < resp.getData().getRoot().size(); i++) {
-                    CommentsResponse.CommentItem existing = resp.getData().getRoot().get(i);
-                    if (existing != null && existing.getId() == item.getId()) {
-                        resp.getData().getRoot().set(i, item);
-                        return;
-                    }
-                }
-            }
-            if (resp.getData().getReplies() != null) {
-                for (int i = 0; i < resp.getData().getReplies().size(); i++) {
-                    CommentsResponse.CommentItem existing = resp.getData().getReplies().get(i);
-                    if (existing != null && existing.getId() == item.getId()) {
-                        resp.getData().getReplies().set(i, item);
-                        return;
-                    }
-                }
-            }
-        }
-
-        if (loadedPageResponses.isEmpty()) {
-            CommentsResponse syntheticPage = new CommentsResponse();
-            CommentsResponse.Data data = new CommentsResponse.Data();
-            data.setRoot(new ArrayList<>());
-            data.setReplies(new ArrayList<>());
-            syntheticPage.setData(data);
-            loadedPageResponses.add(syntheticPage);
-        }
-
-        boolean isReply = (item.getParent_comment() != null && item.getParent_comment() > 0)
-                || (item.getRoot_id() != null && item.getRoot_id() > 0)
-                || item.getComment_level() > 0;
-
-        if (isReply) {
-            Long targetRoot = item.getRoot_id() != null && item.getRoot_id() > 0 ? item.getRoot_id() : item.getParent_comment();
-            CommentsResponse targetResp = loadedPageResponses.get(0);
-            if (targetRoot != null) {
-                for (CommentsResponse resp : loadedPageResponses) {
-                    if (responseContainsComment(resp, targetRoot)) {
-                        targetResp = resp;
-                        break;
-                    }
-                }
-            }
-            if (targetResp.getData() == null) {
-                CommentsResponse.Data d = new CommentsResponse.Data();
-                d.setRoot(new ArrayList<>());
-                d.setReplies(new ArrayList<>());
-                targetResp.setData(d);
-            }
-            if (targetResp.getData().getReplies() == null) {
-                targetResp.getData().setReplies(new ArrayList<>());
-            }
-            targetResp.getData().getReplies().add(item);
-        } else {
-            CommentsResponse targetResp = prependRoot
-                    ? loadedPageResponses.get(0)
-                    : loadedPageResponses.get(loadedPageResponses.size() - 1);
-            if (targetResp.getData() == null) {
-                CommentsResponse.Data d = new CommentsResponse.Data();
-                d.setRoot(new ArrayList<>());
-                d.setReplies(new ArrayList<>());
-                targetResp.setData(d);
-            }
-            if (targetResp.getData().getRoot() == null) {
-                targetResp.getData().setRoot(new ArrayList<>());
-            }
-            if (prependRoot) {
-                targetResp.getData().getRoot().add(0, item);
-            } else {
-                targetResp.getData().getRoot().add(item);
-            }
-        }
     }
 
     private void refreshCommentsPageFromServer(long episodeId,
@@ -2540,82 +1881,45 @@ public class CommentsManager {
                     @Override
                     public void onCommentsReceived(CommentsResponse response) {
                         commentsProcessingExecutor.execute(() -> {
-                            List<CommentsResponse.CommentItem> allItems = new ArrayList<>();
-                            if (response != null && response.getData() != null) {
-                                if (response.getData().getRoot() != null) {
-                                    allItems.addAll(response.getData().getRoot());
-                                }
-                                if (response.getData().getReplies() != null) {
-                                    allItems.addAll(response.getData().getReplies());
-                                }
-                            }
-                            for (CommentsResponse.CommentItem serverItem : allItems) {
-                                if (serverItem != null) {
-                                    sharedParsedCache.remove(serverItem.getId());
-                                }
-                            }
+                            List<CommentsResponse.CommentItem> allItems = CommentsDataCoordinator.extractAllItems(response);
+                            dataCoordinator.invalidateParsedForItems(allItems);
                             Map<Long, CommentHtmlProcessor.ParsedCommentContent> parsedMap =
-                                    preParseCommentsBatch(allItems, primaryTextColor, purpleColor);
+                                    dataCoordinator.preParseCommentsBatch(allItems, primaryTextColor, purpleColor);
 
                             safeRunOnUiThread(() -> {
                                 if (gen != requestGeneration) {
                                     return;
                                 }
                                 isLoadingComments = false;
-                                hideLoadingOverlay(commentsLoadingOverlay);
-                                hideLoadingOverlay(portraitCommentsLoadingOverlay);
-                                if (commentsErrorLayout != null) commentsErrorLayout.setVisibility(View.GONE);
-                                if (portraitCommentsErrorLayout != null) portraitCommentsErrorLayout.setVisibility(View.GONE);
+                                hideLoadingOverlaysAndErrors();
 
-                                if (commentsAdapter != null) {
-                                    commentsAdapter.putParsedContentMap(parsedMap);
-                                    commentsAdapter.setLoadingMore(false);
-                                }
-                                if (portraitCommentsAdapter != null) {
-                                    portraitCommentsAdapter.putParsedContentMap(parsedMap);
-                                    portraitCommentsAdapter.setLoadingMore(false);
-                                }
+                                putParsedContentOnBothAdapters(parsedMap);
+                                setLoadingMoreOnBothAdapters(false);
 
                                 if (response != null) {
-                                    if (targetPage == 1 && loadedPageResponses.size() <= 1) {
-                                        loadedPageResponses.clear();
-                                        loadedPageResponses.add(response);
-                                        if (response.getMeta() != null) {
-                                            commentsHasNextPage = response.getMeta().isHas_next_page();
-                                            commentsCurrentPage = response.getMeta().getPage() > 0 ? response.getMeta().getPage() : 1;
-                                        } else {
-                                            commentsCurrentPage = 1;
-                                            commentsHasNextPage = false;
-                                        }
-                                    } else if (targetPage >= 1 && targetPage <= loadedPageResponses.size()) {
-                                        loadedPageResponses.set(targetPage - 1, response);
-                                        if (targetPage == loadedPageResponses.size() && response.getMeta() != null) {
-                                            commentsHasNextPage = response.getMeta().isHas_next_page();
-                                            commentsCurrentPage = Math.max(commentsCurrentPage, targetPage);
-                                        }
-                                    } else {
-                                        loadedPageResponses.clear();
-                                        loadedPageResponses.add(response);
-                                        commentsCurrentPage = targetPage;
-                                        commentsHasNextPage = response.getMeta() != null && response.getMeta().isHas_next_page();
-                                    }
+                                    CommentsDataCoordinator.PageMetadata meta = dataCoordinator.applyRefreshedPage(
+                                            targetPage, response, commentsCurrentPage, commentsHasNextPage);
+                                    commentsCurrentPage = meta.currentPage;
+                                    commentsHasNextPage = meta.hasNextPage;
 
                                     boolean prependRoot = !"asc".equals(commentsSortType);
-                                    boolean foundInServer = mutatedComment != null && responseContainsComment(response, mutatedComment.getId());
+                                    boolean foundInServer = mutatedComment != null
+                                            && CommentsDataCoordinator.responseContainsComment(response, mutatedComment.getId());
                                     if (!isEdit && mutatedComment != null && mutatedComment.getId() > 0 && !foundInServer) {
-                                        upsertIntoLoadedPageResponses(mutatedComment, prependRoot);
+                                        dataCoordinator.upsertIntoLoadedPageResponses(mutatedComment, prependRoot);
                                     }
 
                                     CommentsResponse.CommentItem ensureItem = (!isEdit && mutatedComment != null) ? mutatedComment : null;
-                                    boolean portraitNow = isPortraitOrientation();
-                                    if (portraitNow) {
+                                    List<CommentsResponse.CommentItem> stickyList = dataCoordinator.getLoadedStickyComments();
+                                    List<CommentsResponse> pages = dataCoordinator.getLoadedPageResponses();
+                                    if (isPortraitOrientation()) {
                                         if (portraitCommentsAdapter != null) {
-                                            portraitCommentsAdapter.replacePagesOnRefresh(loadedStickyComments, loadedPageResponses, ensureItem, prependRoot);
+                                            portraitCommentsAdapter.replacePagesOnRefresh(stickyList, pages, ensureItem, prependRoot);
                                         }
                                         landscapeAdapterNeedsSync = true;
                                     } else {
                                         if (isCommentsVisible && !isPanelAnimatingOpen && commentsAdapter != null) {
-                                            commentsAdapter.replacePagesOnRefresh(loadedStickyComments, loadedPageResponses, ensureItem, prependRoot);
+                                            commentsAdapter.replacePagesOnRefresh(stickyList, pages, ensureItem, prependRoot);
                                         } else {
                                             landscapeAdapterNeedsSync = true;
                                         }
@@ -2652,8 +1956,7 @@ public class CommentsManager {
                             isLoadingComments = false;
                             hideLoadingOverlay(commentsLoadingOverlay);
                             hideLoadingOverlay(portraitCommentsLoadingOverlay);
-                            if (commentsAdapter != null) commentsAdapter.setLoadingMore(false);
-                            if (portraitCommentsAdapter != null) portraitCommentsAdapter.setLoadingMore(false);
+                            setLoadingMoreOnBothAdapters(false);
                             updateEmptyCommentsState();
                         });
                     }
@@ -2671,48 +1974,12 @@ public class CommentsManager {
     }
 
     public void voteOnComment(CommentsResponse.CommentItem comment, int targetVote) {
-        if (comment == null) return;
+        if (comment == null || apiService == null) return;
         apiService.voteComment(comment.getId(), targetVote, new ApiService.VoteCommentCallback() {
             @Override
             public void onSuccess(int newVoteValue, CommentsResponse.Votes updatedVotes) {
                 safeRunOnUiThread(() -> {
-                    if (updatedVotes != null) {
-                        comment.setVotes(updatedVotes);
-                    } else {
-                        if (comment.getVotes() == null) {
-                            comment.setVotes(new CommentsResponse.Votes());
-                        }
-                        Integer oldVote = null;
-                        if (comment.getVotes().getUser() != null) {
-                            try {
-                                if (comment.getVotes().getUser() instanceof Number) {
-                                    oldVote = ((Number) comment.getVotes().getUser()).intValue();
-                                } else if (comment.getVotes().getUser() instanceof Boolean) {
-                                    oldVote = ((Boolean) comment.getVotes().getUser()) ? 1 : 0;
-                                } else {
-                                    String str = comment.getVotes().getUser().toString().trim();
-                                    if ("true".equalsIgnoreCase(str)) oldVote = 1;
-                                    else if ("false".equalsIgnoreCase(str)) oldVote = 0;
-                                    else oldVote = Integer.parseInt(str);
-                                }
-                            } catch (Exception ignored) {}
-                        }
-
-                        int up = comment.getVotes().getUp();
-                        int down = comment.getVotes().getDown();
-
-                        if (oldVote != null) {
-                            if (oldVote == 1) up = Math.max(0, up - 1);
-                            if (oldVote == 0) down = Math.max(0, down - 1);
-                        }
-
-                        if (newVoteValue == 1) up++;
-                        if (newVoteValue == 0) down++;
-
-                        comment.getVotes().setUp(up);
-                        comment.getVotes().setDown(down);
-                        comment.getVotes().setUser(newVoteValue);
-                    }
+                    CommentsDataCoordinator.applyLocalVoteUpdate(comment, newVoteValue, updatedVotes);
 
                     // Точечное обновление только оценённого комментария вместо notifyDataSetChanged() всего списка!
                     if (commentsAdapter != null) {
@@ -2732,14 +1999,7 @@ public class CommentsManager {
     }
 
     public void showRulesDialog() {
-        if (context == null) return;
-        try {
-            RulesBottomSheet rulesBottomSheet = new RulesBottomSheet(context, apiService);
-            rulesBottomSheet.show();
-        } catch (Exception e) {
-            Log.e(TAG, "Error showing rules bottom sheet", e);
-            CustomToast.showInfo(context, "Правила комментариев");
-        }
+        moderationHelper.showRulesDialog();
     }
 
     public void setSettingsCallback(CommentsSettingsCallback callback) {
@@ -2747,46 +2007,7 @@ public class CommentsManager {
     }
 
     public void showSettingsDialog() {
-        if (context == null) return;
-        try {
-            CommentSettingsBottomSheet bs =
-                    new CommentSettingsBottomSheet(context, new CommentSettingsBottomSheet.OnCommentSettingsListener() {
-                        @Override
-                        public void onCommentsInPlayerToggled(boolean disabled) {
-                            applyCommentsDisabledState(disabled);
-                            if (disabled) {
-                                if (isCommentsVisible) {
-                                    hideCommentsPanel();
-                                }
-                                updateCommentsButtonVisibility(false);
-                            } else {
-                                updateCommentsButtonVisibility(true);
-                                if (loadedPageResponses.isEmpty() && !isLoadingComments) {
-                                    hasInitialCommentsLoadError = false;
-                                    lastPaginationErrorTimeMs = 0L;
-                                    isPortraitCommentsRequested = true;
-                                    loadCommentsPage(1);
-                                } else {
-                                    updateEmptyCommentsState();
-                                }
-                            }
-                            if (settingsCallback != null) {
-                                settingsCallback.onCommentsInPlayerToggled(disabled);
-                            }
-                        }
-
-                        @Override
-                        public void onRepliesLimitChanged(int limit) {
-                            updateRepliesLimit(limit);
-                            if (settingsCallback != null) {
-                                settingsCallback.onRepliesLimitChanged(limit);
-                            }
-                        }
-                    });
-            bs.show();
-        } catch (Exception e) {
-            Log.e(TAG, "Error showing comments settings bottom sheet", e);
-        }
+        moderationHelper.showSettingsDialog();
     }
 
     public void updateRepliesLimit(int limit) {
@@ -2876,9 +2097,7 @@ public class CommentsManager {
             portraitCommentsAdapter.clearAll();
         }
 
-        loadedStickyComments.clear();
-        loadedPageResponses.clear();
-        sharedParsedCache.clear();
+        dataCoordinator.clearAll(true);
 
         if (emptyCommentsText != null) {
             emptyCommentsText.setVisibility(View.GONE);

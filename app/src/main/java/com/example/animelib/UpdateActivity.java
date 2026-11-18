@@ -19,24 +19,26 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
 
+import com.example.animelib.api.ApiClientCore;
 import com.example.animelib.models.UpdateInfo;
 import com.example.animelib.util.CustomToast;
 import com.example.animelib.util.ThemeUtils;
 import com.example.animelib.util.UpdateManager;
 import com.google.android.material.button.MaterialButton;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.materialswitch.MaterialSwitch;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.concurrent.TimeUnit;
 
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 public class UpdateActivity extends AppCompatActivity {
     private static final String TAG = "UpdateActivity";
@@ -63,6 +65,7 @@ public class UpdateActivity extends AppCompatActivity {
     private MaterialButton btnRollbackToStable;
 
     private boolean isDownloading = false;
+    private Call activeDownloadCall;
 
     public static void start(Context context, UpdateInfo updateInfo) {
         Intent intent = new Intent(context, UpdateActivity.class);
@@ -105,6 +108,15 @@ public class UpdateActivity extends AppCompatActivity {
         } else {
             loadUpdatesFromNetwork();
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (activeDownloadCall != null) {
+            activeDownloadCall.cancel();
+            activeDownloadCall = null;
+        }
+        super.onDestroy();
     }
 
     private void setupSystemBars() {
@@ -425,16 +437,28 @@ public class UpdateActivity extends AppCompatActivity {
         tvDownloadStatus.setVisibility(View.VISIBLE);
         tvDownloadStatus.setText("Подключение к GitHub...");
 
-        OkHttpClient client = new OkHttpClient();
+        OkHttpClient client = ApiClientCore.getSharedHttpClient()
+                .newBuilder()
+                .readTimeout(60, TimeUnit.SECONDS)
+                .build();
         Request request = new Request.Builder()
                 .url(apkUrl)
                 .header("User-Agent", "AnimeLib-App")
                 .build();
 
-        client.newCall(request).enqueue(new Callback() {
+        if (activeDownloadCall != null) {
+            activeDownloadCall.cancel();
+        }
+        activeDownloadCall = client.newCall(request);
+        activeDownloadCall.enqueue(new Callback() {
             @Override
             public void onFailure(@NonNull Call call, @NonNull java.io.IOException e) {
+                activeDownloadCall = null;
+                if (call.isCanceled()) {
+                    return;
+                }
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     isDownloading = false;
                     btnDownload.setEnabled(true);
                     btnDownload.setText(R.string.btn_download_apk);
@@ -446,36 +470,40 @@ public class UpdateActivity extends AppCompatActivity {
             }
 
             @Override
-            public void onResponse(@NonNull Call call, @NonNull Response response) throws java.io.IOException {
-                if (!response.isSuccessful()) {
-                    runOnUiThread(() -> {
-                        isDownloading = false;
-                        btnDownload.setEnabled(true);
-                        btnDownload.setText(R.string.btn_download_apk);
-                        if (btnRollbackToStable != null) btnRollbackToStable.setEnabled(true);
-                        progressDownload.setVisibility(View.GONE);
-                        tvDownloadStatus.setText("Ошибка сервера HTTP " + response.code());
-                        CustomToast.showWarning(UpdateActivity.this, "Ошибка загрузки файла");
-                    });
-                    return;
-                }
+            public void onResponse(@NonNull Call call, @NonNull Response response) {
+                activeDownloadCall = null;
+                File apkFile = null;
+                boolean downloadCompleted = false;
+                try (Response res = response) {
+                    if (!res.isSuccessful()) {
+                        final int code = res.code();
+                        runOnUiThread(() -> {
+                            if (isFinishing() || isDestroyed()) return;
+                            isDownloading = false;
+                            btnDownload.setEnabled(true);
+                            btnDownload.setText(R.string.btn_download_apk);
+                            if (btnRollbackToStable != null) btnRollbackToStable.setEnabled(true);
+                            progressDownload.setVisibility(View.GONE);
+                            tvDownloadStatus.setText("Ошибка сервера HTTP " + code);
+                            CustomToast.showWarning(UpdateActivity.this, "Ошибка загрузки файла");
+                        });
+                        return;
+                    }
 
-                try {
                     File downloadsDir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
                     if (downloadsDir != null && !downloadsDir.exists()) {
                         downloadsDir.mkdirs();
                     }
                     String fileName = targetInfo.isBeta() ? "app-beta-update.apk" : "app-stable-update.apk";
-                    File apkFile = new File(downloadsDir, fileName);
+                    apkFile = new File(downloadsDir, fileName);
                     if (apkFile.exists()) {
                         apkFile.delete();
                     }
 
-                    long contentLength = response.body() != null ? response.body().contentLength() : 0;
-                    InputStream inputStream = response.body() != null ? response.body().byteStream() : null;
-
-                    if (inputStream == null) {
+                    ResponseBody body = res.body();
+                    if (body == null) {
                         runOnUiThread(() -> {
+                            if (isFinishing() || isDestroyed()) return;
                             isDownloading = false;
                             btnDownload.setEnabled(true);
                             btnDownload.setText(R.string.btn_download_apk);
@@ -486,41 +514,48 @@ public class UpdateActivity extends AppCompatActivity {
                         return;
                     }
 
-                    OutputStream outputStream = new FileOutputStream(apkFile);
+                    long contentLength = body.contentLength();
                     byte[] buffer = new byte[8192];
                     long bytesReadTotal = 0;
                     int read;
 
                     runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) return;
                         progressDownload.setIndeterminate(false);
                         progressDownload.setMax(100);
                     });
 
                     long lastProgressUpdate = 0;
+                    try (InputStream inputStream = body.byteStream();
+                         OutputStream outputStream = new FileOutputStream(apkFile)) {
+                        while ((read = inputStream.read(buffer)) != -1) {
+                            if (call.isCanceled()) {
+                                return;
+                            }
+                            outputStream.write(buffer, 0, read);
+                            bytesReadTotal += read;
 
-                    while ((read = inputStream.read(buffer)) != -1) {
-                        outputStream.write(buffer, 0, read);
-                        bytesReadTotal += read;
+                            long now = System.currentTimeMillis();
+                            if (contentLength > 0 && (now - lastProgressUpdate > 200)) {
+                                lastProgressUpdate = now;
+                                final int progress = (int) ((bytesReadTotal * 100) / contentLength);
+                                final long currentMB = bytesReadTotal / (1024 * 1024);
+                                final long totalMB = contentLength / (1024 * 1024);
 
-                        long now = System.currentTimeMillis();
-                        if (contentLength > 0 && (now - lastProgressUpdate > 200)) {
-                            lastProgressUpdate = now;
-                            final int progress = (int) ((bytesReadTotal * 100) / contentLength);
-                            final long currentMB = bytesReadTotal / (1024 * 1024);
-                            final long totalMB = contentLength / (1024 * 1024);
-
-                            runOnUiThread(() -> {
-                                progressDownload.setProgress(progress);
-                                tvDownloadStatus.setText("Загрузка: " + progress + "% (" + currentMB + " / " + totalMB + " МБ)");
-                            });
+                                runOnUiThread(() -> {
+                                    if (isFinishing() || isDestroyed()) return;
+                                    progressDownload.setProgress(progress);
+                                    tvDownloadStatus.setText("Загрузка: " + progress + "% (" + currentMB + " / " + totalMB + " МБ)");
+                                });
+                            }
                         }
+                        outputStream.flush();
                     }
+                    downloadCompleted = true;
 
-                    outputStream.flush();
-                    outputStream.close();
-                    inputStream.close();
-
+                    final File completedApkFile = apkFile;
                     runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) return;
                         isDownloading = false;
                         btnDownload.setEnabled(true);
                         btnDownload.setText("УСТАНОВИТЬ ПОВТОРНО");
@@ -528,12 +563,13 @@ public class UpdateActivity extends AppCompatActivity {
                         progressDownload.setProgress(100);
                         tvDownloadStatus.setText("Загрузка завершена!");
                         CustomToast.showSuccess(UpdateActivity.this, "Файл загружен! Запуск установки...");
-                        installApk(apkFile);
+                        installApk(completedApkFile);
                     });
 
                 } catch (Exception e) {
                     Log.e(TAG, "Error saving APK", e);
                     runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) return;
                         isDownloading = false;
                         btnDownload.setEnabled(true);
                         btnDownload.setText(R.string.btn_download_apk);
@@ -542,6 +578,10 @@ public class UpdateActivity extends AppCompatActivity {
                         tvDownloadStatus.setText("Ошибка сохранения файла");
                         CustomToast.showWarning(UpdateActivity.this, "Ошибка сохранения файла обновления");
                     });
+                } finally {
+                    if (!downloadCompleted && apkFile != null && apkFile.exists()) {
+                        apkFile.delete();
+                    }
                 }
             }
         });

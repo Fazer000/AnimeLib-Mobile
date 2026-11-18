@@ -73,70 +73,48 @@ public class AnimeCatalogApi {
             return;
         }
 
-        boolean shouldStart = ApiCacheManager.ANIME_INFO.registerOrAttach(cacheKey, new ApiCacheManager.CallbackNotifier<AnimeInfoResponse>() {
-            @Override
-            public void onSuccess(AnimeInfoResponse data) {
-                if (callback != null) callback.onAnimeInfoReceived(data);
-            }
-
-            @Override
-            public void onError(String error) {
-                if (callback != null) callback.onError(error);
-            }
-        });
-        if (!shouldStart) return;
-
-        core.safeExecute(() -> {
-            try {
-                String apiUrl = ApiClientCore.API_BASE_HAPI + "/anime/" + cacheKey + ANIME_INFO_FIELDS;
-                Request request = core.buildApiRequest(apiUrl).build();
-
-                core.getHttpClient().newCall(request).enqueue(new Callback() {
+        String apiUrl = ApiClientCore.API_BASE_HAPI + "/anime/" + cacheKey + ANIME_INFO_FIELDS;
+        core.executeCachedGet(
+                ApiCacheManager.ANIME_INFO,
+                cacheKey,
+                cacheKey,
+                apiUrl,
+                true,
+                false,
+                new ApiCacheManager.CallbackNotifier<AnimeInfoResponse>() {
                     @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        ApiCacheManager.ANIME_INFO.dispatchError(cacheKey, "Ошибка сети: " + e.getMessage());
+                    public void onSuccess(AnimeInfoResponse data) {
+                        if (callback != null) callback.onAnimeInfoReceived(data);
                     }
 
                     @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) {
-                        try (response) {
-                            if (!response.isSuccessful() || response.body() == null) {
-                                AnimeInfoResponse stale = ApiCacheManager.ANIME_INFO.getStale(cacheKey);
-                                if (response.code() == 429 && stale != null) {
-                                    ApiCacheManager.ANIME_INFO.dispatchSuccess(cacheKey, stale);
-                                } else {
-                                    ApiCacheManager.ANIME_INFO.dispatchError(cacheKey, "HTTP " + response.code());
-                                }
-                                return;
-                            }
-                            String body = response.body().string();
-                            AnimeInfoResponse info = core.getGson().fromJson(body, AnimeInfoResponse.class);
-                            if (info != null && info.getData() != null) {
-                                ApiCacheManager.ANIME_INFO.put(cacheKey, info);
-                                int id = info.getData().getId();
-                                if (id > 0) {
-                                    ApiCacheManager.ANIME_INFO.put(String.valueOf(id), info);
-                                }
-                                String slugUrl = info.getData().getSlug_url();
-                                if (slugUrl != null && !slugUrl.trim().isEmpty()) {
-                                    ApiCacheManager.ANIME_INFO.put(slugUrl.trim().toLowerCase(Locale.ROOT), info);
-                                }
-                                String extractedId = ApiClientCore.extractAnimeId(cacheKey);
-                                if (extractedId != null && !extractedId.isEmpty()) {
-                                    ApiCacheManager.ANIME_INFO.put(extractedId, info);
-                                }
-                            }
-                            ApiCacheManager.ANIME_INFO.dispatchSuccess(cacheKey, info);
-                        } catch (Exception ex) {
-                            Log.e(TAG, "Failed to parse anime info JSON", ex);
-                            ApiCacheManager.ANIME_INFO.dispatchError(cacheKey, "Ошибка парсинга: " + ex.getMessage());
+                    public void onError(String error) {
+                        if (callback != null) callback.onError(error);
+                    }
+                },
+                "Ошибка сети: ",
+                "HTTP ",
+                "Ошибка парсинга ответа",
+                body -> {
+                    AnimeInfoResponse info = core.getGson().fromJson(body, AnimeInfoResponse.class);
+                    if (info != null && info.getData() != null) {
+                        ApiCacheManager.ANIME_INFO.put(cacheKey, info);
+                        int id = info.getData().getId();
+                        if (id > 0) {
+                            ApiCacheManager.ANIME_INFO.put(String.valueOf(id), info);
+                        }
+                        String slugUrl = info.getData().getSlug_url();
+                        if (slugUrl != null && !slugUrl.trim().isEmpty()) {
+                            ApiCacheManager.ANIME_INFO.put(slugUrl.trim().toLowerCase(Locale.ROOT), info);
+                        }
+                        String extractedId = ApiClientCore.extractAnimeId(cacheKey);
+                        if (extractedId != null && !extractedId.isEmpty()) {
+                            ApiCacheManager.ANIME_INFO.put(extractedId, info);
                         }
                     }
-                });
-            } catch (Exception e) {
-                ApiCacheManager.ANIME_INFO.dispatchError(cacheKey, "Ошибка запроса: " + e.getMessage());
-            }
-        });
+                    return info;
+                }
+        );
     }
 
     public void searchAnime(String query, ApiService.SearchCallback callback) {
@@ -154,61 +132,44 @@ public class AnimeCatalogApi {
             return;
         }
 
-        boolean shouldStart = ApiCacheManager.SEARCH.registerOrAttach(cacheKey, new ApiCacheManager.CallbackNotifier<SearchResponse>() {
-            @Override
-            public void onSuccess(SearchResponse data) {
-                if (callback != null) callback.onSearchResults(data);
-            }
+        final String encodedUrl;
+        try {
+            encodedUrl = ApiClientCore.API_BASE_HAPI + "/anime?fields[]=rate_avg&fields[]=rate&fields[]=releaseDate&q="
+                    + URLEncoder.encode(trimmedQuery, "UTF-8");
+        } catch (Exception e) {
+            if (callback != null) callback.onError("Ошибка кодирования запроса: " + e.getMessage());
+            return;
+        }
 
-            @Override
-            public void onError(String error) {
-                if (callback != null) callback.onError(error);
-            }
-        });
-        if (!shouldStart) return;
-
-        core.safeExecute(() -> {
-            try {
-                String encodedQuery = URLEncoder.encode(trimmedQuery, "UTF-8");
-                String apiUrl = ApiClientCore.API_BASE_HAPI + "/anime?fields[]=rate_avg&fields[]=rate&fields[]=releaseDate&q=" + encodedQuery;
-                Request request = core.buildSearchApiRequest(apiUrl).build();
-
-                core.getHttpClient().newCall(request).enqueue(new Callback() {
+        core.executeCachedGet(
+                ApiCacheManager.SEARCH,
+                cacheKey,
+                cacheKey,
+                encodedUrl,
+                false,
+                false,
+                new ApiCacheManager.CallbackNotifier<SearchResponse>() {
                     @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        Log.e(TAG, "Search request failed", e);
-                        ApiCacheManager.SEARCH.dispatchError(cacheKey, "Ошибка сети: " + e.getMessage());
+                    public void onSuccess(SearchResponse data) {
+                        if (callback != null) callback.onSearchResults(data);
                     }
 
                     @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) {
-                        try (response) {
-                            if (!response.isSuccessful() || response.body() == null) {
-                                SearchResponse stale = ApiCacheManager.SEARCH.getStale(cacheKey);
-                                if (response.code() == 429 && stale != null) {
-                                    ApiCacheManager.SEARCH.dispatchSuccess(cacheKey, stale);
-                                } else {
-                                    ApiCacheManager.SEARCH.dispatchError(cacheKey, "HTTP " + response.code());
-                                }
-                                return;
-                            }
-                            String body = response.body().string();
-                            SearchResponse searchResponse = core.getGson().fromJson(body, SearchResponse.class);
-                            if (searchResponse != null) {
-                                ApiCacheManager.SEARCH.put(cacheKey, searchResponse);
-                            }
-                            ApiCacheManager.SEARCH.dispatchSuccess(cacheKey, searchResponse);
-                        } catch (Exception ex) {
-                            Log.e(TAG, "Search parsing error", ex);
-                            ApiCacheManager.SEARCH.dispatchError(cacheKey, "Ошибка парсинга: " + ex.getMessage());
-                        }
+                    public void onError(String error) {
+                        if (callback != null) callback.onError(error);
                     }
-                });
-            } catch (Exception e) {
-                Log.e(TAG, "Search request error", e);
-                ApiCacheManager.SEARCH.dispatchError(cacheKey, "Ошибка запроса: " + e.getMessage());
-            }
-        });
+                },
+                "Ошибка сети: ",
+                "HTTP ",
+                "Неверный формат поискового ответа",
+                body -> {
+                    SearchResponse searchResponse = core.getGson().fromJson(body, SearchResponse.class);
+                    if (searchResponse != null) {
+                        ApiCacheManager.SEARCH.put(cacheKey, searchResponse);
+                    }
+                    return searchResponse;
+                }
+        );
     }
 
     public ApiService.SearchSyncResult searchAnimeSync(String query) {
@@ -252,62 +213,37 @@ public class AnimeCatalogApi {
             return;
         }
 
-        boolean shouldStart = ApiCacheManager.EPISODES_LIST.registerOrAttach(cacheKey, new ApiCacheManager.CallbackNotifier<EpisodesListResponse>() {
-            @Override
-            public void onSuccess(EpisodesListResponse data) {
-                if (callback != null) callback.onEpisodesReceived(data);
-            }
-
-            @Override
-            public void onError(String error) {
-                if (callback != null) callback.onError(error);
-            }
-        });
-        if (!shouldStart) return;
-
-        core.safeExecute(() -> {
-            try {
-                String apiUrl = ApiClientCore.API_BASE_HAPI + "/episodes?anime_id=" + cacheKey;
-                Request request = core.buildApiRequest(apiUrl).build();
-
-                core.getHttpClient().newCall(request).enqueue(new Callback() {
+        String apiUrl = ApiClientCore.API_BASE_HAPI + "/episodes?anime_id=" + cacheKey;
+        core.executeCachedGet(
+                ApiCacheManager.EPISODES_LIST,
+                cacheKey,
+                cacheKey,
+                apiUrl,
+                true,
+                false,
+                new ApiCacheManager.CallbackNotifier<EpisodesListResponse>() {
                     @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        Log.e(TAG, "Episodes list request failed", e);
-                        ApiCacheManager.EPISODES_LIST.dispatchError(cacheKey, "Ошибка загрузки эпизодов: " + e.getMessage());
+                    public void onSuccess(EpisodesListResponse data) {
+                        if (callback != null) callback.onEpisodesReceived(data);
                     }
 
                     @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) {
-                        try (response) {
-                            if (response.isSuccessful() && response.body() != null) {
-                                String responseBody = response.body().string();
-                                EpisodesListResponse episodesResponse = core.getGson().fromJson(responseBody, EpisodesListResponse.class);
-                                if (episodesResponse != null && episodesResponse.getData() != null) {
-                                    ApiCacheManager.EPISODES_LIST.put(cacheKey, episodesResponse);
-                                    ApiCacheManager.EPISODES_LIST.dispatchSuccess(cacheKey, episodesResponse);
-                                } else {
-                                    ApiCacheManager.EPISODES_LIST.dispatchError(cacheKey, "Неверный формат ответа эпизодов");
-                                }
-                            } else {
-                                EpisodesListResponse stale = ApiCacheManager.EPISODES_LIST.getStale(cacheKey);
-                                if (response.code() == 429 && stale != null) {
-                                    ApiCacheManager.EPISODES_LIST.dispatchSuccess(cacheKey, stale);
-                                } else {
-                                    ApiCacheManager.EPISODES_LIST.dispatchError(cacheKey, "HTTP ошибка: " + response.code());
-                                }
-                            }
-                        } catch (Exception e) {
-                            Log.e(TAG, "Error processing episodes response", e);
-                            ApiCacheManager.EPISODES_LIST.dispatchError(cacheKey, "Ошибка обработки данных эпизодов: " + e.getMessage());
-                        }
+                    public void onError(String error) {
+                        if (callback != null) callback.onError(error);
                     }
-                });
-            } catch (Exception e) {
-                Log.e(TAG, "Error in episodes API call", e);
-                ApiCacheManager.EPISODES_LIST.dispatchError(cacheKey, "Ошибка выполнения запроса: " + e.getMessage());
-            }
-        });
+                },
+                "Ошибка загрузки эпизодов: ",
+                "HTTP ошибка: ",
+                "Неверный формат ответа эпизодов",
+                body -> {
+                    EpisodesListResponse episodesResponse = core.getGson().fromJson(body, EpisodesListResponse.class);
+                    if (episodesResponse != null && episodesResponse.getData() != null) {
+                        ApiCacheManager.EPISODES_LIST.put(cacheKey, episodesResponse);
+                        return episodesResponse;
+                    }
+                    return null;
+                }
+        );
     }
 
     public void fetchEpisodeData(int episodeId, ApiService.EpisodeDataCallback callback) {
@@ -322,63 +258,37 @@ public class AnimeCatalogApi {
             return;
         }
 
-        boolean shouldStart = ApiCacheManager.EPISODE_DATA.registerOrAttach(episodeId, new ApiCacheManager.CallbackNotifier<EpisodeResponse>() {
-            @Override
-            public void onSuccess(EpisodeResponse data) {
-                if (callback != null) callback.onEpisodeDataReceived(data);
-            }
-
-            @Override
-            public void onError(String error) {
-                if (callback != null) callback.onError(error);
-            }
-        });
-        if (!shouldStart) return;
-
-        core.safeExecute(() -> {
-            try {
-                String apiUrl = ApiClientCore.API_BASE_HAPI + "/episodes/" + episodeId;
-                Request request = core.buildApiRequest(apiUrl).build();
-
-                core.getHttpClient().newCall(request).enqueue(new Callback() {
+        String apiUrl = ApiClientCore.API_BASE_HAPI + "/episodes/" + episodeId;
+        core.executeCachedGet(
+                ApiCacheManager.EPISODE_DATA,
+                episodeId,
+                episodeId,
+                apiUrl,
+                true,
+                false,
+                new ApiCacheManager.CallbackNotifier<EpisodeResponse>() {
                     @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        Log.e(TAG, "Episode data request failed", e);
-                        ApiCacheManager.EPISODE_DATA.dispatchError(episodeId, "Ошибка загрузки данных эпизода: " + e.getMessage());
+                    public void onSuccess(EpisodeResponse data) {
+                        if (callback != null) callback.onEpisodeDataReceived(data);
                     }
 
                     @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) {
-                        try (response) {
-                            if (response.isSuccessful() && response.body() != null) {
-                                String responseBody = response.body().string();
-                                EpisodeResponse episodeResponse = core.getGson().fromJson(responseBody, EpisodeResponse.class);
-                                if (episodeResponse != null && episodeResponse.getData() != null) {
-                                    ApiCacheManager.EPISODE_DATA.put(episodeId, episodeResponse);
-                                    ApiCacheManager.EPISODE_DATA.dispatchSuccess(episodeId, episodeResponse);
-                                } else {
-                                    ApiCacheManager.EPISODE_DATA.dispatchError(episodeId, "Неверный формат ответа эпизода");
-                                }
-                            } else {
-                                EpisodeResponse stale = ApiCacheManager.EPISODE_DATA.getStale(episodeId);
-                                if (response.code() == 429 && stale != null) {
-                                    Log.w(TAG, "HTTP 429 for episodeId " + episodeId + " - using stale cached data");
-                                    ApiCacheManager.EPISODE_DATA.dispatchSuccess(episodeId, stale);
-                                } else {
-                                    ApiCacheManager.EPISODE_DATA.dispatchError(episodeId, "HTTP ошибка: " + response.code());
-                                }
-                            }
-                        } catch (Exception e) {
-                            Log.e(TAG, "Error processing episode data response", e);
-                            ApiCacheManager.EPISODE_DATA.dispatchError(episodeId, "Ошибка обработки данных эпизода: " + e.getMessage());
-                        }
+                    public void onError(String error) {
+                        if (callback != null) callback.onError(error);
                     }
-                });
-            } catch (Exception e) {
-                Log.e(TAG, "Error in episode data API call", e);
-                ApiCacheManager.EPISODE_DATA.dispatchError(episodeId, "Ошибка выполнения запроса: " + e.getMessage());
-            }
-        });
+                },
+                "Ошибка загрузки данных эпизода: ",
+                "HTTP ошибка: ",
+                "Неверный формат ответа эпизода",
+                body -> {
+                    EpisodeResponse episodeResponse = core.getGson().fromJson(body, EpisodeResponse.class);
+                    if (episodeResponse != null && episodeResponse.getData() != null) {
+                        ApiCacheManager.EPISODE_DATA.put(episodeId, episodeResponse);
+                        return episodeResponse;
+                    }
+                    return null;
+                }
+        );
     }
 
     public void loadAnimeFromUrl(String animeUrl, ApiService.EpisodeDataCallback callback) {
@@ -495,66 +405,40 @@ public class AnimeCatalogApi {
             return;
         }
 
-        boolean shouldStart = ApiCacheManager.RELATED_TITLES.registerOrAttach(cacheKey, new ApiCacheManager.CallbackNotifier<RelatedTitlesResponse>() {
-            @Override
-            public void onSuccess(RelatedTitlesResponse data) {
-                if (callback != null) core.safeRunOnUiThread(() -> callback.onRelatedTitlesReceived(data));
-            }
-
-            @Override
-            public void onError(String error) {
-                if (callback != null) core.safeRunOnUiThread(() -> callback.onError(error));
-            }
-        });
-        if (!shouldStart) return;
-
-        core.safeExecute(() -> {
-            try {
-                String url = ApiClientCore.API_BASE_HAPI + "/anime/" + cacheKey + "/relations";
-                Request request = core.buildApiRequest(url).build();
-
-                core.getHttpClient().newCall(request).enqueue(new Callback() {
+        String url = ApiClientCore.API_BASE_HAPI + "/anime/" + cacheKey + "/relations";
+        core.executeCachedGet(
+                ApiCacheManager.RELATED_TITLES,
+                cacheKey,
+                cacheKey,
+                url,
+                true,
+                false,
+                new ApiCacheManager.CallbackNotifier<RelatedTitlesResponse>() {
                     @Override
-                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                        Log.e(TAG, "Failed to fetch related titles", e);
-                        ApiCacheManager.RELATED_TITLES.dispatchError(cacheKey, "Network error: " + e.getMessage());
+                    public void onSuccess(RelatedTitlesResponse data) {
+                        if (callback != null) core.safeRunOnUiThread(() -> callback.onRelatedTitlesReceived(data));
                     }
 
                     @Override
-                    public void onResponse(@NonNull Call call, @NonNull Response response) {
-                        try (response) {
-                            if (response.isSuccessful() && response.body() != null) {
-                                String responseBody = response.body().string();
-                                RelatedTitlesResponse relatedTitlesResponse = core.getGson().fromJson(responseBody, RelatedTitlesResponse.class);
-                                if (relatedTitlesResponse != null) {
-                                    ApiCacheManager.RELATED_TITLES.put(cacheKey, relatedTitlesResponse);
-                                    String extractedId = ApiClientCore.extractAnimeId(cacheKey);
-                                    if (extractedId != null && !extractedId.isEmpty()) {
-                                        ApiCacheManager.RELATED_TITLES.put(extractedId, relatedTitlesResponse);
-                                    }
-                                    ApiCacheManager.RELATED_TITLES.dispatchSuccess(cacheKey, relatedTitlesResponse);
-                                } else {
-                                    ApiCacheManager.RELATED_TITLES.dispatchError(cacheKey, "Parse error: empty response");
-                                }
-                            } else {
-                                RelatedTitlesResponse stale = ApiCacheManager.RELATED_TITLES.getStale(cacheKey);
-                                if (response.code() == 429 && stale != null) {
-                                    ApiCacheManager.RELATED_TITLES.dispatchSuccess(cacheKey, stale);
-                                } else {
-                                    ApiCacheManager.RELATED_TITLES.dispatchError(cacheKey, "Server error: " + response.code());
-                                }
-                            }
-                        } catch (Exception e) {
-                            Log.e(TAG, "Error parsing related titles response", e);
-                            ApiCacheManager.RELATED_TITLES.dispatchError(cacheKey, "Parse error: " + e.getMessage());
+                    public void onError(String error) {
+                        if (callback != null) core.safeRunOnUiThread(() -> callback.onError(error));
+                    }
+                },
+                "Network error: ",
+                "Server error: ",
+                "Parse error: empty response",
+                body -> {
+                    RelatedTitlesResponse relatedTitlesResponse = core.getGson().fromJson(body, RelatedTitlesResponse.class);
+                    if (relatedTitlesResponse != null) {
+                        ApiCacheManager.RELATED_TITLES.put(cacheKey, relatedTitlesResponse);
+                        String extractedId = ApiClientCore.extractAnimeId(cacheKey);
+                        if (extractedId != null && !extractedId.isEmpty()) {
+                            ApiCacheManager.RELATED_TITLES.put(extractedId, relatedTitlesResponse);
                         }
                     }
-                });
-            } catch (Exception e) {
-                Log.e(TAG, "Error in getRelatedTitles", e);
-                ApiCacheManager.RELATED_TITLES.dispatchError(cacheKey, "Request error: " + e.getMessage());
-            }
-        });
+                    return relatedTitlesResponse;
+                }
+        );
     }
 
     public boolean markEpisodeViewedSync(String animeId, int playerId) {

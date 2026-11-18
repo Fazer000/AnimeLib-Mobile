@@ -35,7 +35,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import okhttp3.ConnectionPool;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -72,17 +71,18 @@ public class DownloadsManager {
 
     public DownloadsManager(Context context) {
         this.context = context.getApplicationContext();
-        this.executor = Executors.newSingleThreadExecutor();
-        this.client = new OkHttpClient.Builder()
-                .connectionPool(new ConnectionPool(10, 5, TimeUnit.MINUTES))
+        this.executor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "downloads-manager-worker");
+            t.setDaemon(true);
+            return t;
+        });
+        this.client = ApiClientCore.getSharedHttpClient().newBuilder()
                 .connectTimeout(20, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
                 .writeTimeout(30, TimeUnit.SECONDS)
-                .followRedirects(true)
-                .followSslRedirects(true)
                 .build();
         this.apiService = new ApiService(this.context);
-        this.databaseManager = new DatabaseManager(this.context);
+        this.databaseManager = DatabaseManager.getInstance(this.context);
         this.kodikExtractor = new KodikLinksExtractor(this.client, new Gson());
     }
 
@@ -530,7 +530,7 @@ public class DownloadsManager {
         }
 
         if (!isSamePlaylist) {
-            deleteDirContents(segsDir);
+            com.example.animelib.util.FileUtils.deleteDirectoryContents(segsDir);
             try (FileOutputStream fos = new FileOutputStream(infoFile)) {
                 fos.write((mediaPlaylistUrl + "\n" + totalSegments + "\n").getBytes());
             } catch (Exception ignored) {}
@@ -618,7 +618,7 @@ public class DownloadsManager {
             throw e;
         }
 
-        deleteDir(segsDir);
+        com.example.animelib.util.FileUtils.deleteRecursively(segsDir);
         mainHandler.post(() -> callback.onProgress(100));
     }
 
@@ -672,25 +672,6 @@ public class DownloadsManager {
         }
 
         throw lastExc != null ? lastExc : new IOException("Failed segment download after retries");
-    }
-
-    private void deleteDirContents(File dir) {
-        if (dir != null && dir.exists()) {
-            File[] files = dir.listFiles();
-            if (files != null) {
-                for (File f : files) {
-                    if (f.isDirectory()) deleteDir(f);
-                    else f.delete();
-                }
-            }
-        }
-    }
-
-    private void deleteDir(File dir) {
-        if (dir != null && dir.exists()) {
-            deleteDirContents(dir);
-            dir.delete();
-        }
     }
 
     private String resolveUrl(String baseUrl, String relativeUrl) {
@@ -934,7 +915,6 @@ public class DownloadsManager {
         if (t.equalsIgnoreCase("Загрузка")) return true;
         if (t.equalsIgnoreCase("Загрузка...")) return true;
         if (t.startsWith("Аниме #")) return true;
-        if (t.contains("Маг Целитель")) return true;
         return false;
     }
 

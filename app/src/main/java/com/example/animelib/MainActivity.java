@@ -21,6 +21,7 @@ import androidx.lifecycle.ViewModelProvider;
 import androidx.media3.common.util.UnstableApi;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
+import com.example.animelib.api.ApiClientCore;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.controllers.MainAuthController;
 import com.example.animelib.controllers.MainBannerController;
@@ -183,7 +184,7 @@ public class MainActivity extends AppCompatActivity {
             updateSystemBarColors();
         }
 
-        httpClient = new OkHttpClient();
+        httpClient = ApiClientCore.getSharedHttpClient();
         executor = Executors.newSingleThreadExecutor();
         gson = new Gson();
 

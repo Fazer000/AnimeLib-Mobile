@@ -96,7 +96,6 @@ public class VideoPlayerActivity extends AppCompatActivity {
     public static final String EXTRA_ANIME_URL = "anime_url";
 
     private static final int CONTROLLER_SHOW_TIMEOUT_MS = 4000;
-    private static final int MENU_WIDTH_DP = 300;
     private static final int REQUEST_POST_NOTIFICATIONS = 4201;
 
     private static final List<WeakReference<VideoPlayerActivity>> ACTIVE_INSTANCES = new CopyOnWriteArrayList<>();
@@ -343,7 +342,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
         executor = Executors.newSingleThreadExecutor();
         playerApiController = new PlayerApiController(this);
         apiService = playerApiController.getApiService();
-        databaseManager = new DatabaseManager(this);
+        databaseManager = DatabaseManager.getInstance(this);
 
         httpDataSourceFactory = new DefaultHttpDataSource.Factory()
                 .setUserAgent("Mozilla/5.0 (Linux; Android 14; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36")
@@ -993,14 +992,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
         playersManager.initializeViews(
                 playerUIBinder.slidingMenuPanel,
                 playerUIBinder.closeMenuButton,
-                null,
-                null,
                 playerUIBinder.menuOverlay,
                 playerUIBinder.menuLoadingOverlay,
                 playerUIBinder.menuLoadingIndicator
         );
-        float density = getResources().getDisplayMetrics().density;
-        playersManager.setMenuWidth((int) (MENU_WIDTH_DP * density));
 
         episodesManager.initializeViews(
                 null,
