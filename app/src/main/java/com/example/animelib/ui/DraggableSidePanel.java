@@ -1,10 +1,18 @@
 package com.example.animelib.ui;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.util.AttributeSet;
+import android.util.TypedValue;
 import android.view.MotionEvent;
+import android.view.VelocityTracker;
 import android.view.View;
+import android.view.ViewConfiguration;
+import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.animation.Interpolator;
 import android.widget.FrameLayout;
 
@@ -13,35 +21,40 @@ import androidx.annotation.Nullable;
 import androidx.interpolator.view.animation.FastOutSlowInInterpolator;
 
 /**
- * Кастомная панель с возможностью drag-to-dismiss справа налево
+ * Кастомная боковая панель с плавным 1:1 drag-to-open / drag-to-dismiss без скачков в начале жеста.
  */
 public class DraggableSidePanel extends FrameLayout {
-    private static final float COLLAPSE_THRESHOLD = 0.3f;
+    public static final float OPEN_DRAG_THRESHOLD = 0.20f;
+    public static final float COLLAPSE_THRESHOLD = 0.30f;
+    public static final float FLING_VELOCITY_THRESHOLD = 400f;
     private static final int ANIMATION_DURATION = 260;
-    private static final Interpolator BOTTOM_SHEET_INTERPOLATOR = new FastOutSlowInInterpolator();
-    
-    private View dragView; // Основная панель (slidingMenuPanel или commentsPanel)
-    private View dragZone; // Зона для перетаскивания
-    private View animatedView; // View который будет анимироваться (корневой контейнер из include)
+    private static final Interpolator PANEL_INTERPOLATOR = new FastOutSlowInInterpolator();
+
+    private View dragView;
+    private View dragZone;
+    private View animatedView;
     private boolean isOpen = false;
     private boolean dragEnabled = true;
     private OnPanelStateChangeListener listener;
-    
-    private float initialTouchX;
-    private float initialTouchY;
+
+    private float initialTouchRawX;
+    private float initialTouchRawY;
     private float initialTranslationX;
     private boolean isDragging = false;
-    private boolean isDragStarted = false; // Флаг что драг действительно начался (прошли порог)
-    private int touchSlop = 0; // Минимальное расстояние для начала драга
-    private float dragStartOffset = 0; // Смещение на момент начала драга
-    private android.view.VelocityTracker velocityTracker;
-    
+    private boolean isDragStarted = false;
+    private boolean isExternalDragging = false;
+    private boolean dragStartNotified = false;
+    private int touchSlop = 0;
+    private float dragStartOffset = 0f;
+    private VelocityTracker velocityTracker;
+    private ValueAnimator activeAnimator;
+
     public interface OnPanelStateChangeListener {
         default void onPanelDragStart() {}
         void onPanelOpened();
         void onPanelClosed();
         void onPanelSliding(float slideOffset);
-        
+
         /**
          * Проверяет можно ли закрыть панель
          * @return true если можно закрыть, false если нельзя
@@ -50,83 +63,83 @@ public class DraggableSidePanel extends FrameLayout {
             return true;
         }
     }
-    
+
     public DraggableSidePanel(@NonNull Context context) {
         super(context);
         init(context);
     }
-    
+
     public DraggableSidePanel(@NonNull Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
         init(context);
     }
-    
+
     public DraggableSidePanel(@NonNull Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
         init(context);
     }
-    
+
     private void init(Context context) {
-        // Получаем touch slop из конфигурации системы
-        android.view.ViewConfiguration config = android.view.ViewConfiguration.get(context);
+        ViewConfiguration config = ViewConfiguration.get(context);
         touchSlop = config.getScaledTouchSlop();
-        android.util.Log.d("DraggableSidePanel", "Touch slop initialized: " + touchSlop + "px");
     }
-    
+
     @Override
     protected void onFinishInflate() {
         super.onFinishInflate();
         if (getChildCount() > 0) {
-            // Первый дочерний элемент - это корневой элемент из include (CardView или LinearLayout)
             animatedView = getChildAt(0);
-            dragView = animatedView; // Для совместимости
-            
-            // Ищем dragZone внутри animatedView
-            if (animatedView instanceof android.view.ViewGroup) {
+            dragView = animatedView;
+
+            if (animatedView instanceof ViewGroup) {
                 dragZone = animatedView.findViewById(com.example.animelib.R.id.dragZone);
             }
-            
-            android.util.Log.d("DraggableSidePanel", "onFinishInflate: animatedView=" + animatedView + 
-                ", dragZone=" + dragZone);
-            
+
             setupTouchListener();
         }
     }
-    
+
     @SuppressLint("ClickableViewAccessibility")
     private void setupTouchListener() {
         if (animatedView == null) {
-            android.util.Log.e("DraggableSidePanel", "animatedView is null!");
             return;
         }
-        
-        android.util.Log.d("DraggableSidePanel", "Setting up touch listeners. dragZone=" + (dragZone != null ? "found" : "null"));
-        
-        // Touch listener для drag zone
         if (dragZone != null) {
             dragZone.setOnTouchListener((v, event) -> {
-                if (!isOpen) return false;
+                if (!isOpen || isExternalDragging) return false;
                 return handleTouchEvent(event);
             });
         }
     }
-    
+
     public void setDragEnabled(boolean enabled) {
         this.dragEnabled = enabled;
     }
 
+    private void cancelActiveAnimator() {
+        if (activeAnimator != null) {
+            activeAnimator.removeAllUpdateListeners();
+            activeAnimator.removeAllListeners();
+            activeAnimator.cancel();
+            activeAnimator = null;
+        }
+        if (animatedView != null) {
+            animatedView.animate().setUpdateListener(null).withEndAction(null).cancel();
+        }
+    }
+
     private void clearPendingCallbacks() {
+        cancelActiveAnimator();
         if (animatedView != null) {
             animatedView.removeCallbacks(null);
-            animatedView.animate().cancel();
         }
         removeCallbacks(null);
     }
 
-    private float getPanelWidth() {
+    public float getPanelWidth() {
         if (animatedView == null) {
-            return android.util.TypedValue.applyDimension(
-                android.util.TypedValue.COMPLEX_UNIT_DIP, 360f, getResources().getDisplayMetrics());
+            return TypedValue.applyDimension(
+                    TypedValue.COMPLEX_UNIT_DIP, 360f, getResources().getDisplayMetrics());
         }
         if (animatedView.getWidth() > 0) {
             return animatedView.getWidth();
@@ -134,218 +147,247 @@ public class DraggableSidePanel extends FrameLayout {
         if (animatedView.getMeasuredWidth() > 0) {
             return animatedView.getMeasuredWidth();
         }
-        
-        // Заставляем измериться если еще не был измерен
+
         int parentW = getWidth() > 0 ? getWidth() : getResources().getDisplayMetrics().widthPixels;
         int parentH = getHeight() > 0 ? getHeight() : getResources().getDisplayMetrics().heightPixels;
-        animatedView.measure(
-            MeasureSpec.makeMeasureSpec(parentW, MeasureSpec.AT_MOST),
-            MeasureSpec.makeMeasureSpec(parentH, MeasureSpec.EXACTLY)
-        );
+        ViewGroup.LayoutParams lp = animatedView.getLayoutParams();
+        int widthSpec;
+        if (lp != null && lp.width > 0) {
+            widthSpec = MeasureSpec.makeMeasureSpec(lp.width, MeasureSpec.EXACTLY);
+        } else {
+            widthSpec = MeasureSpec.makeMeasureSpec(parentW, MeasureSpec.AT_MOST);
+        }
+        int heightSpec = MeasureSpec.makeMeasureSpec(parentH, MeasureSpec.EXACTLY);
+        animatedView.measure(widthSpec, heightSpec);
+
         if (animatedView.getMeasuredWidth() > 0) {
             return animatedView.getMeasuredWidth();
         }
-        
-        return android.util.TypedValue.applyDimension(
-            android.util.TypedValue.COMPLEX_UNIT_DIP, 360f, getResources().getDisplayMetrics());
+
+        return TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, 360f, getResources().getDisplayMetrics());
+    }
+
+    private void notifyDragStartOnce() {
+        if (!dragStartNotified) {
+            dragStartNotified = true;
+            if (listener != null) {
+                listener.onPanelDragStart();
+            }
+        }
     }
 
     private boolean handleTouchEvent(MotionEvent event) {
         if (!dragEnabled || !isOpen || animatedView == null || getVisibility() != View.VISIBLE) return false;
-        
-        switch (event.getAction()) {
+
+        switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                clearPendingCallbacks();
-                initialTouchX = event.getRawX();
-                initialTouchY = event.getRawY();
+                cancelActiveAnimator();
+                initialTouchRawX = event.getRawX();
+                initialTouchRawY = event.getRawY();
                 initialTranslationX = animatedView.getTranslationX();
                 isDragging = true;
-                isDragStarted = false; // Сбрасываем флаг начала драга
-                dragStartOffset = 0;
-                
+                isDragStarted = false;
+                dragStartOffset = 0f;
+
                 if (velocityTracker == null) {
-                    velocityTracker = android.view.VelocityTracker.obtain();
+                    velocityTracker = VelocityTracker.obtain();
                 } else {
                     velocityTracker.clear();
                 }
-                velocityTracker.addMovement(event);
+                addRawMovementToVelocityTracker(velocityTracker, event);
                 return true;
-                
+
             case MotionEvent.ACTION_MOVE:
                 if (!isDragging) return false;
-                
-                if (velocityTracker != null) {
-                    velocityTracker.addMovement(event);
-                }
-                
-                float deltaX = event.getRawX() - initialTouchX;
-                float deltaY = event.getRawY() - initialTouchY;
-                
-                // Проверяем прошли ли порог для начала драга
+                addRawMovementToVelocityTracker(velocityTracker, event);
+
+                float deltaX = event.getRawX() - initialTouchRawX;
+                float deltaY = event.getRawY() - initialTouchRawY;
+
                 if (!isDragStarted) {
-                    float totalDelta = (float) Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-                    
+                    float totalDelta = (float) Math.hypot(deltaX, deltaY);
                     if (totalDelta < touchSlop) {
-                        // Еще не прошли порог - просто ждем
                         return true;
                     }
-                    
-                    // Порог пройден - запоминаем текущее смещение
+                    if (Math.abs(deltaY) > Math.abs(deltaX) * 1.2f) {
+                        isDragging = false;
+                        if (velocityTracker != null) {
+                            velocityTracker.recycle();
+                            velocityTracker = null;
+                        }
+                        return false;
+                    }
                     isDragStarted = true;
                     dragStartOffset = deltaX;
-                    if (listener != null) {
-                        listener.onPanelDragStart();
+                    ViewParent parent = getParent();
+                    if (parent != null) {
+                        parent.requestDisallowInterceptTouchEvent(true);
                     }
-                    
-                    android.util.Log.d("DraggableSidePanel", "Drag started. touchSlop=" + touchSlop + 
-                                     ", totalDelta=" + totalDelta + ", dragStartOffset=" + dragStartOffset);
+                    notifyDragStartOnce();
                 }
-                
-                // Вычисляем новую позицию с учетом смещения на момент начала
+
                 float adjustedDeltaX = deltaX - dragStartOffset;
-                float newTranslationX = initialTranslationX + adjustedDeltaX;
-                
-                // Ограничиваем: от 0 (открыто) до width (закрыто)
-                float pw = getPanelWidth();
-                newTranslationX = Math.max(0, Math.min(newTranslationX, pw));
+                float panelWidth = getPanelWidth();
+                float newTranslationX = Math.max(0f, Math.min(initialTranslationX + adjustedDeltaX, panelWidth));
                 animatedView.setTranslationX(newTranslationX);
-                
-                // Уведомляем о скольжении
-                if (listener != null && pw > 0) {
-                    float slideOffset = newTranslationX / pw;
-                    listener.onPanelSliding(slideOffset);
+
+                if (listener != null && panelWidth > 0f) {
+                    listener.onPanelSliding(computeSlideOffset(newTranslationX, panelWidth));
                 }
                 return true;
-                
+
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
                 if (!isDragging) return false;
-                
+
+                float xVel = 0f;
                 if (velocityTracker != null) {
-                    velocityTracker.addMovement(event);
+                    addRawMovementToVelocityTracker(velocityTracker, event);
                     velocityTracker.computeCurrentVelocity(1000);
-                }
-                float xVel = velocityTracker != null ? velocityTracker.getXVelocity() : 0f;
-                if (velocityTracker != null) {
+                    xVel = velocityTracker.getXVelocity();
                     velocityTracker.recycle();
                     velocityTracker = null;
                 }
-                
-                // Сохраняем состояние до сброса
+
                 boolean dragWasStarted = isDragStarted;
-                
                 isDragging = false;
-                isDragStarted = false; // Сбрасываем флаг
-                
-                // Если драг не начался (не прошли touchSlop), не обрабатываем как drag gesture
-                if (!dragWasStarted && event.getAction() == MotionEvent.ACTION_UP) {
-                    android.util.Log.d("DraggableSidePanel", "Touch released without starting drag (touchSlop not passed)");
-                    return false; // Позволяем обработать как обычное нажатие
+                isDragStarted = false;
+
+                if (!dragWasStarted && event.getActionMasked() == MotionEvent.ACTION_UP) {
+                    dragStartNotified = false;
+                    return false;
                 }
-                
+
                 float currentTranslationX = animatedView.getTranslationX();
-                float panelWidth = getPanelWidth();
-                
-                boolean shouldClose;
-                if (xVel > 400f) {
-                    // Быстрый свайп вправо -> закрыть
-                    shouldClose = true;
-                } else if (xVel < -400f) {
-                    // Быстрый свайп влево -> открыть
-                    shouldClose = false;
-                } else {
-                    shouldClose = currentTranslationX > panelWidth * COLLAPSE_THRESHOLD;
-                }
-                
+                float panelW = getPanelWidth();
+                float closeOffset = computeSlideOffset(currentTranslationX, panelW);
+                boolean shouldClose = shouldClosePanelOnRelease(closeOffset, xVel);
+
+                dragStartNotified = false;
                 if (shouldClose) {
-                    // Проверяем можно ли закрыть
                     if (listener != null && !listener.canClosePanel()) {
-                        // Нельзя закрыть - показываем "тряску" и возвращаем в открытое положение
                         shakePanel();
                     } else {
-                        // Закрываем
                         animateClose();
                     }
                 } else {
-                    // Возвращаем в открытое положение
                     animateToOpen();
                 }
                 return true;
         }
         return false;
     }
-    
+
+    private static void addRawMovementToVelocityTracker(@Nullable VelocityTracker tracker, @NonNull MotionEvent event) {
+        if (tracker == null) return;
+        MotionEvent rawEvent = MotionEvent.obtain(event);
+        rawEvent.setLocation(event.getRawX(), event.getRawY());
+        tracker.addMovement(rawEvent);
+        rawEvent.recycle();
+    }
+
     public void setOnPanelStateChangeListener(OnPanelStateChangeListener listener) {
         this.listener = listener;
     }
-    
+
     public void openPanel() {
         if (animatedView == null) return;
-        
+
         clearPendingCallbacks();
+        isExternalDragging = false;
+        dragStartNotified = false;
         isOpen = true;
-        
-        setVisibility(VISIBLE);
-        animatedView.setVisibility(VISIBLE);
-        
+
         float panelWidth = getPanelWidth();
-        if (animatedView.getTranslationX() == 0f && animatedView.getWidth() > 0 && isOpen) {
-            android.util.Log.d("DraggableSidePanel", "Panel already open, skipping");
+        boolean alreadyVisibleAndOpen = getVisibility() == VISIBLE
+                && animatedView.getVisibility() == VISIBLE
+                && animatedView.getTranslationX() == 0f
+                && animatedView.getWidth() > 0;
+        if (alreadyVisibleAndOpen) {
             if (listener != null) {
                 listener.onPanelOpened();
             }
             return;
         }
-        
-        if (animatedView.getTranslationX() == 0f) {
+
+        if (getVisibility() != VISIBLE || animatedView.getVisibility() != VISIBLE || animatedView.getTranslationX() <= 0f) {
             animatedView.setTranslationX(panelWidth);
         }
-        
+        setVisibility(VISIBLE);
+        animatedView.setVisibility(VISIBLE);
+
         animateToOpen();
     }
-    
+
     private void animateToOpen() {
         if (animatedView == null) return;
-        
-        clearPendingCallbacks();
+
+        cancelActiveAnimator();
         isOpen = true;
-        
+
         if (getVisibility() != VISIBLE) setVisibility(VISIBLE);
         if (animatedView.getVisibility() != VISIBLE) animatedView.setVisibility(VISIBLE);
-        
-        if (listener != null) {
-            listener.onPanelDragStart();
-        }
-        
+
+        notifyDragStartOnce();
+
         float panelWidth = getPanelWidth();
-        float currentX = animatedView.getTranslationX();
-        float remainingRatio = panelWidth > 0 ? Math.abs(currentX) / panelWidth : 1f;
-        long duration = Math.max(120, Math.min(ANIMATION_DURATION, (long) (ANIMATION_DURATION * remainingRatio)));
-        
-        animatedView.animate()
-            .translationX(0f)
-            .setDuration(duration)
-            .setInterpolator(BOTTOM_SHEET_INTERPOLATOR)
-            .setUpdateListener(animation -> {
-                if (listener != null && panelWidth > 0) {
-                    float curX = animatedView.getTranslationX();
-                    float slideOffset = curX / panelWidth;
-                    listener.onPanelSliding(Math.max(0f, Math.min(1f, slideOffset)));
+        float startX = animatedView.getTranslationX();
+        if (startX <= 0.5f) {
+            animatedView.setTranslationX(0f);
+            dragStartNotified = false;
+            if (listener != null) {
+                listener.onPanelSliding(0f);
+                listener.onPanelOpened();
+            }
+            return;
+        }
+
+        float remainingRatio = panelWidth > 0f ? Math.min(1f, Math.abs(startX) / panelWidth) : 1f;
+        long duration = Math.max(120L, Math.min(ANIMATION_DURATION, (long) (ANIMATION_DURATION * remainingRatio)));
+
+        ValueAnimator animator = ValueAnimator.ofFloat(startX, 0f);
+        animator.setDuration(duration);
+        animator.setInterpolator(PANEL_INTERPOLATOR);
+        animator.addUpdateListener(animation -> {
+            float curX = (float) animation.getAnimatedValue();
+            animatedView.setTranslationX(curX);
+            if (listener != null && panelWidth > 0f) {
+                listener.onPanelSliding(computeSlideOffset(curX, panelWidth));
+            }
+        });
+        animator.addListener(new AnimatorListenerAdapter() {
+            private boolean cancelled = false;
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                cancelled = true;
+            }
+
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (activeAnimator == animator) {
+                    activeAnimator = null;
                 }
-            })
-            .withEndAction(() -> {
-                clearPendingCallbacks();
+                if (cancelled) return;
+                dragStartNotified = false;
                 isOpen = true;
                 animatedView.setTranslationX(0f);
                 if (listener != null) {
                     listener.onPanelOpened();
                 }
-            })
-            .start();
+            }
+        });
+        activeAnimator = animator;
+        animator.start();
     }
 
     public void forceClose() {
         isOpen = false;
+        isExternalDragging = false;
+        isDragging = false;
+        isDragStarted = false;
+        dragStartNotified = false;
         clearPendingCallbacks();
         if (animatedView != null) {
             float targetX = getPanelWidth();
@@ -360,86 +402,105 @@ public class DraggableSidePanel extends FrameLayout {
 
     public void closePanel() {
         if (animatedView == null || !isOpen) return;
-        
-        // Проверяем можно ли закрыть
+
         if (listener != null && !listener.canClosePanel()) {
-            android.util.Log.d("DraggableSidePanel", "Panel close blocked by listener");
             shakePanel();
             return;
         }
-        
+
         animateClose();
     }
-    
+
     /**
      * Анимация "тряски" панели когда её нельзя закрыть
      */
     private void shakePanel() {
         if (animatedView == null) return;
-        clearPendingCallbacks();
-        
-        // Быстрая анимация влево-вправо
-        animatedView.animate()
-            .translationX(20)
-            .setDuration(50)
-            .setInterpolator(new android.view.animation.LinearInterpolator())
-            .withEndAction(() -> {
-                animatedView.animate()
-                    .translationX(-20)
-                    .setDuration(50)
-                    .withEndAction(() -> {
-                        animatedView.animate()
-                            .translationX(0)
-                            .setDuration(50)
-                            .start();
-                    })
-                    .start();
-            })
-            .start();
+        cancelActiveAnimator();
+
+        ValueAnimator animator = ValueAnimator.ofFloat(0f, 20f, -20f, 10f, 0f);
+        animator.setDuration(160);
+        animator.addUpdateListener(animation -> {
+            float val = (float) animation.getAnimatedValue();
+            animatedView.setTranslationX(val);
+        });
+        animator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (activeAnimator == animator) {
+                    activeAnimator = null;
+                }
+                animatedView.setTranslationX(0f);
+            }
+        });
+        activeAnimator = animator;
+        animator.start();
     }
-    
+
     private void animateClose() {
         if (animatedView == null) return;
-        
-        clearPendingCallbacks();
-        
-        if (listener != null) {
-            listener.onPanelDragStart();
-        }
-        
-        float targetX = getPanelWidth();
-        float currentX = animatedView.getTranslationX();
-        float remainingRatio = targetX > 0 ? Math.abs(targetX - currentX) / targetX : 1f;
-        long duration = Math.max(120, Math.min(ANIMATION_DURATION, (long) (ANIMATION_DURATION * remainingRatio)));
 
-        animatedView.animate()
-            .translationX(targetX)
-            .setDuration(duration)
-            .setInterpolator(BOTTOM_SHEET_INTERPOLATOR)
-            .setUpdateListener(animation -> {
-                if (listener != null && targetX > 0) {
-                    float curX = animatedView.getTranslationX();
-                    float slideOffset = curX / targetX;
-                    listener.onPanelSliding(Math.max(0f, Math.min(1f, slideOffset)));
+        cancelActiveAnimator();
+        notifyDragStartOnce();
+
+        float targetX = getPanelWidth();
+        float startX = animatedView.getTranslationX();
+        if (startX >= targetX - 0.5f) {
+            dragStartNotified = false;
+            isOpen = false;
+            animatedView.setTranslationX(targetX);
+            setVisibility(GONE);
+            if (listener != null) {
+                listener.onPanelSliding(1f);
+                listener.onPanelClosed();
+            }
+            return;
+        }
+
+        float remainingRatio = targetX > 0f ? Math.min(1f, Math.abs(targetX - startX) / targetX) : 1f;
+        long duration = Math.max(120L, Math.min(ANIMATION_DURATION, (long) (ANIMATION_DURATION * remainingRatio)));
+
+        ValueAnimator animator = ValueAnimator.ofFloat(startX, targetX);
+        animator.setDuration(duration);
+        animator.setInterpolator(PANEL_INTERPOLATOR);
+        animator.addUpdateListener(animation -> {
+            float curX = (float) animation.getAnimatedValue();
+            animatedView.setTranslationX(curX);
+            if (listener != null && targetX > 0f) {
+                listener.onPanelSliding(computeSlideOffset(curX, targetX));
+            }
+        });
+        animator.addListener(new AnimatorListenerAdapter() {
+            private boolean cancelled = false;
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                cancelled = true;
+            }
+
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (activeAnimator == animator) {
+                    activeAnimator = null;
                 }
-            })
-            .withEndAction(() -> {
-                clearPendingCallbacks();
+                if (cancelled) return;
+                dragStartNotified = false;
                 isOpen = false;
                 animatedView.setTranslationX(targetX);
                 setVisibility(GONE);
-                
                 if (listener != null) {
                     listener.onPanelClosed();
                 }
-            })
-            .start();
+            }
+        });
+        activeAnimator = animator;
+        animator.start();
     }
-    
+
     public boolean isOpen() {
         return isOpen;
     }
-    
+
     public void setPanelOpen(boolean open) {
         if (open) {
             openPanel();
@@ -447,48 +508,121 @@ public class DraggableSidePanel extends FrameLayout {
             closePanel();
         }
     }
-    
+
     /**
-     * Устанавливает прогресс drag (0.0 = закрыто, 1.0 = открыто)
-     * Используется для плавного вытягивания панели во время жеста
+     * Подготавливает панель перед началом интерактивного drag-жеста справа налево.
+     * Выставляет начальный translationX = width ДО перевода контейнера в VISIBLE,
+     * исключая однокадровое мигание в открытом положении и скачок в начале жеста.
      */
-    public void setDragProgress(float progress) {
+    public void beginDragFromRight() {
         if (animatedView == null) return;
-        
-        clearPendingCallbacks();
-        
-        progress = Math.max(0f, Math.min(1f, progress));
-        
+
+        cancelActiveAnimator();
+        isExternalDragging = true;
+        isOpen = false;
+
+        notifyDragStartOnce();
+
+        float panelWidth = getPanelWidth();
         if (getVisibility() != VISIBLE) {
+            animatedView.setTranslationX(panelWidth);
             setVisibility(VISIBLE);
+        } else if (animatedView.getVisibility() != VISIBLE) {
+            animatedView.setTranslationX(panelWidth);
         }
         if (animatedView.getVisibility() != VISIBLE) {
             animatedView.setVisibility(VISIBLE);
         }
-        
+    }
+
+    /**
+     * Сдвигает панель справа налево ровно на draggedLeftPx экранных пикселей (1:1 с пальцем).
+     */
+    public void updateDragByLeftPx(float draggedLeftPx) {
+        if (animatedView == null) return;
+        if (!isExternalDragging) {
+            beginDragFromRight();
+        }
+
         float panelWidth = getPanelWidth();
-        float translationX = panelWidth * (1f - progress);
-        
+        float translationX = computeTranslationXForRightDrag(panelWidth, draggedLeftPx);
         animatedView.setTranslationX(translationX);
-        
-        if (listener != null && panelWidth > 0) {
-            listener.onPanelSliding(1f - progress);
+
+        if (listener != null && panelWidth > 0f) {
+            listener.onPanelSliding(computeSlideOffset(translationX, panelWidth));
         }
     }
-    
+
     /**
-     * Завершает drag жест с решением открыть или закрыть панель
+     * Устанавливает прогресс drag (0.0 = закрыто, 1.0 = открыто).
+     */
+    public void setDragProgress(float progress) {
+        if (animatedView == null) return;
+        if (!isExternalDragging) {
+            beginDragFromRight();
+        }
+        float clamped = Math.max(0f, Math.min(1f, progress));
+        float panelWidth = getPanelWidth();
+        updateDragByLeftPx(clamped * panelWidth);
+    }
+
+    /**
+     * Завершает внешний drag жест с учётом текущей позиции и горизонтальной скорости пальца.
+     */
+    public void completeDragWithVelocity(float xVelocityPxPerSec) {
+        if (animatedView == null) return;
+        float panelWidth = getPanelWidth();
+        float currentTx = animatedView.getTranslationX();
+        float openProgress = panelWidth > 0f ? Math.max(0f, Math.min(1f, 1f - (currentTx / panelWidth))) : 0f;
+        boolean shouldOpen = shouldOpenPanelOnRelease(openProgress, xVelocityPxPerSec);
+        completeDrag(shouldOpen);
+    }
+
+    /**
+     * Завершает drag жест с решением открыть или закрыть панель.
      */
     public void completeDrag(boolean shouldOpen) {
         if (animatedView == null) return;
-        
-        clearPendingCallbacks();
-        android.util.Log.d("DraggableSidePanel", "Complete drag: shouldOpen=" + shouldOpen);
-        
+
+        isExternalDragging = false;
+        dragStartNotified = false;
         if (shouldOpen) {
             animateToOpen();
         } else {
             animateClose();
         }
+    }
+
+    // ==================== Pure Testable Helpers ====================
+
+    public static float computeTranslationXForRightDrag(float panelWidth, float draggedLeftPx) {
+        if (panelWidth <= 0f) return 0f;
+        float clampedLeft = Math.max(0f, Math.min(draggedLeftPx, panelWidth));
+        return panelWidth - clampedLeft;
+    }
+
+    public static float computeSlideOffset(float translationX, float panelWidth) {
+        if (panelWidth <= 0f) return 1f;
+        return Math.max(0f, Math.min(1f, translationX / panelWidth));
+    }
+
+    public static boolean shouldOpenPanelOnRelease(float openProgress, float xVelocityPxPerSec) {
+        if (xVelocityPxPerSec < -FLING_VELOCITY_THRESHOLD) {
+            return true;
+        }
+        if (xVelocityPxPerSec > FLING_VELOCITY_THRESHOLD) {
+            return false;
+        }
+        return openProgress >= OPEN_DRAG_THRESHOLD;
+    }
+
+    public static boolean shouldClosePanelOnRelease(float slideOffset, float xVelocityPxPerSec) {
+        if (xVelocityPxPerSec > FLING_VELOCITY_THRESHOLD) {
+            return true;
+        }
+        if (xVelocityPxPerSec < -FLING_VELOCITY_THRESHOLD) {
+            return false;
+        }
+        return slideOffset > COLLAPSE_THRESHOLD;
     }
 }

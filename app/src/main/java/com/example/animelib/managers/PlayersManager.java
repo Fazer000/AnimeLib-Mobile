@@ -1107,6 +1107,9 @@ public class PlayersManager {
         if (sidePanelViewPager != null) {
             sidePanelViewPager.setUserInputEnabled(false);
         }
+        if (visibilityCallback != null) {
+            visibilityCallback.onPlayersVisibilityChanged(false);
+        }
     }
     
     public String getPreferredPlayerType() {

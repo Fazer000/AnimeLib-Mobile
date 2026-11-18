@@ -117,6 +117,9 @@ public class PlayerPanelsController {
             menuPanelContainer.setOnPanelStateChangeListener(new DraggableSidePanel.OnPanelStateChangeListener() {
                 @Override
                 public void onPanelDragStart() {
+                    if (slidingMenuPanel != null && slidingMenuPanel.getVisibility() != View.VISIBLE) {
+                        slidingMenuPanel.setVisibility(View.VISIBLE);
+                    }
                     callback.setAmbientTransitionAnimating(true);
                     PlayersManager pm = callback.getPlayersManager();
                     if (pm != null) {
@@ -186,6 +189,9 @@ public class PlayerPanelsController {
             commentsPanelContainer.setOnPanelStateChangeListener(new DraggableSidePanel.OnPanelStateChangeListener() {
                 @Override
                 public void onPanelDragStart() {
+                    if (commentsPanel != null && commentsPanel.getVisibility() != View.VISIBLE) {
+                        commentsPanel.setVisibility(View.VISIBLE);
+                    }
                     callback.setAmbientTransitionAnimating(true);
                     CommentsManager cm = callback.getCommentsManager();
                     if (cm != null) {
@@ -316,20 +322,32 @@ public class PlayerPanelsController {
             callback.updateAmbientPlayerTransform(1f, 0f, 0f, false, -1f);
             ViewGroup.LayoutParams rawLp = playerContainer.getLayoutParams();
             if (rawLp != null) {
+                boolean needsLayout = rawLp.width != ViewGroup.LayoutParams.MATCH_PARENT
+                        || rawLp.height != ViewGroup.LayoutParams.MATCH_PARENT;
                 if (rawLp instanceof ViewGroup.MarginLayoutParams) {
                     ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) rawLp;
-                    mlp.leftMargin = 0;
-                    mlp.topMargin = 0;
-                    mlp.rightMargin = 0;
-                    mlp.bottomMargin = 0;
+                    if (mlp.leftMargin != 0 || mlp.topMargin != 0 || mlp.rightMargin != 0 || mlp.bottomMargin != 0) {
+                        mlp.leftMargin = 0;
+                        mlp.topMargin = 0;
+                        mlp.rightMargin = 0;
+                        mlp.bottomMargin = 0;
+                        needsLayout = true;
+                    }
                     if (mlp instanceof FrameLayout.LayoutParams) {
-                        ((FrameLayout.LayoutParams) mlp).gravity = Gravity.TOP | Gravity.START;
+                        FrameLayout.LayoutParams flp = (FrameLayout.LayoutParams) mlp;
+                        if (flp.gravity != (Gravity.TOP | Gravity.START)) {
+                            flp.gravity = Gravity.TOP | Gravity.START;
+                            needsLayout = true;
+                        }
                     } else if (mlp instanceof LinearLayout.LayoutParams) {
-                        ((LinearLayout.LayoutParams) mlp).gravity = Gravity.TOP | Gravity.START;
+                        LinearLayout.LayoutParams llp = (LinearLayout.LayoutParams) mlp;
+                        if (llp.gravity != (Gravity.TOP | Gravity.START)) {
+                            llp.gravity = Gravity.TOP | Gravity.START;
+                            needsLayout = true;
+                        }
                     }
                 }
-                if (rawLp.width != ViewGroup.LayoutParams.MATCH_PARENT ||
-                        rawLp.height != ViewGroup.LayoutParams.MATCH_PARENT) {
+                if (needsLayout) {
                     rawLp.width = ViewGroup.LayoutParams.MATCH_PARENT;
                     rawLp.height = ViewGroup.LayoutParams.MATCH_PARENT;
                     if (rawLp instanceof LinearLayout.LayoutParams) {
@@ -398,9 +416,11 @@ public class PlayerPanelsController {
             activePanel = menuPanelContainer;
         }
 
-        if (activePanel != null && activePanel.getChildCount() > 0) {
-            int w = activePanel.getChildAt(0).getWidth();
-            if (w > 0) panelWidthPx = w;
+        if (activePanel != null) {
+            float measuredPanelW = activePanel.getPanelWidth();
+            if (measuredPanelW > 0f) {
+                panelWidthPx = measuredPanelW;
+            }
         }
 
         float marginPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 12f, activity.getResources().getDisplayMetrics());
@@ -437,10 +457,6 @@ public class PlayerPanelsController {
         float maxRadiusPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 20f, activity.getResources().getDisplayMetrics());
         float cornerRadiusPx = (currentScale > 0) ? (maxRadiusPx * openProgress / currentScale) : 0f;
         callback.onOutlineValuesChanged(0f, 0f, 0f, 0f, cornerRadiusPx);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            playerContainer.invalidateOutline();
-        }
 
         callback.updateAmbientPlayerTransform(currentScale, translationX, translationY, false, currentAvailW);
     }

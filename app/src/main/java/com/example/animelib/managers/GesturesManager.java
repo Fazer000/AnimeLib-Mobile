@@ -60,16 +60,19 @@ public class GesturesManager {
     private long basePositionMs = 0L;
     private Float lastSwipeX = null;
     
-    // Переменные для edge swipes
+    // Переменные для edge swipes (строго в экранных raw-координатах, чтобы масштабирование playerContainer не вызывало дёрганье)
     private boolean isEdgeSwipe = false;
+    private boolean isBlockedEdgeSwipe = false;
     private EdgeSwipeType currentEdgeSwipeType = EdgeSwipeType.NONE;
-    private float edgeDragStartX = 0f;
-    private float edgeDragStartY = 0f;
-    private static final float EDGE_DRAG_THRESHOLD = 0.1f; // Порог для открытия панели (10%)
+    private float swipeStartRawX = 0f;
+    private float swipeStartRawY = 0f;
+    private float edgeDragStartRawX = 0f;
+    private float edgeDragStartRawY = 0f;
+    private static final float EDGE_DRAG_THRESHOLD = 0.20f; // Порог для открытия панели (20%)
     private android.view.VelocityTracker velocityTracker = null;
     private int screenWidth = 0;
     private int screenHeight = 0;
-    private static final int EDGE_SWIPE_THRESHOLD = 100; // dp для определения края экрана (увеличено с 50dp)
+    private static final int EDGE_SWIPE_THRESHOLD = 100; // dp для определения края экрана
     private static final int BOTTOM_ZONE_HEIGHT = 200; // dp для нижней зоны (над таймбаром)
     private static final int TOP_ZONE_HEIGHT = 200; // dp для верхней зоны (для закрытия эпизодов)
     private int edgeSwipeThresholdPx = 0;
@@ -93,9 +96,17 @@ public class GesturesManager {
         void onCommentsDragProgress(float progress); // Прогресс вытягивания панели комментариев
         void onPlayersDragProgress(float progress); // Прогресс вытягивания панели озвучек
         void onPanelDragComplete(EdgeSwipeType type, boolean shouldOpen); // Завершение drag жеста
+
+        // Прямой 1:1 пиксельный drag в экранных координатах (без округления до фиксированных 360dp)
+        default boolean canStartEdgePanelDrag(EdgeSwipeType type) { return true; }
+        default void onPanelDragStart(EdgeSwipeType type) {}
+        default void onCommentsDragPx(float draggedLeftPx) {}
+        default void onPlayersDragPx(float draggedLeftPx) {}
+        default void onPanelDragRelease(EdgeSwipeType type, float draggedLeftPx, float xVelocityPxPerSec) {}
+        default void onBlockedEdgeSwipe(EdgeSwipeType type) {}
         
         // Метод для двойного нажатия (длинная перемотка)
-        void onDoubleTapSkip(boolean isForward, int skipDurationSeconds); // Двойное нажатие для длинной перемотки
+        void onDoubleTapSkip(boolean isForward, int skipDurationSeconds); // Двойное нажатия для длинной перемотки
         
         // УСТАРЕВШИЕ методы - оставлены для совместимости, но не используются
         // Вертикальные жесты теперь в VerticalGesturesManager
@@ -191,11 +202,32 @@ public class GesturesManager {
         return context.getResources().getDisplayMetrics().widthPixels;
     }
 
-    private int getEffectiveHeight() {
-        if (playerView != null && playerView.getHeight() > 0) {
-            return playerView.getHeight();
+    private int getEffectiveScreenWidth() {
+        if (playerView != null && playerView.getRootView() != null && playerView.getRootView().getWidth() > 0) {
+            return playerView.getRootView().getWidth();
         }
-        return context.getResources().getDisplayMetrics().heightPixels;
+        if (context != null) {
+            return context.getResources().getDisplayMetrics().widthPixels;
+        }
+        return screenWidth;
+    }
+
+    private int getEffectiveScreenHeight() {
+        if (playerView != null && playerView.getRootView() != null && playerView.getRootView().getHeight() > 0) {
+            return playerView.getRootView().getHeight();
+        }
+        if (context != null) {
+            return context.getResources().getDisplayMetrics().heightPixels;
+        }
+        return screenHeight;
+    }
+
+    private static void addRawMovementToVelocityTracker(android.view.VelocityTracker tracker, MotionEvent event) {
+        if (tracker == null || event == null) return;
+        MotionEvent rawEvent = MotionEvent.obtain(event);
+        rawEvent.setLocation(event.getRawX(), event.getRawY());
+        tracker.addMovement(rawEvent);
+        rawEvent.recycle();
     }
 
     /**
@@ -305,7 +337,7 @@ public class GesturesManager {
                     } else {
                         velocityTracker.clear();
                     }
-                    velocityTracker.addMovement(event);
+                    addRawMovementToVelocityTracker(velocityTracker, event);
 
                     // Принудительно сбрасываем все состояния жестов
                     if (isHoldToSpeed && player != null) {
@@ -313,31 +345,33 @@ public class GesturesManager {
                         resetHoldToSpeed();
                     }
                     
-                     // Инициализируем переменные для жестов
-                     isSwipingSeek = false;
-                     isEdgeSwipe = false;
-                     isHorizontalGestureActive = false; // Сбрасываем флаг блокировки
-                     currentEdgeSwipeType = EdgeSwipeType.NONE;
-                     isSpeedAdjustmentMode = false;
-                     swipeAccumulatedDx = 0f;
-                     assert player != null;
-                     basePositionMs = player.getCurrentPosition();
-                     lastSwipeX = event.getX();
-                     swipeStartX = event.getX();
-                     swipeStartY = event.getY();
-                     speedAdjustmentStartX = event.getX();
-                     holdStartTime = System.currentTimeMillis();
-                     currentSpeedMultiplier = 1.0f; // Сбрасываем скорость на 1.0x при новом касании
-                    
-                    // НЕ проверяем edge swipe в ACTION_DOWN - это блокирует обычные жесты
-                    // Проверка будет в ACTION_MOVE
+                    // Инициализируем переменные для жестов
+                    isSwipingSeek = false;
+                    isEdgeSwipe = false;
+                    isBlockedEdgeSwipe = false;
+                    isHorizontalGestureActive = false; // Сбрасываем флаг блокировки
+                    currentEdgeSwipeType = EdgeSwipeType.NONE;
+                    isSpeedAdjustmentMode = false;
+                    swipeAccumulatedDx = 0f;
+                    assert player != null;
+                    basePositionMs = player.getCurrentPosition();
+                    lastSwipeX = event.getX();
+                    swipeStartX = event.getX();
+                    swipeStartY = event.getY();
+                    swipeStartRawX = event.getRawX();
+                    swipeStartRawY = event.getRawY();
+                    edgeDragStartRawX = swipeStartRawX;
+                    edgeDragStartRawY = swipeStartRawY;
+                    speedAdjustmentStartX = event.getX();
+                    holdStartTime = System.currentTimeMillis();
+                    currentSpeedMultiplier = 1.0f; // Сбрасываем скорость на 1.0x при новом касании
                     
                     // Запускаем таймер для hold-to-speed
                     if (holdToSpeedRunnable != null) {
                         v.removeCallbacks(holdToSpeedRunnable);
                     }
                     holdToSpeedRunnable = () -> {
-                        if (!isSwipingSeek && !isHoldToSpeed && player != null) {
+                        if (!isSwipingSeek && !isEdgeSwipe && !isBlockedEdgeSwipe && !isHoldToSpeed && player != null) {
                             Log.d(TAG, "Hold to speed activated");
                             activateHoldToSpeed();
                         }
@@ -348,51 +382,73 @@ public class GesturesManager {
                     return false; // НЕ перехватываем событие, позволяем контролам работать
                     
                 case MotionEvent.ACTION_MOVE:
-                    if (velocityTracker != null) {
-                        velocityTracker.addMovement(event);
+                    addRawMovementToVelocityTracker(velocityTracker, event);
+
+                    float currentRawX = event.getRawX();
+                    float currentRawY = event.getRawY();
+                    float deltaRawX = currentRawX - swipeStartRawX;
+                    float deltaRawY = currentRawY - swipeStartRawY;
+                    float absDeltaRawX = Math.abs(deltaRawX);
+                    float absDeltaRawY = Math.abs(deltaRawY);
+
+                    // Проверяем edge swipe строго в экранных raw-координатах до трансформации playerContainer
+                    if (!isEdgeSwipe && !isBlockedEdgeSwipe && !isSwipingSeek && !isHoldToSpeed
+                            && !isPortraitMode
+                            && isEdgeSwipeStart(swipeStartRawX)
+                            && deltaRawX < -swipeTouchSlopPx
+                            && absDeltaRawX > absDeltaRawY * 1.15f) {
+                        EdgeSwipeType swipeType = detectEdgeSwipeType(swipeStartRawY);
+                        if (swipeType != EdgeSwipeType.NONE) {
+                            if (holdToSpeedRunnable != null) {
+                                v.removeCallbacks(holdToSpeedRunnable);
+                                holdToSpeedRunnable = null;
+                            }
+                            if (isHoldToSpeed) {
+                                resetHoldToSpeed();
+                            }
+
+                            android.view.ViewParent parent = v.getParent();
+                            if (parent != null) {
+                                parent.requestDisallowInterceptTouchEvent(true);
+                            }
+
+                            isHorizontalGestureActive = true;
+                            currentEdgeSwipeType = swipeType;
+                            // Якорим начало drag к точке пересечения touchSlop, чтобы панель пошла плавно с 0px
+                            edgeDragStartRawX = currentRawX;
+                            edgeDragStartRawY = currentRawY;
+
+                            if (gestureCallback != null && !gestureCallback.canStartEdgePanelDrag(swipeType)) {
+                                isBlockedEdgeSwipe = true;
+                                return true;
+                            }
+
+                            isEdgeSwipe = true;
+                            if (gestureCallback != null) {
+                                gestureCallback.onPanelDragStart(swipeType);
+                            }
+                            updateEdgeDragPx(swipeType, 0f);
+                            Log.d(TAG, "Edge drag started: " + swipeType + " at rawX=" + currentRawX);
+                            return true;
+                        }
                     }
+
+                    if (isBlockedEdgeSwipe) {
+                        return true;
+                    }
+
+                    // Обработка 1:1 drag для edge swipe строго по rawX
+                    if (isEdgeSwipe && currentEdgeSwipeType != EdgeSwipeType.NONE) {
+                        float draggedLeftPx = Math.max(0f, edgeDragStartRawX - currentRawX);
+                        updateEdgeDragPx(currentEdgeSwipeType, draggedLeftPx);
+                        return true;
+                    }
+
                     float currentX = event.getX();
                     float currentY = event.getY();
                     float totalDx = Math.abs(currentX - swipeStartX);
                     float totalDy = Math.abs(currentY - swipeStartY);
                     boolean passedDeadZone = totalDx > swipeTouchSlopPx && totalDx > totalDy * 1.5f;
-
-                    // Проверяем edge swipe ТОЛЬКО если начало было с края И есть движение
-                    if (!isEdgeSwipe && !isSwipingSeek && !isHoldToSpeed &&
-                        (totalDx > swipeTouchSlopPx || totalDy > swipeTouchSlopPx)) {
-                        // Проверяем, начался ли жест с края экрана
-                        if (isEdgeSwipeStart(swipeStartX, swipeStartY)) {
-                            EdgeSwipeType swipeType = detectEdgeSwipeType(swipeStartX, swipeStartY, currentX, currentY);
-                            if (swipeType != EdgeSwipeType.NONE) {
-                                isEdgeSwipe = true;
-                                isHorizontalGestureActive = true; // Блокируем вертикальные жесты
-                                currentEdgeSwipeType = swipeType;
-                                edgeDragStartX = swipeStartX;
-                                edgeDragStartY = swipeStartY;
-                                
-                                // ВАЖНО: Отменяем таймер hold-to-speed при начале edge swipe
-                                if (holdToSpeedRunnable != null) {
-                                    v.removeCallbacks(holdToSpeedRunnable);
-                                    holdToSpeedRunnable = null;
-                                }
-                                
-                                // Сбрасываем hold-to-speed если он был активен (на всякий случай)
-                                if (isHoldToSpeed) {
-                                    resetHoldToSpeed();
-                                }
-                                
-                                Log.d(TAG, "Edge drag started: " + swipeType + " - blocking vertical gestures");
-                                return true;
-                            }
-                        }
-                    }
-                    
-                    // Обработка drag progress для edge swipe
-                    if (isEdgeSwipe && currentEdgeSwipeType != EdgeSwipeType.NONE) {
-                        float progress = calculateEdgeDragProgress(currentEdgeSwipeType, currentX, currentY);
-                        updateEdgeDragProgress(currentEdgeSwipeType, progress);
-                        return true;
-                    }
 
                     // Если есть движение, отменяем hold-to-speed
                     if (passedDeadZone && holdToSpeedRunnable != null) {
@@ -454,12 +510,11 @@ public class GesturesManager {
 
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL:
+                    float xVel = 0f;
                     if (velocityTracker != null) {
-                        velocityTracker.addMovement(event);
+                        addRawMovementToVelocityTracker(velocityTracker, event);
                         velocityTracker.computeCurrentVelocity(1000);
-                    }
-                    float xVel = velocityTracker != null ? velocityTracker.getXVelocity() : 0f;
-                    if (velocityTracker != null) {
+                        xVel = event.getActionMasked() == MotionEvent.ACTION_CANCEL ? 0f : velocityTracker.getXVelocity();
                         velocityTracker.recycle();
                         velocityTracker = null;
                     }
@@ -489,14 +544,10 @@ public class GesturesManager {
                         }
                         Log.d(TAG, "Seek completed: " + finalOffsetMs + "ms");
                         
-                        // Показываем контролы плеера после перемотки
                         if (playerView != null) {
                             playerView.showController();
                         }
-                        
-                        // Активируем cooldown для восстановления кликабельности
                         activateGestureCooldown();
-                        
                         handledGesture = true;
                     }
                     
@@ -504,52 +555,46 @@ public class GesturesManager {
                     if (isHoldToSpeed) {
                         Log.d(TAG, "Hold to speed deactivated");
                         resetHoldToSpeed();
-                        
-                        // Показываем контролы плеера после завершения ускорения
                         if (playerView != null) {
                             playerView.showController();
                         }
-                        
-                        // Активируем cooldown для восстановления кликабельности
                         activateGestureCooldown();
-                        
                         handledGesture = true;
                     }
-                    
-                    // Handle edge drag completion (только для горизонтальных свайпов)
-                    if (isEdgeSwipe && currentEdgeSwipeType != EdgeSwipeType.NONE) {
-                        float finalProgress = calculateEdgeDragProgress(currentEdgeSwipeType, event.getX(), event.getY());
-                        boolean shouldOpen;
-                        if (xVel < -300f) {
-                            // Быстрый свайп влево (открытие правой панели)
-                            shouldOpen = true;
-                        } else if (xVel > 300f) {
-                            // Быстрый свайп вправо (закрытие панели)
-                            shouldOpen = false;
-                        } else {
-                            shouldOpen = finalProgress >= EDGE_DRAG_THRESHOLD;
+
+                    if (isBlockedEdgeSwipe && currentEdgeSwipeType != EdgeSwipeType.NONE) {
+                        float leftPx = Math.max(0f, edgeDragStartRawX - event.getRawX());
+                        if (event.getActionMasked() == MotionEvent.ACTION_UP
+                                && gestureCallback != null
+                                && (leftPx > swipeTouchSlopPx || xVel < -300f)) {
+                            gestureCallback.onBlockedEdgeSwipe(currentEdgeSwipeType);
                         }
-                        
-                        Log.d(TAG, "Edge drag completed: " + currentEdgeSwipeType + 
-                              ", progress=" + finalProgress + ", xVel=" + xVel + ", shouldOpen=" + shouldOpen);
-                        
+                        handledGesture = true;
+                    } else if (isEdgeSwipe && currentEdgeSwipeType != EdgeSwipeType.NONE) {
+                        float draggedLeftPx = Math.max(0f, edgeDragStartRawX - event.getRawX());
+                        float finalProgress = calculateEdgeDragProgress(currentEdgeSwipeType, draggedLeftPx);
+                        boolean shouldOpen = com.example.animelib.ui.DraggableSidePanel.shouldOpenPanelOnRelease(finalProgress, xVel);
+
+                        Log.d(TAG, "Edge drag completed: " + currentEdgeSwipeType +
+                              ", leftPx=" + draggedLeftPx + ", xVel=" + xVel + ", shouldOpen=" + shouldOpen);
+
                         if (gestureCallback != null) {
+                            gestureCallback.onPanelDragRelease(currentEdgeSwipeType, draggedLeftPx, xVel);
                             gestureCallback.onPanelDragComplete(currentEdgeSwipeType, shouldOpen);
                         }
-                        
+
                         handledGesture = true;
                     }
                     
                     // Сбрасываем состояние
                     isSwipingSeek = false;
                     isEdgeSwipe = false;
+                    isBlockedEdgeSwipe = false;
                     isHorizontalGestureActive = false; // Разблокируем вертикальные жесты
                     currentEdgeSwipeType = EdgeSwipeType.NONE;
                     swipeAccumulatedDx = 0f;
                     lastSwipeX = null;
                     
-                    // Если был какой-то жест, перехватываем событие
-                    // Если не было жеста, позволяем клику пройти для показа контролов
                     return handledGesture;
             }
             return false;
@@ -566,118 +611,44 @@ public class GesturesManager {
     }
     
     /**
-     * Проверяет, начался ли жест с края экрана (только правый край для горизонтальных свайпов)
+     * Проверяет, начался ли жест с правого края экрана (в экранных raw-координатах)
      */
-    private boolean isEdgeSwipeStart(float x, float y) {
-        // Проверяем только правый край (для комментариев и озвучек)
-        // Вертикальные жесты обрабатываются в VerticalGesturesManager
-        return x > (getEffectiveWidth() - edgeSwipeThresholdPx);
+    private boolean isEdgeSwipeStart(float rawX) {
+        return rawX > (getEffectiveScreenWidth() - edgeSwipeThresholdPx);
     }
     
     /**
-     * Определяет тип edge swipe на основе начальной и конечной позиции
+     * Определяет тип правой боковой панели по вертикальной позиции старта касания
      */
-    private EdgeSwipeType detectEdgeSwipeType(float startX, float startY, float endX, float endY) {
+    private EdgeSwipeType detectEdgeSwipeType(float startRawY) {
         if (isPortraitMode) {
             return EdgeSwipeType.NONE;
         }
-        float deltaX = endX - startX;
-        float deltaY = endY - startY;
-        float absDeltaX = Math.abs(deltaX);
-        float absDeltaY = Math.abs(deltaY);
-        
-        int effWidth = getEffectiveWidth();
-        int effHeight = getEffectiveHeight();
-        
-        // ВЕРТИКАЛЬНЫЕ ЖЕСТЫ (эпизоды и панель с инфо) ОБРАБАТЫВАЮТСЯ В VerticalGesturesManager
-        // Здесь остаются только горизонтальные свайпы справа (комментарии и озвучки)
-        
-        // Свайпы справа налево
-        if (startX > (effWidth - edgeSwipeThresholdPx) && deltaX < -swipeTouchSlopPx && absDeltaX > absDeltaY) {
-            // Определяем верх или низ экрана
-            boolean isTopHalf = startY < (effHeight / 2f);
-            
-            if (isTopHalf) {
-                Log.d(TAG, "Detected COMMENTS_RIGHT swipe (startY=" + startY + ", effHeight=" + effHeight + ")");
-                return EdgeSwipeType.COMMENTS_RIGHT;
-            } else {
-                Log.d(TAG, "Detected PLAYERS_RIGHT swipe (startY=" + startY + ", effHeight=" + effHeight + ")");
-                return EdgeSwipeType.PLAYERS_RIGHT;
-            }
-        }
-        
-        return EdgeSwipeType.NONE;
+        int effHeight = getEffectiveScreenHeight();
+        boolean isTopHalf = startRawY < (effHeight / 2f);
+        return isTopHalf ? EdgeSwipeType.COMMENTS_RIGHT : EdgeSwipeType.PLAYERS_RIGHT;
     }
-    
-    /**
-     * Обрабатывает edge swipe и вызывает соответствующий callback
-     * УСТАРЕВШИЙ МЕТОД - теперь используется drag-to-open
-     */
-    private void handleEdgeSwipe(EdgeSwipeType swipeType) {
-        if (gestureCallback == null) {
-            Log.w(TAG, "GestureCallback is null, cannot handle edge swipe");
-            return;
-        }
-        
-        switch (swipeType) {
-            case COMMENTS_RIGHT:
-                Log.d(TAG, "Opening comments panel");
-                gestureCallback.onCommentsSwipeFromRight();
-                break;
-            case PLAYERS_RIGHT:
-                Log.d(TAG, "Opening players panel");
-                gestureCallback.onPlayersSwipeFromRight();
-                break;
-            case NONE:
-                // Ничего не делаем
-                break;
-        }
+
+    private float calculateEdgeDragProgress(EdgeSwipeType swipeType, float draggedLeftPx) {
+        if (swipeType == EdgeSwipeType.NONE) return 0f;
+        float density = context != null ? context.getResources().getDisplayMetrics().density : 1f;
+        float fallbackWidthPx = 360f * density;
+        return Math.max(0f, Math.min(1f, draggedLeftPx / fallbackWidthPx));
     }
-    
-    /**
-     * Вычисляет прогресс drag для edge swipe (0.0 - 1.0)
-     * Только для горизонтальных свайпов (комментарии и озвучки)
-     */
-    private float calculateEdgeDragProgress(EdgeSwipeType swipeType, float currentX, float currentY) {
-        float progress = 0f;
-        
-        switch (swipeType) {
-            case COMMENTS_RIGHT:
-            case PLAYERS_RIGHT:
-                // Свайп справа налево - чем левее сдвинулся палец, тем больше прогресс
-                float leftDistance = edgeDragStartX - currentX;
-                // Рассчитываем относительно реальной ширины боковой панели (360dp), чтобы панель следовала 1:1 за пальцем
-                float density = context.getResources().getDisplayMetrics().density;
-                float panelWidthPx = 360f * density;
-                progress = Math.max(0f, Math.min(1f, leftDistance / panelWidthPx));
-                break;
-                
-            case NONE:
-                progress = 0f;
-                break;
-        }
-        
-        return progress;
-    }
-    
-    /**
-     * Обновляет прогресс drag и вызывает соответствующий callback
-     * Только для горизонтальных свайпов (комментарии и озвучки)
-     */
-    private void updateEdgeDragProgress(EdgeSwipeType swipeType, float progress) {
+
+    private void updateEdgeDragPx(EdgeSwipeType swipeType, float draggedLeftPx) {
         if (gestureCallback == null) return;
-        
+        float fallbackProgress = calculateEdgeDragProgress(swipeType, draggedLeftPx);
         switch (swipeType) {
             case COMMENTS_RIGHT:
-                gestureCallback.onCommentsDragProgress(progress);
+                gestureCallback.onCommentsDragPx(draggedLeftPx);
+                gestureCallback.onCommentsDragProgress(fallbackProgress);
                 break;
-                
             case PLAYERS_RIGHT:
-                gestureCallback.onPlayersDragProgress(progress);
+                gestureCallback.onPlayersDragPx(draggedLeftPx);
+                gestureCallback.onPlayersDragProgress(fallbackProgress);
                 break;
-                
             case NONE:
-                // Ничего не делаем
                 break;
         }
     }
@@ -964,8 +935,14 @@ public class GesturesManager {
         
         isSwipingSeek = false;
         isEdgeSwipe = false;
+        isBlockedEdgeSwipe = false;
         isHorizontalGestureActive = false; // Разблокируем вертикальные жесты
         isGestureCooldown = false; // Сбрасываем cooldown
+        currentEdgeSwipeType = EdgeSwipeType.NONE;
+        if (velocityTracker != null) {
+            velocityTracker.recycle();
+            velocityTracker = null;
+        }
         
         // Принудительно отменяем таймер
         if (holdToSpeedRunnable != null && playerView != null) {

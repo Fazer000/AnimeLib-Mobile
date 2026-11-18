@@ -148,63 +148,91 @@ public class PlayerGesturesCoordinator {
                 }
 
                 @Override
-                public void onCommentsDragProgress(float progress) {
-                    if (host.isOfflineMode() || host.isCommentsDisabledInPlayer()) return;
+                public boolean canStartEdgePanelDrag(GesturesManager.EdgeSwipeType type) {
+                    if (type == GesturesManager.EdgeSwipeType.COMMENTS_RIGHT) {
+                        return !host.isOfflineMode() && !host.isCommentsDisabledInPlayer();
+                    } else if (type == GesturesManager.EdgeSwipeType.PLAYERS_RIGHT) {
+                        return !host.isOfflineMode();
+                    }
+                    return true;
+                }
+
+                @Override
+                public void onPanelDragStart(GesturesManager.EdgeSwipeType type) {
                     PlayerView pv = host.getPlayerView();
-                    if (progress > 0 && pv != null) {
+                    if (pv != null) {
                         pv.hideController();
                     }
                     PlayerUIBinder ui = host.getUiBinder();
+                    if (ui == null) return;
+                    if (type == GesturesManager.EdgeSwipeType.COMMENTS_RIGHT && ui.commentsPanelContainer != null) {
+                        ui.commentsPanelContainer.beginDragFromRight();
+                    } else if (type == GesturesManager.EdgeSwipeType.PLAYERS_RIGHT && ui.menuPanelContainer != null) {
+                        ui.menuPanelContainer.beginDragFromRight();
+                    }
+                }
+
+                @Override
+                public void onCommentsDragPx(float draggedLeftPx) {
+                    if (host.isOfflineMode() || host.isCommentsDisabledInPlayer()) return;
+                    PlayerUIBinder ui = host.getUiBinder();
                     DraggableSidePanel commentsContainer = ui != null ? ui.commentsPanelContainer : null;
                     if (commentsContainer != null) {
-                        commentsContainer.setDragProgress(progress);
+                        commentsContainer.updateDragByLeftPx(draggedLeftPx);
                     }
+                }
+
+                @Override
+                public void onPlayersDragPx(float draggedLeftPx) {
+                    if (host.isOfflineMode()) return;
+                    PlayerUIBinder ui = host.getUiBinder();
+                    DraggableSidePanel menuContainer = ui != null ? ui.menuPanelContainer : null;
+                    if (menuContainer != null) {
+                        menuContainer.updateDragByLeftPx(draggedLeftPx);
+                    }
+                }
+
+                @Override
+                public void onPanelDragRelease(GesturesManager.EdgeSwipeType type, float draggedLeftPx, float xVelocityPxPerSec) {
+                    PlayerUIBinder ui = host.getUiBinder();
+                    if (ui == null) return;
+                    switch (type) {
+                        case COMMENTS_RIGHT:
+                            if (host.isOfflineMode() || host.isCommentsDisabledInPlayer()) return;
+                            if (ui.commentsPanelContainer != null) {
+                                ui.commentsPanelContainer.completeDragWithVelocity(xVelocityPxPerSec);
+                            }
+                            break;
+                        case PLAYERS_RIGHT:
+                            if (host.isOfflineMode()) return;
+                            if (ui.menuPanelContainer != null) {
+                                ui.menuPanelContainer.completeDragWithVelocity(xVelocityPxPerSec);
+                            }
+                            break;
+                    }
+                }
+
+                @Override
+                public void onBlockedEdgeSwipe(GesturesManager.EdgeSwipeType type) {
+                    if (type == GesturesManager.EdgeSwipeType.PLAYERS_RIGHT && host.isOfflineMode() && host.getContext() != null) {
+                        CustomToast.showInfo(host.getContext(), "Выбор озвучки недоступен в офлайн режиме");
+                    }
+                }
+
+                @Override
+                public void onCommentsDragProgress(float progress) {
+                    // Обрабатывается через 1:1 пиксельный onCommentsDragPx
                 }
 
                 @Override
                 public void onPlayersDragProgress(float progress) {
-                    if (host.isOfflineMode()) return;
-                    PlayerView pv = host.getPlayerView();
-                    if (progress > 0 && pv != null) {
-                        pv.hideController();
-                    }
-                    PlayerUIBinder ui = host.getUiBinder();
-                    DraggableSidePanel menuContainer = ui != null ? ui.menuPanelContainer : null;
-                    if (menuContainer != null) {
-                        menuContainer.setDragProgress(progress);
-                    }
+                    // Обрабатывается через 1:1 пиксельный onPlayersDragPx
                 }
 
                 @Override
                 public void onPanelDragComplete(GesturesManager.EdgeSwipeType type, boolean shouldOpen) {
-                    PlayerUIBinder ui = host.getUiBinder();
-                    switch (type) {
-                        case COMMENTS_RIGHT:
-                            if (host.isOfflineMode() || host.isCommentsDisabledInPlayer()) return;
-                            if (ui != null && ui.commentsPanelContainer != null) {
-                                ui.commentsPanelContainer.completeDrag(shouldOpen);
-                            }
-                            PlayerCommentsController cc = host.getCommentsController();
-                            if (cc != null) {
-                                cc.updateDragState(shouldOpen);
-                            }
-                            break;
-                        case PLAYERS_RIGHT:
-                            if (host.isOfflineMode()) {
-                                if (shouldOpen && host.getContext() != null) {
-                                    CustomToast.showInfo(host.getContext(), "Выбор озвучки недоступен в офлайн режиме");
-                                }
-                                return;
-                            }
-                            if (ui != null && ui.menuPanelContainer != null) {
-                                ui.menuPanelContainer.completeDrag(shouldOpen);
-                            }
-                            PlayersManager pm = host.getPlayersManager();
-                            if (pm != null) {
-                                pm.updateDragState(shouldOpen);
-                            }
-                            break;
-                    }
+                    // Завершение и анимация выполняются в onPanelDragRelease;
+                    // контроллеры/менеджеры обновляются по завершении анимации в OnPanelStateChangeListener.
                 }
 
                 @Override

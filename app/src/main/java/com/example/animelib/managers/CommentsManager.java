@@ -1613,6 +1613,9 @@ public class CommentsManager {
         mainHandler.removeCallbacks(panelOpenFallbackRunnable);
         isPanelAnimatingOpen = false;
         isCommentsVisible = false;
+        if (visibilityCallback != null) {
+            visibilityCallback.onCommentsVisibilityChanged(false);
+        }
     }
 
     public String getCommentsSortType() {
