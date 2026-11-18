@@ -603,7 +603,7 @@ public class PlayerVideoResolverController {
                 if (file.exists() && file.length() > 0) {
                     provider.setCurrentVideoUrl(Uri.fromFile(file).toString());
                     provider.onActiveQualityResolved(downloadedEp.getQuality());
-                    if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
+                    applyTimecodesWithOfflineFallback(playerData, downloadedEp);
                     provider.initializePlayer(seekToPosition);
                     ExoPlayer player = provider.getPlayer();
                     if (seekToPosition > 0 && player != null) {
@@ -687,7 +687,7 @@ public class PlayerVideoResolverController {
                 if (file.exists() && file.length() > 0) {
                     provider.setCurrentVideoUrl(Uri.fromFile(file).toString());
                     provider.onActiveQualityResolved(downloadedEp.getQuality());
-                    if (timecodeManager != null) timecodeManager.setTimecodes(playerData);
+                    applyTimecodesWithOfflineFallback(playerData, downloadedEp);
                     provider.initializePlayer(seekToPosition);
                     ExoPlayer player = provider.getPlayer();
                     if (seekToPosition > 0 && player != null) {
@@ -951,5 +951,23 @@ public class PlayerVideoResolverController {
 
         return AutoQualityHelper.resolveBestQuality(
                 provider.getContext(), availableQualities, preferredQuality, estimate);
+    }
+
+    private void applyTimecodesWithOfflineFallback(@androidx.annotation.Nullable EpisodeResponse.PlayerData playerData,
+                                                   @androidx.annotation.Nullable DownloadedEpisodeEntity downloadedEp) {
+        if (timecodeManager == null) return;
+        if (playerData != null && playerData.getTimecode() != null && !playerData.getTimecode().isEmpty()) {
+            timecodeManager.setTimecodes(playerData);
+            return;
+        }
+        if (downloadedEp != null) {
+            List<EpisodeResponse.TimecodeData> offlineTimecodes =
+                    com.example.animelib.models.OfflineEpisodeMetadata.parseTimecodesJson(downloadedEp.getTimecodesJson());
+            if (!offlineTimecodes.isEmpty()) {
+                timecodeManager.setTimecodes(offlineTimecodes);
+                return;
+            }
+        }
+        timecodeManager.setTimecodes(playerData);
     }
 }

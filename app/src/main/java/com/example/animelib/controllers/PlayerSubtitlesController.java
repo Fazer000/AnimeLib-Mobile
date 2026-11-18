@@ -157,29 +157,36 @@ public class PlayerSubtitlesController {
     }
 
     public List<MediaItem.SubtitleConfiguration> buildSubtitleConfigurations() {
+        return buildSubtitleConfigurations(null);
+    }
+
+    public List<MediaItem.SubtitleConfiguration> buildSubtitleConfigurations(@Nullable String videoUrlOverride) {
         List<MediaItem.SubtitleConfiguration> configs = new ArrayList<>();
         if (!subtitlesEnabled) {
             return configs;
         }
 
         boolean isOffline = callback.isOfflineMode();
-        String currentVideoUrl = callback.getCurrentVideoUrl();
+        String effectiveVideoUrl = (videoUrlOverride != null && !videoUrlOverride.trim().isEmpty())
+                ? videoUrlOverride
+                : callback.getCurrentVideoUrl();
 
-        if (isOffline || (currentVideoUrl != null && currentVideoUrl.startsWith("/"))) {
-            List<File> localSubs = findLocalSubtitleFiles();
+        if (isOffline || com.example.animelib.models.OfflineEpisodeMetadata.isLocalMediaPath(effectiveVideoUrl)) {
+            List<LocalSubtitleEntry> localSubs = findLocalSubtitleEntries(effectiveVideoUrl);
             if (!localSubs.isEmpty()) {
-                int preferredIdx = pickPreferredLocalIndex(localSubs);
+                int preferredIdx = pickPreferredLocalEntryIndex(localSubs);
                 List<Integer> order = buildIndexOrder(localSubs.size(), preferredIdx);
                 for (int i = 0; i < order.size(); i++) {
                     int idx = order.get(i);
-                    File f = localSubs.get(idx);
-                    String format = getFileExtensionLower(f.getName());
+                    LocalSubtitleEntry entry = localSubs.get(idx);
+                    File f = entry.file;
+                    String format = entry.format;
                     String mimeType = getMimeTypeForSubtitle(format, f.getAbsolutePath());
                     boolean isPreferred = (idx == preferredIdx);
                     MediaItem.SubtitleConfiguration config = new MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(f))
                             .setMimeType(mimeType)
                             .setLanguage("ru")
-                            .setLabel("Субтитры (офлайн " + format.toUpperCase(Locale.ROOT) + ")")
+                            .setLabel(entry.label)
                             .setSelectionFlags(isPreferred ? (C.SELECTION_FLAG_DEFAULT | C.SELECTION_FLAG_FORCED) : 0)
                             .setRoleFlags(C.ROLE_FLAG_SUBTITLE)
                             .build();
@@ -275,11 +282,11 @@ public class PlayerSubtitlesController {
         clearNativeAssState();
 
         if (subtitlesEnabled) {
-            loadPreferredAssSubtitleAsync();
+            loadPreferredAssSubtitleAsync(videoUrl);
         }
 
         MediaItem.Builder builder = new MediaItem.Builder().setUri(videoUrl);
-        List<MediaItem.SubtitleConfiguration> subtitleConfigs = buildSubtitleConfigurations();
+        List<MediaItem.SubtitleConfiguration> subtitleConfigs = buildSubtitleConfigurations(videoUrl);
         if (!subtitleConfigs.isEmpty()) {
             builder.setSubtitleConfigurations(subtitleConfigs);
             Log.d(TAG, "Attached " + subtitleConfigs.size() + " subtitle tracks to media item.");
@@ -315,14 +322,13 @@ public class PlayerSubtitlesController {
         if ("ass".equalsIgnoreCase(subtitleFormat) || "ssa".equalsIgnoreCase(subtitleFormat)) {
             return false;
         }
-        // "auto": check local files first in offline mode
+        // "auto": check local files first in offline mode or when playing a local downloaded file
         boolean isOffline = callback.isOfflineMode();
         String currentVideoUrl = callback.getCurrentVideoUrl();
-        if (isOffline || (currentVideoUrl != null && currentVideoUrl.startsWith("/"))) {
-            List<File> localSubs = findLocalSubtitleFiles();
-            for (File f : localSubs) {
-                String ext = getFileExtensionLower(f.getName());
-                if ("ass".equals(ext) || "ssa".equals(ext)) {
+        if (isOffline || com.example.animelib.models.OfflineEpisodeMetadata.isLocalMediaPath(currentVideoUrl)) {
+            List<LocalSubtitleEntry> localSubs = findLocalSubtitleEntries(currentVideoUrl);
+            for (LocalSubtitleEntry entry : localSubs) {
+                if ("ass".equals(entry.format) || "ssa".equals(entry.format)) {
                     return false;
                 }
             }
@@ -403,23 +409,28 @@ public class PlayerSubtitlesController {
     }
 
     private void loadPreferredAssSubtitleAsync() {
+        loadPreferredAssSubtitleAsync(null);
+    }
+
+    private void loadPreferredAssSubtitleAsync(@Nullable String videoUrlOverride) {
         if (!subtitlesEnabled) {
             clearNativeAssState();
             return;
         }
 
-        // Resolve local ASS file first if offline
+        // Resolve local ASS file first if offline or playing a downloaded local file
         boolean isOffline = callback.isOfflineMode();
-        String currentVideoUrl = callback.getCurrentVideoUrl();
-        if (isOffline || (currentVideoUrl != null && currentVideoUrl.startsWith("/"))) {
-            List<File> localSubs = findLocalSubtitleFiles();
+        String effectiveVideoUrl = (videoUrlOverride != null && !videoUrlOverride.trim().isEmpty())
+                ? videoUrlOverride
+                : callback.getCurrentVideoUrl();
+        if (isOffline || com.example.animelib.models.OfflineEpisodeMetadata.isLocalMediaPath(effectiveVideoUrl)) {
+            List<LocalSubtitleEntry> localSubs = findLocalSubtitleEntries(effectiveVideoUrl);
             if (!localSubs.isEmpty()) {
-                int preferredIdx = pickPreferredLocalIndex(localSubs);
+                int preferredIdx = pickPreferredLocalEntryIndex(localSubs);
                 if (preferredIdx >= 0) {
-                    File chosen = localSubs.get(preferredIdx);
-                    String ext = getFileExtensionLower(chosen.getName());
-                    if ("ass".equals(ext) || "ssa".equals(ext)) {
-                        loadAssFromLocalFileAsync(chosen);
+                    LocalSubtitleEntry chosen = localSubs.get(preferredIdx);
+                    if ("ass".equals(chosen.format) || "ssa".equals(chosen.format)) {
+                        loadAssFromLocalFileAsync(chosen.file);
                         return;
                     } else {
                         clearNativeAssState();
@@ -934,44 +945,71 @@ public class PlayerSubtitlesController {
 
     // ==================== HELPER METHODS ====================
 
-    private List<File> findLocalSubtitleFiles() {
-        List<File> result = new ArrayList<>();
-        DownloadedEpisodeEntity offlineEp = callback.getCurrentOfflineEpisode();
-        String currentVideoUrl = callback.getCurrentVideoUrl();
-        String localPath = (offlineEp != null && offlineEp.getLocalFilePath() != null)
-                ? offlineEp.getLocalFilePath()
-                : currentVideoUrl;
-        if (localPath == null || !localPath.startsWith("/")) {
-            return result;
-        }
-        File videoFile = new File(localPath);
-        File dir = videoFile.getParentFile();
-        if (dir == null || !dir.exists()) return result;
+    private static final class LocalSubtitleEntry {
+        final File file;
+        final String format;
+        final String label;
 
-        String baseName = videoFile.getName();
-        int dotIdx = baseName.lastIndexOf('.');
-        if (dotIdx > 0) baseName = baseName.substring(0, dotIdx);
-
-        File[] files = dir.listFiles();
-        if (files == null) return result;
-        for (File f : files) {
-            if (f.getName().startsWith(baseName + "_sub_") && f.length() > 0) {
-                result.add(f);
-            }
+        LocalSubtitleEntry(File file, String format, String label) {
+            this.file = file;
+            this.format = format;
+            this.label = label;
         }
-        return result;
     }
 
-    private int pickPreferredLocalIndex(List<File> files) {
-        for (int i = 0; i < files.size(); i++) {
-            String ext = getFileExtensionLower(files.get(i).getName());
+    private List<LocalSubtitleEntry> findLocalSubtitleEntries(@Nullable String videoUrlOverride) {
+        List<LocalSubtitleEntry> entries = new ArrayList<>();
+        java.util.Set<String> seenPaths = new java.util.HashSet<>();
+
+        DownloadedEpisodeEntity offlineEp = callback.getCurrentOfflineEpisode();
+
+        // 1. Сначала читаем сохранённые метаданные субтитров из Room (сохраняют оригинальные названия дорожек)
+        if (offlineEp != null) {
+            List<com.example.animelib.models.OfflineEpisodeMetadata.DownloadedSubtitleInfo> savedSubs =
+                    com.example.animelib.models.OfflineEpisodeMetadata.getExistingSubtitles(offlineEp);
+            for (int i = 0; i < savedSubs.size(); i++) {
+                com.example.animelib.models.OfflineEpisodeMetadata.DownloadedSubtitleInfo info = savedSubs.get(i);
+                File f = new File(info.getLocalPath());
+                if (f.exists() && f.length() > 0 && seenPaths.add(f.getAbsolutePath())) {
+                    String fmt = (info.getFormat() != null && !info.getFormat().trim().isEmpty())
+                            ? info.getFormat().trim().toLowerCase(Locale.ROOT)
+                            : getFileExtensionLower(f.getName());
+                    entries.add(new LocalSubtitleEntry(f, fmt, info.getDisplayLabel(i)));
+                }
+            }
+        }
+
+        // 2. Фолбэк/дополнение сканированием локальной папки видеофайла (поддержка file:// и старых загрузок)
+        String rawLocalPath = (videoUrlOverride != null && !videoUrlOverride.trim().isEmpty())
+                ? videoUrlOverride
+                : ((offlineEp != null && offlineEp.getLocalFilePath() != null)
+                        ? offlineEp.getLocalFilePath()
+                        : callback.getCurrentVideoUrl());
+
+        List<File> scannedFiles = com.example.animelib.util.FileUtils.findLocalSubtitleFilesForVideo(rawLocalPath);
+        for (File f : scannedFiles) {
+            if (seenPaths.add(f.getAbsolutePath())) {
+                String fmt = getFileExtensionLower(f.getName());
+                String label = "Субтитры (офлайн " + fmt.toUpperCase(Locale.ROOT) + ")";
+                entries.add(new LocalSubtitleEntry(f, fmt, label));
+            }
+        }
+
+        return entries;
+    }
+
+    private int pickPreferredLocalEntryIndex(List<LocalSubtitleEntry> entries) {
+        for (int i = 0; i < entries.size(); i++) {
+            String ext = entries.get(i).format;
             if ("auto".equalsIgnoreCase(subtitleFormat)) {
                 if ("ass".equals(ext) || "ssa".equals(ext)) return i;
-            } else if (ext.equalsIgnoreCase(subtitleFormat)) {
+            } else if (ext.equalsIgnoreCase(subtitleFormat)
+                    || ("ass".equalsIgnoreCase(subtitleFormat) && "ssa".equals(ext))
+                    || ("vtt".equalsIgnoreCase(subtitleFormat) && "webvtt".equals(ext))) {
                 return i;
             }
         }
-        return files.isEmpty() ? -1 : 0;
+        return entries.isEmpty() ? -1 : 0;
     }
 
     private int pickPreferredOnlineIndex(List<EpisodeResponse.SubtitleData> subtitlesList) {

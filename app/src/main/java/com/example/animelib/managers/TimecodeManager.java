@@ -214,16 +214,24 @@ public class TimecodeManager {
      * Устанавливает таймкоды из PlayerData
      */
     public void setTimecodes(EpisodeResponse.PlayerData playerData) {
-        if (playerData != null && playerData.getTimecode() != null) {
-            this.timecodes = playerData.getTimecode();
+        setTimecodes(playerData != null ? playerData.getTimecode() : null);
+    }
+
+    /**
+     * Устанавливает список таймкодов напрямую (в том числе из сохранённых офлайн-метаданных).
+     */
+    public void setTimecodes(List<EpisodeResponse.TimecodeData> newTimecodes) {
+        if (newTimecodes != null && !newTimecodes.isEmpty()) {
+            this.timecodes = new ArrayList<>(newTimecodes);
             Log.d(TAG, "Timecodes set: " + timecodes.size() + " items");
             updateTimecodeButtons();
         } else {
-            this.timecodes.clear();
+            this.timecodes = new ArrayList<>();
             hideTimecodeButtons();
             Log.d(TAG, "No timecodes found");
         }
         updateTimecodeSegmentsOnBar();
+        updateTimecodeButtonsVisibility();
     }
 
     /**

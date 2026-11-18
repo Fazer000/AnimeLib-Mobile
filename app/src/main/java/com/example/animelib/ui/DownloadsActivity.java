@@ -252,8 +252,8 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
         if (btnQueuePause != null) {
             btnQueuePause.setOnClickListener(v -> {
                 if (DownloadService.isRunning()) {
-                    DownloadService.cancel(this);
-                    com.example.animelib.util.CustomToast.showInfo(this, "Пауза");
+                    DownloadService.pause(this);
+                    com.example.animelib.util.CustomToast.showInfo(this, "Пауза (прогресс сохранён)");
                 } else {
                     List<DownloadService.TaskProgressItem> items = DownloadService.getActiveTaskItems();
                     ArrayList<DownloadTask> remainingTasks = new ArrayList<>();
@@ -313,14 +313,26 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
                             List<DownloadedEpisodeEntity> episodes = databaseManager.getEpisodesForAnimeSync(anime.getAnimeId());
                             long totalBytes = 0;
                             int epCount = 0;
+                            int subsCount = 0;
+                            int segmentsCount = 0;
                             if (episodes != null) {
                                 epCount = episodes.size();
                                 for (DownloadedEpisodeEntity ep : episodes) {
-                                    if (ep != null) totalBytes += ep.getFileSize();
+                                    if (ep != null) {
+                                        long actualSize = com.example.animelib.util.FileUtils.getEpisodeTotalDiskSize(ep.getLocalFilePath());
+                                        totalBytes += actualSize > 0 ? actualSize : ep.getFileSize();
+                                        if (com.example.animelib.models.OfflineEpisodeMetadata.hasSubtitles(ep)) {
+                                            subsCount++;
+                                        }
+                                        if (com.example.animelib.models.OfflineEpisodeMetadata.hasTimecodes(ep)) {
+                                            segmentsCount++;
+                                        }
+                                    }
                                 }
                             }
                             animeSizesMap.put(anime.getAnimeId(), totalBytes);
                             animeEpisodeCountsMap.put(anime.getAnimeId(), epCount);
+                            animeMetaSummaryMap.put(anime.getAnimeId(), buildOfflineCategorySummary(anime, subsCount, segmentsCount));
                         }
                     }
                     runOnUiThread(() -> {
@@ -747,10 +759,29 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
         }
     }
 
+    private final java.util.Map<String, String> animeMetaSummaryMap = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private String buildOfflineCategorySummary(DownloadedAnimeEntity anime, int subsCount, int segmentsCount) {
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        if (anime != null && anime.getAnimeType() != null && !anime.getAnimeType().trim().isEmpty()) {
+            parts.add(anime.getAnimeType().trim());
+        } else {
+            parts.add("Аниме");
+        }
+        if (anime != null && anime.getReleaseYear() != null && !anime.getReleaseYear().trim().isEmpty()) {
+            parts.add(anime.getReleaseYear().trim());
+        }
+        if (subsCount > 0) {
+            parts.add("Субтитры");
+        }
+        if (segmentsCount > 0) {
+            parts.add("Сегменты");
+        }
+        return String.join(" • ", parts);
+    }
+
     private String getEpisodeBadgeText(int count) {
-        if (count == 1) return "1 серия";
-        if (count >= 2 && count <= 4) return count + " серии";
-        return count + " серий";
+        return com.example.animelib.models.OfflineEpisodeMetadata.formatRussianEpisodesCount(count);
     }
 
     private class AnimeAdapter extends RecyclerView.Adapter<AnimeAdapter.ViewHolder> {
@@ -773,7 +804,8 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
 
             holder.tvAnimeTitle.setText(anime.getTitle() != null ? anime.getTitle() : "Аниме");
             if (holder.tvAnimeCategory != null) {
-                holder.tvAnimeCategory.setText("Аниме");
+                String summary = animeMetaSummaryMap.get(anime.getAnimeId());
+                holder.tvAnimeCategory.setText(summary != null && !summary.isEmpty() ? summary : "Аниме");
             }
 
             // Load Poster from local file or disk cache or HTTP

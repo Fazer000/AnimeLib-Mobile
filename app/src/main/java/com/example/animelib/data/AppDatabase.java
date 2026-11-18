@@ -1,9 +1,12 @@
 package com.example.animelib.data;
 
 import android.content.Context;
+import androidx.annotation.NonNull;
 import androidx.room.Database;
 import androidx.room.Room;
 import androidx.room.RoomDatabase;
+import androidx.room.migration.Migration;
+import androidx.sqlite.db.SupportSQLiteDatabase;
 
 import com.example.animelib.data.dao.TokenDao;
 import com.example.animelib.data.dao.PlayerPreferencesDao;
@@ -17,9 +20,26 @@ import com.example.animelib.data.entity.DownloadedEpisodeEntity;
 import com.example.animelib.data.entity.OfflineBookmarkEntity;
 import com.example.animelib.data.entity.PendingSyncTaskEntity;
 
-@Database(entities = {AppSettings.class, TokenEntity.class, PlayerPreferences.class, DownloadedAnimeEntity.class, DownloadedEpisodeEntity.class, OfflineBookmarkEntity.class, PendingSyncTaskEntity.class}, version = 28, exportSchema = false)
+@Database(entities = {AppSettings.class, TokenEntity.class, PlayerPreferences.class, DownloadedAnimeEntity.class, DownloadedEpisodeEntity.class, OfflineBookmarkEntity.class, PendingSyncTaskEntity.class}, version = 29, exportSchema = false)
 public abstract class AppDatabase extends RoomDatabase {
     private static volatile AppDatabase INSTANCE;
+
+    public static final Migration MIGRATION_28_29 = new Migration(28, 29) {
+        @Override
+        public void migrate(@NonNull SupportSQLiteDatabase db) {
+            db.execSQL("ALTER TABLE downloaded_episodes ADD COLUMN subtitlesJson TEXT");
+            db.execSQL("ALTER TABLE downloaded_episodes ADD COLUMN timecodesJson TEXT");
+            db.execSQL("ALTER TABLE downloaded_episodes ADD COLUMN season TEXT");
+            db.execSQL("ALTER TABLE downloaded_episodes ADD COLUMN translationType TEXT");
+            db.execSQL("ALTER TABLE downloaded_episodes ADD COLUMN durationMs INTEGER NOT NULL DEFAULT 0");
+
+            db.execSQL("ALTER TABLE downloaded_anime ADD COLUMN description TEXT");
+            db.execSQL("ALTER TABLE downloaded_anime ADD COLUMN releaseYear TEXT");
+            db.execSQL("ALTER TABLE downloaded_anime ADD COLUMN animeType TEXT");
+            db.execSQL("ALTER TABLE downloaded_anime ADD COLUMN rating TEXT");
+            db.execSQL("ALTER TABLE downloaded_anime ADD COLUMN totalEpisodes INTEGER NOT NULL DEFAULT 0");
+        }
+    };
 
     public abstract AppSettingsDao appSettingsDao();
     public abstract TokenDao tokenDao();
@@ -34,6 +54,7 @@ public abstract class AppDatabase extends RoomDatabase {
                 if (INSTANCE == null) {
                     INSTANCE = Room.databaseBuilder(context.getApplicationContext(),
                                     AppDatabase.class, "animelib_database")
+                            .addMigrations(MIGRATION_28_29)
                             .fallbackToDestructiveMigration()
                             .allowMainThreadQueries()
                             .build();

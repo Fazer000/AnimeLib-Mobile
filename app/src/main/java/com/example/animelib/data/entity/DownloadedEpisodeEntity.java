@@ -20,11 +20,18 @@ public class DownloadedEpisodeEntity {
     private long fileSize;
     private long downloadedAt;
     private String quality;
+    private String subtitlesJson;
+    private String timecodesJson;
+    private String season;
+    private String translationType;
+    private long durationMs;
 
     public DownloadedEpisodeEntity(@NonNull String id, String animeId, String animeTitle,
                                    int episodeId, String episodeNumber, String episodeName,
                                    String teamName, String playerType, String localFilePath,
-                                   long fileSize, long downloadedAt, String quality) {
+                                   long fileSize, long downloadedAt, String quality,
+                                   String subtitlesJson, String timecodesJson,
+                                   String season, String translationType, long durationMs) {
         this.id = id;
         this.animeId = animeId;
         this.animeTitle = animeTitle;
@@ -37,6 +44,20 @@ public class DownloadedEpisodeEntity {
         this.fileSize = fileSize;
         this.downloadedAt = downloadedAt;
         this.quality = quality;
+        this.subtitlesJson = subtitlesJson;
+        this.timecodesJson = timecodesJson;
+        this.season = season;
+        this.translationType = translationType;
+        this.durationMs = durationMs;
+    }
+
+    @androidx.room.Ignore
+    public DownloadedEpisodeEntity(@NonNull String id, String animeId, String animeTitle,
+                                   int episodeId, String episodeNumber, String episodeName,
+                                   String teamName, String playerType, String localFilePath,
+                                   long fileSize, long downloadedAt, String quality) {
+        this(id, animeId, animeTitle, episodeId, episodeNumber, episodeName, teamName, playerType,
+                localFilePath, fileSize, downloadedAt, quality, null, null, null, null, 0L);
     }
 
     @androidx.room.Ignore
@@ -44,7 +65,8 @@ public class DownloadedEpisodeEntity {
                                    String episodeNumber, String episodeName, String teamName,
                                    String playerType, String localFilePath, long fileSize,
                                    long downloadedAt, String quality) {
-        this(id, animeId, animeTitle, 0, episodeNumber, episodeName, teamName, playerType, localFilePath, fileSize, downloadedAt, quality);
+        this(id, animeId, animeTitle, 0, episodeNumber, episodeName, teamName, playerType,
+                localFilePath, fileSize, downloadedAt, quality, null, null, null, null, 0L);
     }
 
     @NonNull
@@ -83,4 +105,19 @@ public class DownloadedEpisodeEntity {
 
     public String getQuality() { return quality; }
     public void setQuality(String quality) { this.quality = quality; }
+
+    public String getSubtitlesJson() { return subtitlesJson; }
+    public void setSubtitlesJson(String subtitlesJson) { this.subtitlesJson = subtitlesJson; }
+
+    public String getTimecodesJson() { return timecodesJson; }
+    public void setTimecodesJson(String timecodesJson) { this.timecodesJson = timecodesJson; }
+
+    public String getSeason() { return season; }
+    public void setSeason(String season) { this.season = season; }
+
+    public String getTranslationType() { return translationType; }
+    public void setTranslationType(String translationType) { this.translationType = translationType; }
+
+    public long getDurationMs() { return durationMs; }
+    public void setDurationMs(long durationMs) { this.durationMs = durationMs; }
 }

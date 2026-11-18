@@ -864,7 +864,13 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
                     }
                 }
 
-                item.isAlreadyDownloaded = (downloaded != null);
+                boolean hasValidFile = false;
+                if (downloaded != null && downloaded.getLocalFilePath() != null) {
+                    java.io.File localFile = new java.io.File(downloaded.getLocalFilePath());
+                    hasValidFile = localFile.exists() && localFile.length() > 0;
+                }
+
+                item.isAlreadyDownloaded = hasValidFile;
                 item.isDownloading = isDownloadingOrQueued;
                 item.isAvailable = true; // By default available
                 item.isChecked = item.isAvailable && !item.isAlreadyDownloaded && !item.isDownloading;
@@ -944,7 +950,8 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         }
 
         DownloadService.startQueue(requireContext(), tasks);
-        com.example.animelib.util.CustomToast.showSuccess(requireContext(), "Скачивание запущено в фоне (" + tasks.size() + " серий)");
+        com.example.animelib.util.CustomToast.showSuccess(requireContext(),
+                "Скачивание запущено в фоне (" + com.example.animelib.models.OfflineEpisodeMetadata.formatRussianEpisodesCount(tasks.size()) + ")");
         dismiss();
     }
 

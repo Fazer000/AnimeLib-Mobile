@@ -64,6 +64,7 @@ public class PlayerOfflineController {
         PlayerDownloadController getDownloadController();
         PlayerSubtitlesController getSubtitlesController();
         PlayerPortraitController getPortraitController();
+        @Nullable com.example.animelib.managers.TimecodeManager getTimecodeManager();
         void markAnimeInfoLoaded();
         void markEpisodeAndVoiceoversLoaded();
         void showLoading(String message);
@@ -79,6 +80,7 @@ public class PlayerOfflineController {
     private boolean isOfflineMode = false;
     private boolean isFirstOfflineLaunch = true;
     private final Map<String, DownloadedEpisodeEntity> offlineEpisodesMap = new HashMap<>();
+    @Nullable private volatile DownloadedEpisodeEntity activeOfflineEpisode = null;
     private volatile boolean isSyncingPlayerData = false;
 
     public PlayerOfflineController(Activity activity, OfflineHost host) {
@@ -106,6 +108,7 @@ public class PlayerOfflineController {
         isOfflineMode = false;
         isFirstOfflineLaunch = true;
         offlineEpisodesMap.clear();
+        activeOfflineEpisode = null;
     }
 
     @Nullable
@@ -238,7 +241,15 @@ public class PlayerOfflineController {
     public EpisodeResponse.PlayerData createSyntheticPlayerDataForDownloaded(@Nullable DownloadedEpisodeEntity downloadedEp) {
         String playerType = downloadedEp != null ? downloadedEp.getPlayerType() : "animelib";
         String teamName = downloadedEp != null ? downloadedEp.getTeamName() : "Офлайн";
-        return PlayerMetadataHelper.createSyntheticPlayerData(playerType, teamName);
+        EpisodeResponse.PlayerData pd = PlayerMetadataHelper.createSyntheticPlayerData(playerType, teamName);
+        if (downloadedEp != null) {
+            List<EpisodeResponse.TimecodeData> offlineTimecodes =
+                    com.example.animelib.models.OfflineEpisodeMetadata.parseTimecodesJson(downloadedEp.getTimecodesJson());
+            if (!offlineTimecodes.isEmpty()) {
+                pd.setTimecode(offlineTimecodes);
+            }
+        }
+        return pd;
     }
 
     public List<String> getQualitiesWithDownloadedOption(List<String> onlineQualities) {
@@ -302,6 +313,9 @@ public class PlayerOfflineController {
             if (offlineEpisodesMap.containsKey(String.valueOf(cur.getId()))) {
                 return offlineEpisodesMap.get(String.valueOf(cur.getId()));
             }
+        }
+        if (activeOfflineEpisode != null) {
+            return activeOfflineEpisode;
         }
         Intent intent = host.getIntent();
         String epNum = intent != null ? intent.getStringExtra("EXTRA_EPISODE_NUMBER") : null;
@@ -489,6 +503,26 @@ public class PlayerOfflineController {
             }
             if (isPlayingDownloadedVideo()) {
                 syncCurrentPlayerDataForDownloadedIfNeeded();
+                PlayersManager pm = host.getPlayersManager();
+                com.example.animelib.managers.TimecodeManager tcManager = host.getTimecodeManager();
+                if (pm != null && pm.getCurrentPlayerData() != null) {
+                    EpisodeResponse.PlayerData syncedPd = pm.getCurrentPlayerData();
+                    if (syncedPd.getTimecode() != null && !syncedPd.getTimecode().isEmpty()) {
+                        if (tcManager != null && !tcManager.hasTimecodes()) {
+                            tcManager.setTimecodes(syncedPd);
+                        }
+                        // Автоматически дополняем сохранённую запись сегментами, если серия была скачана раньше без них
+                        DownloadedEpisodeEntity dep = getDownloadedEpisodeForActive();
+                        DatabaseManager dbMgr = host.getDatabaseManager();
+                        if (dep != null && dbMgr != null && !com.example.animelib.models.OfflineEpisodeMetadata.hasTimecodes(dep)) {
+                            String tcJson = com.example.animelib.models.OfflineEpisodeMetadata.toTimecodesJson(syncedPd.getTimecode());
+                            if (tcJson != null) {
+                                dep.setTimecodesJson(tcJson);
+                                dbMgr.saveDownloadedEpisode(dep);
+                            }
+                        }
+                    }
+                }
                 PlayerPortraitController portraitCtrl = host.getPortraitController();
                 if (portraitCtrl != null) {
                     portraitCtrl.updateEpisodeHeaderQuick();
@@ -533,6 +567,24 @@ public class PlayerOfflineController {
         }
 
         Uri videoUri = Uri.fromFile(file);
+
+        // Синхронно (из O(1) RAM-кэша DatabaseManager) резолвим DownloadedEpisodeEntity до создания MediaItem,
+        // чтобы офлайн-субтитры и сегменты (таймкоды) подключились с первого кадра.
+        DatabaseManager dbMgr = host.getDatabaseManager();
+        if (dbMgr == null && host.getApiService() != null) {
+            dbMgr = host.getApiService().getDatabaseManager();
+        }
+        DownloadedEpisodeEntity matchedOfflineEp = dbMgr != null ? dbMgr.findEpisodeByPath(file.getAbsolutePath()) : null;
+        activeOfflineEpisode = matchedOfflineEp;
+
+        com.example.animelib.managers.TimecodeManager tcManager = host.getTimecodeManager();
+        if (tcManager != null) {
+            List<EpisodeResponse.TimecodeData> offlineTimecodes = matchedOfflineEp != null
+                    ? com.example.animelib.models.OfflineEpisodeMetadata.parseTimecodesJson(matchedOfflineEp.getTimecodesJson())
+                    : java.util.Collections.emptyList();
+            tcManager.setTimecodes(offlineTimecodes);
+        }
+
         PlayerPlaybackController playbackCtrl = host.getPlaybackController();
         PlayerSubtitlesController subsCtrl = host.getSubtitlesController();
         if (playbackCtrl != null) {
@@ -541,6 +593,9 @@ public class PlayerOfflineController {
                     : MediaItem.fromUri(videoUri);
             playbackCtrl.initializeOfflinePlayer(videoUri.toString(), mediaItem, host.isAutoPlayOnPrepare());
             host.setAutoPlayOnPrepare(true);
+            if (tcManager != null && playbackCtrl.getPlayer() != null) {
+                tcManager.updatePlayer(playbackCtrl.getPlayer());
+            }
         }
 
         if (ui != null && ui.playerView != null) {
@@ -701,6 +756,21 @@ public class PlayerOfflineController {
                         progressCtrl.updateBookmarkButtonColor(false);
                     }
                     episodesManager.updateEpisodeNavigationButtonsVisibility();
+                }
+
+                if (finalCurrent != null) {
+                    DownloadedEpisodeEntity resolvedDep = getOfflineEpisode(finalCurrent);
+                    if (resolvedDep != null) {
+                        activeOfflineEpisode = resolvedDep;
+                        com.example.animelib.managers.TimecodeManager tcManager = host.getTimecodeManager();
+                        if (tcManager != null && !tcManager.hasTimecodes()) {
+                            List<EpisodeResponse.TimecodeData> offlineTimecodes =
+                                    com.example.animelib.models.OfflineEpisodeMetadata.parseTimecodesJson(resolvedDep.getTimecodesJson());
+                            if (!offlineTimecodes.isEmpty()) {
+                                tcManager.setTimecodes(offlineTimecodes);
+                            }
+                        }
+                    }
                 }
 
                 isFirstOfflineLaunch = false;

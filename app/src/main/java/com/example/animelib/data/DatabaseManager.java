@@ -709,7 +709,17 @@ public class DatabaseManager {
 
     private static DownloadedAnimeEntity copyDownloadedAnime(DownloadedAnimeEntity src) {
         if (src == null) return null;
-        return new DownloadedAnimeEntity(src.getAnimeId(), src.getTitle(), src.getPosterUrl(), src.getSavedAt());
+        return new DownloadedAnimeEntity(
+                src.getAnimeId(),
+                src.getTitle(),
+                src.getPosterUrl(),
+                src.getSavedAt(),
+                src.getDescription(),
+                src.getReleaseYear(),
+                src.getAnimeType(),
+                src.getRating(),
+                src.getTotalEpisodes()
+        );
     }
 
     private static DownloadedEpisodeEntity copyDownloadedEpisode(DownloadedEpisodeEntity src) {
@@ -726,17 +736,43 @@ public class DatabaseManager {
                 src.getLocalFilePath(),
                 src.getFileSize(),
                 src.getDownloadedAt(),
-                src.getQuality()
+                src.getQuality(),
+                src.getSubtitlesJson(),
+                src.getTimecodesJson(),
+                src.getSeason(),
+                src.getTranslationType(),
+                src.getDurationMs()
         );
     }
 
-    private static int parseEpisodeOrderInt(String episodeNumber) {
-        if (episodeNumber == null) return 0;
-        try {
-            return Integer.parseInt(episodeNumber.trim());
-        } catch (NumberFormatException ignored) {
-            return 0;
-        }
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private static DownloadedAnimeEntity mergeDownloadedAnime(DownloadedAnimeEntity existing, DownloadedAnimeEntity incoming) {
+        if (existing == null) return copyDownloadedAnime(incoming);
+        if (incoming == null) return copyDownloadedAnime(existing);
+        String title = !isBlank(incoming.getTitle()) && !"Аниме".equals(incoming.getTitle())
+                ? incoming.getTitle()
+                : (!isBlank(existing.getTitle()) ? existing.getTitle() : incoming.getTitle());
+        String poster = !isBlank(incoming.getPosterUrl()) ? incoming.getPosterUrl() : existing.getPosterUrl();
+        String description = !isBlank(incoming.getDescription()) ? incoming.getDescription() : existing.getDescription();
+        String releaseYear = !isBlank(incoming.getReleaseYear()) ? incoming.getReleaseYear() : existing.getReleaseYear();
+        String animeType = !isBlank(incoming.getAnimeType()) ? incoming.getAnimeType() : existing.getAnimeType();
+        String rating = !isBlank(incoming.getRating()) ? incoming.getRating() : existing.getRating();
+        int totalEpisodes = incoming.getTotalEpisodes() > 0 ? incoming.getTotalEpisodes() : existing.getTotalEpisodes();
+        long savedAt = Math.max(incoming.getSavedAt(), existing.getSavedAt());
+        return new DownloadedAnimeEntity(
+                incoming.getAnimeId(),
+                title,
+                poster,
+                savedAt,
+                description,
+                releaseYear,
+                animeType,
+                rating,
+                totalEpisodes
+        );
     }
 
     private static void rebuildEpisodesByPathLocked() {
@@ -781,8 +817,12 @@ public class DatabaseManager {
 
     public void saveDownloadedAnime(DownloadedAnimeEntity anime) {
         if (anime == null) return;
-        final DownloadedAnimeEntity snapshot = copyDownloadedAnime(anime);
+        final DownloadedAnimeEntity snapshot;
         synchronized (downloadsCacheLock) {
+            DownloadedAnimeEntity existing = downloadsCacheLoaded
+                    ? cachedDownloadedAnimeById.get(anime.getAnimeId())
+                    : db.downloadedAnimeDao().getAnimeByIdSync(anime.getAnimeId());
+            snapshot = mergeDownloadedAnime(existing, anime);
             if (downloadsCacheLoaded) {
                 cachedDownloadedAnimeById.put(snapshot.getAnimeId(), copyDownloadedAnime(snapshot));
             }
@@ -842,7 +882,11 @@ public class DatabaseManager {
                     result.add(copyDownloadedEpisode(ep));
                 }
             }
-            result.sort(Comparator.comparingInt(ep -> parseEpisodeOrderInt(ep.getEpisodeNumber())));
+            result.sort(Comparator
+                    .comparingDouble((DownloadedEpisodeEntity ep) ->
+                            com.example.animelib.models.OfflineEpisodeMetadata.parseEpisodeOrder(ep.getEpisodeNumber()))
+                    .thenComparingInt(DownloadedEpisodeEntity::getEpisodeId)
+                    .thenComparing(ep -> ep.getTeamName() != null ? ep.getTeamName() : ""));
             return result;
         }
     }
@@ -910,9 +954,23 @@ public class DatabaseManager {
 
     public DownloadedEpisodeEntity findEpisodeByPath(String path) {
         if (path == null) return null;
+        String normalized = com.example.animelib.models.OfflineEpisodeMetadata.normalizeLocalFilePath(path);
+        String lookupKey = normalized != null ? normalized : path;
         synchronized (downloadsCacheLock) {
             ensureDownloadsCacheLoadedLocked();
-            return copyDownloadedEpisode(cachedEpisodesByPath.get(path));
+            DownloadedEpisodeEntity exact = cachedEpisodesByPath.get(lookupKey);
+            if (exact != null) {
+                return copyDownloadedEpisode(exact);
+            }
+            for (DownloadedEpisodeEntity ep : cachedEpisodesById.values()) {
+                if (ep != null && ep.getLocalFilePath() != null) {
+                    String epNorm = com.example.animelib.models.OfflineEpisodeMetadata.normalizeLocalFilePath(ep.getLocalFilePath());
+                    if (lookupKey.equals(epNorm)) {
+                        return copyDownloadedEpisode(ep);
+                    }
+                }
+            }
+            return null;
         }
     }
 
@@ -946,6 +1004,10 @@ public class DatabaseManager {
                 if (animeId != null) {
                     int count = db.downloadedAnimeDao().getEpisodeCountForAnime(animeId);
                     if (count == 0) {
+                        DownloadedAnimeEntity anime = db.downloadedAnimeDao().getAnimeByIdSync(animeId);
+                        if (anime != null) {
+                            com.example.animelib.util.FileUtils.deleteLocalPosterAndEmptyDir(anime.getPosterUrl());
+                        }
                         db.downloadedAnimeDao().deleteAnimeById(animeId);
                     }
                 }
@@ -967,11 +1029,15 @@ public class DatabaseManager {
         }
         executor.execute(() -> {
             try {
+                DownloadedAnimeEntity anime = db.downloadedAnimeDao().getAnimeByIdSync(animeId);
                 List<DownloadedEpisodeEntity> episodes = db.downloadedAnimeDao().getEpisodesForAnimeSync(animeId);
                 for (DownloadedEpisodeEntity ep : episodes) {
                     if (ep != null) {
                         com.example.animelib.util.FileUtils.deleteDownloadedEpisodeFiles(ep.getLocalFilePath());
                     }
+                }
+                if (anime != null) {
+                    com.example.animelib.util.FileUtils.deleteLocalPosterAndEmptyDir(anime.getPosterUrl());
                 }
                 db.downloadedAnimeDao().deleteEpisodesForAnime(animeId);
                 db.downloadedAnimeDao().deleteAnimeById(animeId);

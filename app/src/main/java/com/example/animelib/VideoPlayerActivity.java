@@ -2291,6 +2291,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
 
             @Override
+            public TimecodeManager getTimecodeManager() {
+                return timecodeManager;
+            }
+
+            @Override
             public void markAnimeInfoLoaded() {
                 isAnimeInfoLoaded = true;
             }

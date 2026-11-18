@@ -37,6 +37,7 @@ public class DownloadService extends Service {
     private static final int RESULT_NOTIFICATION_ID = 4202;
 
     public static final String ACTION_START_QUEUE = "com.example.animelib.action.DOWNLOAD_START_QUEUE";
+    public static final String ACTION_PAUSE = "com.example.animelib.action.DOWNLOAD_PAUSE";
     public static final String ACTION_CANCEL = "com.example.animelib.action.DOWNLOAD_CANCEL";
     private static final String EXTRA_TASKS = "download_tasks";
 
@@ -114,6 +115,19 @@ public class DownloadService extends Service {
         context.startForegroundService(intent);
     }
 
+    /**
+     * Ставит очередь на паузу, сохраняя список задач и временные файлы (.part / _segs) для докачки.
+     */
+    public static void pause(Context context) {
+        if (!running) return;
+        Intent intent = new Intent(context, DownloadService.class);
+        intent.setAction(ACTION_PAUSE);
+        context.startService(intent);
+    }
+
+    /**
+     * Полностью отменяет загрузку и очищает временные файлы незавершённых серий.
+     */
     public static void cancel(Context context) {
         if (!running) return;
         Intent intent = new Intent(context, DownloadService.class);
@@ -160,9 +174,10 @@ public class DownloadService extends Service {
                 wakeLock.setReferenceCounted(false);
             }
         }
-        if (wakeLock != null && !wakeLock.isHeld()) {
+        if (wakeLock != null) {
             try {
-                wakeLock.acquire(15 * 60 * 1000L); // 15 mins
+                // Обновляем таймаут на 20 минут для каждой серии в очереди
+                wakeLock.acquire(20 * 60 * 1000L);
             } catch (Exception ignored) {}
         }
     }
@@ -192,6 +207,9 @@ public class DownloadService extends Service {
         boolean sameAnime = java.util.Objects.equals(t1.getAnimeId(), t2.getAnimeId());
         if (!sameAnime) return false;
 
+        boolean sameTeam = java.util.Objects.equals(t1.getTeamName(), t2.getTeamName());
+        if (!sameTeam) return false;
+
         if (t1.getEpisodeId() > 0 && t2.getEpisodeId() > 0) {
             return t1.getEpisodeId() == t2.getEpisodeId();
         }
@@ -202,8 +220,8 @@ public class DownloadService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent != null ? intent.getAction() : null;
 
-        if (ACTION_CANCEL.equals(action)) {
-            Log.d(TAG, "Cancel requested");
+        if (ACTION_PAUSE.equals(action)) {
+            Log.d(TAG, "Pause requested (preserving partial files for resume)");
             int completedCount = 0;
             int errorCount = 0;
             synchronized (queueLock) {
@@ -218,12 +236,62 @@ public class DownloadService extends Service {
                             completedCount++;
                         } else if (item.status == TaskProgressItem.STATUS_ERROR) {
                             errorCount++;
+                        } else if (item.status == TaskProgressItem.STATUS_DOWNLOADING) {
+                            item.status = TaskProgressItem.STATUS_WAITING;
+                        }
+                    }
+                }
+            }
+            if (downloadsManager != null) {
+                downloadsManager.pause();
+            }
+            releaseWakeLock();
+            showResultNotification("Скачивание на паузе", completedCount > 0
+                    ? ("Скачано серий: " + completedCount + ". Можно продолжить в загрузках")
+                    : "Нажмите «Продолжить» в разделе загрузок");
+            notifyQueueUpdated();
+            stopAfterResult();
+            ProgressListener l = listener;
+            if (l != null) {
+                l.onFinished(completedCount, errorCount, true);
+            }
+            return START_NOT_STICKY;
+        }
+
+        if (ACTION_CANCEL.equals(action)) {
+            Log.d(TAG, "Cancel requested");
+            int completedCount = 0;
+            int errorCount = 0;
+            List<DownloadTask> tasksToCleanTemp = new ArrayList<>();
+            synchronized (queueLock) {
+                cancelRequested = true;
+                queueGeneration++;
+                taskQueue.clear();
+                running = false;
+                currentProgressItem = null;
+                synchronized (activeTaskItems) {
+                    for (TaskProgressItem item : activeTaskItems) {
+                        if (item.status == TaskProgressItem.STATUS_COMPLETED) {
+                            completedCount++;
+                        } else {
+                            if (item.status == TaskProgressItem.STATUS_ERROR) {
+                                errorCount++;
+                            }
+                            if (item.task != null) {
+                                tasksToCleanTemp.add(item.task);
+                            }
                         }
                     }
                 }
             }
             if (downloadsManager != null) {
                 downloadsManager.cancel();
+                for (DownloadTask t : tasksToCleanTemp) {
+                    try {
+                        java.io.File outFile = downloadsManager.resolveOutputFileForTask(t);
+                        com.example.animelib.util.FileUtils.deleteDownloadTempFiles(outFile.getAbsolutePath());
+                    } catch (Exception ignored) {}
+                }
             }
             releaseWakeLock();
 
@@ -307,7 +375,7 @@ public class DownloadService extends Service {
             }
         }
 
-        return START_STICKY;
+        return START_NOT_STICKY;
     }
 
     private TaskProgressItem currentProgressItem;
@@ -416,6 +484,7 @@ public class DownloadService extends Service {
             return;
         }
 
+        acquireWakeLock();
         notifyQueueUpdated();
 
         String taskTitle = (task.getAnimeTitle() != null ? task.getAnimeTitle() : "Аниме") + " - Серия " + task.getEpisodeNumber();
@@ -521,6 +590,10 @@ public class DownloadService extends Service {
     }
 
     private Notification buildProgressNotification(String title, int percent) {
+        Intent pauseIntent = new Intent(this, DownloadService.class).setAction(ACTION_PAUSE);
+        PendingIntent pausePending = PendingIntent.getService(this, 1, pauseIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
         Intent cancelIntent = new Intent(this, DownloadService.class).setAction(ACTION_CANCEL);
         PendingIntent cancelPending = PendingIntent.getService(this, 0, cancelIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
@@ -544,6 +617,7 @@ public class DownloadService extends Service {
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+                .addAction(R.drawable.ic_pause, "Пауза", pausePending)
                 .addAction(R.drawable.ic_close, "Отмена", cancelPending);
 
         return builder.build();

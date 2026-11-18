@@ -12,12 +12,29 @@ public class DownloadedAnimeEntity {
     private String title;
     private String posterUrl;
     private long savedAt;
+    private String description;
+    private String releaseYear;
+    private String animeType;
+    private String rating;
+    private int totalEpisodes;
 
-    public DownloadedAnimeEntity(@NonNull String animeId, String title, String posterUrl, long savedAt) {
+    public DownloadedAnimeEntity(@NonNull String animeId, String title, String posterUrl, long savedAt,
+                                 String description, String releaseYear, String animeType,
+                                 String rating, int totalEpisodes) {
         this.animeId = animeId;
         this.title = title;
         this.posterUrl = posterUrl;
         this.savedAt = savedAt;
+        this.description = description;
+        this.releaseYear = releaseYear;
+        this.animeType = animeType;
+        this.rating = rating;
+        this.totalEpisodes = totalEpisodes;
+    }
+
+    @androidx.room.Ignore
+    public DownloadedAnimeEntity(@NonNull String animeId, String title, String posterUrl, long savedAt) {
+        this(animeId, title, posterUrl, savedAt, null, null, null, null, 0);
     }
 
     @NonNull
@@ -32,4 +49,19 @@ public class DownloadedAnimeEntity {
 
     public long getSavedAt() { return savedAt; }
     public void setSavedAt(long savedAt) { this.savedAt = savedAt; }
+
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+
+    public String getReleaseYear() { return releaseYear; }
+    public void setReleaseYear(String releaseYear) { this.releaseYear = releaseYear; }
+
+    public String getAnimeType() { return animeType; }
+    public void setAnimeType(String animeType) { this.animeType = animeType; }
+
+    public String getRating() { return rating; }
+    public void setRating(String rating) { this.rating = rating; }
+
+    public int getTotalEpisodes() { return totalEpisodes; }
+    public void setTotalEpisodes(int totalEpisodes) { this.totalEpisodes = totalEpisodes; }
 }
