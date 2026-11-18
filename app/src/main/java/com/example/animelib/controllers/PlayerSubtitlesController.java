@@ -3,39 +3,66 @@ package com.example.animelib.controllers;
 import android.content.Context;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
+import android.util.LruCache;
 import android.util.TypedValue;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewParent;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
-import androidx.media3.common.text.Cue;
-import androidx.media3.common.text.CueGroup;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.Player;
 import androidx.media3.common.TrackSelectionOverride;
 import androidx.media3.common.TrackSelectionParameters;
 import androidx.media3.common.Tracks;
+import androidx.media3.common.VideoSize;
+import androidx.media3.common.text.Cue;
+import androidx.media3.common.text.CueGroup;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.CaptionStyleCompat;
 import androidx.media3.ui.PlayerView;
 import androidx.media3.ui.SubtitleView;
 
+import com.example.animelib.api.ApiService;
 import com.example.animelib.data.entity.DownloadedEpisodeEntity;
 import com.example.animelib.managers.PlayersManager;
 import com.example.animelib.models.EpisodeResponse;
-import com.example.animelib.api.ApiService;
+import com.example.animelib.subtitles.AssParser;
+import com.example.animelib.subtitles.AssScript;
+import com.example.animelib.ui.AssSubtitleOverlayView;
 import com.example.animelib.ui.VideoUrlHelper;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 public class PlayerSubtitlesController {
+
+    private static final String TAG = "PlayerSubtitlesCtrl";
+    private static final LruCache<String, AssScript> ASS_SCRIPT_CACHE = new LruCache<>(12);
 
     public interface SubtitlesCallback {
         boolean isOfflineMode();
@@ -50,6 +77,9 @@ public class PlayerSubtitlesController {
     }
 
     private final SubtitlesCallback callback;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService assLoadExecutor = Executors.newSingleThreadExecutor();
+    private final AtomicLong assLoadGeneration = new AtomicLong(0L);
 
     private boolean subtitlesEnabled = true;
     private String subtitleFormat = "ass";
@@ -60,6 +90,13 @@ public class PlayerSubtitlesController {
     private int subtitleEdgeColor = 0xFF000000;
     private int cachedPlayResX = 0;
     private int cachedPlayResY = 0;
+
+    @Nullable private AssSubtitleOverlayView assOverlayView;
+    @Nullable private AssScript activeAssScript;
+    @Nullable private String activeAssSourceKey;
+    private volatile boolean nativeAssActive = false;
+    @Nullable private ExoPlayer attachedListenerPlayer;
+    @Nullable private Player.Listener activePlayerListener;
 
     public PlayerSubtitlesController(SubtitlesCallback callback) {
         this.callback = callback;
@@ -112,6 +149,13 @@ public class PlayerSubtitlesController {
         return subtitleEdgeColor;
     }
 
+    /**
+     * Returns true when ASS/SSA is effectively selected (explicit "ass"/"ssa", or "auto" with an ASS track).
+     */
+    public boolean isAssSubtitleActive() {
+        return !isCurrentSubtitleVttOrSrt();
+    }
+
     public List<MediaItem.SubtitleConfiguration> buildSubtitleConfigurations() {
         List<MediaItem.SubtitleConfiguration> configs = new ArrayList<>();
         if (!subtitlesEnabled) {
@@ -122,42 +166,25 @@ public class PlayerSubtitlesController {
         String currentVideoUrl = callback.getCurrentVideoUrl();
 
         if (isOffline || (currentVideoUrl != null && currentVideoUrl.startsWith("/"))) {
-            DownloadedEpisodeEntity offlineEp = callback.getCurrentOfflineEpisode();
-            String localPath = (offlineEp != null && offlineEp.getLocalFilePath() != null) ? offlineEp.getLocalFilePath() : currentVideoUrl;
-            if (localPath != null && localPath.startsWith("/")) {
-                File videoFile = new File(localPath);
-                File dir = videoFile.getParentFile();
-                if (dir != null && dir.exists()) {
-                    String baseName = videoFile.getName();
-                    int dotIdx = baseName.lastIndexOf('.');
-                    if (dotIdx > 0) baseName = baseName.substring(0, dotIdx);
-
-                    File[] files = dir.listFiles();
-                    if (files != null) {
-                        int trackIdx = 1;
-                        for (File f : files) {
-                            if (f.getName().startsWith(baseName + "_sub_") && f.length() > 0) {
-                                String name = f.getName();
-                                String format = "";
-                                int lastDot = name.lastIndexOf('.');
-                                if (lastDot > 0) format = name.substring(lastDot + 1).toLowerCase();
-
-                                String mimeType = getMimeTypeForSubtitle(format, f.getAbsolutePath());
-                                MediaItem.SubtitleConfiguration config = new MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(f))
-                                        .setMimeType(mimeType)
-                                        .setLanguage("ru")
-                                        .setLabel("Субтитры (офлайн " + format.toUpperCase() + ")")
-                                        .setSelectionFlags(trackIdx == 1 ? C.SELECTION_FLAG_DEFAULT : 0)
-                                        .setRoleFlags(C.ROLE_FLAG_SUBTITLE)
-                                        .build();
-                                configs.add(config);
-                                trackIdx++;
-                            }
-                        }
-                    }
+            List<File> localSubs = findLocalSubtitleFiles();
+            if (!localSubs.isEmpty()) {
+                int preferredIdx = pickPreferredLocalIndex(localSubs);
+                List<Integer> order = buildIndexOrder(localSubs.size(), preferredIdx);
+                for (int i = 0; i < order.size(); i++) {
+                    int idx = order.get(i);
+                    File f = localSubs.get(idx);
+                    String format = getFileExtensionLower(f.getName());
+                    String mimeType = getMimeTypeForSubtitle(format, f.getAbsolutePath());
+                    boolean isPreferred = (idx == preferredIdx);
+                    MediaItem.SubtitleConfiguration config = new MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(f))
+                            .setMimeType(mimeType)
+                            .setLanguage("ru")
+                            .setLabel("Субтитры (офлайн " + format.toUpperCase(Locale.ROOT) + ")")
+                            .setSelectionFlags(isPreferred ? (C.SELECTION_FLAG_DEFAULT | C.SELECTION_FLAG_FORCED) : 0)
+                            .setRoleFlags(C.ROLE_FLAG_SUBTITLE)
+                            .build();
+                    configs.add(config);
                 }
-            }
-            if (!configs.isEmpty()) {
                 return configs;
             }
         }
@@ -173,50 +200,12 @@ public class PlayerSubtitlesController {
         }
 
         List<EpisodeResponse.SubtitleData> subtitlesList = playerData.getSubtitles();
-        if (subtitlesList.isEmpty()) {
-            return configs;
-        }
-
-        int preferredIndex = -1;
-        for (int i = 0; i < subtitlesList.size(); i++) {
-            EpisodeResponse.SubtitleData sub = subtitlesList.get(i);
-            if (sub == null || sub.getSrc() == null || sub.getSrc().trim().isEmpty()) {
-                continue;
-            }
-            String format = sub.getFormat() != null ? sub.getFormat().trim().toLowerCase() : "";
-            if ("auto".equalsIgnoreCase(subtitleFormat)) {
-                if ("ass".equals(format) || "ssa".equals(format)) {
-                    preferredIndex = i;
-                    break;
-                }
-            } else if (format.equalsIgnoreCase(subtitleFormat)) {
-                preferredIndex = i;
-                break;
-            }
-        }
-
-        if (preferredIndex == -1) {
-            for (int i = 0; i < subtitlesList.size(); i++) {
-                EpisodeResponse.SubtitleData sub = subtitlesList.get(i);
-                if (sub != null && sub.getSrc() != null && !sub.getSrc().trim().isEmpty()) {
-                    preferredIndex = i;
-                    break;
-                }
-            }
-        }
-
+        int preferredIndex = pickPreferredOnlineIndex(subtitlesList);
         if (preferredIndex == -1) {
             return configs;
         }
 
-        List<Integer> order = new ArrayList<>();
-        order.add(preferredIndex);
-        for (int i = 0; i < subtitlesList.size(); i++) {
-            if (i != preferredIndex) {
-                order.add(i);
-            }
-        }
-
+        List<Integer> order = buildIndexOrder(subtitlesList.size(), preferredIndex);
         String currentVideoDomain = callback.getCurrentVideoDomain();
 
         for (int idx : order) {
@@ -225,7 +214,7 @@ public class PlayerSubtitlesController {
                 continue;
             }
 
-            String format = sub.getFormat() != null ? sub.getFormat().trim().toLowerCase() : "";
+            String format = sub.getFormat() != null ? sub.getFormat().trim().toLowerCase(Locale.ROOT) : "";
             String mimeType = getMimeTypeForSubtitle(format, sub.getSrc());
             String absUrl = VideoUrlHelper.toAbsoluteVideoUrl(sub.getSrc(), currentVideoDomain);
 
@@ -234,7 +223,7 @@ public class PlayerSubtitlesController {
                 label = sub.getFilename();
             }
             if (label == null || label.isEmpty()) {
-                label = "Субтитры (" + (format.isEmpty() ? " track " + (idx + 1) : format.toUpperCase()) + ")";
+                label = "Субтитры (" + (format.isEmpty() ? " track " + (idx + 1) : format.toUpperCase(Locale.ROOT)) + ")";
             }
 
             boolean isPreferred = (idx == preferredIndex);
@@ -255,7 +244,7 @@ public class PlayerSubtitlesController {
 
     public String getMimeTypeForSubtitle(String format, String url) {
         if (format != null && !format.trim().isEmpty()) {
-            String fmt = format.trim().toLowerCase();
+            String fmt = format.trim().toLowerCase(Locale.ROOT);
             if ("ass".equals(fmt) || "ssa".equals(fmt)) {
                 return MimeTypes.TEXT_SSA;
             } else if ("vtt".equals(fmt) || "webvtt".equals(fmt)) {
@@ -265,7 +254,7 @@ public class PlayerSubtitlesController {
             }
         }
         if (url != null) {
-            String lowerUrl = url.toLowerCase();
+            String lowerUrl = url.toLowerCase(Locale.ROOT);
             if (lowerUrl.contains(".ass") || lowerUrl.contains(".ssa")) {
                 return MimeTypes.TEXT_SSA;
             } else if (lowerUrl.contains(".vtt")) {
@@ -283,76 +272,73 @@ public class PlayerSubtitlesController {
     public MediaItem createMediaItemWithSubtitles(String videoUrl) {
         cachedPlayResX = 0;
         cachedPlayResY = 0;
-        boolean isOffline = callback.isOfflineMode();
-        String currentVideoUrl = callback.getCurrentVideoUrl();
-        if (isOffline || (currentVideoUrl != null && currentVideoUrl.startsWith("/"))) {
-            DownloadedEpisodeEntity offlineEp = callback.getCurrentOfflineEpisode();
-            String localPath = (offlineEp != null && offlineEp.getLocalFilePath() != null) ? offlineEp.getLocalFilePath() : currentVideoUrl;
-            if (localPath != null && localPath.startsWith("/")) {
-                File videoFile = new File(localPath);
-                File dir = videoFile.getParentFile();
-                if (dir != null && dir.exists()) {
-                    String baseName = videoFile.getName();
-                    int dotIdx = baseName.lastIndexOf('.');
-                    if (dotIdx > 0) baseName = baseName.substring(0, dotIdx);
-                    File[] files = dir.listFiles();
-                    if (files != null) {
-                        for (File f : files) {
-                            if (f.getName().startsWith(baseName + "_sub_") && f.getName().toLowerCase().endsWith(".ass") && f.length() > 0) {
-                                parsePlayResFromFile(f);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+        clearNativeAssState();
+
+        if (subtitlesEnabled) {
+            loadPreferredAssSubtitleAsync();
         }
 
         MediaItem.Builder builder = new MediaItem.Builder().setUri(videoUrl);
         List<MediaItem.SubtitleConfiguration> subtitleConfigs = buildSubtitleConfigurations();
         if (!subtitleConfigs.isEmpty()) {
             builder.setSubtitleConfigurations(subtitleConfigs);
-            Log.d("PlayerSubtitlesController", "Attached " + subtitleConfigs.size() + " subtitle tracks to media item.");
+            Log.d(TAG, "Attached " + subtitleConfigs.size() + " subtitle tracks to media item.");
         }
         return builder.build();
     }
 
     public void parsePlayResFromFile(File assFile) {
         if (assFile == null || !assFile.exists()) return;
-        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(assFile))) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(assFile), StandardCharsets.UTF_8))) {
             String line;
             int count = 0;
             while ((line = reader.readLine()) != null && count < 60) {
                 count++;
                 String trimmed = line.trim();
                 if (trimmed.startsWith("[Events]")) break;
-                if (trimmed.toLowerCase().startsWith("playresx:")) {
-                    String val = trimmed.substring(9).trim();
-                    cachedPlayResX = Integer.parseInt(val);
-                } else if (trimmed.toLowerCase().startsWith("playresy:")) {
-                    String val = trimmed.substring(9).trim();
-                    cachedPlayResY = Integer.parseInt(val);
+                if (trimmed.toLowerCase(Locale.ROOT).startsWith("playresx:")) {
+                    cachedPlayResX = Integer.parseInt(trimmed.substring(9).trim());
+                } else if (trimmed.toLowerCase(Locale.ROOT).startsWith("playresy:")) {
+                    cachedPlayResY = Integer.parseInt(trimmed.substring(9).trim());
                 }
             }
-            Log.d("PlayerSubtitlesController", "Parsed ASS PlayRes: " + cachedPlayResX + "x" + cachedPlayResY);
+            Log.d(TAG, "Parsed ASS PlayRes: " + cachedPlayResX + "x" + cachedPlayResY);
         } catch (Exception ignored) {}
     }
 
     public boolean isCurrentSubtitleVttOrSrt() {
-        if ("vtt".equalsIgnoreCase(subtitleFormat) || "webvtt".equalsIgnoreCase(subtitleFormat) || "srt".equalsIgnoreCase(subtitleFormat)) {
+        if ("vtt".equalsIgnoreCase(subtitleFormat)
+                || "webvtt".equalsIgnoreCase(subtitleFormat)
+                || "srt".equalsIgnoreCase(subtitleFormat)) {
             return true;
         }
         if ("ass".equalsIgnoreCase(subtitleFormat) || "ssa".equalsIgnoreCase(subtitleFormat)) {
             return false;
+        }
+        // "auto": check local files first in offline mode
+        boolean isOffline = callback.isOfflineMode();
+        String currentVideoUrl = callback.getCurrentVideoUrl();
+        if (isOffline || (currentVideoUrl != null && currentVideoUrl.startsWith("/"))) {
+            List<File> localSubs = findLocalSubtitleFiles();
+            for (File f : localSubs) {
+                String ext = getFileExtensionLower(f.getName());
+                if ("ass".equals(ext) || "ssa".equals(ext)) {
+                    return false;
+                }
+            }
+            if (!localSubs.isEmpty()) {
+                return true;
+            }
         }
         PlayersManager playersManager = callback.getPlayersManager();
         if (playersManager != null) {
             EpisodeResponse.PlayerData playerData = playersManager.getCurrentPlayerData();
             if (playerData != null && playerData.getSubtitles() != null) {
                 for (EpisodeResponse.SubtitleData sub : playerData.getSubtitles()) {
-                    if (sub != null && sub.getFormat() != null) {
-                        String fmt = sub.getFormat().trim().toLowerCase();
-                        if ("ass".equals(fmt) || "ssa".equals(fmt)) {
+                    if (sub != null) {
+                        String fmt = sub.getFormat() != null ? sub.getFormat().trim().toLowerCase(Locale.ROOT) : "";
+                        String src = sub.getSrc() != null ? sub.getSrc().toLowerCase(Locale.ROOT) : "";
+                        if ("ass".equals(fmt) || "ssa".equals(fmt) || src.contains(".ass") || src.contains(".ssa")) {
                             return false;
                         }
                     }
@@ -362,22 +348,291 @@ public class PlayerSubtitlesController {
         return true;
     }
 
+    // ==================== NATIVE ASS LOADING & OVERLAY MANAGEMENT ====================
+
+    @Nullable
+    private AssSubtitleOverlayView ensureAssOverlayView(@Nullable PlayerView playerView) {
+        if (playerView == null) return null;
+        SubtitleView subtitleView = playerView.getSubtitleView();
+        if (subtitleView == null) return null;
+
+        ViewParent parent = subtitleView.getParent();
+        if (!(parent instanceof ViewGroup)) return null;
+        ViewGroup container = (ViewGroup) parent;
+
+        // Reuse existing overlay if already attached to this PlayerView's content frame
+        if (assOverlayView != null && assOverlayView.getParent() == container) {
+            return assOverlayView;
+        }
+
+        for (int i = 0; i < container.getChildCount(); i++) {
+            View child = container.getChildAt(i);
+            if (child instanceof AssSubtitleOverlayView) {
+                assOverlayView = (AssSubtitleOverlayView) child;
+                return assOverlayView;
+            }
+        }
+
+        AssSubtitleOverlayView overlay = new AssSubtitleOverlayView(playerView.getContext());
+        ViewGroup.LayoutParams lp = new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        );
+        int subIndex = container.indexOfChild(subtitleView);
+        if (subIndex >= 0) {
+            container.addView(overlay, subIndex + 1, lp);
+        } else {
+            container.addView(overlay, lp);
+        }
+        overlay.setVisibility(View.GONE);
+        assOverlayView = overlay;
+        return overlay;
+    }
+
+    private void clearNativeAssState() {
+        assLoadGeneration.incrementAndGet();
+        activeAssScript = null;
+        activeAssSourceKey = null;
+        nativeAssActive = false;
+        mainHandler.post(() -> {
+            if (assOverlayView != null) {
+                assOverlayView.setAssScript(null);
+                assOverlayView.setVisibility(View.GONE);
+            }
+        });
+    }
+
+    private void loadPreferredAssSubtitleAsync() {
+        if (!subtitlesEnabled) {
+            clearNativeAssState();
+            return;
+        }
+
+        // Resolve local ASS file first if offline
+        boolean isOffline = callback.isOfflineMode();
+        String currentVideoUrl = callback.getCurrentVideoUrl();
+        if (isOffline || (currentVideoUrl != null && currentVideoUrl.startsWith("/"))) {
+            List<File> localSubs = findLocalSubtitleFiles();
+            if (!localSubs.isEmpty()) {
+                int preferredIdx = pickPreferredLocalIndex(localSubs);
+                if (preferredIdx >= 0) {
+                    File chosen = localSubs.get(preferredIdx);
+                    String ext = getFileExtensionLower(chosen.getName());
+                    if ("ass".equals(ext) || "ssa".equals(ext)) {
+                        loadAssFromLocalFileAsync(chosen);
+                        return;
+                    } else {
+                        clearNativeAssState();
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Resolve online ASS subtitle track
+        PlayersManager playersManager = callback.getPlayersManager();
+        if (playersManager == null) {
+            clearNativeAssState();
+            return;
+        }
+        EpisodeResponse.PlayerData playerData = playersManager.getCurrentPlayerData();
+        if (playerData == null || playerData.getSubtitles() == null || playerData.getSubtitles().isEmpty()) {
+            clearNativeAssState();
+            return;
+        }
+
+        List<EpisodeResponse.SubtitleData> subtitlesList = playerData.getSubtitles();
+        int preferredIndex = pickPreferredOnlineIndex(subtitlesList);
+        if (preferredIndex < 0) {
+            clearNativeAssState();
+            return;
+        }
+
+        EpisodeResponse.SubtitleData chosen = subtitlesList.get(preferredIndex);
+        if (chosen == null || chosen.getSrc() == null || chosen.getSrc().trim().isEmpty()) {
+            clearNativeAssState();
+            return;
+        }
+
+        String fmt = chosen.getFormat() != null ? chosen.getFormat().trim().toLowerCase(Locale.ROOT) : "";
+        String mime = getMimeTypeForSubtitle(fmt, chosen.getSrc());
+        if (!MimeTypes.TEXT_SSA.equals(mime)) {
+            clearNativeAssState();
+            return;
+        }
+
+        String absUrl = VideoUrlHelper.toAbsoluteVideoUrl(chosen.getSrc(), callback.getCurrentVideoDomain());
+        loadAssFromUrlAsync(absUrl);
+    }
+
+    private void loadAssFromLocalFileAsync(@NonNull File file) {
+        final String key = "file:" + file.getAbsolutePath() + ":" + file.lastModified();
+        if (key.equals(activeAssSourceKey) && activeAssScript != null) {
+            applyParsedAssScript(key, activeAssScript);
+            return;
+        }
+        AssScript cached = ASS_SCRIPT_CACHE.get(key);
+        if (cached != null) {
+            applyParsedAssScript(key, cached);
+            return;
+        }
+
+        final long gen = assLoadGeneration.incrementAndGet();
+        assLoadExecutor.execute(() -> {
+            try {
+                String content = readFileUtf8(file);
+                AssScript parsed = AssParser.parse(content);
+                if (!parsed.isEmpty()) {
+                    ASS_SCRIPT_CACHE.put(key, parsed);
+                }
+                mainHandler.post(() -> {
+                    if (assLoadGeneration.get() == gen) {
+                        applyParsedAssScript(key, parsed);
+                    }
+                });
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to parse local ASS subtitle file: " + file.getName(), e);
+            }
+        });
+    }
+
+    private void loadAssFromUrlAsync(@NonNull String url) {
+        final String key = "url:" + url;
+        if (key.equals(activeAssSourceKey) && activeAssScript != null) {
+            applyParsedAssScript(key, activeAssScript);
+            return;
+        }
+        AssScript cached = ASS_SCRIPT_CACHE.get(key);
+        if (cached != null) {
+            applyParsedAssScript(key, cached);
+            return;
+        }
+
+        final long gen = assLoadGeneration.incrementAndGet();
+        final ApiService apiService = callback.getApiService();
+        assLoadExecutor.execute(() -> {
+            try {
+                OkHttpClient client = (apiService != null && apiService.getHttpClient() != null)
+                        ? apiService.getHttpClient()
+                        : new OkHttpClient();
+
+                Request.Builder reqBuilder = new Request.Builder().url(url).get();
+                if (apiService != null) {
+                    Map<String, String> headers = apiService.getVideoRequestHeadersForUrl(url);
+                    if (headers != null) {
+                        for (Map.Entry<String, String> entry : headers.entrySet()) {
+                            if (entry.getKey() != null && entry.getValue() != null) {
+                                reqBuilder.header(entry.getKey(), entry.getValue());
+                            }
+                        }
+                    }
+                }
+
+                try (Response response = client.newCall(reqBuilder.build()).execute()) {
+                    if (!response.isSuccessful()) {
+                        Log.w(TAG, "ASS subtitle HTTP fetch failed (" + response.code() + ") for " + url);
+                        return;
+                    }
+                    ResponseBody body = response.body();
+                    if (body == null) return;
+                    byte[] bytes = body.bytes();
+                    String content = decodeAssBytes(bytes);
+                    AssScript parsed = AssParser.parse(content);
+                    if (!parsed.isEmpty()) {
+                        ASS_SCRIPT_CACHE.put(key, parsed);
+                    }
+                    mainHandler.post(() -> {
+                        if (assLoadGeneration.get() == gen) {
+                            applyParsedAssScript(key, parsed);
+                        }
+                    });
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to fetch/parse online ASS subtitle: " + url, e);
+            }
+        });
+    }
+
+    private void applyParsedAssScript(String sourceKey, @NonNull AssScript script) {
+        activeAssSourceKey = sourceKey;
+        activeAssScript = script;
+        if (script.playResX > 0f) cachedPlayResX = Math.round(script.playResX);
+        if (script.playResY > 0f) cachedPlayResY = Math.round(script.playResY);
+
+        nativeAssActive = subtitlesEnabled && !script.isEmpty() && !isCurrentSubtitleVttOrSrt();
+        Log.d(TAG, "Loaded native ASS script: events=" + script.events.size()
+                + ", styles=" + script.styles.size()
+                + ", PlayRes=" + script.playResX + "x" + script.playResY
+                + ", nativeActive=" + nativeAssActive);
+
+        applySubtitlesStateToPlayer();
+    }
+
+    private static String readFileUtf8(File file) throws Exception {
+        byte[] bytes;
+        try (FileInputStream fis = new FileInputStream(file)) {
+            int len = (int) Math.min(file.length(), 16 * 1024 * 1024);
+            bytes = new byte[len];
+            int offset = 0;
+            while (offset < len) {
+                int read = fis.read(bytes, offset, len - offset);
+                if (read <= 0) break;
+                offset += read;
+            }
+            if (offset != len) {
+                byte[] trimmed = new byte[offset];
+                System.arraycopy(bytes, 0, trimmed, 0, offset);
+                bytes = trimmed;
+            }
+        }
+        return decodeAssBytes(bytes);
+    }
+
+    private static String decodeAssBytes(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) return "";
+        if (bytes.length >= 2) {
+            if ((bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xFE) {
+                return new String(bytes, 2, bytes.length - 2, StandardCharsets.UTF_16LE);
+            }
+            if ((bytes[0] & 0xFF) == 0xFE && (bytes[1] & 0xFF) == 0xFF) {
+                return new String(bytes, 2, bytes.length - 2, StandardCharsets.UTF_16BE);
+            }
+        }
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    // ==================== PLAYER LISTENER & STATE SYNC ====================
+
     public void setupSubtitlePlayerListener(ExoPlayer p) {
         if (p == null) return;
-        p.addListener(new Player.Listener() {
+        if (attachedListenerPlayer == p && activePlayerListener != null) {
+            AssSubtitleOverlayView overlay = ensureAssOverlayView(callback.getPlayerView());
+            if (overlay != null) {
+                overlay.setPlayer(p);
+            }
+            return;
+        }
+        if (attachedListenerPlayer != null && activePlayerListener != null) {
+            try {
+                attachedListenerPlayer.removeListener(activePlayerListener);
+            } catch (Exception ignored) {}
+        }
+
+        Player.Listener listener = new Player.Listener() {
             @Override
             public void onCues(@NonNull CueGroup cueGroup) {
                 PlayerView playerView = callback.getPlayerView();
-                if (!subtitlesEnabled || playerView == null || playerView.getSubtitleView() == null) {
-                    if (playerView != null && playerView.getSubtitleView() != null) {
-                        playerView.getSubtitleView().setCues(Collections.emptyList());
-                    }
+                if (playerView == null || playerView.getSubtitleView() == null) return;
+
+                if (!subtitlesEnabled || nativeAssActive) {
+                    playerView.getSubtitleView().setCues(Collections.emptyList());
                     return;
                 }
                 if (cueGroup.cues == null || cueGroup.cues.isEmpty()) {
                     playerView.getSubtitleView().setCues(Collections.emptyList());
                     return;
                 }
+
                 List<Cue> processedCues = new ArrayList<>();
                 for (Cue cue : cueGroup.cues) {
                     if (cue == null) continue;
@@ -388,7 +643,6 @@ public class PlayerSubtitlesController {
                             if (vectorCue != null) {
                                 processedCues.add(vectorCue);
                             }
-                            // Do not display drawing commands as raw text
                             continue;
                         }
                         Cue processed = processAssCue(cue);
@@ -403,6 +657,42 @@ public class PlayerSubtitlesController {
                 }
                 List<Cue> stackedCues = resolveCueCollisions(processedCues);
                 playerView.getSubtitleView().setCues(stackedCues);
+            }
+
+            @Override
+            public void onIsPlayingChanged(boolean isPlaying) {
+                if (assOverlayView != null && nativeAssActive) {
+                    if (isPlaying) {
+                        assOverlayView.syncNow();
+                        assOverlayView.startRenderLoop();
+                    } else {
+                        assOverlayView.stopRenderLoop();
+                        assOverlayView.syncNow();
+                    }
+                }
+            }
+
+            @Override
+            public void onPlaybackStateChanged(int playbackState) {
+                if (assOverlayView != null && nativeAssActive) {
+                    assOverlayView.syncNow();
+                }
+            }
+
+            @Override
+            public void onPositionDiscontinuity(@NonNull Player.PositionInfo oldPosition,
+                                                @NonNull Player.PositionInfo newPosition,
+                                                int reason) {
+                if (assOverlayView != null && nativeAssActive) {
+                    assOverlayView.syncNow();
+                }
+            }
+
+            @Override
+            public void onVideoSizeChanged(@NonNull VideoSize videoSize) {
+                if (assOverlayView != null) {
+                    assOverlayView.updateVideoSize(videoSize.width, videoSize.height);
+                }
             }
 
             @Override
@@ -429,7 +719,8 @@ public class PlayerSubtitlesController {
                             if ("ass".equalsIgnoreCase(subtitleFormat) && MimeTypes.TEXT_SSA.equals(mime)) {
                                 preferredTextGroup = group;
                                 break;
-                            } else if (("vtt".equalsIgnoreCase(subtitleFormat) || "webvtt".equalsIgnoreCase(subtitleFormat)) && MimeTypes.TEXT_VTT.equals(mime)) {
+                            } else if (("vtt".equalsIgnoreCase(subtitleFormat) || "webvtt".equalsIgnoreCase(subtitleFormat))
+                                    && MimeTypes.TEXT_VTT.equals(mime)) {
                                 preferredTextGroup = group;
                                 break;
                             }
@@ -440,7 +731,7 @@ public class PlayerSubtitlesController {
                 if (!hasSelectedTextTrack) {
                     Tracks.Group targetGroup = preferredTextGroup != null ? preferredTextGroup : firstSupportedTextGroup;
                     if (targetGroup != null) {
-                        Log.d("PlayerSubtitlesController", "No text track auto-selected by Media3. Forcing selection of text track: " + targetGroup.getMediaTrackGroup());
+                        Log.d(TAG, "Forcing selection of text track: " + targetGroup.getMediaTrackGroup());
                         try {
                             TrackSelectionParameters newParams = player.getTrackSelectionParameters()
                                     .buildUpon()
@@ -449,16 +740,28 @@ public class PlayerSubtitlesController {
                                     .build();
                             player.setTrackSelectionParameters(newParams);
                         } catch (Exception e) {
-                            Log.e("PlayerSubtitlesController", "Failed to force text track selection", e);
+                            Log.e(TAG, "Failed to force text track selection", e);
                         }
                     }
                 }
             }
-        });
+        };
+
+        p.addListener(listener);
+        attachedListenerPlayer = p;
+        activePlayerListener = listener;
+
+        AssSubtitleOverlayView overlay = ensureAssOverlayView(callback.getPlayerView());
+        if (overlay != null) {
+            overlay.setPlayer(p);
+        }
     }
 
     public void applySubtitlesStateToPlayer() {
         ExoPlayer player = callback.getPlayer();
+        boolean isAssMode = isAssSubtitleActive();
+        nativeAssActive = subtitlesEnabled && isAssMode && activeAssScript != null && !activeAssScript.isEmpty();
+
         if (player != null) {
             try {
                 TrackSelectionParameters.Builder builder = player.getTrackSelectionParameters()
@@ -466,36 +769,73 @@ public class PlayerSubtitlesController {
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesEnabled);
                 if (subtitlesEnabled) {
                     builder.setPreferredTextLanguage("ru")
-                           .setPreferredTextRoleFlags(C.ROLE_FLAG_SUBTITLE)
-                           .setSelectUndeterminedTextLanguage(true);
+                            .setPreferredTextRoleFlags(C.ROLE_FLAG_SUBTITLE)
+                            .setSelectUndeterminedTextLanguage(true);
                 }
                 player.setTrackSelectionParameters(builder.build());
-                Log.d("PlayerSubtitlesController", "Updated subtitle track selection state: enabled=" + subtitlesEnabled);
             } catch (Exception e) {
-                Log.e("PlayerSubtitlesController", "Failed to setTrackSelectionParameters for subtitles", e);
+                Log.e(TAG, "Failed to setTrackSelectionParameters for subtitles", e);
             }
         }
+
         PlayerView playerView = callback.getPlayerView();
         if (playerView != null && playerView.getSubtitleView() != null) {
             try {
                 SubtitleView subtitleView = playerView.getSubtitleView();
-                subtitleView.setVisibility(subtitlesEnabled ? View.VISIBLE : View.GONE);
-                subtitleView.setApplyEmbeddedStyles(true);
-                subtitleView.setApplyEmbeddedFontSizes(true);
-                subtitleView.setViewType(SubtitleView.VIEW_TYPE_CANVAS);
-                CaptionStyleCompat style = new CaptionStyleCompat(
-                        subtitleTextColor,
-                        subtitleBackgroundColor,
-                        Color.TRANSPARENT,
-                        subtitleEdgeType,
-                        subtitleEdgeColor,
-                        null
-                );
-                subtitleView.setStyle(style);
-                subtitleView.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleTextSize);
-                subtitleView.setBottomPaddingFraction(0.06f);
+                AssSubtitleOverlayView overlay = ensureAssOverlayView(playerView);
+
+                if (overlay != null) {
+                    overlay.setPlayer(player);
+                    if (nativeAssActive) {
+                        overlay.setAssScript(activeAssScript);
+                        overlay.setVisibility(View.VISIBLE);
+                        overlay.syncNow();
+                    } else {
+                        overlay.stopRenderLoop();
+                        overlay.setVisibility(View.GONE);
+                    }
+                }
+
+                if (!subtitlesEnabled || nativeAssActive) {
+                    subtitleView.setCues(Collections.emptyList());
+                    subtitleView.setVisibility(View.GONE);
+                } else {
+                    subtitleView.setVisibility(View.VISIBLE);
+                    subtitleView.setViewType(SubtitleView.VIEW_TYPE_CANVAS);
+
+                    if (isAssMode) {
+                        // ASS fallback mode: never apply VTT/SRT user customization overrides
+                        subtitleView.setApplyEmbeddedStyles(true);
+                        subtitleView.setApplyEmbeddedFontSizes(true);
+                        CaptionStyleCompat defaultAssFallbackStyle = new CaptionStyleCompat(
+                                Color.WHITE,
+                                Color.TRANSPARENT,
+                                Color.TRANSPARENT,
+                                CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                                Color.BLACK,
+                                null
+                        );
+                        subtitleView.setStyle(defaultAssFallbackStyle);
+                        subtitleView.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION);
+                    } else {
+                        // VTT / SRT mode: apply user's custom style preferences
+                        subtitleView.setApplyEmbeddedStyles(true);
+                        subtitleView.setApplyEmbeddedFontSizes(true);
+                        CaptionStyleCompat style = new CaptionStyleCompat(
+                                subtitleTextColor,
+                                subtitleBackgroundColor,
+                                Color.TRANSPARENT,
+                                subtitleEdgeType,
+                                subtitleEdgeColor,
+                                null
+                        );
+                        subtitleView.setStyle(style);
+                        subtitleView.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleTextSize);
+                    }
+                    subtitleView.setBottomPaddingFraction(0.06f);
+                }
             } catch (Exception e) {
-                Log.w("PlayerSubtitlesController", "Failed to style SubtitleView", e);
+                Log.w(TAG, "Failed to style SubtitleView / AssSubtitleOverlayView", e);
             }
         }
     }
@@ -516,12 +856,13 @@ public class PlayerSubtitlesController {
                 player.play();
             }
             applySubtitlesStateToPlayer();
-            Log.d("PlayerSubtitlesController", "Reloaded player with updated subtitle configurations at position " + currentPos);
+            Log.d(TAG, "Reloaded player with updated subtitle configurations at position " + currentPos);
         }
     }
 
     public void updateSubtitleSettings(boolean enabled, String format) {
         boolean formatChanged = !Objects.equals(subtitleFormat, format);
+        boolean wasEnabled = subtitlesEnabled;
         subtitlesEnabled = enabled;
         subtitleFormat = format;
         ApiService apiService = callback.getApiService();
@@ -529,14 +870,30 @@ public class PlayerSubtitlesController {
             apiService.saveSubtitlesEnabledSetting(enabled);
             apiService.saveSubtitleFormatSetting(format);
         }
-        Log.d("PlayerSubtitlesController", "Subtitle settings changed: enabled=" + enabled + ", format=" + format);
-        applySubtitlesStateToPlayer();
+        Log.d(TAG, "Subtitle settings changed: enabled=" + enabled + ", format=" + format);
+
+        if (!enabled) {
+            nativeAssActive = false;
+            applySubtitlesStateToPlayer();
+            return;
+        }
+
         if (formatChanged) {
             reloadPlayerWithSubtitles();
+        } else {
+            if (!wasEnabled && isAssSubtitleActive() && activeAssScript == null) {
+                loadPreferredAssSubtitleAsync();
+            }
+            applySubtitlesStateToPlayer();
         }
     }
 
     public void updateSubtitleStyleSettings(float textSize, int textColor, int bgColor, int edgeType, int edgeColor) {
+        // Lock customization when ASS subtitles are selected
+        if (isAssSubtitleActive()) {
+            Log.d(TAG, "Ignoring subtitle style customization while ASS subtitles are selected.");
+            return;
+        }
         subtitleTextSize = textSize;
         subtitleTextColor = textColor;
         subtitleBackgroundColor = bgColor;
@@ -554,15 +911,17 @@ public class PlayerSubtitlesController {
     }
 
     public Cue processAssCue(Cue cue) {
-        androidx.media3.common.VideoSize videoSize = (callback != null && callback.getPlayer() != null)
+        VideoSize videoSize = (callback != null && callback.getPlayer() != null)
                 ? callback.getPlayer().getVideoSize()
                 : null;
         Context ctx = callback != null ? callback.getContext() : null;
+        int fallbackColor = isAssSubtitleActive() ? Color.WHITE : subtitleTextColor;
+        float fallbackSize = isAssSubtitleActive() ? 18f : subtitleTextSize;
         return AssSubtitlesProcessor.processAssCue(
                 cue,
                 ctx,
-                subtitleTextColor,
-                subtitleTextSize,
+                fallbackColor,
+                fallbackSize,
                 cachedPlayResX,
                 cachedPlayResY,
                 videoSize
@@ -571,5 +930,91 @@ public class PlayerSubtitlesController {
 
     public List<Cue> resolveCueCollisions(List<Cue> cues) {
         return AssSubtitlesProcessor.resolveCueCollisions(cues);
+    }
+
+    // ==================== HELPER METHODS ====================
+
+    private List<File> findLocalSubtitleFiles() {
+        List<File> result = new ArrayList<>();
+        DownloadedEpisodeEntity offlineEp = callback.getCurrentOfflineEpisode();
+        String currentVideoUrl = callback.getCurrentVideoUrl();
+        String localPath = (offlineEp != null && offlineEp.getLocalFilePath() != null)
+                ? offlineEp.getLocalFilePath()
+                : currentVideoUrl;
+        if (localPath == null || !localPath.startsWith("/")) {
+            return result;
+        }
+        File videoFile = new File(localPath);
+        File dir = videoFile.getParentFile();
+        if (dir == null || !dir.exists()) return result;
+
+        String baseName = videoFile.getName();
+        int dotIdx = baseName.lastIndexOf('.');
+        if (dotIdx > 0) baseName = baseName.substring(0, dotIdx);
+
+        File[] files = dir.listFiles();
+        if (files == null) return result;
+        for (File f : files) {
+            if (f.getName().startsWith(baseName + "_sub_") && f.length() > 0) {
+                result.add(f);
+            }
+        }
+        return result;
+    }
+
+    private int pickPreferredLocalIndex(List<File> files) {
+        for (int i = 0; i < files.size(); i++) {
+            String ext = getFileExtensionLower(files.get(i).getName());
+            if ("auto".equalsIgnoreCase(subtitleFormat)) {
+                if ("ass".equals(ext) || "ssa".equals(ext)) return i;
+            } else if (ext.equalsIgnoreCase(subtitleFormat)) {
+                return i;
+            }
+        }
+        return files.isEmpty() ? -1 : 0;
+    }
+
+    private int pickPreferredOnlineIndex(List<EpisodeResponse.SubtitleData> subtitlesList) {
+        for (int i = 0; i < subtitlesList.size(); i++) {
+            EpisodeResponse.SubtitleData sub = subtitlesList.get(i);
+            if (sub == null || sub.getSrc() == null || sub.getSrc().trim().isEmpty()) continue;
+            String format = sub.getFormat() != null ? sub.getFormat().trim().toLowerCase(Locale.ROOT) : "";
+            String src = sub.getSrc().toLowerCase(Locale.ROOT);
+            if ("auto".equalsIgnoreCase(subtitleFormat)) {
+                if ("ass".equals(format) || "ssa".equals(format) || src.contains(".ass") || src.contains(".ssa")) {
+                    return i;
+                }
+            } else if (format.equalsIgnoreCase(subtitleFormat)
+                    || ("ass".equalsIgnoreCase(subtitleFormat) && ("ssa".equals(format) || src.contains(".ass")))
+                    || ("vtt".equalsIgnoreCase(subtitleFormat) && ("webvtt".equals(format) || src.contains(".vtt")))) {
+                return i;
+            }
+        }
+        for (int i = 0; i < subtitlesList.size(); i++) {
+            EpisodeResponse.SubtitleData sub = subtitlesList.get(i);
+            if (sub != null && sub.getSrc() != null && !sub.getSrc().trim().isEmpty()) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static List<Integer> buildIndexOrder(int size, int preferredIdx) {
+        List<Integer> order = new ArrayList<>(size);
+        if (preferredIdx >= 0 && preferredIdx < size) {
+            order.add(preferredIdx);
+        }
+        for (int i = 0; i < size; i++) {
+            if (i != preferredIdx) {
+                order.add(i);
+            }
+        }
+        return order;
+    }
+
+    private static String getFileExtensionLower(String fileName) {
+        if (fileName == null) return "";
+        int lastDot = fileName.lastIndexOf('.');
+        return lastDot > 0 ? fileName.substring(lastDot + 1).toLowerCase(Locale.ROOT) : "";
     }
 }

@@ -310,6 +310,7 @@
             android:layout_marginTop="8dp"/>
 
         <TextView
+            android:id="@+id/subtitleStyleSectionTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingHorizontal="16dp"
@@ -320,6 +321,46 @@
             android:textSize="@dimen/bs_subtitle_text_size"
             android:textStyle="bold"
             android:fontFamily="@font/open_sans_bold"/>
+
+        <!-- Lock notice shown when ASS subtitles are selected -->
+        <LinearLayout
+            android:id="@+id/subtitleAssLockBanner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="6dp"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="10dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/bg_m3_item_single"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_marginEnd="10dp"
+                android:src="@drawable/ic_player_ctrl_lock"
+                app:tint="@color/purple_primary"
+                android:contentDescription="Locked"/>
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/bs_subtitle_ass_customization_locked"
+                android:textColor="?attr/accentTextColor"
+                android:textSize="12.5sp"
+                android:fontFamily="@font/open_sans_semibold"/>
+        </LinearLayout>
+
+        <!-- Customization Controls Container (locked & dimmed when ASS is selected) -->
+        <LinearLayout
+            android:id="@+id/subtitleStyleCustomizationContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
 
         <!-- Live Preview Card -->
         <FrameLayout
@@ -663,6 +704,7 @@
                     android:clickable="true"
                     android:focusable="true"/>
             </LinearLayout>
+        </LinearLayout>
         </LinearLayout>
 
         <!-- Tracks Container (if specific episode tracks are present) -->

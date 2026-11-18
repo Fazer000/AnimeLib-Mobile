@@ -52,6 +52,7 @@
 
     <!-- Subtitle Styling Strings -->
     <string name="bs_subtitle_style_title">Оформление субтитров (для VTT / SRT)</string>
+    <string name="bs_subtitle_ass_customization_locked">Кастомизация недоступна для ASS — используется оригинальное оформление субтитров</string>
     <string name="bs_subtitle_style_preview">Предпросмотр субтитров</string>
     <string name="bs_subtitle_style_preview_text">Пример текста субтитров</string>
     <string name="bs_subtitle_style_size">Размер шрифта:</string>

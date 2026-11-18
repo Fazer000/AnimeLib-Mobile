@@ -1,13 +1,11 @@
 package com.example.animelib.settings;
 
 import android.content.Context;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.ImageButton;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -21,6 +19,7 @@ import com.example.animelib.util.FlexibleBottomSheetDialog;
 import com.google.android.material.materialswitch.MaterialSwitch;
 
 import java.util.List;
+import java.util.Locale;
 
 public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
 
@@ -58,6 +57,8 @@ public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
     private View unselectedAuto, unselectedAss, unselectedVtt;
     private MaterialSwitch enableSwitch;
     private TextView subtitlePreviewText;
+    private View subtitleAssLockBanner;
+    private View subtitleStyleCustomizationContainer;
 
     private TextView chipSize14, chipSize16, chipSize18, chipSize22, chipSize26;
     private TextView chipColorWhite, chipColorYellow, chipColorCyan, chipColorGreen;
@@ -93,6 +94,39 @@ public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
         setOnBackPressedAction(onBackPressedListener != null ? onBackPressedListener::onBackPressed : null);
     }
 
+    /**
+     * Returns true when ASS/SSA subtitles are selected (explicitly "ass"/"ssa",
+     * or "auto" when an ASS/SSA track is available or tracks are not yet enumerated).
+     */
+    public static boolean isAssCustomizationLocked(String format, List<EpisodeResponse.SubtitleData> available) {
+        if ("ass".equalsIgnoreCase(format) || "ssa".equalsIgnoreCase(format)) {
+            return true;
+        }
+        if ("vtt".equalsIgnoreCase(format)
+                || "webvtt".equalsIgnoreCase(format)
+                || "srt".equalsIgnoreCase(format)) {
+            return false;
+        }
+        // "auto" prefers ASS if available
+        if (available == null || available.isEmpty()) {
+            return true;
+        }
+        for (EpisodeResponse.SubtitleData sub : available) {
+            if (sub != null) {
+                String fmt = sub.getFormat() != null ? sub.getFormat().trim().toLowerCase(Locale.ROOT) : "";
+                String src = sub.getSrc() != null ? sub.getSrc().toLowerCase(Locale.ROOT) : "";
+                if ("ass".equals(fmt) || "ssa".equals(fmt) || src.contains(".ass") || src.contains(".ssa")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean isAssSelected() {
+        return isAssCustomizationLocked(currentFormat, availableSubtitles);
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -118,6 +152,8 @@ public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
         unselectedVtt = view.findViewById(R.id.unselectedVtt);
 
         subtitlePreviewText = view.findViewById(R.id.subtitlePreviewText);
+        subtitleAssLockBanner = view.findViewById(R.id.subtitleAssLockBanner);
+        subtitleStyleCustomizationContainer = view.findViewById(R.id.subtitleStyleCustomizationContainer);
 
         // Size Chips
         chipSize14 = view.findViewById(R.id.chipSize14);
@@ -168,30 +204,31 @@ public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
         assOption.setOnClickListener(v -> selectFormat("ass"));
         vttOption.setOnClickListener(v -> selectFormat("vtt"));
 
-        // Setup size chip listeners
-        if (chipSize14 != null) chipSize14.setOnClickListener(v -> { selectedTextSize = 14f; notifyStyleChanged(); });
-        if (chipSize16 != null) chipSize16.setOnClickListener(v -> { selectedTextSize = 16f; notifyStyleChanged(); });
-        if (chipSize18 != null) chipSize18.setOnClickListener(v -> { selectedTextSize = 18f; notifyStyleChanged(); });
-        if (chipSize22 != null) chipSize22.setOnClickListener(v -> { selectedTextSize = 22f; notifyStyleChanged(); });
-        if (chipSize26 != null) chipSize26.setOnClickListener(v -> { selectedTextSize = 26f; notifyStyleChanged(); });
+        // Setup size chip listeners (guarded against ASS lock)
+        if (chipSize14 != null) chipSize14.setOnClickListener(v -> { if (!isAssSelected()) { selectedTextSize = 14f; notifyStyleChanged(); } });
+        if (chipSize16 != null) chipSize16.setOnClickListener(v -> { if (!isAssSelected()) { selectedTextSize = 16f; notifyStyleChanged(); } });
+        if (chipSize18 != null) chipSize18.setOnClickListener(v -> { if (!isAssSelected()) { selectedTextSize = 18f; notifyStyleChanged(); } });
+        if (chipSize22 != null) chipSize22.setOnClickListener(v -> { if (!isAssSelected()) { selectedTextSize = 22f; notifyStyleChanged(); } });
+        if (chipSize26 != null) chipSize26.setOnClickListener(v -> { if (!isAssSelected()) { selectedTextSize = 26f; notifyStyleChanged(); } });
 
         // Setup color chip listeners
-        if (chipColorWhite != null) chipColorWhite.setOnClickListener(v -> { selectedTextColor = 0xFFFFFFFF; notifyStyleChanged(); });
-        if (chipColorYellow != null) chipColorYellow.setOnClickListener(v -> { selectedTextColor = 0xFFFFEB3B; notifyStyleChanged(); });
-        if (chipColorCyan != null) chipColorCyan.setOnClickListener(v -> { selectedTextColor = 0xFF00E5FF; notifyStyleChanged(); });
-        if (chipColorGreen != null) chipColorGreen.setOnClickListener(v -> { selectedTextColor = 0xFF76FF03; notifyStyleChanged(); });
+        if (chipColorWhite != null) chipColorWhite.setOnClickListener(v -> { if (!isAssSelected()) { selectedTextColor = 0xFFFFFFFF; notifyStyleChanged(); } });
+        if (chipColorYellow != null) chipColorYellow.setOnClickListener(v -> { if (!isAssSelected()) { selectedTextColor = 0xFFFFEB3B; notifyStyleChanged(); } });
+        if (chipColorCyan != null) chipColorCyan.setOnClickListener(v -> { if (!isAssSelected()) { selectedTextColor = 0xFF00E5FF; notifyStyleChanged(); } });
+        if (chipColorGreen != null) chipColorGreen.setOnClickListener(v -> { if (!isAssSelected()) { selectedTextColor = 0xFF76FF03; notifyStyleChanged(); } });
 
         // Setup background chip listeners
-        if (chipBgNone != null) chipBgNone.setOnClickListener(v -> { selectedBgColor = 0x00000000; notifyStyleChanged(); });
-        if (chipBgTranslucent != null) chipBgTranslucent.setOnClickListener(v -> { selectedBgColor = 0x80000000; notifyStyleChanged(); });
-        if (chipBgBlack != null) chipBgBlack.setOnClickListener(v -> { selectedBgColor = 0xFF000000; notifyStyleChanged(); });
+        if (chipBgNone != null) chipBgNone.setOnClickListener(v -> { if (!isAssSelected()) { selectedBgColor = 0x00000000; notifyStyleChanged(); } });
+        if (chipBgTranslucent != null) chipBgTranslucent.setOnClickListener(v -> { if (!isAssSelected()) { selectedBgColor = 0x80000000; notifyStyleChanged(); } });
+        if (chipBgBlack != null) chipBgBlack.setOnClickListener(v -> { if (!isAssSelected()) { selectedBgColor = 0xFF000000; notifyStyleChanged(); } });
 
         // Setup edge chip listeners
-        if (chipEdgeOutline != null) chipEdgeOutline.setOnClickListener(v -> { selectedEdgeType = CaptionStyleCompat.EDGE_TYPE_OUTLINE; notifyStyleChanged(); });
-        if (chipEdgeShadow != null) chipEdgeShadow.setOnClickListener(v -> { selectedEdgeType = CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW; notifyStyleChanged(); });
-        if (chipEdgeNone != null) chipEdgeNone.setOnClickListener(v -> { selectedEdgeType = CaptionStyleCompat.EDGE_TYPE_NONE; notifyStyleChanged(); });
+        if (chipEdgeOutline != null) chipEdgeOutline.setOnClickListener(v -> { if (!isAssSelected()) { selectedEdgeType = CaptionStyleCompat.EDGE_TYPE_OUTLINE; notifyStyleChanged(); } });
+        if (chipEdgeShadow != null) chipEdgeShadow.setOnClickListener(v -> { if (!isAssSelected()) { selectedEdgeType = CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW; notifyStyleChanged(); } });
+        if (chipEdgeNone != null) chipEdgeNone.setOnClickListener(v -> { if (!isAssSelected()) { selectedEdgeType = CaptionStyleCompat.EDGE_TYPE_NONE; notifyStyleChanged(); } });
 
         updateStyleUI();
+        updateStyleLockState();
 
         // Render available episode subtitle tracks if present
         LinearLayout tracksContainer = view.findViewById(R.id.subtitlesTracksContainer);
@@ -201,6 +238,7 @@ public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
             tracksContainer.setVisibility(View.VISIBLE);
             tracksList.removeAllViews();
 
+            String effectiveActiveFormat = isAssSelected() ? "ass" : "vtt";
             for (int i = 0; i < availableSubtitles.size(); i++) {
                 EpisodeResponse.SubtitleData sub = availableSubtitles.get(i);
                 if (sub == null) continue;
@@ -211,7 +249,7 @@ public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
                 View selectedPill = trackRow.findViewById(R.id.selectedPill);
                 View unselectedIndicator = trackRow.findViewById(R.id.unselectedIndicator);
 
-                String formatUpper = sub.getFormat() != null ? sub.getFormat().toUpperCase() : "SUB";
+                String formatUpper = sub.getFormat() != null ? sub.getFormat().toUpperCase(Locale.ROOT) : "SUB";
                 String title = sub.getFilename() != null ? sub.getFilename() : ("Субтитры #" + (i + 1));
                 if (sub.getName() != null && !sub.getName().isEmpty() && !sub.getName().equals(sub.getFilename())) {
                     title = sub.getName();
@@ -220,11 +258,15 @@ public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
                 if (trackTitle != null) trackTitle.setText(title);
                 if (trackFormat != null) trackFormat.setText(formatUpper);
 
-                boolean isSelected = sub.getFormat() != null && sub.getFormat().equalsIgnoreCase(currentFormat);
+                String subFmt = sub.getFormat() != null ? sub.getFormat().trim().toLowerCase(Locale.ROOT) : "";
+                boolean isSelected = subFmt.equalsIgnoreCase(currentFormat)
+                        || ("auto".equalsIgnoreCase(currentFormat)
+                        && (subFmt.equalsIgnoreCase(effectiveActiveFormat)
+                        || ("ass".equals(effectiveActiveFormat) && "ssa".equals(subFmt))));
                 if (selectedPill != null) selectedPill.setVisibility(isSelected ? View.VISIBLE : View.GONE);
                 if (unselectedIndicator != null) unselectedIndicator.setVisibility(isSelected ? View.GONE : View.VISIBLE);
 
-                String fmt = sub.getFormat() != null ? sub.getFormat().toLowerCase() : "ass";
+                String fmt = sub.getFormat() != null ? sub.getFormat().toLowerCase(Locale.ROOT) : "ass";
                 trackRow.setOnClickListener(v -> selectFormat(fmt));
 
                 tracksList.addView(trackRow);
@@ -238,6 +280,7 @@ public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
     private void selectFormat(String format) {
         currentFormat = format;
         updateSelection();
+        updateStyleLockState();
         if (formatListener != null) {
             formatListener.onSubtitleFormatChanged(format);
         }
@@ -246,8 +289,8 @@ public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
 
     private void updateSelection() {
         boolean isAuto = "auto".equalsIgnoreCase(currentFormat);
-        boolean isAss = "ass".equalsIgnoreCase(currentFormat);
-        boolean isVtt = "vtt".equalsIgnoreCase(currentFormat);
+        boolean isAss = "ass".equalsIgnoreCase(currentFormat) || "ssa".equalsIgnoreCase(currentFormat);
+        boolean isVtt = "vtt".equalsIgnoreCase(currentFormat) || "webvtt".equalsIgnoreCase(currentFormat);
 
         if (pillAuto != null) pillAuto.setVisibility(isAuto ? View.VISIBLE : View.GONE);
         if (unselectedAuto != null) unselectedAuto.setVisibility(isAuto ? View.GONE : View.VISIBLE);
@@ -257,6 +300,30 @@ public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
 
         if (pillVtt != null) pillVtt.setVisibility(isVtt ? View.VISIBLE : View.GONE);
         if (unselectedVtt != null) unselectedVtt.setVisibility(isVtt ? View.GONE : View.VISIBLE);
+    }
+
+    private void updateStyleLockState() {
+        boolean locked = isAssSelected();
+        if (subtitleAssLockBanner != null) {
+            subtitleAssLockBanner.setVisibility(locked ? View.VISIBLE : View.GONE);
+        }
+        if (subtitleStyleCustomizationContainer != null) {
+            subtitleStyleCustomizationContainer.setAlpha(locked ? 0.38f : 1.0f);
+        }
+
+        TextView[] allChips = new TextView[] {
+                chipSize14, chipSize16, chipSize18, chipSize22, chipSize26,
+                chipColorWhite, chipColorYellow, chipColorCyan, chipColorGreen,
+                chipBgNone, chipBgTranslucent, chipBgBlack,
+                chipEdgeOutline, chipEdgeShadow, chipEdgeNone
+        };
+        for (TextView chip : allChips) {
+            if (chip != null) {
+                chip.setEnabled(!locked);
+                chip.setClickable(!locked);
+                chip.setFocusable(!locked);
+            }
+        }
     }
 
     private void updateStyleUI() {
@@ -305,6 +372,9 @@ public class SubtitlesBottomSheet extends FlexibleBottomSheetDialog {
     }
 
     private void notifyStyleChanged() {
+        if (isAssSelected()) {
+            return;
+        }
         updateStyleUI();
         if (styleListener != null) {
             styleListener.onSubtitleStyleChanged(selectedTextSize, selectedTextColor, selectedBgColor, selectedEdgeType, selectedEdgeColor);
