@@ -593,7 +593,7 @@ public class CommentsManager {
         commentsRecyclerView.setLayoutManager(layoutManager);
         commentsRecyclerView.setRecycledViewPool(sharedCommentViewPool);
         commentsRecyclerView.setHasFixedSize(true);
-        commentsRecyclerView.setItemViewCacheSize(12);
+        commentsRecyclerView.setItemViewCacheSize(16);
         commentsRecyclerView.setItemAnimator(null);
 
         commentsAdapter.setRepliesLimit(loadSavedRepliesLimit());
@@ -683,10 +683,10 @@ public class CommentsManager {
             View content = scrollView.getChildAt(0);
             int remainingPx = content.getMeasuredHeight() - (scrollY + scrollView.getMeasuredHeight());
 
-            // Раскрываем по 6 уже распарсенных элементов за шаг скролла (без каскадного post)
+            // Раскрываем по 2 элемента на vsync (всего 6) без единовременного раздувания View при скролле
             if (portraitCommentsAdapter.hasDeferredViewportItems()) {
                 if (remainingPx <= dpToPx(PORTRAIT_VIEWPORT_REVEAL_THRESHOLD_DP)) {
-                    portraitCommentsAdapter.revealNextViewportBatch(PORTRAIT_SCROLL_REVEAL_SIZE);
+                    portraitCommentsAdapter.schedulePortraitReveal(PORTRAIT_SCROLL_REVEAL_SIZE);
                 }
                 return;
             }

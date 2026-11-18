@@ -6,7 +6,7 @@
     android:layout_height="match_parent"
     android:layout_gravity="end"
     android:background="@android:color/transparent"
-    android:elevation="16dp"
+    android:elevation="6dp"
     android:orientation="horizontal">
 
     <!-- Drag Handle - слева вертикально -->
@@ -28,7 +28,7 @@
         android:layout_height="match_parent"
         android:layout_weight="1"
         app:cardBackgroundColor="@color/bs_bg_color"
-        android:elevation="20dp"
+        app:cardElevation="6dp"
         app:cardCornerRadius="20dp">
 
         <!-- Main Content -->

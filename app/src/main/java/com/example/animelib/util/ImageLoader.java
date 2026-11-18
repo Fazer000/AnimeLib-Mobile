@@ -6,6 +6,12 @@ import com.example.animelib.AnimeLibApplication;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.BitmapShader;
+import android.graphics.Canvas;
+import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.graphics.Shader;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Process;
@@ -25,6 +31,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class ImageLoader {
+    private static final String NO_AVATAR_TAG = "__no_avatar__";
     private static volatile ImageLoader instance;
     private final LruCache<String, Bitmap> memoryCache;
     private final ExecutorService executor;
@@ -139,20 +146,35 @@ public class ImageLoader {
      * с дедупликацией одинаковых URL и пониженным приоритетом потока, чтобы не конкурировать с плеером.
      */
     public void loadAvatarInto(ImageView imageView, String url, int placeholderResId, int targetSizePx) {
+        loadAvatarInto(imageView, url, placeholderResId, targetSizePx, 0f);
+    }
+
+    /**
+     * Облегчённая загрузка маленьких аватарок с однократным фоновым скруглением углов в Bitmap,
+     * чтобы при скролле не включать тяжёлое аппаратное обрезание clipToOutline на каждом кадре.
+     */
+    public void loadAvatarInto(ImageView imageView, String url, int placeholderResId, int targetSizePx, float cornerRadiusPx) {
         if (imageView == null) return;
         int placeholder = placeholderResId != 0 ? placeholderResId : R.drawable.ic_avatar_placeholder;
-        stopShimmerIfPresent(imageView);
-        imageView.animate().cancel();
-        imageView.setAlpha(1f);
+        if (imageView.getAlpha() != 1f) {
+            imageView.animate().cancel();
+            imageView.setAlpha(1f);
+        }
 
         if (url == null || url.isEmpty()) {
-            imageView.setTag(null);
-            imageView.setImageResource(placeholder);
+            if (!NO_AVATAR_TAG.equals(imageView.getTag()) || imageView.getDrawable() == null) {
+                imageView.setTag(NO_AVATAR_TAG);
+                imageView.setImageResource(placeholder);
+            }
             return;
         }
 
         final int reqSize = targetSizePx > 0 ? targetSizePx : 96;
-        final String cacheKey = url + "#av" + reqSize;
+        final int roundedKey = cornerRadiusPx > 0f ? Math.round(cornerRadiusPx) : 0;
+        final String cacheKey = roundedKey > 0
+                ? (url + "#av" + reqSize + "r" + roundedKey)
+                : (url + "#av" + reqSize);
+
         Bitmap cached = memoryCache.get(cacheKey);
         if (cached != null) {
             imageView.setTag(cacheKey);
@@ -160,7 +182,7 @@ public class ImageLoader {
             return;
         }
 
-        if (!cacheKey.equals(imageView.getTag())) {
+        if (!cacheKey.equals(imageView.getTag()) || imageView.getDrawable() == null) {
             imageView.setTag(cacheKey);
             imageView.setImageResource(placeholder);
         }
@@ -188,9 +210,15 @@ public class ImageLoader {
         }
 
         avatarExecutor.submit(() -> {
-            Bitmap bitmap = downloadBitmap(url, reqSize, true);
-            if (bitmap != null) {
-                memoryCache.put(cacheKey, bitmap);
+            Bitmap raw = downloadBitmap(url, reqSize, true);
+            Bitmap result = (raw != null && cornerRadiusPx > 0f)
+                    ? createRoundedSquareBitmap(raw, reqSize, cornerRadiusPx)
+                    : raw;
+            if (result != raw && raw != null && !raw.isRecycled()) {
+                raw.recycle();
+            }
+            if (result != null) {
+                memoryCache.put(cacheKey, result);
             }
             final List<AvatarCallback> callbacks;
             synchronized (inFlightAvatars) {
@@ -199,11 +227,43 @@ public class ImageLoader {
             if (callbacks != null && !callbacks.isEmpty()) {
                 mainHandler.post(() -> {
                     for (int i = 0, size = callbacks.size(); i < size; i++) {
-                        callbacks.get(i).onComplete(bitmap);
+                        callbacks.get(i).onComplete(result);
                     }
                 });
             }
         });
+    }
+
+    private static Bitmap createRoundedSquareBitmap(Bitmap src, int targetSize, float cornerRadiusPx) {
+        if (src == null || src.isRecycled() || targetSize <= 0) {
+            return src;
+        }
+        int srcW = src.getWidth();
+        int srcH = src.getHeight();
+        if (srcW <= 0 || srcH <= 0) {
+            return src;
+        }
+        try {
+            Bitmap out = Bitmap.createBitmap(targetSize, targetSize, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(out);
+            BitmapShader shader = new BitmapShader(src, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+
+            float scale = Math.max((float) targetSize / srcW, (float) targetSize / srcH);
+            float dx = (targetSize - srcW * scale) * 0.5f;
+            float dy = (targetSize - srcH * scale) * 0.5f;
+            Matrix matrix = new Matrix();
+            matrix.setScale(scale, scale);
+            matrix.postTranslate(dx, dy);
+            shader.setLocalMatrix(matrix);
+
+            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+            paint.setShader(shader);
+            float radius = Math.min(cornerRadiusPx, targetSize * 0.5f);
+            canvas.drawRoundRect(new RectF(0f, 0f, targetSize, targetSize), radius, radius, paint);
+            return out;
+        } catch (OutOfMemoryError | RuntimeException e) {
+            return src;
+        }
     }
 
     private void stopShimmerIfPresent(ImageView imageView) {

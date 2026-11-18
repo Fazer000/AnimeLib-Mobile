@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/commentItemRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
     android:paddingHorizontal="12dp"
     android:paddingVertical="10dp">
 
@@ -14,15 +13,15 @@
         android:id="@+id/threadGuideLine"
         android:layout_width="2.5dp"
         android:layout_height="match_parent"
+        android:layout_gravity="start"
         android:layout_marginStart="4dp"
-        android:layout_marginEnd="10dp"
         android:background="@color/bs_divider_color"
         android:visibility="gone" />
 
     <LinearLayout
-        android:layout_width="0dp"
+        android:id="@+id/commentContentColumn"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
         android:orientation="vertical">
 
         <!-- Sticky Badge -->
@@ -71,9 +70,8 @@
                 android:importantForAccessibility="no" />
 
             <LinearLayout
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:layout_marginStart="10dp"
                 android:orientation="vertical">
 
@@ -256,4 +254,4 @@
             android:layout_marginTop="8dp" />
 
     </LinearLayout>
-</LinearLayout>
+</FrameLayout>

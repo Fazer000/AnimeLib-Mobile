@@ -89,6 +89,8 @@ public class PlayerPortraitController {
     private View portraitDownloadProgressCard;
     private View portraitRelatedTitlesContainer;
     private RecyclerView portraitRelatedTitlesRecyclerView;
+    private int scrollToTopBottomThresholdPx = 0;
+    private boolean isScrollToTopVisible = false;
 
     public PlayerPortraitController(Activity activity, PortraitHost host) {
         this.activity = activity;
@@ -98,6 +100,8 @@ public class PlayerPortraitController {
     public void initializePortraitViews() {
         portraitScrollView = activity.findViewById(R.id.portraitScrollView);
         btnPortraitScrollToTop = activity.findViewById(R.id.btnPortraitScrollToTop);
+        scrollToTopBottomThresholdPx = (int) (80 * activity.getResources().getDisplayMetrics().density);
+        isScrollToTopVisible = btnPortraitScrollToTop != null && btnPortraitScrollToTop.getVisibility() == View.VISIBLE;
         portraitVoiceoverPlayerButton = activity.findViewById(R.id.portraitVoiceoverPlayerButton);
         tvPortraitVoiceover = activity.findViewById(R.id.tvPortraitVoiceover);
         tvPortraitPlayer = activity.findViewById(R.id.tvPortraitPlayer);
@@ -225,25 +229,20 @@ public class PlayerPortraitController {
                 PlayerCommentsController cc = host.getCommentsController();
                 if (btnPortraitScrollToTop != null) {
                     boolean imeActive = cc != null && cc.isImeVisible();
+                    boolean shouldShowFab = false;
                     if (!imeActive && scrollY > 300) {
                         int childHeight = (v.getChildCount() > 0) ? v.getChildAt(0).getMeasuredHeight() : 0;
                         int scrollBottom = scrollY + v.getMeasuredHeight();
-                        int threshold = (int) (80 * activity.getResources().getDisplayMetrics().density);
-                        boolean isNearBottom = (childHeight > 0 && (childHeight - scrollBottom < threshold)) || !v.canScrollVertically(1);
-
-                        if (isNearBottom) {
-                            if (btnPortraitScrollToTop.getVisibility() == View.VISIBLE) {
-                                btnPortraitScrollToTop.hide();
-                            }
-                        } else {
-                            if (btnPortraitScrollToTop.getVisibility() != View.VISIBLE) {
-                                btnPortraitScrollToTop.show();
-                            }
-                        }
-                    } else {
-                        if (btnPortraitScrollToTop.getVisibility() == View.VISIBLE) {
-                            btnPortraitScrollToTop.hide();
-                        }
+                        boolean isNearBottom = (childHeight > 0 && (childHeight - scrollBottom < scrollToTopBottomThresholdPx))
+                                || !v.canScrollVertically(1);
+                        shouldShowFab = !isNearBottom;
+                    }
+                    if (shouldShowFab && !isScrollToTopVisible) {
+                        isScrollToTopVisible = true;
+                        btnPortraitScrollToTop.show();
+                    } else if (!shouldShowFab && isScrollToTopVisible) {
+                        isScrollToTopVisible = false;
+                        btnPortraitScrollToTop.hide();
                     }
                 }
 

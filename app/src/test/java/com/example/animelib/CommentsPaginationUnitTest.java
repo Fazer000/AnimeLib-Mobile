@@ -141,6 +141,37 @@ public class CommentsPaginationUnitTest {
     }
 
     @Test
+    public void testSchedulePortraitRevealDrainsWithoutDroppingItems() {
+        StringBuilder rootsJson = new StringBuilder();
+        for (int i = 1; i <= 14; i++) {
+            if (i > 1) rootsJson.append(",");
+            rootsJson.append("{\"id\": ").append(i).append(", \"comment\": \"<p>Item ").append(i).append("</p>\"}");
+        }
+        Gson gson = new Gson();
+        CommentsResponse page1 = gson.fromJson("{"
+                + "\"data\": {\"root\": [" + rootsJson + "], \"replies\": []},"
+                + "\"meta\": {\"page\": 1, \"has_next_page\": false}"
+                + "}", CommentsResponse.class);
+
+        CommentsAdapter portraitAdapter = new CommentsAdapter();
+        portraitAdapter.setPortraitViewportMode(true);
+        portraitAdapter.setInitialComments(Collections.emptyList(), page1);
+
+        assertEquals(CommentsAdapter.INITIAL_PORTRAIT_RENDER_COUNT, portraitAdapter.getCommentDisplayCount());
+        assertEquals(8, portraitAdapter.getDeferredViewportCount());
+
+        portraitAdapter.schedulePortraitReveal(6);
+        assertEquals(CommentsAdapter.INITIAL_PORTRAIT_RENDER_COUNT + 6, portraitAdapter.getCommentDisplayCount());
+        assertEquals(2, portraitAdapter.getDeferredViewportCount());
+        assertFalse(portraitAdapter.isPendingInsertion());
+
+        portraitAdapter.schedulePortraitReveal(6);
+        assertEquals(14, portraitAdapter.getCommentDisplayCount());
+        assertFalse(portraitAdapter.hasDeferredViewportItems());
+        assertFalse(portraitAdapter.isPendingInsertion());
+    }
+
+    @Test
     public void testEpisodeCommentsCacheInvalidationClearsAllSortsAndPagesForEpisode() {
         java.util.Map<String, Object> commentsCache = new java.util.concurrent.ConcurrentHashMap<>();
         java.util.Map<Long, Object> stickyCache = new java.util.concurrent.ConcurrentHashMap<>();
