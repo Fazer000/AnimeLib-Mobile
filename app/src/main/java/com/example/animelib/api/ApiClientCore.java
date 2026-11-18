@@ -470,12 +470,22 @@ public class ApiClientCore {
     }
 
     public static String extractAnimeId(String url) {
-        if (url == null) return null;
+        if (url == null || url.trim().isEmpty()) return null;
         try {
-            String[] parts = url.split("/");
+            String cleanUrl = url.trim();
+            int qIdx = cleanUrl.indexOf('?');
+            if (qIdx >= 0) cleanUrl = cleanUrl.substring(0, qIdx);
+            int hIdx = cleanUrl.indexOf('#');
+            if (hIdx >= 0) cleanUrl = cleanUrl.substring(0, hIdx);
+
+            String[] parts = cleanUrl.split("/");
             for (String part : parts) {
                 if (part.contains("--")) {
-                    return part.split("--")[0];
+                    String[] subParts = part.split("--");
+                    if (subParts.length > 0 && subParts[0].matches("\\d+")) {
+                        return subParts[0];
+                    }
+                    return cleanUrlSegment(part);
                 }
             }
             for (String part : parts) {
@@ -483,15 +493,11 @@ public class ApiClientCore {
                     return part;
                 }
             }
-            for (String part : parts) {
-                if (part.matches("^\\d+.*")) {
-                    return part.replaceAll("^(\\d+).*", "$1");
-                }
-            }
-            String identifier = VideoUrlHelper.extractAnimeIdentifier(url);
+            String identifier = VideoUrlHelper.extractAnimeIdentifier(cleanUrl);
             if (identifier != null) {
                 String numericId = VideoUrlHelper.extractAnimeId(identifier);
                 if (numericId != null) return numericId;
+                return cleanUrlSegment(identifier);
             }
         } catch (Exception e) {
             Log.e(TAG, "Error extracting anime_id from URL: " + url, e);

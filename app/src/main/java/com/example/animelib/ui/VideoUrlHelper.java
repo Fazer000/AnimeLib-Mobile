@@ -181,7 +181,7 @@ public class VideoUrlHelper {
             return animeId;
         }
 
-        return null;
+        return animeIdentifier.trim();
     }
 
     private static String getBaseDomainFromContext(String currentUrl) {
