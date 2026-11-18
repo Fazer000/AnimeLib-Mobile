@@ -24,6 +24,7 @@ import androidx.media3.common.text.Cue;
 
 import com.example.animelib.subtitles.AssParser;
 import com.example.animelib.subtitles.AssScript;
+import com.example.animelib.subtitles.AssVectorGeometry;
 import com.example.animelib.subtitles.AssVectorPathParser;
 import com.example.animelib.util.CustomTypefaceSpan;
 import com.example.animelib.util.FontResolver;
@@ -62,6 +63,9 @@ public final class AssSubtitlesProcessor {
     private static final Pattern ALPHA_3A_PATTERN = Pattern.compile("(?i)\\\\3a[&H#]*([0-9a-fA-F]{1,2})&?");
     private static final Pattern BORD_PATTERN = Pattern.compile("(?i)\\\\bord(\\d+(?:\\.\\d+)?)");
     private static final Pattern P_LEVEL_PATTERN = Pattern.compile("(?i)\\\\p([1-9])(?![0-9a-zA-Z])");
+    private static final Pattern PBO_PATTERN = Pattern.compile("(?i)\\\\pbo([+-]?\\d+(?:\\.\\d+)?)");
+    private static final Pattern FSCX_PATTERN = Pattern.compile("(?i)\\\\fscx(\\d+(?:\\.\\d+)?)");
+    private static final Pattern FSCY_PATTERN = Pattern.compile("(?i)\\\\fscy(\\d+(?:\\.\\d+)?)");
     private static final Pattern P_BLOCK_PATTERN = Pattern.compile("(?i)\\{[^\\}]*\\\\p[1-9](?![0-9a-zA-Z])[^\\}]*\\}(.*?)(?:\\{[^\\}]*\\\\p0(?![0-9a-zA-Z])[^\\}]*\\}|$)", Pattern.DOTALL);
     private static final Pattern P_STRIP_PATTERN = Pattern.compile("(?i)\\{[^\\}]*\\\\p[1-9](?![0-9a-zA-Z])[^\\}]*\\}[^\\{]*(\\{[^\\}]*\\\\p0(?![0-9a-zA-Z])[^\\}]*\\})?");
 
@@ -115,13 +119,20 @@ public final class AssSubtitlesProcessor {
 
     @Nullable
     private static Cue renderAssVectorCue(Path rawPath, RectF bounds, int fillColor, int strokeColor, float strokeWidth,
-                                          float posX, float posY, int anVal, float playResX, float playResY,
+                                          float posX, float posY, int anVal, float pbo, float pScale,
+                                          float fscx, float fscy, float playResX, float playResY,
                                           @Nullable Cue sourceCue) {
         if (rawPath == null || bounds == null || (bounds.width() <= 0f && bounds.height() <= 0f)) return null;
+        if (fscx <= 0.001f || fscy <= 0.001f) return null;
         try {
+            float bLeft = bounds.left * fscx;
+            float bRight = bounds.right * fscx;
+            float bTop = bounds.top * fscy;
+            float bBottom = bounds.bottom * fscy;
+
             float padding = Math.max(4.0f, strokeWidth * 2.0f + 2.0f);
-            float boundsW = Math.max(1f, bounds.width()) + padding * 2f;
-            float boundsH = Math.max(1f, bounds.height()) + padding * 2f;
+            float boundsW = Math.max(1f, bRight - bLeft) + padding * 2f;
+            float boundsH = Math.max(1f, bBottom - bTop) + padding * 2f;
 
             float renderScale = Math.max(1.0f, Math.min(3.0f, 1080.0f / Math.max(1.0f, playResY)));
             int bmpWidth = Math.max(1, Math.min(2048, Math.round(boundsW * renderScale)));
@@ -131,7 +142,8 @@ public final class AssSubtitlesProcessor {
             Canvas canvas = new Canvas(bitmap);
 
             Matrix matrix = new Matrix();
-            matrix.postTranslate(-bounds.left + padding, -bounds.top + padding);
+            matrix.postScale(fscx, fscy);
+            matrix.postTranslate(-bLeft + padding, -bTop + padding);
             matrix.postScale(renderScale, renderScale);
 
             Path drawPath = new Path();
@@ -176,37 +188,18 @@ public final class AssSubtitlesProcessor {
                 effectiveAn = yRow * 3 + xPart;
             }
 
-            float scriptLeft;
-            float scriptTop;
-            if (hasExplicitPos) {
-                int xAlign = (effectiveAn - 1) % 3 + 1;
-                int yAlign = (effectiveAn - 1) / 3 + 1;
+            float anchorX = hasExplicitPos
+                    ? effectivePosX
+                    : AssVectorGeometry.computeUnpositionedAnchorX(playResX, 0, 0, effectiveAn);
+            float anchorY = hasExplicitPos
+                    ? effectivePosY
+                    : AssVectorGeometry.computeUnpositionedAnchorY(playResY, 0, effectiveAn);
 
-                float originX;
-                if (xAlign == 1) originX = effectivePosX;
-                else if (xAlign == 2) originX = effectivePosX - (bounds.left + bounds.right) * 0.5f;
-                else originX = effectivePosX - bounds.right;
+            float originX = AssVectorGeometry.computeSingleOriginX(anchorX, bLeft, bRight, effectiveAn);
+            float originY = AssVectorGeometry.computeSingleOriginY(anchorY, bTop, bBottom, effectiveAn, pbo, pScale, fscy);
 
-                float originY;
-                if (yAlign == 3) originY = effectivePosY;
-                else if (yAlign == 2) originY = effectivePosY - (bounds.top + bounds.bottom) * 0.5f;
-                else originY = effectivePosY - bounds.bottom;
-
-                scriptLeft = originX + bounds.left - padding;
-                scriptTop = originY + bounds.top - padding;
-            } else {
-                scriptLeft = bounds.left - padding;
-                scriptTop = bounds.top - padding;
-                if (scriptLeft < -padding || scriptTop < -padding) {
-                    int xAlign = (effectiveAn - 1) % 3 + 1;
-                    int yAlign = (effectiveAn - 1) / 3 + 1;
-                    scriptLeft = (xAlign == 2) ? ((playResX - boundsW) * 0.5f)
-                            : ((xAlign == 3) ? (playResX - boundsW - 20f) : 20f);
-                    scriptTop = (yAlign == 3) ? (0.05f * playResY)
-                            : ((yAlign == 2) ? ((playResY - boundsH) * 0.5f)
-                            : (playResY - boundsH - 0.06f * playResY));
-                }
-            }
+            float scriptLeft = originX + bLeft - padding;
+            float scriptTop = originY + bTop - padding;
 
             float normX = Math.max(0.0f, Math.min(1.0f, scriptLeft / playResX));
             float normY = Math.max(0.0f, Math.min(1.0f, scriptTop / playResY));
@@ -490,6 +483,30 @@ public final class AssSubtitlesProcessor {
                 pScale = 1.0f / (float) (1 << (pLevel - 1));
             }
 
+            float pbo = 0.0f;
+            Matcher pboMatcher = PBO_PATTERN.matcher(raw);
+            if (pboMatcher.find()) {
+                try {
+                    pbo = Float.parseFloat(pboMatcher.group(1));
+                } catch (Exception ignored) {}
+            }
+
+            float fscx = 1.0f;
+            Matcher fscxMatcher = FSCX_PATTERN.matcher(raw);
+            if (fscxMatcher.find()) {
+                try {
+                    fscx = Math.max(0f, Float.parseFloat(fscxMatcher.group(1)) / 100.0f);
+                } catch (Exception ignored) {}
+            }
+
+            float fscy = 1.0f;
+            Matcher fscyMatcher = FSCY_PATTERN.matcher(raw);
+            if (fscyMatcher.find()) {
+                try {
+                    fscy = Math.max(0f, Float.parseFloat(fscyMatcher.group(1)) / 100.0f);
+                } catch (Exception ignored) {}
+            }
+
             String drawingCommands;
             Matcher pBlockMatcher = P_BLOCK_PATTERN.matcher(raw);
             if (pBlockMatcher.find()) {
@@ -506,7 +523,7 @@ public final class AssSubtitlesProcessor {
                 Cue vectorCue = renderAssVectorCue(
                         drawingResult.path, drawingResult.bounds,
                         fillColor, strokeColor, strokeWidth,
-                        posX, posY, anVal, playResX, playResY, cue
+                        posX, posY, anVal, pbo, pScale, fscx, fscy, playResX, playResY, cue
                 );
                 if (vectorCue != null) {
                     return vectorCue;

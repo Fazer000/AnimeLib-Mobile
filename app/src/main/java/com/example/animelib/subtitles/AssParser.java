@@ -642,11 +642,11 @@ public final class AssParser {
             return;
         }
         if (lower.startsWith("fscx")) {
-            style.scaleX = Math.max(1f, parseFloatOrDefault(tag.substring(4), baseStyle.scaleX));
+            style.scaleX = Math.max(0f, parseFloatOrDefault(tag.substring(4), baseStyle.scaleX));
             return;
         }
         if (lower.startsWith("fscy")) {
-            style.scaleY = Math.max(1f, parseFloatOrDefault(tag.substring(4), baseStyle.scaleY));
+            style.scaleY = Math.max(0f, parseFloatOrDefault(tag.substring(4), baseStyle.scaleY));
             return;
         }
         if (lower.startsWith("fsp")) {
@@ -673,8 +673,8 @@ public final class AssParser {
             style.pbo = parseFloatOrDefault(tag.substring(3), 0f);
             return;
         }
-        if (lower.startsWith("an") && isAllDigits(tag.substring(2))) {
-            int an = parseIntSafe(tag.substring(2), -1);
+        if (lower.startsWith("an")) {
+            int an = parseLeadingInt(tag.substring(2), -1);
             if (an >= 1 && an <= 9 && !ctx.alignmentSet) {
                 ctx.alignment = an;
                 ctx.alignmentSet = true;
@@ -773,25 +773,30 @@ public final class AssParser {
                 if (arg.isEmpty()) style.strikeOut = baseStyle.strikeOut;
                 else style.strikeOut = "1".equals(arg);
                 break;
-            case 'p':
-                if (isAllDigits(arg)) {
-                    style.pLevel = Math.max(0, Math.min(9, parseIntSafe(arg, 0)));
+            case 'p': {
+                int pVal = parseLeadingInt(arg, -1);
+                if (pVal >= 0) {
+                    style.pLevel = Math.min(9, pVal);
                 }
                 break;
-            case 'a':
-                if (isAllDigits(arg) && !ctx.alignmentSet) {
-                    int legacyA = parseIntSafe(arg, -1);
+            }
+            case 'a': {
+                if (!ctx.alignmentSet) {
+                    int legacyA = parseLeadingInt(arg, -1);
                     if (legacyA >= 1 && legacyA <= 11) {
                         ctx.alignment = convertLegacyAlignment(legacyA);
                         ctx.alignmentSet = true;
                     }
                 }
                 break;
-            case 'q':
-                if (isAllDigits(arg)) {
-                    ctx.wrapStyle = parseIntSafe(arg, ctx.wrapStyle);
+            }
+            case 'q': {
+                int qVal = parseLeadingInt(arg, -1);
+                if (qVal >= 0 && qVal <= 3) {
+                    ctx.wrapStyle = qVal;
                 }
                 break;
+            }
             case 'r': {
                 AssScript.AssStyle resetTarget = arg.isEmpty() ? baseStyle : resolveStyle(styles, arg);
                 style.applyFrom(resetTarget);
@@ -1230,19 +1235,35 @@ public final class AssParser {
         return true;
     }
 
-    private static boolean isAllDigits(String s) {
-        if (s == null || s.isEmpty()) return false;
-        for (int i = 0; i < s.length(); i++) {
-            if (!Character.isDigit(s.charAt(i))) return false;
+    private static int parseLeadingInt(String raw, int fallback) {
+        if (raw == null) return fallback;
+        int len = raw.length();
+        int i = 0;
+        while (i < len && Character.isWhitespace(raw.charAt(i))) {
+            i++;
         }
-        return true;
+        int start = i;
+        if (i < len && (raw.charAt(i) == '+' || raw.charAt(i) == '-')) {
+            i++;
+        }
+        int digitStart = i;
+        while (i < len && Character.isDigit(raw.charAt(i))) {
+            i++;
+        }
+        if (i == digitStart) return fallback;
+        try {
+            return Integer.parseInt(raw.substring(start, i));
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     @Nullable
     private static float[] parseParenFloats(String tag, int openOffset) {
         int open = tag.indexOf('(', openOffset);
-        int close = tag.lastIndexOf(')');
-        if (open < 0 || close <= open) return null;
+        if (open < 0) return null;
+        int close = tag.indexOf(')', open + 1);
+        if (close <= open) return null;
         String inner = tag.substring(open + 1, close).trim();
         if (inner.isEmpty()) return null;
         String[] parts = inner.split(",");
@@ -1289,11 +1310,41 @@ public final class AssParser {
 
     private static float parseFloatSafe(String raw, float fallback) {
         if (raw == null) return fallback;
+        String s = raw.trim();
+        if (s.isEmpty()) return fallback;
         try {
-            return Float.parseFloat(raw.trim());
+            return Float.parseFloat(s);
         } catch (NumberFormatException e) {
+            // Fallback to leading float prefix (e.g. if trailing inline comment exists in tag)
+            int end = extractLeadingFloatEnd(s);
+            if (end > 0) {
+                try {
+                    return Float.parseFloat(s.substring(0, end));
+                } catch (NumberFormatException ignored) {}
+            }
             return fallback;
         }
+    }
+
+    private static int extractLeadingFloatEnd(String s) {
+        int i = 0;
+        int len = s.length();
+        if (i < len && (s.charAt(i) == '+' || s.charAt(i) == '-')) i++;
+        boolean sawDigit = false;
+        boolean sawDot = false;
+        while (i < len) {
+            char c = s.charAt(i);
+            if (Character.isDigit(c)) {
+                sawDigit = true;
+                i++;
+            } else if (c == '.' && !sawDot) {
+                sawDot = true;
+                i++;
+            } else {
+                break;
+            }
+        }
+        return sawDigit ? i : 0;
     }
 
     private static float parseFloatOrDefault(String raw, float fallback) {
@@ -1304,9 +1355,16 @@ public final class AssParser {
     @Nullable
     private static Float parseFloatBoxed(String raw) {
         if (raw == null || raw.trim().isEmpty()) return null;
+        String s = raw.trim();
         try {
-            return Float.parseFloat(raw.trim());
+            return Float.parseFloat(s);
         } catch (NumberFormatException e) {
+            int end = extractLeadingFloatEnd(s);
+            if (end > 0) {
+                try {
+                    return Float.parseFloat(s.substring(0, end));
+                } catch (NumberFormatException ignored) {}
+            }
             return null;
         }
     }

@@ -11,6 +11,7 @@ import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.text.TextPaint;
 import android.util.AttributeSet;
+import android.util.LruCache;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -18,6 +19,7 @@ import androidx.annotation.Nullable;
 import androidx.media3.exoplayer.ExoPlayer;
 
 import com.example.animelib.subtitles.AssScript;
+import com.example.animelib.subtitles.AssVectorGeometry;
 import com.example.animelib.subtitles.AssVectorPathParser;
 import com.example.animelib.util.FontResolver;
 
@@ -30,13 +32,14 @@ import java.util.Map;
 /**
  * Native hardware-accelerated Canvas renderer for ASS/SSA subtitles.
  * Renders full [V4+ Styles], inline colors & alphas (\c, \1c, \3c, \4c, \alpha, \1a..4a),
- * accurate vector drawings (\p1..\p9 with B-splines & WINDING fill), \pos/\move/\org/\frz/\fscx/\fscy,
- * \clip/\iclip, \fad/\fade, \t(...) transforms, Layer ordering, and non-overlapping collision stacking.
+ * accurate vector drawings (\p1..\p9 with B-splines, WINDING fill, and libass/VSFilter alignment),
+ * \pos/\move/\org/\frz/\fscx/\fscy, \clip/\iclip, \fad/\fade, \t(...) transforms, Layer ordering,
+ * and non-overlapping collision stacking.
  */
 public class AssSubtitleOverlayView extends View {
 
-    // Visual ratio between ASS/GDI Fontsize (ascent+descent) and Android Skia TextPaint size
-    private static final float ASS_FONT_SIZE_RATIO = 0.86f;
+    // Fallback ratio between ASS/GDI Fontsize (WinAscent+WinDescent) and Android em-size if metrics are unavailable
+    private static final float FALLBACK_ASS_FONT_SIZE_RATIO = 0.86f;
 
     @Nullable private AssScript script;
     @Nullable private ExoPlayer player;
@@ -49,9 +52,11 @@ public class AssSubtitleOverlayView extends View {
     private final List<AssScript.AssEvent> previousActiveEvents = new ArrayList<>();
     private final List<RectF> occupiedBoxes = new ArrayList<>();
     private final Map<Integer, RectF> placedRectsByEventIndex = new HashMap<>();
+    private final LruCache<Typeface, Float> fontMetricRatioCache = new LruCache<>(32);
 
     // Reusable drawing primitives to avoid allocations in onDraw
     private final TextPaint textPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
+    private final TextPaint metricMeasurePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
     private final Paint vectorFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint vectorStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint boxPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -260,7 +265,8 @@ public class AssSubtitleOverlayView extends View {
 
         for (int i = 0; i < activeEvents.size(); i++) {
             AssScript.AssEvent ev = activeEvents.get(i);
-            if (!ev.hasVectorDrawing) {
+            boolean isPureVector = ev.hasVectorDrawing && !ev.hasTextContent;
+            if (!isPureVector) {
                 TextBlockLayout layout = layoutTextEvent(ev, posMs, playResX, sx, sy);
                 if (layout != null && !layout.lines.isEmpty()) {
                     textLayouts.put(ev.eventIndex, layout);
@@ -308,7 +314,8 @@ public class AssSubtitleOverlayView extends View {
             int clipSave = canvas.save();
             applyEventClip(canvas, ev.clip, sx, sy);
 
-            if (ev.hasVectorDrawing) {
+            boolean isPureVector = ev.hasVectorDrawing && !ev.hasTextContent;
+            if (isPureVector) {
                 drawVectorEvent(canvas, ev, posMs, fadeFactor, playResX, playResY, sx, sy, borderScaleX, borderScaleY);
             } else {
                 TextBlockLayout layout = textLayouts.get(ev.eventIndex);
@@ -359,6 +366,32 @@ public class AssSubtitleOverlayView extends View {
 
     // ==================== VECTOR DRAWING RENDERER ====================
 
+    private static final class PreparedVectorSegment {
+        final AssScript.SegmentStyle style;
+        final AssVectorPathParser.ParsedVectorPath parsed;
+        final float pScale;
+        final float fscx;
+        final float fscy;
+        final float bWidth;
+        final float bHeight;
+
+        PreparedVectorSegment(AssScript.SegmentStyle style,
+                              AssVectorPathParser.ParsedVectorPath parsed,
+                              float pScale,
+                              float fscx,
+                              float fscy,
+                              float bWidth,
+                              float bHeight) {
+            this.style = style;
+            this.parsed = parsed;
+            this.pScale = pScale;
+            this.fscx = fscx;
+            this.fscy = fscy;
+            this.bWidth = bWidth;
+            this.bHeight = bHeight;
+        }
+    }
+
     private void drawVectorEvent(Canvas canvas,
                                  AssScript.AssEvent ev,
                                  long posMs,
@@ -373,68 +406,65 @@ public class AssSubtitleOverlayView extends View {
         long durMs = ev.getDurationMs();
 
         int an = ev.alignment;
-        int xAlign = (an - 1) % 3 + 1; // 1=left, 2=center, 3=right
-        int yAlign = (an - 1) / 3 + 1; // 1=bottom, 2=middle, 3=top
-
         float anchorX;
         float anchorY;
         if (ev.isExplicitlyPositioned()) {
             anchorX = ev.computePosXAt(posMs);
             anchorY = ev.computePosYAt(posMs);
         } else {
-            if (xAlign == 1) anchorX = ev.marginL;
-            else if (xAlign == 2) anchorX = playResX * 0.5f;
-            else anchorX = playResX - ev.marginR;
-
-            if (yAlign == 3) anchorY = ev.marginV;
-            else if (yAlign == 2) anchorY = playResY * 0.5f;
-            else anchorY = playResY - ev.marginV;
+            anchorX = AssVectorGeometry.computeUnpositionedAnchorX(playResX, ev.marginL, ev.marginR, an);
+            anchorY = AssVectorGeometry.computeUnpositionedAnchorY(playResY, ev.marginV, an);
         }
+
+        // Prepare all drawing segments on this line to compute accurate combined libass/VSFilter line metrics
+        List<PreparedVectorSegment> prepared = new ArrayList<>(ev.segments.size());
+        float totalWidth = 0f;
+        float maxHeight = 0f;
 
         for (int sIdx = 0; sIdx < ev.segments.size(); sIdx++) {
             AssScript.AssSegment seg = ev.segments.get(sIdx);
             if (!seg.isDrawing) continue;
 
             AssScript.SegmentStyle st = seg.resolveStyleAt(relMs, durMs);
+            float fscx = st.scaleX / 100f;
+            float fscy = st.scaleY / 100f;
+            if (fscx <= 0.001f || fscy <= 0.001f) continue;
+
             float pScale = 1f / (float) (1 << Math.max(0, st.pLevel - 1));
             AssVectorPathParser.ParsedVectorPath parsed = AssVectorPathParser.parseCached(seg.content, pScale);
             if (parsed == null) continue;
 
-            float fscx = st.scaleX / 100f;
-            float fscy = st.scaleY / 100f;
-
-            float bLeft = parsed.bounds.left * fscx;
-            float bTop = parsed.bounds.top * fscy;
-            float bRight = parsed.bounds.right * fscx;
-            float bBottom = parsed.bounds.bottom * fscy;
-
-            float originX;
-            if (xAlign == 1) {
-                originX = anchorX;
-            } else if (xAlign == 2) {
-                originX = anchorX - (bLeft + bRight) * 0.5f;
-            } else {
-                originX = anchorX - bRight;
+            float bWidth = Math.max(0f, (parsed.bounds.right - parsed.bounds.left) * fscx);
+            float bHeight = Math.max(0f, (parsed.bounds.bottom - parsed.bounds.top) * fscy);
+            prepared.add(new PreparedVectorSegment(st, parsed, pScale, fscx, fscy, bWidth, bHeight));
+            totalWidth += bWidth;
+            if (bHeight > maxHeight) {
+                maxHeight = bHeight;
             }
+        }
 
-            float originY;
-            if (yAlign == 3) {
-                originY = anchorY;
-            } else if (yAlign == 2) {
-                originY = anchorY - (bTop + bBottom) * 0.5f;
-            } else {
-                originY = anchorY - bBottom;
-            }
-            originY -= st.pbo * pScale * fscy;
+        if (prepared.isEmpty()) return;
+
+        float penX = AssVectorGeometry.computeLineOriginX(anchorX, totalWidth, an);
+        float lineTopY = AssVectorGeometry.computeLineTopY(anchorY, maxHeight, an);
+
+        for (int i = 0; i < prepared.size(); i++) {
+            PreparedVectorSegment pv = prepared.get(i);
+            AssScript.SegmentStyle st = pv.style;
+
+            float originX = penX;
+            float originY = lineTopY
+                    + (maxHeight - pv.bHeight)
+                    + AssVectorGeometry.computePboOffsetY(st.pbo, pv.pScale, pv.fscy);
 
             // Transform path into screen pixel coordinates
             tempMatrix.reset();
-            tempMatrix.postScale(fscx, fscy);
+            tempMatrix.postScale(pv.fscx, pv.fscy);
             tempMatrix.postTranslate(originX, originY);
             tempMatrix.postScale(sx, sy);
 
             tempPath.reset();
-            parsed.path.transform(tempMatrix, tempPath);
+            pv.parsed.path.transform(tempMatrix, tempPath);
             tempPath.setFillType(Path.FillType.WINDING);
 
             int saveCount = canvas.save();
@@ -453,61 +483,101 @@ public class AssSubtitleOverlayView extends View {
                 canvas.translate(-pivotX, -pivotY);
             }
 
-            float avgBorder = (st.borderX + st.borderY) * 0.5f;
-            float strokeWidthPx = avgBorder * ((borderScaleX + borderScaleY) * 0.5f) * 2f;
-            float blurPx = st.blur > 0.1f ? Math.min(24f, st.blur * ((borderScaleX + borderScaleY) * 0.5f)) : 0f;
-            BlurMaskFilter blurFilter = blurPx > 0.2f ? new BlurMaskFilter(blurPx, BlurMaskFilter.Blur.NORMAL) : null;
-
-            int fillColor = AssScript.multiplyAlpha(st.primaryColor, fadeFactor);
-            int outlineColor = AssScript.multiplyAlpha(st.outlineColor, fadeFactor);
-            int shadowColor = AssScript.multiplyAlpha(st.backColor, fadeFactor);
-
-            // 1. Shadow (drawn first, behind border and fill)
-            if ((Math.abs(st.shadowX) > 0.01f || Math.abs(st.shadowY) > 0.01f) && Color.alpha(shadowColor) > 0) {
-                int shSave = canvas.save();
-                canvas.translate(st.shadowX * borderScaleX, st.shadowY * borderScaleY);
-                if (strokeWidthPx > 0.1f) {
-                    vectorStrokePaint.setColor(shadowColor);
-                    vectorStrokePaint.setStrokeWidth(strokeWidthPx);
-                    vectorStrokePaint.setMaskFilter(blurFilter);
-                    canvas.drawPath(tempPath, vectorStrokePaint);
-                }
-                vectorFillPaint.setColor(shadowColor);
-                vectorFillPaint.setMaskFilter(blurFilter);
-                canvas.drawPath(tempPath, vectorFillPaint);
-                canvas.restoreToCount(shSave);
-            }
-
-            // 2. Border / Outline (drawn BEHIND fill at 2*bord width so outer half matches exact ASS bord)
-            if (strokeWidthPx > 0.1f && Color.alpha(outlineColor) > 0) {
-                vectorStrokePaint.setColor(outlineColor);
-                vectorStrokePaint.setStrokeWidth(strokeWidthPx);
-                vectorStrokePaint.setMaskFilter(blurFilter);
-                canvas.drawPath(tempPath, vectorStrokePaint);
-            }
-
-            // 3. Primary Fill (drawn ON TOP)
-            if (Color.alpha(fillColor) > 0) {
-                vectorFillPaint.setColor(fillColor);
-                vectorFillPaint.setMaskFilter(blurFilter);
-                canvas.drawPath(tempPath, vectorFillPaint);
-            }
-
-            vectorFillPaint.setMaskFilter(null);
-            vectorStrokePaint.setMaskFilter(null);
+            drawTransformedVectorPath(canvas, tempPath, st, fadeFactor, borderScaleX, borderScaleY);
             canvas.restoreToCount(saveCount);
+
+            penX += pv.bWidth;
         }
     }
 
-    // ==================== RICH TEXT LAYOUT & RENDERER ====================
+    private void drawTransformedVectorPath(Canvas canvas,
+                                           Path transformedPath,
+                                           AssScript.SegmentStyle st,
+                                           float fadeFactor,
+                                           float borderScaleX,
+                                           float borderScaleY) {
+        float avgBorder = (st.borderX + st.borderY) * 0.5f;
+        float strokeWidthPx = avgBorder * ((borderScaleX + borderScaleY) * 0.5f) * 2f;
+        float blurPx = st.blur > 0.1f ? Math.min(24f, st.blur * ((borderScaleX + borderScaleY) * 0.5f)) : 0f;
+        BlurMaskFilter blurFilter = blurPx > 0.2f ? new BlurMaskFilter(blurPx, BlurMaskFilter.Blur.NORMAL) : null;
+
+        int fillColor = AssScript.multiplyAlpha(st.primaryColor, fadeFactor);
+        int outlineColor = AssScript.multiplyAlpha(st.outlineColor, fadeFactor);
+        int shadowColor = AssScript.multiplyAlpha(st.backColor, fadeFactor);
+
+        // 1. Shadow (drawn first, behind border and fill)
+        if ((Math.abs(st.shadowX) > 0.01f || Math.abs(st.shadowY) > 0.01f) && Color.alpha(shadowColor) > 0) {
+            int shSave = canvas.save();
+            canvas.translate(st.shadowX * borderScaleX, st.shadowY * borderScaleY);
+            if (strokeWidthPx > 0.1f) {
+                vectorStrokePaint.setColor(shadowColor);
+                vectorStrokePaint.setStrokeWidth(strokeWidthPx);
+                vectorStrokePaint.setMaskFilter(blurFilter);
+                canvas.drawPath(transformedPath, vectorStrokePaint);
+            }
+            vectorFillPaint.setColor(shadowColor);
+            vectorFillPaint.setMaskFilter(blurFilter);
+            canvas.drawPath(transformedPath, vectorFillPaint);
+            canvas.restoreToCount(shSave);
+        }
+
+        // 2. Border / Outline (drawn BEHIND fill at 2*bord width so outer half matches exact ASS bord)
+        if (strokeWidthPx > 0.1f && Color.alpha(outlineColor) > 0) {
+            vectorStrokePaint.setColor(outlineColor);
+            vectorStrokePaint.setStrokeWidth(strokeWidthPx);
+            vectorStrokePaint.setMaskFilter(blurFilter);
+            canvas.drawPath(transformedPath, vectorStrokePaint);
+        }
+
+        // 3. Primary Fill (drawn ON TOP)
+        if (Color.alpha(fillColor) > 0) {
+            vectorFillPaint.setColor(fillColor);
+            vectorFillPaint.setMaskFilter(blurFilter);
+            canvas.drawPath(transformedPath, vectorFillPaint);
+        }
+
+        vectorFillPaint.setMaskFilter(null);
+        vectorStrokePaint.setMaskFilter(null);
+    }
+
+    // ==================== RICH TEXT & INLINE VECTOR LAYOUT / RENDERER ====================
+
+    /**
+     * Resolves Android Skia TextPaint em-size so that (-ascent + descent) matches ASS/GDI
+     * Fontsize * sy across every typeface (e.g. Open Sans, Roboto, Serif, Condensed).
+     */
+    private float resolveAssTextSizePx(Typeface tf, float assFontSize, float sy) {
+        float ratio = getAssFontMetricRatio(tf);
+        return Math.max(4f, assFontSize * sy * ratio);
+    }
+
+    private float getAssFontMetricRatio(Typeface tf) {
+        if (tf == null) return FALLBACK_ASS_FONT_SIZE_RATIO;
+        Float cached = fontMetricRatioCache.get(tf);
+        if (cached != null) {
+            return cached;
+        }
+        metricMeasurePaint.setTypeface(tf);
+        metricMeasurePaint.setTextSize(100f);
+        Paint.FontMetrics fm = metricMeasurePaint.getFontMetrics();
+        float metricHeight = fm.descent - fm.ascent;
+        float ratio = (metricHeight > 10f) ? (100f / metricHeight) : FALLBACK_ASS_FONT_SIZE_RATIO;
+        ratio = Math.max(0.55f, Math.min(1.15f, ratio));
+        fontMetricRatioCache.put(tf, ratio);
+        return ratio;
+    }
 
     private static final class MeasuredRun {
+        final boolean isDrawing;
         final String text;
+        @Nullable final AssVectorPathParser.ParsedVectorPath parsedVector;
         final AssScript.SegmentStyle style;
-        final Typeface typeface;
+        @Nullable final Typeface typeface;
         final float textSizePx;
+        final float spacingPx;
         final float scaleXRatio;
         final float scaleYRatio;
+        final float pboPx;
         final float widthPx;
         final float ascentPx;  // positive magnitude above baseline
         final float descentPx; // positive magnitude below baseline
@@ -516,20 +586,47 @@ public class AssSubtitleOverlayView extends View {
                     AssScript.SegmentStyle style,
                     Typeface typeface,
                     float textSizePx,
+                    float spacingPx,
                     float scaleXRatio,
                     float scaleYRatio,
                     float widthPx,
                     float ascentPx,
                     float descentPx) {
+            this.isDrawing = false;
             this.text = text;
+            this.parsedVector = null;
             this.style = style;
             this.typeface = typeface;
             this.textSizePx = textSizePx;
+            this.spacingPx = spacingPx;
             this.scaleXRatio = scaleXRatio;
             this.scaleYRatio = scaleYRatio;
+            this.pboPx = 0f;
             this.widthPx = widthPx;
             this.ascentPx = ascentPx;
             this.descentPx = descentPx;
+        }
+
+        MeasuredRun(AssVectorPathParser.ParsedVectorPath parsedVector,
+                    AssScript.SegmentStyle style,
+                    float scaleXToPx,
+                    float scaleYToPx,
+                    float pboPx,
+                    float widthPx,
+                    float ascentPx) {
+            this.isDrawing = true;
+            this.text = "";
+            this.parsedVector = parsedVector;
+            this.style = style;
+            this.typeface = null;
+            this.textSizePx = 0f;
+            this.spacingPx = 0f;
+            this.scaleXRatio = scaleXToPx;
+            this.scaleYRatio = scaleYToPx;
+            this.pboPx = pboPx;
+            this.widthPx = widthPx;
+            this.ascentPx = ascentPx;
+            this.descentPx = 0f;
         }
     }
 
@@ -571,8 +668,11 @@ public class AssSubtitleOverlayView extends View {
 
         for (int i = 0; i < ev.segments.size(); i++) {
             AssScript.AssSegment seg = ev.segments.get(i);
-            if (seg.isDrawing) continue;
             AssScript.SegmentStyle st = seg.resolveStyleAt(relMs, durMs);
+            if (seg.isDrawing) {
+                currentHardLine.add(new StyledPiece(seg.content, st, true));
+                continue;
+            }
             String raw = seg.content;
             int len = raw.length();
             StringBuilder buf = new StringBuilder();
@@ -583,7 +683,7 @@ public class AssSubtitleOverlayView extends View {
                     char next = raw.charAt(c + 1);
                     if (next == 'N' || (next == 'n' && ev.wrapStyle == 2)) {
                         if (buf.length() > 0) {
-                            currentHardLine.add(new StyledPiece(buf.toString(), st));
+                            currentHardLine.add(new StyledPiece(buf.toString(), st, false));
                             buf.setLength(0);
                         }
                         hardLines.add(currentHardLine);
@@ -601,7 +701,7 @@ public class AssSubtitleOverlayView extends View {
                     }
                 } else if (ch == '\n') {
                     if (buf.length() > 0) {
-                        currentHardLine.add(new StyledPiece(buf.toString(), st));
+                        currentHardLine.add(new StyledPiece(buf.toString(), st, false));
                         buf.setLength(0);
                     }
                     hardLines.add(currentHardLine);
@@ -611,7 +711,7 @@ public class AssSubtitleOverlayView extends View {
                 buf.append(ch);
             }
             if (buf.length() > 0) {
-                currentHardLine.add(new StyledPiece(buf.toString(), st));
+                currentHardLine.add(new StyledPiece(buf.toString(), st, false));
             }
         }
         if (!currentHardLine.isEmpty()) {
@@ -625,9 +725,9 @@ public class AssSubtitleOverlayView extends View {
         for (int h = 0; h < hardLines.size(); h++) {
             List<StyledPiece> pieces = hardLines.get(h);
             if (pieces.isEmpty()) {
-                // Preserve intentional empty line spacing
+                // Preserve intentional empty line spacing (ASS Fontsize == ascent + descent)
                 MeasuredLine empty = new MeasuredLine();
-                float fallbackH = ev.style.fontSize * sy * ASS_FONT_SIZE_RATIO;
+                float fallbackH = Math.max(4f, ev.style.fontSize * sy);
                 empty.maxAscentPx = fallbackH * 0.8f;
                 empty.maxDescentPx = fallbackH * 0.2f;
                 block.lines.add(empty);
@@ -662,10 +762,12 @@ public class AssSubtitleOverlayView extends View {
     private static final class StyledPiece {
         final String text;
         final AssScript.SegmentStyle style;
+        final boolean isDrawing;
 
-        StyledPiece(String text, AssScript.SegmentStyle style) {
+        StyledPiece(String text, AssScript.SegmentStyle style, boolean isDrawing) {
             this.text = text;
             this.style = style;
+            this.isDrawing = isDrawing;
         }
     }
 
@@ -680,12 +782,37 @@ public class AssSubtitleOverlayView extends View {
         for (int p = 0; p < pieces.size(); p++) {
             StyledPiece piece = pieces.get(p);
             AssScript.SegmentStyle st = piece.style;
+
+            if (piece.isDrawing) {
+                float fscx = st.scaleX / 100f;
+                float fscy = st.scaleY / 100f;
+                if (fscx <= 0.001f || fscy <= 0.001f) continue;
+                float pScale = 1f / (float) (1 << Math.max(0, st.pLevel - 1));
+                AssVectorPathParser.ParsedVectorPath parsed = AssVectorPathParser.parseCached(piece.text, pScale);
+                if (parsed == null) continue;
+
+                float drawW = Math.max(0f, (parsed.bounds.right - parsed.bounds.left) * fscx * sx);
+                float drawH = Math.max(0f, (parsed.bounds.bottom - parsed.bounds.top) * fscy * sy);
+                float pboPx = AssVectorGeometry.computePboOffsetY(st.pbo, pScale, fscy) * sy;
+
+                if (allowWrap && !currentLine.runs.isEmpty() && currentLine.widthPx + drawW > maxLineWidthPx) {
+                    trimTrailingSpace(currentLine);
+                    outLines.add(currentLine);
+                    currentLine = new MeasuredLine();
+                }
+                addRunToLine(currentLine, new MeasuredRun(parsed, st, fscx * sx, fscy * sy, pboPx, drawW, drawH), sy);
+                continue;
+            }
+
+            if (st.scaleX <= 0.001f || st.scaleY <= 0.001f) continue;
+
             Typeface tf = FontResolver.resolveTypeface(getContext(), st.fontName, st.bold, st.italic);
-            float textSizePx = Math.max(6f, st.fontSize * sy * ASS_FONT_SIZE_RATIO);
+            float textSizePx = resolveAssTextSizePx(tf, st.fontSize, sy);
             float scaleXRatio = Math.max(0.05f, (st.scaleX / 100f) * (sx / Math.max(0.0001f, sy)));
             float scaleYRatio = Math.max(0.05f, st.scaleY / 100f);
+            float spacingPx = st.spacing * sx;
 
-            configureTextPaint(textPaint, tf, textSizePx, st.spacing * sx, scaleXRatio, st.underline, st.strikeOut);
+            configureTextPaint(textPaint, tf, textSizePx, spacingPx, scaleXRatio, st.underline, st.strikeOut);
             Paint.FontMetrics fm = textPaint.getFontMetrics();
             float ascentPx = -fm.ascent * scaleYRatio;
             float descentPx = fm.descent * scaleYRatio;
@@ -693,7 +820,7 @@ public class AssSubtitleOverlayView extends View {
             String text = piece.text;
             if (!allowWrap) {
                 float w = textPaint.measureText(text);
-                addRunToLine(currentLine, new MeasuredRun(text, st, tf, textSizePx, scaleXRatio, scaleYRatio, w, ascentPx, descentPx), sy);
+                addRunToLine(currentLine, new MeasuredRun(text, st, tf, textSizePx, spacingPx, scaleXRatio, scaleYRatio, w, ascentPx, descentPx), sy);
                 continue;
             }
 
@@ -730,11 +857,11 @@ public class AssSubtitleOverlayView extends View {
                             outLines.add(currentLine);
                             currentLine = new MeasuredLine();
                         }
-                        addRunToLine(currentLine, new MeasuredRun(part, st, tf, textSizePx, scaleXRatio, scaleYRatio, partW, ascentPx, descentPx), sy);
+                        addRunToLine(currentLine, new MeasuredRun(part, st, tf, textSizePx, spacingPx, scaleXRatio, scaleYRatio, partW, ascentPx, descentPx), sy);
                         subStart += count;
                     }
                 } else {
-                    addRunToLine(currentLine, new MeasuredRun(chunk, st, tf, textSizePx, scaleXRatio, scaleYRatio, chunkW, ascentPx, descentPx), sy);
+                    addRunToLine(currentLine, new MeasuredRun(chunk, st, tf, textSizePx, spacingPx, scaleXRatio, scaleYRatio, chunkW, ascentPx, descentPx), sy);
                 }
                 idx = nextBreak;
             }
@@ -758,6 +885,7 @@ public class AssSubtitleOverlayView extends View {
     private void trimTrailingSpace(MeasuredLine line) {
         if (line.runs.isEmpty()) return;
         MeasuredRun last = line.runs.get(line.runs.size() - 1);
+        if (last.isDrawing) return;
         String trimmed = last.text;
         while (trimmed.endsWith(" ")) {
             trimmed = trimmed.substring(0, trimmed.length() - 1);
@@ -768,11 +896,11 @@ public class AssSubtitleOverlayView extends View {
             line.runs.remove(line.runs.size() - 1);
             return;
         }
-        configureTextPaint(textPaint, last.typeface, last.textSizePx, last.style.spacing, last.scaleXRatio, last.style.underline, last.style.strikeOut);
+        configureTextPaint(textPaint, last.typeface, last.textSizePx, last.spacingPx, last.scaleXRatio, last.style.underline, last.style.strikeOut);
         float newW = textPaint.measureText(trimmed);
         line.widthPx = Math.max(0f, line.widthPx - last.widthPx + newW);
         line.runs.set(line.runs.size() - 1, new MeasuredRun(
-                trimmed, last.style, last.typeface, last.textSizePx,
+                trimmed, last.style, last.typeface, last.textSizePx, last.spacingPx,
                 last.scaleXRatio, last.scaleYRatio, newW, last.ascentPx, last.descentPx
         ));
     }
@@ -1040,7 +1168,59 @@ public class AssSubtitleOverlayView extends View {
                 MeasuredRun run = line.runs.get(r);
                 AssScript.SegmentStyle st = run.style;
 
-                configureTextPaint(textPaint, run.typeface, run.textSizePx, st.spacing * borderScaleX,
+                if (run.isDrawing && run.parsedVector != null) {
+                    float drawOriginY = baselineY - run.ascentPx + run.pboPx;
+                    tempMatrix.reset();
+                    tempMatrix.postScale(run.scaleXRatio, run.scaleYRatio);
+                    tempMatrix.postTranslate(cursorX, drawOriginY);
+                    tempPath.reset();
+                    run.parsedVector.path.transform(tempMatrix, tempPath);
+                    tempPath.setFillType(Path.FillType.WINDING);
+
+                    float avgBorder = (st.borderX + st.borderY) * 0.5f;
+                    float strokeWidthPx = avgBorder * borderAvgScale * 2f;
+                    float blurPx = st.blur > 0.1f ? Math.min(24f, st.blur * borderAvgScale) : 0f;
+                    BlurMaskFilter blurFilter = blurPx > 0.2f ? new BlurMaskFilter(blurPx, BlurMaskFilter.Blur.NORMAL) : null;
+
+                    if (pass == PASS_SHADOW) {
+                        int shadowColor = AssScript.multiplyAlpha(st.backColor, fadeFactor);
+                        if ((Math.abs(st.shadowX) > 0.01f || Math.abs(st.shadowY) > 0.01f) && Color.alpha(shadowColor) > 0) {
+                            int shSave = canvas.save();
+                            canvas.translate(st.shadowX * borderScaleX, st.shadowY * borderScaleY);
+                            if (strokeWidthPx > 0.1f) {
+                                vectorStrokePaint.setColor(shadowColor);
+                                vectorStrokePaint.setStrokeWidth(strokeWidthPx);
+                                vectorStrokePaint.setMaskFilter(blurFilter);
+                                canvas.drawPath(tempPath, vectorStrokePaint);
+                            }
+                            vectorFillPaint.setColor(shadowColor);
+                            vectorFillPaint.setMaskFilter(blurFilter);
+                            canvas.drawPath(tempPath, vectorFillPaint);
+                            canvas.restoreToCount(shSave);
+                        }
+                    } else if (pass == PASS_OUTLINE) {
+                        int outlineColor = AssScript.multiplyAlpha(st.outlineColor, fadeFactor);
+                        if (strokeWidthPx > 0.1f && Color.alpha(outlineColor) > 0) {
+                            vectorStrokePaint.setColor(outlineColor);
+                            vectorStrokePaint.setStrokeWidth(strokeWidthPx);
+                            vectorStrokePaint.setMaskFilter(blurFilter);
+                            canvas.drawPath(tempPath, vectorStrokePaint);
+                        }
+                    } else {
+                        int fillColor = AssScript.multiplyAlpha(st.primaryColor, fadeFactor);
+                        if (Color.alpha(fillColor) > 0) {
+                            vectorFillPaint.setColor(fillColor);
+                            vectorFillPaint.setMaskFilter(blurFilter);
+                            canvas.drawPath(tempPath, vectorFillPaint);
+                        }
+                    }
+                    vectorFillPaint.setMaskFilter(null);
+                    vectorStrokePaint.setMaskFilter(null);
+                    cursorX += run.widthPx;
+                    continue;
+                }
+
+                configureTextPaint(textPaint, run.typeface, run.textSizePx, run.spacingPx,
                         run.scaleXRatio, st.underline, st.strikeOut);
 
                 float avgBorder = (st.borderX + st.borderY) * 0.5f;

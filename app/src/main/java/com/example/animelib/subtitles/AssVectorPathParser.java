@@ -70,6 +70,7 @@ public final class AssVectorPathParser {
             int i = 0;
             boolean hasPoints = false;
             boolean contourHasSegments = false;
+            boolean closeCurrentContour = true;
             float curX = 0f;
             float curY = 0f;
 
@@ -87,7 +88,7 @@ public final class AssVectorPathParser {
                             flushBSpline(path, splineX, splineY, true);
                             splineX = null;
                             splineY = null;
-                            contourHasSegments = true;
+                            contourHasSegments = false;
                         } else if (contourHasSegments) {
                             path.close();
                             contourHasSegments = false;
@@ -115,7 +116,7 @@ public final class AssVectorPathParser {
                     if (i + 1 < tokens.size() && isNumberToken(tokens.get(i)) && isNumberToken(tokens.get(i + 1))) {
                         float x = Float.parseFloat(tokens.get(i)) * scale;
                         float y = Float.parseFloat(tokens.get(i + 1)) * scale;
-                        if (currentCmd == 'm' && contourHasSegments) {
+                        if (closeCurrentContour && contourHasSegments) {
                             path.close();
                         }
                         path.moveTo(x, y);
@@ -123,6 +124,7 @@ public final class AssVectorPathParser {
                         curY = y;
                         hasPoints = true;
                         contourHasSegments = false;
+                        closeCurrentContour = (currentCmd == 'm');
                         i += 2;
                         // Subsequent bare coordinate pairs after 'm'/'n' act as line segments
                         currentCmd = 'l';
@@ -135,6 +137,7 @@ public final class AssVectorPathParser {
                         float y = Float.parseFloat(tokens.get(i + 1)) * scale;
                         if (!hasPoints) {
                             path.moveTo(x, y);
+                            closeCurrentContour = true;
                         } else {
                             path.lineTo(x, y);
                             contourHasSegments = true;
@@ -159,6 +162,7 @@ public final class AssVectorPathParser {
                         float y3 = Float.parseFloat(tokens.get(i + 5)) * scale;
                         if (!hasPoints) {
                             path.moveTo(curX, curY);
+                            closeCurrentContour = true;
                         }
                         path.cubicTo(x1, y1, x2, y2, x3, y3);
                         curX = x3;
@@ -196,6 +200,9 @@ public final class AssVectorPathParser {
             if (splineX != null) {
                 flushBSpline(path, splineX, splineY, false);
                 contourHasSegments = true;
+            }
+            if (closeCurrentContour && contourHasSegments) {
+                path.close();
             }
 
             if (!hasPoints) return null;

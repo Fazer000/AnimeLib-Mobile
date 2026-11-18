@@ -68,7 +68,7 @@ public final class AssScript {
     }
 
     /**
-     * Resolves effective PlayResX, falling back cleanly when [Script Info] omits PlayResX.
+     * Resolves effective PlayResX per ASS/libass spec (defaults to 384 when both PlayResX/Y are omitted).
      */
     public float resolvePlayResX(int videoWidth, int videoHeight) {
         if (playResX > 0f) {
@@ -80,14 +80,11 @@ public final class AssScript {
         if (playResY > 0f) {
             return playResY * (16f / 9f);
         }
-        if (videoWidth > 0) {
-            return (float) videoWidth;
-        }
         return 384f;
     }
 
     /**
-     * Resolves effective PlayResY, falling back cleanly when [Script Info] omits PlayResY.
+     * Resolves effective PlayResY per ASS/libass spec (defaults to 288 when both PlayResX/Y are omitted).
      */
     public float resolvePlayResY(int videoWidth, int videoHeight) {
         if (playResY > 0f) {
@@ -98,9 +95,6 @@ public final class AssScript {
         }
         if (playResX > 0f) {
             return playResX * (9f / 16f);
-        }
-        if (videoHeight > 0) {
-            return (float) videoHeight;
         }
         return 288f;
     }
@@ -597,6 +591,7 @@ public final class AssScript {
         public final int wrapStyle;
         public final List<AssSegment> segments;
         public final boolean hasVectorDrawing;
+        public final boolean hasTextContent;
         public final boolean hasAnimations;
 
         public AssEvent(int eventIndex,
@@ -671,13 +666,19 @@ public final class AssScript {
             this.segments = Collections.unmodifiableList(segments);
 
             boolean vec = false;
+            boolean txt = false;
             boolean anim = hasMove || fadeInMs > 0 || fadeOutMs > 0 || hasComplexFade;
             for (int i = 0; i < segments.size(); i++) {
                 AssSegment seg = segments.get(i);
-                if (seg.isDrawing) vec = true;
+                if (seg.isDrawing) {
+                    vec = true;
+                } else if (seg.content != null && !seg.content.isEmpty()) {
+                    txt = true;
+                }
                 if (seg.transforms != null && !seg.transforms.isEmpty()) anim = true;
             }
             this.hasVectorDrawing = vec;
+            this.hasTextContent = txt;
             this.hasAnimations = anim;
         }
 

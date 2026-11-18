@@ -141,4 +141,77 @@ public class AssParserUnitTest {
         assertTrue(SubtitlesBottomSheet.isAssCustomizationLocked("auto", Arrays.asList(assSub, vttSub)));
         assertFalse(SubtitlesBottomSheet.isAssCustomizationLocked("auto", Collections.singletonList(vttSub)));
     }
+
+    @Test
+    public void vectorGeometry_alignmentAndNegativeCoordinatesMatchLibass() {
+        // Zero-origin box [0..100, 0..80]: bWidth=100, bHeight=80
+        assertEquals(500f, AssVectorGeometry.computeSingleOriginX(500f, 0f, 100f, 7), 0.01f);
+        assertEquals(450f, AssVectorGeometry.computeSingleOriginX(500f, 0f, 100f, 8), 0.01f);
+        assertEquals(400f, AssVectorGeometry.computeSingleOriginX(500f, 0f, 100f, 9), 0.01f);
+        assertEquals(300f, AssVectorGeometry.computeSingleOriginY(300f, 0f, 80f, 7, 0f, 1f, 1f), 0.01f);
+        assertEquals(260f, AssVectorGeometry.computeSingleOriginY(300f, 0f, 80f, 5, 0f, 1f, 1f), 0.01f);
+        assertEquals(220f, AssVectorGeometry.computeSingleOriginY(300f, 0f, 80f, 3, 0f, 1f, 1f), 0.01f);
+
+        // Negative-coordinate drawing [-50..50, -80..20]: bWidth=100, bHeight=100
+        // libass/VSFilter keeps (0,0) anchored by advance=bWidth, asc=bHeight (NOT bRight/bBottom)
+        assertEquals(500f, AssVectorGeometry.computeSingleOriginX(500f, -50f, 50f, 7), 0.01f);
+        assertEquals(450f, AssVectorGeometry.computeSingleOriginX(500f, -50f, 50f, 5), 0.01f);
+        assertEquals(400f, AssVectorGeometry.computeSingleOriginX(500f, -50f, 50f, 3), 0.01f);
+        assertEquals(700f, AssVectorGeometry.computeSingleOriginY(700f, -80f, 20f, 7, 0f, 1f, 1f), 0.01f);
+        assertEquals(650f, AssVectorGeometry.computeSingleOriginY(700f, -80f, 20f, 5, 0f, 1f, 1f), 0.01f);
+        assertEquals(600f, AssVectorGeometry.computeSingleOriginY(700f, -80f, 20f, 3, 0f, 1f, 1f), 0.01f);
+
+        // Positive-offset drawing [100..200, 50..150]: bWidth=100, bHeight=100
+        assertEquals(0f, AssVectorGeometry.computeSingleOriginX(0f, 100f, 200f, 7), 0.01f);
+        assertEquals(0f, AssVectorGeometry.computeSingleOriginY(0f, 50f, 150f, 7, 0f, 1f, 1f), 0.01f);
+    }
+
+    @Test
+    public void vectorGeometry_pboSignAndMargins() {
+        // Negative \pbo shifts UP (-Y), positive \pbo shifts DOWN (+Y)
+        assertEquals(-30f, AssVectorGeometry.computePboOffsetY(-30f, 1f, 1f), 0.01f);
+        assertEquals(40f, AssVectorGeometry.computePboOffsetY(40f, 1f, 1f), 0.01f);
+        // With \p2 (scale 0.5) and \fscy200 (2.0): -30 * 0.5 * 2.0 = -30
+        assertEquals(-30f, AssVectorGeometry.computePboOffsetY(-30f, 0.5f, 2f), 0.01f);
+        // Combined with \an3 at anchorY=700, bHeight=100, \pbo-25 -> 700 - 100 - 25 = 575
+        assertEquals(575f, AssVectorGeometry.computeSingleOriginY(700f, 0f, 100f, 3, -25f, 1f, 1f), 0.01f);
+
+        // Asymmetric MarginL=100, MarginR=20 on 1280px width -> centered at 100 + (1280 - 120) / 2 = 680
+        assertEquals(100f, AssVectorGeometry.computeUnpositionedAnchorX(1280f, 100, 20, 1), 0.01f);
+        assertEquals(680f, AssVectorGeometry.computeUnpositionedAnchorX(1280f, 100, 20, 2), 0.01f);
+        assertEquals(1260f, AssVectorGeometry.computeUnpositionedAnchorX(1280f, 100, 20, 3), 0.01f);
+        assertEquals(30f, AssVectorGeometry.computeUnpositionedAnchorY(720f, 30, 8), 0.01f);
+        assertEquals(360f, AssVectorGeometry.computeUnpositionedAnchorY(720f, 30, 5), 0.01f);
+        assertEquals(690f, AssVectorGeometry.computeUnpositionedAnchorY(720f, 30, 2), 0.01f);
+    }
+
+    @Test
+    public void parse_mixedVectorAndText_pboZeroScaleAndDefaultPlayRes() {
+        String ass = "[Script Info]\n"
+                + "[Events]\n"
+                + "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+                + "Dialogue: 0,0:00:01.00,0:00:05.00,Default,,0,0,0,,"
+                + "{\\an3 comment\\pbo-24\\p1}m 0 0 l 20 0 20 20 0 20{\\p0} Ждём тебя летом\n"
+                + "Dialogue: 0,0:00:01.00,0:00:05.00,Default,,0,0,0,,{\\fscx0\\fscy50}Hidden\n";
+
+        AssScript script = AssParser.parse(ass);
+        // Official ASS fallback when both PlayResX and PlayResY are omitted
+        assertEquals(384f, script.resolvePlayResX(1920, 1080), 0.01f);
+        assertEquals(288f, script.resolvePlayResY(1920, 1080), 0.01f);
+        assertEquals(2, script.events.size());
+
+        AssScript.AssEvent mixed = script.events.get(0);
+        assertTrue(mixed.hasVectorDrawing);
+        assertTrue(mixed.hasTextContent);
+        assertEquals(3, mixed.alignment);
+        assertEquals(2, mixed.segments.size());
+        assertTrue(mixed.segments.get(0).isDrawing);
+        assertEquals(-24f, mixed.segments.get(0).style.pbo, 0.01f);
+        assertFalse(mixed.segments.get(1).isDrawing);
+        assertEquals(" Ждём тебя летом", mixed.segments.get(1).content);
+
+        AssScript.AssEvent zeroScale = script.events.get(1);
+        assertEquals(0f, zeroScale.segments.get(0).style.scaleX, 0.01f);
+        assertEquals(50f, zeroScale.segments.get(0).style.scaleY, 0.01f);
+    }
 }
