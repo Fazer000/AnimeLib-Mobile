@@ -127,4 +127,68 @@ public class BookmarkEpisodeResolutionUnitTest {
         OfflineBookmarkEntity empty = new OfflineBookmarkEntity("anime1", 0, "", "00:00", 0L, 1L);
         assertNull(BookmarkManager.resolveOfflineBookmarkedEpisode(empty, episodes));
     }
+
+    @Test
+    public void testInitialEpisodeStrictlySelectsFirstWhenNoApiOrDbBookmark() {
+        List<EpisodesListResponse.EpisodeItem> episodes = Arrays.asList(
+                ep(300, "1"),
+                ep(301, "2"),
+                ep(302, "11"),
+                ep(303, "12")
+        );
+
+        EpisodesListResponse.EpisodeItem resolved = BookmarkManager.resolveInitialEpisode(null, null, episodes);
+        assertNotNull(resolved);
+        assertEquals(300, resolved.getId());
+        assertEquals("1", resolved.getNumber());
+
+        // Status-only online bookmark without episode reference + no DB bookmark -> first episode
+        AnimeBookmarkResponse.BookmarkData statusOnly = new AnimeBookmarkResponse.BookmarkData();
+        statusOnly.setStatus(21);
+        statusOnly.setItemId(0);
+        EpisodesListResponse.EpisodeItem resolvedStatusOnly = BookmarkManager.resolveInitialEpisode(statusOnly, null, episodes);
+        assertNotNull(resolvedStatusOnly);
+        assertEquals(300, resolvedStatusOnly.getId());
+
+        // Stale online bookmark pointing to missing episode ID + empty DB bookmark -> first episode
+        AnimeBookmarkResponse.BookmarkData missingEpBookmark = new AnimeBookmarkResponse.BookmarkData();
+        missingEpBookmark.setItemId(999999);
+        OfflineBookmarkEntity emptyDb = new OfflineBookmarkEntity("anime1", 0, "", "00:00", 0L, 1L);
+        EpisodesListResponse.EpisodeItem resolvedMissing = BookmarkManager.resolveInitialEpisode(missingEpBookmark, emptyDb, episodes);
+        assertNotNull(resolvedMissing);
+        assertEquals(300, resolvedMissing.getId());
+    }
+
+    @Test
+    public void testInitialEpisodePrefersApiThenDbBookmark() {
+        List<EpisodesListResponse.EpisodeItem> episodes = Arrays.asList(
+                ep(400, "1"),
+                ep(401, "2"),
+                ep(402, "3")
+        );
+
+        AnimeBookmarkResponse.BookmarkData online = new AnimeBookmarkResponse.BookmarkData();
+        online.setItemId(402);
+        online.setProgress("04:00");
+
+        OfflineBookmarkEntity offline = new OfflineBookmarkEntity("anime1", 401, "2", "01:30", 90_000L, 1L);
+
+        // Both present -> API bookmark wins
+        EpisodesListResponse.EpisodeItem fromApi = BookmarkManager.resolveInitialEpisode(online, offline, episodes);
+        assertNotNull(fromApi);
+        assertEquals(402, fromApi.getId());
+
+        // Only DB bookmark present -> DB bookmark wins
+        EpisodesListResponse.EpisodeItem fromDb = BookmarkManager.resolveInitialEpisode(null, offline, episodes);
+        assertNotNull(fromDb);
+        assertEquals(401, fromDb.getId());
+
+        // Status-only API bookmark + DB bookmark -> DB bookmark wins
+        AnimeBookmarkResponse.BookmarkData statusOnly = new AnimeBookmarkResponse.BookmarkData();
+        statusOnly.setStatus(2);
+        EpisodesListResponse.EpisodeItem fromDbWithStatusOnly = BookmarkManager.resolveInitialEpisode(statusOnly, offline, episodes);
+        assertNotNull(fromDbWithStatusOnly);
+        assertEquals(401, fromDbWithStatusOnly.getId());
+    }
 }
+

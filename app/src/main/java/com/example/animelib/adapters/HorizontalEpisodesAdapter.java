@@ -48,8 +48,8 @@ public class HorizontalEpisodesAdapter extends RecyclerView.Adapter<HorizontalEp
     
     private boolean isMatchingEpisode(EpisodesListResponse.EpisodeItem ep1, EpisodesListResponse.EpisodeItem ep2) {
         if (ep1 == null || ep2 == null) return false;
-        if (ep1.getId() != 0 && ep2.getId() != 0 && ep1.getId() == ep2.getId()) {
-            return true;
+        if (ep1.getId() > 0 && ep2.getId() > 0) {
+            return ep1.getId() == ep2.getId();
         }
         String a = ep1.getNumber();
         String b = ep2.getNumber();

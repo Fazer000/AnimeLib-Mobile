@@ -1120,15 +1120,18 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
                     com.example.animelib.data.entity.OfflineBookmarkEntity bookmark = databaseManager.getOfflineBookmarkSync(anime.getAnimeId());
                     if (bookmark != null) {
                         for (DownloadedEpisodeEntity dep : episodes) {
-                            if (bookmark.getEpisodeId() != 0 && dep.getEpisodeId() == bookmark.getEpisodeId()) {
+                            if (bookmark.getEpisodeId() > 0 && dep.getEpisodeId() == bookmark.getEpisodeId()) {
                                 ep = dep;
                                 break;
                             }
-                            if (dep.getId() != null && dep.getId().equals(String.valueOf(bookmark.getEpisodeId()))) {
+                            if (bookmark.getEpisodeId() > 0 && dep.getId() != null
+                                    && dep.getId().equals(String.valueOf(bookmark.getEpisodeId()))) {
                                 ep = dep;
                                 break;
                             }
-                            if (dep.getEpisodeNumber() != null && dep.getEpisodeNumber().equals(bookmark.getEpisodeNumber())) {
+                            if (bookmark.getEpisodeNumber() != null && !bookmark.getEpisodeNumber().trim().isEmpty()
+                                    && dep.getEpisodeNumber() != null
+                                    && dep.getEpisodeNumber().trim().equals(bookmark.getEpisodeNumber().trim())) {
                                 ep = dep;
                                 break;
                             }

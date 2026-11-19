@@ -151,9 +151,15 @@ public class PlayerEpisodesController {
         logDebug("Loading episodes for anime_id: " + animeId);
         resetForNewAnime();
         String animeUrl = (intent != null) ? intent.getStringExtra("anime_url") : null;
+        if ((animeUrl == null || animeUrl.isEmpty()) && intent != null) {
+            animeUrl = intent.getStringExtra("EXTRA_ANIME_URL");
+        }
         String mediaSlug = null;
         if (animeUrl != null && !animeUrl.isEmpty()) {
             mediaSlug = ApiService.extractMediaSlugFromUrl(animeUrl);
+        }
+        if ((mediaSlug == null || mediaSlug.trim().isEmpty()) && animeId != null && !animeId.trim().isEmpty()) {
+            mediaSlug = animeId.trim();
         }
 
         if (episodesManager != null) {

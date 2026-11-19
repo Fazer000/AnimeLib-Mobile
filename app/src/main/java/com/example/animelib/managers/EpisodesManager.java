@@ -588,13 +588,7 @@ public class EpisodesManager {
             return;
         }
 
-        int currentIndex = -1;
-        for (int i = 0; i < episodes.size(); i++) {
-            if (Objects.equals(episodes.get(i).getNumber(), currentEpisode.getNumber())) {
-                currentIndex = i;
-                break;
-            }
-        }
+        int currentIndex = findEpisodeIndex(currentEpisode);
 
         Log.d(TAG, "Current index: " + currentIndex + ", episodes count: " + episodes.size());
 
@@ -626,13 +620,7 @@ public class EpisodesManager {
             return;
         }
 
-        int currentIndex = -1;
-        for (int i = 0; i < episodes.size(); i++) {
-            if (Objects.equals(episodes.get(i).getNumber(), currentEpisode.getNumber())) {
-                currentIndex = i;
-                break;
-            }
-        }
+        int currentIndex = findEpisodeIndex(currentEpisode);
 
         Log.d(TAG, "Current index: " + currentIndex + ", episodes count: " + episodes.size());
 
@@ -670,16 +658,7 @@ public class EpisodesManager {
         boolean isLastEpisode = false;
 
         if (hasCurrentEpisode && !episodes.isEmpty()) {
-            int currentIndex = -1;
-            for (int i = 0; i < episodes.size(); i++) {
-                EpisodesListResponse.EpisodeItem ep = episodes.get(i);
-                if (ep == null) continue;
-                if ((ep.getId() > 0 && currentEpisode.getId() > 0 && ep.getId() == currentEpisode.getId())
-                        || (ep.getNumber() != null && Objects.equals(ep.getNumber(), currentEpisode.getNumber()))) {
-                    currentIndex = i;
-                    break;
-                }
-            }
+            int currentIndex = findEpisodeIndex(currentEpisode);
             if (currentIndex >= 0) {
                 isFirstEpisode = (currentIndex == 0);
                 isLastEpisode = (currentIndex == episodes.size() - 1);
@@ -712,6 +691,9 @@ public class EpisodesManager {
         episodes.clear();
         hasInitialScrolledLandscape = false;
         hasInitialScrolledPortrait = false;
+        if (bookmarkManager != null) {
+            bookmarkManager.clearAllMemoryCache();
+        }
         safeRunOnUiThread(() -> {
             if (episodesAdapter != null) {
                 episodesAdapter.setAnimeBookmark(null);
@@ -902,16 +884,8 @@ public class EpisodesManager {
             return;
         }
         
-        int currentIndex = -1;
-        for (int i = 0; i < episodes.size(); i++) {
-            EpisodesListResponse.EpisodeItem episode = episodes.get(i);
-            if (episode.getId() == currentEpisode.getId() || 
-                (episode.getNumber() != null && episode.getNumber().equals(currentEpisode.getNumber()))) {
-                currentIndex = i;
-                break;
-            }
-        }
-        
+        int currentIndex = findEpisodeIndex(currentEpisode);
+
         if (currentIndex >= 0) {
             final int targetIndex = currentIndex;
             
@@ -1026,6 +1000,29 @@ public class EpisodesManager {
         return currentEpisode;
     }
     
+    private int findEpisodeIndex(EpisodesListResponse.EpisodeItem target) {
+        if (target == null || episodes.isEmpty()) {
+            return -1;
+        }
+        if (target.getId() > 0) {
+            for (int i = 0; i < episodes.size(); i++) {
+                EpisodesListResponse.EpisodeItem ep = episodes.get(i);
+                if (ep != null && ep.getId() == target.getId()) {
+                    return i;
+                }
+            }
+        }
+        if (target.getNumber() != null) {
+            for (int i = 0; i < episodes.size(); i++) {
+                EpisodesListResponse.EpisodeItem ep = episodes.get(i);
+                if (ep != null && Objects.equals(ep.getNumber(), target.getNumber())) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
     /**
      * Получить следующий эпизод (без переключения)
      */
@@ -1034,13 +1031,7 @@ public class EpisodesManager {
             return null;
         }
         
-        int currentIndex = -1;
-        for (int i = 0; i < episodes.size(); i++) {
-            if (episodes.get(i).equals(currentEpisode)) {
-                currentIndex = i;
-                break;
-            }
-        }
+        int currentIndex = findEpisodeIndex(currentEpisode);
         
         if (currentIndex >= 0 && currentIndex < episodes.size() - 1) {
             return episodes.get(currentIndex + 1);

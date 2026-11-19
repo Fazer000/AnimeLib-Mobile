@@ -1177,36 +1177,40 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     rawUrl = VideoPlayerActivity.this.animeUrl;
                 }
                 final String effectiveUrl = rawUrl;
+                final String expectedAnimeId = currentAnimeId;
                 final List<EpisodesListResponse.EpisodeItem> loadedEpisodes = new ArrayList<>(episodes);
 
-                if (currentAnimeId != null) {
-                    String mediaSlug = effectiveUrl != null && !effectiveUrl.isEmpty()
+                if (expectedAnimeId != null && !expectedAnimeId.trim().isEmpty()) {
+                    String resolvedSlug = effectiveUrl != null && !effectiveUrl.isEmpty()
                             ? ApiService.extractMediaSlugFromUrl(effectiveUrl) : null;
-
-                    if (mediaSlug != null) {
-                        episodesManager.getBookmarkManager().getLastEpisodeFromBookmark(mediaSlug, loadedEpisodes,
-                                new BookmarkManager.LastEpisodeCallback() {
-                                    @Override
-                                    public void onLastEpisodeFound(EpisodesListResponse.EpisodeItem episode, String progress) {
-                                        safeRunOnUiThread(() -> {
-                                            if (playerEpisodesController != null && playerEpisodesController.hasUserSwitchedEpisode()) {
-                                                return;
-                                            }
-                                            long parsedBm = episodesManager.getBookmarkManager().parseTimecodeToMilliseconds(progress);
-                                            startResolvedBookmarkedEpisode(episode, parsedBm, null);
-                                        });
-                                    }
-
-                                    @Override
-                                    public void onNoBookmarkFound() {
-                                        resolveEpisodeWhenNoOnlineBookmark(loadedEpisodes, effectiveUrl);
-                                    }
-                                });
-                    } else {
-                        resolveEpisodeWhenNoOnlineBookmark(loadedEpisodes, effectiveUrl);
+                    if (resolvedSlug == null || resolvedSlug.trim().isEmpty()) {
+                        resolvedSlug = expectedAnimeId.trim();
                     }
+                    final String mediaSlug = resolvedSlug;
+
+                    episodesManager.getBookmarkManager().getLastEpisodeFromBookmark(mediaSlug, loadedEpisodes,
+                            new BookmarkManager.LastEpisodeCallback() {
+                                @Override
+                                public void onLastEpisodeFound(EpisodesListResponse.EpisodeItem episode, String progress) {
+                                    safeRunOnUiThread(() -> {
+                                        if (isFinishing() || isDestroyed()) return;
+                                        if (!java.util.Objects.equals(expectedAnimeId, currentAnimeId)) return;
+                                        if (playerEpisodesController != null && playerEpisodesController.hasUserSwitchedEpisode()) {
+                                            return;
+                                        }
+                                        long parsedBm = episodesManager.getBookmarkManager().parseTimecodeToMilliseconds(progress);
+                                        startResolvedBookmarkedEpisode(episode, parsedBm, null);
+                                    });
+                                }
+
+                                @Override
+                                public void onNoBookmarkFound() {
+                                    if (!java.util.Objects.equals(expectedAnimeId, currentAnimeId)) return;
+                                    resolveEpisodeWhenNoOnlineBookmark(loadedEpisodes, mediaSlug);
+                                }
+                            });
                 } else {
-                    resolveEpisodeWhenNoOnlineBookmark(loadedEpisodes, effectiveUrl);
+                    resolveEpisodeWhenNoOnlineBookmark(loadedEpisodes, null);
                 }
             }
 
@@ -1381,9 +1385,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
             playerEpisodesController.setNewEpisodeSelection(true);
             playerEpisodesController.setBookmarkTimecode(Math.max(0L, bookmarkPositionMs));
         }
-        if (localBookmark != null && episodesManager != null && episodesManager.getAnimeBookmark() == null) {
+        if (localBookmark != null && episodesManager != null
+                && !BookmarkManager.hasExplicitEpisodeReference(episodesManager.getAnimeBookmark())) {
             com.example.animelib.models.AnimeBookmarkResponse.BookmarkData bmData =
                     new com.example.animelib.models.AnimeBookmarkResponse.BookmarkData();
+            if (episodesManager.getAnimeBookmark() != null) {
+                bmData.setStatus(episodesManager.getAnimeBookmark().getStatus());
+            }
             bmData.setItemId(episode.getId());
             bmData.setProgress(localBookmark.getTimecode());
             episodesManager.updateBookmarkInAdapter(bmData);
@@ -1410,14 +1418,14 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     /**
-     * Разрешает стартовый эпизод, когда онлайн-закладка на тайтле отсутствует:
+     * Разрешает стартовый эпизод, когда онлайн-закладка в API отсутствует:
      * 1) Проверяет сохранённую локальную закладку в БД.
-     * 2) Если закладки нет ни на тайтле, ни в БД — при явном ?episode= в URL берёт его,
-     *    иначе строго запускает первый эпизод (0-й объект в JSON).
+     * 2) Если закладки нет ни в API, ни в БД — строго запускает первый эпизод в списке (индекс 0),
+     *    игнорируя параметры ?episode= из URL сайта.
      */
     private void resolveEpisodeWhenNoOnlineBookmark(
             List<EpisodesListResponse.EpisodeItem> episodes,
-            @androidx.annotation.Nullable String effectiveUrl) {
+            @androidx.annotation.Nullable String mediaSlug) {
         final String expectedAnimeId = currentAnimeId;
         if (databaseManager != null && expectedAnimeId != null && !expectedAnimeId.trim().isEmpty()
                 && executor != null && !executor.isShutdown()) {
@@ -1425,6 +1433,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 com.example.animelib.data.entity.OfflineBookmarkEntity dbBookmark = null;
                 try {
                     dbBookmark = databaseManager.getOfflineBookmarkSync(expectedAnimeId);
+                    if (dbBookmark == null && mediaSlug != null && !mediaSlug.trim().isEmpty()
+                            && !mediaSlug.trim().equals(expectedAnimeId)) {
+                        dbBookmark = databaseManager.getOfflineBookmarkSync(mediaSlug.trim());
+                    }
                 } catch (Exception e) {
                     Log.w(TAG, "Failed to query offline bookmark for animeId=" + expectedAnimeId, e);
                 }
@@ -1442,30 +1454,26 @@ public class VideoPlayerActivity extends AppCompatActivity {
                                 + " (ID=" + dbEpisode.getId() + ", pos=" + resolvedDbBookmark.getPositionMs() + "ms)");
                         startResolvedBookmarkedEpisode(dbEpisode, resolvedDbBookmark.getPositionMs(), resolvedDbBookmark);
                     } else {
-                        selectInitialEpisodeWithoutBookmark(effectiveUrl);
+                        selectInitialEpisodeWithoutBookmark();
                     }
                 });
             });
         } else {
             safeRunOnUiThread(() -> {
                 if (isFinishing() || isDestroyed()) return;
+                if (!java.util.Objects.equals(expectedAnimeId, currentAnimeId)) return;
                 if (playerEpisodesController != null && playerEpisodesController.hasUserSwitchedEpisode()) {
                     return;
                 }
-                selectInitialEpisodeWithoutBookmark(effectiveUrl);
+                selectInitialEpisodeWithoutBookmark();
             });
         }
     }
 
-    private void selectInitialEpisodeWithoutBookmark(@androidx.annotation.Nullable String effectiveUrl) {
+    private void selectInitialEpisodeWithoutBookmark() {
         if (playerEpisodesController == null) return;
         autoPlayOnPrepare = VideoPlayerActivity.this.autoPlay;
-        String activeUrl = (effectiveUrl != null && !effectiveUrl.isEmpty()) ? effectiveUrl : VideoPlayerActivity.this.animeUrl;
-        if (activeUrl != null && activeUrl.contains("episode=")) {
-            playerEpisodesController.fallbackToUrlDetection(getIntent());
-        } else {
-            playerEpisodesController.loadFirstEpisode();
-        }
+        playerEpisodesController.loadFirstEpisode();
     }
 
     private void initializeDirectPlayback() {
@@ -1501,6 +1509,16 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         String animeSlug = apiService.extractAnimeSlug(url);
         if (animeSlug == null) animeSlug = currentAnimeId;
+
+        // Сбрасываем кэш закладки перед входом, чтобы всегда получать актуальное состояние из API
+        if (episodesManager != null && episodesManager.getBookmarkManager() != null) {
+            episodesManager.getBookmarkManager().clearMemoryCache(animeSlug);
+            if (!animeSlug.equals(currentAnimeId)) {
+                episodesManager.getBookmarkManager().clearMemoryCache(currentAnimeId);
+            }
+        } else if (apiService != null) {
+            apiService.invalidateAnimeBookmarkCache(animeSlug);
+        }
 
         if (playerAnimeInfoController != null) {
             playerAnimeInfoController.setOfflineMode(false);

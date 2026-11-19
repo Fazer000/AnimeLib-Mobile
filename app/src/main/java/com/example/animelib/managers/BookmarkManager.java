@@ -196,14 +196,22 @@ public class BookmarkManager {
         return null;
     }
 
-    public void invalidateCache(String mediaSlug) {
-        if (mediaSlug != null) {
+    public void clearMemoryCache(@Nullable String mediaSlug) {
+        if (mediaSlug != null && !mediaSlug.trim().isEmpty()) {
             bookmarkCache.remove(mediaSlug);
             bookmarkCache.remove(mediaSlug.trim());
         }
-        if (apiService != null) {
+        if (apiService != null && mediaSlug != null && !mediaSlug.trim().isEmpty()) {
             apiService.invalidateAnimeBookmarkCache(mediaSlug);
         }
+    }
+
+    public void clearAllMemoryCache() {
+        bookmarkCache.clear();
+    }
+
+    public void invalidateCache(String mediaSlug) {
+        clearMemoryCache(mediaSlug);
         Context effectiveCtx = this.appContext != null ? this.appContext : this.context;
         if (effectiveCtx != null) {
             BookmarkSyncDispatcher.getInstance(effectiveCtx).invalidateSavedSignature(mediaSlug);
@@ -392,6 +400,31 @@ public class BookmarkManager {
         }
 
         return null;
+    }
+
+    /**
+     * Разрешает стартовый эпизод при входе в плеер:
+     * 1) Если есть валидная закладка в API — возвращает её эпизод.
+     * 2) Иначе если есть валидная локальная закладка в БД — возвращает её эпизод.
+     * 3) Иначе строго возвращает первый эпизод в списке (episodesList.get(0)).
+     */
+    @Nullable
+    public static EpisodesListResponse.EpisodeItem resolveInitialEpisode(
+            @Nullable AnimeBookmarkResponse.BookmarkData onlineBookmark,
+            @Nullable com.example.animelib.data.entity.OfflineBookmarkEntity offlineBookmark,
+            @Nullable java.util.List<EpisodesListResponse.EpisodeItem> episodesList) {
+        if (episodesList == null || episodesList.isEmpty()) {
+            return null;
+        }
+        EpisodesListResponse.EpisodeItem onlineEpisode = resolveBookmarkedEpisode(onlineBookmark, episodesList);
+        if (onlineEpisode != null) {
+            return onlineEpisode;
+        }
+        EpisodesListResponse.EpisodeItem offlineEpisode = resolveOfflineBookmarkedEpisode(offlineBookmark, episodesList);
+        if (offlineEpisode != null) {
+            return offlineEpisode;
+        }
+        return episodesList.get(0);
     }
 
     /**

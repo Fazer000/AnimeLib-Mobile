@@ -117,35 +117,10 @@
     function buildWatchHref(contextEl) {
         var info = extractAnimeRouteInfo(contextEl);
         var basePath = info.basePath || '';
-        var slug = info.slug || '';
         if (!basePath) {
             return (window.location && window.location.href) ? window.location.href : '/watch';
         }
-
-        var idMatch = slug.match(/^(\d+)/);
-        var animeId = idMatch ? parseInt(idMatch[1], 10) : 0;
-
-        var watchHref = basePath + '/watch';
-        var latestEntry = findLatestViewForAnime(animeId, slug);
-        if (latestEntry) {
-            var epId = (latestEntry.meta && latestEntry.meta.episode)
-                ? latestEntry.meta.episode
-                : (latestEntry.item && latestEntry.item.id ? latestEntry.item.id : null);
-            var player = (latestEntry.meta && latestEntry.meta.player) ? latestEntry.meta.player : 'Animelib';
-            var team = (latestEntry.meta && latestEntry.meta.team) ? latestEntry.meta.team : null;
-
-            if (epId) {
-                var params = ['episode=' + encodeURIComponent(String(epId))];
-                if (player) {
-                    params.push('player=' + encodeURIComponent(String(player)));
-                }
-                if (team && String(team) !== '0') {
-                    params.push('team=' + encodeURIComponent(String(team)));
-                }
-                watchHref += '?' + params.join('&');
-            }
-        }
-        return watchHref;
+        return basePath + '/watch';
     }
 
     function isLicensedButton(button) {
