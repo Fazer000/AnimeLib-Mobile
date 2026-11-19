@@ -20,7 +20,7 @@ import com.example.animelib.data.entity.DownloadedEpisodeEntity;
 import com.example.animelib.data.entity.OfflineBookmarkEntity;
 import com.example.animelib.data.entity.PendingSyncTaskEntity;
 
-@Database(entities = {AppSettings.class, TokenEntity.class, PlayerPreferences.class, DownloadedAnimeEntity.class, DownloadedEpisodeEntity.class, OfflineBookmarkEntity.class, PendingSyncTaskEntity.class}, version = 30, exportSchema = false)
+@Database(entities = {AppSettings.class, TokenEntity.class, PlayerPreferences.class, DownloadedAnimeEntity.class, DownloadedEpisodeEntity.class, OfflineBookmarkEntity.class, PendingSyncTaskEntity.class}, version = 31, exportSchema = false)
 public abstract class AppDatabase extends RoomDatabase {
     private static volatile AppDatabase INSTANCE;
 
@@ -48,6 +48,16 @@ public abstract class AppDatabase extends RoomDatabase {
         }
     };
 
+    public static final Migration MIGRATION_30_31 = new Migration(30, 31) {
+        @Override
+        public void migrate(@NonNull SupportSQLiteDatabase db) {
+            db.execSQL("ALTER TABLE app_settings ADD COLUMN autoSkipOpening INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE app_settings ADD COLUMN autoSkipEnding INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE app_settings ADD COLUMN autoSkipSplashscreen INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE app_settings ADD COLUMN autoSkipCompilation INTEGER NOT NULL DEFAULT 0");
+        }
+    };
+
     public abstract AppSettingsDao appSettingsDao();
     public abstract TokenDao tokenDao();
     public abstract PlayerPreferencesDao playerPreferencesDao();
@@ -61,7 +71,7 @@ public abstract class AppDatabase extends RoomDatabase {
                 if (INSTANCE == null) {
                     INSTANCE = Room.databaseBuilder(context.getApplicationContext(),
                                     AppDatabase.class, "animelib_database")
-                            .addMigrations(MIGRATION_28_29, MIGRATION_29_30)
+                            .addMigrations(MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
                             .fallbackToDestructiveMigration()
                             .allowMainThreadQueries()
                             .build();

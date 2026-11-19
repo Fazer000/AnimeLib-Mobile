@@ -11,11 +11,17 @@ import android.widget.TextView;
 import com.example.animelib.R;
 import com.example.animelib.util.FlexibleBottomSheetDialog;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
+import com.google.android.material.materialswitch.MaterialSwitch;
 import com.google.android.material.slider.Slider;
 
 public class SkipDurationBottomSheet extends FlexibleBottomSheetDialog {
     private int currentDuration; // in seconds
+    private boolean autoSkipOpening;
+    private boolean autoSkipEnding;
+    private boolean autoSkipSplashscreen;
+    private boolean autoSkipCompilation;
     private final OnDurationChangedListener listener;
+    private final OnAutoSkipChangedListener autoSkipListener;
     private OnBackPressedListener onBackPressedListener;
 
     private TextView digitalTimeText;
@@ -25,9 +31,25 @@ public class SkipDurationBottomSheet extends FlexibleBottomSheetDialog {
     private TextView preset30, preset60, preset85, preset90, preset110, preset120;
 
     public SkipDurationBottomSheet(Context context, int currentDuration, OnDurationChangedListener listener) {
+        this(context, currentDuration, false, false, false, false, listener, null);
+    }
+
+    public SkipDurationBottomSheet(Context context,
+                                   int currentDuration,
+                                   boolean autoSkipOpening,
+                                   boolean autoSkipEnding,
+                                   boolean autoSkipSplashscreen,
+                                   boolean autoSkipCompilation,
+                                   OnDurationChangedListener listener,
+                                   OnAutoSkipChangedListener autoSkipListener) {
         super(context, com.example.animelib.R.style.ThemeOverlay_AnimeLIB_BottomSheetDialog);
         this.currentDuration = currentDuration;
+        this.autoSkipOpening = autoSkipOpening;
+        this.autoSkipEnding = autoSkipEnding;
+        this.autoSkipSplashscreen = autoSkipSplashscreen;
+        this.autoSkipCompilation = autoSkipCompilation;
         this.listener = listener;
+        this.autoSkipListener = autoSkipListener;
     }
 
     public interface OnBackPressedListener {
@@ -36,6 +58,10 @@ public class SkipDurationBottomSheet extends FlexibleBottomSheetDialog {
 
     public interface OnDurationChangedListener {
         void onDurationChanged(int durationInSeconds);
+    }
+
+    public interface OnAutoSkipChangedListener {
+        void onAutoSkipChanged(boolean opening, boolean ending, boolean splashscreen, boolean compilation);
     }
 
     @Override
@@ -52,6 +78,60 @@ public class SkipDurationBottomSheet extends FlexibleBottomSheetDialog {
 
         ImageButton backButton = view.findViewById(R.id.backButton);
         ImageButton confirmButton = view.findViewById(R.id.confirmButton);
+
+        View rowAutoSkipOpening = view.findViewById(R.id.rowAutoSkipOpening);
+        View rowAutoSkipEnding = view.findViewById(R.id.rowAutoSkipEnding);
+        View rowAutoSkipSplashscreen = view.findViewById(R.id.rowAutoSkipSplashscreen);
+        View rowAutoSkipCompilation = view.findViewById(R.id.rowAutoSkipCompilation);
+
+        MaterialSwitch switchAutoSkipOpening = view.findViewById(R.id.switchAutoSkipOpening);
+        MaterialSwitch switchAutoSkipEnding = view.findViewById(R.id.switchAutoSkipEnding);
+        MaterialSwitch switchAutoSkipSplashscreen = view.findViewById(R.id.switchAutoSkipSplashscreen);
+        MaterialSwitch switchAutoSkipCompilation = view.findViewById(R.id.switchAutoSkipCompilation);
+
+        if (switchAutoSkipOpening != null) {
+            switchAutoSkipOpening.setChecked(autoSkipOpening);
+            switchAutoSkipOpening.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                autoSkipOpening = isChecked;
+                notifyAutoSkipChanged();
+            });
+            if (rowAutoSkipOpening != null) {
+                rowAutoSkipOpening.setOnClickListener(v -> switchAutoSkipOpening.toggle());
+            }
+        }
+
+        if (switchAutoSkipEnding != null) {
+            switchAutoSkipEnding.setChecked(autoSkipEnding);
+            switchAutoSkipEnding.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                autoSkipEnding = isChecked;
+                notifyAutoSkipChanged();
+            });
+            if (rowAutoSkipEnding != null) {
+                rowAutoSkipEnding.setOnClickListener(v -> switchAutoSkipEnding.toggle());
+            }
+        }
+
+        if (switchAutoSkipSplashscreen != null) {
+            switchAutoSkipSplashscreen.setChecked(autoSkipSplashscreen);
+            switchAutoSkipSplashscreen.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                autoSkipSplashscreen = isChecked;
+                notifyAutoSkipChanged();
+            });
+            if (rowAutoSkipSplashscreen != null) {
+                rowAutoSkipSplashscreen.setOnClickListener(v -> switchAutoSkipSplashscreen.toggle());
+            }
+        }
+
+        if (switchAutoSkipCompilation != null) {
+            switchAutoSkipCompilation.setChecked(autoSkipCompilation);
+            switchAutoSkipCompilation.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                autoSkipCompilation = isChecked;
+                notifyAutoSkipChanged();
+            });
+            if (rowAutoSkipCompilation != null) {
+                rowAutoSkipCompilation.setOnClickListener(v -> switchAutoSkipCompilation.toggle());
+            }
+        }
 
         TextView btnMinus10 = view.findViewById(R.id.btnMinus10);
         TextView btnMinus5 = view.findViewById(R.id.btnMinus5);
@@ -104,6 +184,12 @@ public class SkipDurationBottomSheet extends FlexibleBottomSheetDialog {
         });
 
         setCancelable(true);
+    }
+
+    private void notifyAutoSkipChanged() {
+        if (autoSkipListener != null) {
+            autoSkipListener.onAutoSkipChanged(autoSkipOpening, autoSkipEnding, autoSkipSplashscreen, autoSkipCompilation);
+        }
     }
 
     private void adjustDuration(int delta) {

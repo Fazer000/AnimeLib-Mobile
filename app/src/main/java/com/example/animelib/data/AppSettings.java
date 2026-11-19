@@ -38,6 +38,10 @@ public class AppSettings {
     private boolean disableCommentsInPlayer = false;
     private int commentRepliesLimit = 3;
     private int videoResizeMode = 0; // 0 = FIT, 3 = FILL, 4 = ZOOM
+    private boolean autoSkipOpening = false;
+    private boolean autoSkipEnding = false;
+    private boolean autoSkipSplashscreen = false;
+    private boolean autoSkipCompilation = false;
 
     public AppSettings() {
     }
@@ -248,5 +252,37 @@ public class AppSettings {
 
     public void setVideoResizeMode(int videoResizeMode) {
         this.videoResizeMode = (videoResizeMode >= 0 && videoResizeMode <= 4) ? videoResizeMode : 0;
+    }
+
+    public boolean isAutoSkipOpening() {
+        return autoSkipOpening;
+    }
+
+    public void setAutoSkipOpening(boolean autoSkipOpening) {
+        this.autoSkipOpening = autoSkipOpening;
+    }
+
+    public boolean isAutoSkipEnding() {
+        return autoSkipEnding;
+    }
+
+    public void setAutoSkipEnding(boolean autoSkipEnding) {
+        this.autoSkipEnding = autoSkipEnding;
+    }
+
+    public boolean isAutoSkipSplashscreen() {
+        return autoSkipSplashscreen;
+    }
+
+    public void setAutoSkipSplashscreen(boolean autoSkipSplashscreen) {
+        this.autoSkipSplashscreen = autoSkipSplashscreen;
+    }
+
+    public boolean isAutoSkipCompilation() {
+        return autoSkipCompilation;
+    }
+
+    public void setAutoSkipCompilation(boolean autoSkipCompilation) {
+        this.autoSkipCompilation = autoSkipCompilation;
     }
 }

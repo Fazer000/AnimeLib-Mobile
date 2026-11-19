@@ -542,6 +542,26 @@ public class ApiService {
         return databaseManager.loadVideoResizeModeSetting();
     }
 
+    public void saveAutoSkipSegmentsSettings(boolean opening, boolean ending, boolean splashscreen, boolean compilation) {
+        databaseManager.saveAutoSkipSegmentsSettings(opening, ending, splashscreen, compilation);
+    }
+
+    public boolean loadAutoSkipOpeningSetting() {
+        return databaseManager.loadAutoSkipOpeningSetting();
+    }
+
+    public boolean loadAutoSkipEndingSetting() {
+        return databaseManager.loadAutoSkipEndingSetting();
+    }
+
+    public boolean loadAutoSkipSplashscreenSetting() {
+        return databaseManager.loadAutoSkipSplashscreenSetting();
+    }
+
+    public boolean loadAutoSkipCompilationSetting() {
+        return databaseManager.loadAutoSkipCompilationSetting();
+    }
+
     public void saveVideoFilters(float brightness, float contrast, float saturation, float gamma, float hue) {
         databaseManager.saveVideoFilters(brightness, contrast, saturation, gamma, hue);
     }

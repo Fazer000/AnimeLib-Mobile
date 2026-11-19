@@ -64,6 +64,11 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
     private final OnAutoPlayToggledListener onAutoPlayToggledListener;
     private int longSkipDuration = 85; // seconds
     private final OnSkipDurationChangedListener onSkipDurationChangedListener;
+    private boolean autoSkipOpening = false;
+    private boolean autoSkipEnding = false;
+    private boolean autoSkipSplashscreen = false;
+    private boolean autoSkipCompilation = false;
+    private SkipDurationBottomSheet.OnAutoSkipChangedListener onAutoSkipChangedListener;
     private int currentTheme = ThemeUtils.THEME_SYSTEM;
     private final OnThemeChangedListener onThemeChangedListener;
     private int currentResizeMode = 0; // RESIZE_MODE_FIT
@@ -148,6 +153,19 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
     public void setResizeMode(int resizeMode, OnResizeModeChangedListener listener) {
         this.currentResizeMode = resizeMode;
         this.onResizeModeChangedListener = listener;
+    }
+
+    public void setAutoSkipSegmentsSettings(boolean opening, boolean ending, boolean splashscreen, boolean compilation,
+                                            SkipDurationBottomSheet.OnAutoSkipChangedListener listener) {
+        this.autoSkipOpening = opening;
+        this.autoSkipEnding = ending;
+        this.autoSkipSplashscreen = splashscreen;
+        this.autoSkipCompilation = compilation;
+        this.onAutoSkipChangedListener = listener;
+        TextView currentSkipDurationText = findViewById(R.id.currentSkipDurationText);
+        if (currentSkipDurationText != null) {
+            currentSkipDurationText.setText(formatSkipSummary());
+        }
     }
 
     public void setOfflineMode(boolean offlineMode) {
@@ -255,7 +273,7 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
             surroundSoundSwitch.setChecked(enableSurroundSound);
         }
         autoPlaySwitch.setChecked(autoPlay);
-        currentSkipDurationText.setText(formatDuration(longSkipDuration));
+        currentSkipDurationText.setText(formatSkipSummary());
         currentThemeText.setText(getThemeText(currentTheme));
         if (currentResizeModeText != null) {
             currentResizeModeText.setText(ResizeModeBottomSheet.getResizeModeText(currentResizeMode));
@@ -627,21 +645,38 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
     }
 
     private void showSkipDurationDialog() {
-        SkipDurationBottomSheet dialog = new SkipDurationBottomSheet(getContext(), longSkipDuration, duration -> {
-            longSkipDuration = duration;
-            // Update UI in settings
-            TextView currentSkipDurationText = findViewById(R.id.currentSkipDurationText);
-            if (currentSkipDurationText != null) {
-                currentSkipDurationText.setText(formatDuration(duration));
-            }
-            // Propagate to owner immediately
-            if (onSkipDurationChangedListener != null) {
-                onSkipDurationChangedListener.onSkipDurationChanged(duration);
-            }
-        });
+        SkipDurationBottomSheet dialog = new SkipDurationBottomSheet(
+                getContext(),
+                longSkipDuration,
+                autoSkipOpening,
+                autoSkipEnding,
+                autoSkipSplashscreen,
+                autoSkipCompilation,
+                duration -> {
+                    longSkipDuration = duration;
+                    TextView currentSkipDurationText = findViewById(R.id.currentSkipDurationText);
+                    if (currentSkipDurationText != null) {
+                        currentSkipDurationText.setText(formatSkipSummary());
+                    }
+                    if (onSkipDurationChangedListener != null) {
+                        onSkipDurationChangedListener.onSkipDurationChanged(duration);
+                    }
+                },
+                (opening, ending, splashscreen, compilation) -> {
+                    autoSkipOpening = opening;
+                    autoSkipEnding = ending;
+                    autoSkipSplashscreen = splashscreen;
+                    autoSkipCompilation = compilation;
+                    TextView currentSkipDurationText = findViewById(R.id.currentSkipDurationText);
+                    if (currentSkipDurationText != null) {
+                        currentSkipDurationText.setText(formatSkipSummary());
+                    }
+                    if (onAutoSkipChangedListener != null) {
+                        onAutoSkipChangedListener.onAutoSkipChanged(opening, ending, splashscreen, compilation);
+                    }
+                }
+        );
 
-        // Set up back button listener
-        // Show main settings when back button is pressed
         dialog.setOnBackPressedListener(this::show);
 
         dialog.show();
@@ -683,6 +718,17 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
         int minutes = seconds / 60;
         int remainingSeconds = seconds % 60;
         return String.format("%d:%02d", minutes, remainingSeconds);
+    }
+
+    private String formatSkipSummary() {
+        int enabledCount = (autoSkipOpening ? 1 : 0)
+                + (autoSkipEnding ? 1 : 0)
+                + (autoSkipSplashscreen ? 1 : 0)
+                + (autoSkipCompilation ? 1 : 0);
+        if (enabledCount > 0) {
+            return "Авто (" + enabledCount + ") • " + formatDuration(longSkipDuration);
+        }
+        return formatDuration(longSkipDuration);
     }
 
     public float getCurrentPlaybackSpeed() {

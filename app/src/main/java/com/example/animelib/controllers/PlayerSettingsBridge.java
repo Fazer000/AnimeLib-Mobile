@@ -49,6 +49,12 @@ public class PlayerSettingsBridge implements PlayerDialogsController.SettingsDat
         int getLongSkipDuration();
         void setLongSkipDuration(int duration);
 
+        boolean isAutoSkipOpening();
+        boolean isAutoSkipEnding();
+        boolean isAutoSkipSplashscreen();
+        boolean isAutoSkipCompilation();
+        void setAutoSkipSegments(boolean opening, boolean ending, boolean splashscreen, boolean compilation);
+
         int getCurrentTheme();
         void applyThemeAndOrientation(int themeMode);
     }
@@ -177,6 +183,32 @@ public class PlayerSettingsBridge implements PlayerDialogsController.SettingsDat
     public void onLongSkipDurationChanged(int duration) {
         host.setLongSkipDuration(duration);
         host.getApiService().saveLongSkipDurationSetting(duration);
+    }
+
+    @Override
+    public boolean isAutoSkipOpening() {
+        return host.isAutoSkipOpening();
+    }
+
+    @Override
+    public boolean isAutoSkipEnding() {
+        return host.isAutoSkipEnding();
+    }
+
+    @Override
+    public boolean isAutoSkipSplashscreen() {
+        return host.isAutoSkipSplashscreen();
+    }
+
+    @Override
+    public boolean isAutoSkipCompilation() {
+        return host.isAutoSkipCompilation();
+    }
+
+    @Override
+    public void onAutoSkipSegmentsChanged(boolean opening, boolean ending, boolean splashscreen, boolean compilation) {
+        host.setAutoSkipSegments(opening, ending, splashscreen, compilation);
+        host.getApiService().saveAutoSkipSegmentsSettings(opening, ending, splashscreen, compilation);
     }
 
     @Override

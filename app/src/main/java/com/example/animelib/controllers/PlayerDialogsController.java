@@ -244,6 +244,11 @@ public class PlayerDialogsController {
         void onAutoPlayChanged(boolean enabled);
         int getLongSkipDuration();
         void onLongSkipDurationChanged(int duration);
+        default boolean isAutoSkipOpening() { return false; }
+        default boolean isAutoSkipEnding() { return false; }
+        default boolean isAutoSkipSplashscreen() { return false; }
+        default boolean isAutoSkipCompilation() { return false; }
+        default void onAutoSkipSegmentsChanged(boolean opening, boolean ending, boolean splashscreen, boolean compilation) {}
         int getCurrentTheme();
         void onThemeChanged(int themeMode);
         float[] getVideoFilters();
@@ -312,6 +317,13 @@ public class PlayerDialogsController {
         dialog.setOfflineMode(provider.isOfflineMode());
         dialog.setDownloadedVideo(provider.isPlayingDownloadedVideo());
         dialog.setActivePlayingQuality(provider.getActivePlayingQuality());
+        dialog.setAutoSkipSegmentsSettings(
+                provider.isAutoSkipOpening(),
+                provider.isAutoSkipEnding(),
+                provider.isAutoSkipSplashscreen(),
+                provider.isAutoSkipCompilation(),
+                provider::onAutoSkipSegmentsChanged
+        );
 
         float[] filters = provider.getVideoFilters();
         if (filters != null && filters.length >= 5) {

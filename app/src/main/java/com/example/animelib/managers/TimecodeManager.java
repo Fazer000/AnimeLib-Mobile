@@ -16,13 +16,19 @@ import androidx.media3.ui.DefaultTimeBar;
 import androidx.media3.ui.PlayerView;
 import androidx.media3.ui.TimeBar;
 
+import android.os.SystemClock;
+
 import com.example.animelib.R;
 import com.example.animelib.models.EpisodeResponse;
+import com.example.animelib.util.CustomToast;
 import com.example.animelib.views.TimebarSegmentsView;
 import com.google.android.material.button.MaterialButton;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * Менеджер для обработки таймкодов и сегментов видео.
@@ -45,10 +51,25 @@ public class TimecodeManager {
     private MaterialButton skipSegmentButton;
     private boolean isControllerVisible = false;
     private boolean isScrubbing = false;
-    
+    private boolean autoSkipOpening = false;
+    private boolean autoSkipEnding = false;
+    private boolean autoSkipSplashscreen = false;
+    private boolean autoSkipCompilation = false;
+    private final Set<String> autoSkippedSegmentKeys = new HashSet<>();
+    private long lastAutoSkipTimestampMs = 0L;
+    private static final long AUTO_SKIP_COOLDOWN_MS = 500L;
+
     public TimecodeManager(Context context) {
         this.context = context;
         this.updateHandler = new Handler(Looper.getMainLooper());
+    }
+
+    public void setAutoSkipSettings(boolean opening, boolean ending, boolean splashscreen, boolean compilation) {
+        this.autoSkipOpening = opening;
+        this.autoSkipEnding = ending;
+        this.autoSkipSplashscreen = splashscreen;
+        this.autoSkipCompilation = compilation;
+        updateTimecodeButtonsVisibility();
     }
     
     /**
@@ -131,6 +152,9 @@ public class TimecodeManager {
                 @Override
                 public void onScrubStop(@NonNull TimeBar timeBar, long position, boolean canceled) {
                     isScrubbing = false;
+                    if (!canceled) {
+                        markActiveSegmentAsAutoSkippedAt(position);
+                    }
                     if (timebarSegmentsView != null && TimecodeManager.this.player != null) {
                         timebarSegmentsView.setProgress(position, TimecodeManager.this.player.getBufferedPosition(), TimecodeManager.this.player.getDuration());
                     }
@@ -221,6 +245,8 @@ public class TimecodeManager {
      * Устанавливает список таймкодов напрямую (в том числе из сохранённых офлайн-метаданных).
      */
     public void setTimecodes(List<EpisodeResponse.TimecodeData> newTimecodes) {
+        autoSkippedSegmentKeys.clear();
+        lastAutoSkipTimestampMs = 0L;
         if (newTimecodes != null && !newTimecodes.isEmpty()) {
             this.timecodes = new ArrayList<>(newTimecodes);
             Log.d(TAG, "Timecodes set: " + timecodes.size() + " items");
@@ -262,6 +288,16 @@ public class TimecodeManager {
         }
 
         if (isScrubbing) return;
+
+        if (checkAndPerformAutoSkip()) {
+            if (skipSegmentButton != null) {
+                skipSegmentButton.setVisibility(View.GONE);
+            }
+            if (currentSegmentBadge != null) {
+                currentSegmentBadge.setVisibility(View.GONE);
+            }
+            return;
+        }
         
         long currentPositionMs = player.getCurrentPosition();
         int currentPositionSeconds = (int) (currentPositionMs / 1000);
@@ -424,11 +460,94 @@ public class TimecodeManager {
         Log.d(TAG, "Skip segment button ready");
     }
     
+    private boolean isAutoSkipEnabledForType(String type) {
+        if (type == null) return false;
+        switch (type.toLowerCase(Locale.US)) {
+            case "opening":
+                return autoSkipOpening;
+            case "ending":
+                return autoSkipEnding;
+            case "splashscreen":
+                return autoSkipSplashscreen;
+            case "compilation":
+                return autoSkipCompilation;
+            default:
+                return false;
+        }
+    }
+
+    private String buildSegmentKey(EpisodeResponse.TimecodeData tc) {
+        String safeType = tc.getType() != null ? tc.getType().toLowerCase(Locale.US) : "";
+        return safeType + ":" + tc.getFrom() + ":" + tc.getTo();
+    }
+
+    private void markActiveSegmentAsAutoSkippedAt(long positionMs) {
+        if (timecodes.isEmpty()) return;
+        int posSeconds = (int) (positionMs / 1000L);
+        for (EpisodeResponse.TimecodeData tc : timecodes) {
+            if (tc != null && tc.getTo() > tc.getFrom()
+                    && posSeconds >= tc.getFrom() && posSeconds <= tc.getTo()) {
+                autoSkippedSegmentKeys.add(buildSegmentKey(tc));
+                break;
+            }
+        }
+    }
+
+    private boolean checkAndPerformAutoSkip() {
+        if (player == null || timecodes.isEmpty() || isScrubbing) {
+            return false;
+        }
+        if (!autoSkipOpening && !autoSkipEnding && !autoSkipSplashscreen && !autoSkipCompilation) {
+            return false;
+        }
+        if (!player.isPlaying() || player.getPlaybackState() != Player.STATE_READY) {
+            return false;
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastAutoSkipTimestampMs < AUTO_SKIP_COOLDOWN_MS) {
+            return false;
+        }
+
+        long currentPosMs = player.getCurrentPosition();
+        long durationMs = player.getDuration();
+
+        for (EpisodeResponse.TimecodeData tc : timecodes) {
+            if (tc == null || tc.getFrom() < 0 || tc.getTo() <= tc.getFrom()) {
+                continue;
+            }
+            if (!isAutoSkipEnabledForType(tc.getType())) {
+                continue;
+            }
+            long fromMs = tc.getFrom() * 1000L;
+            long toMs = tc.getTo() * 1000L;
+            if (currentPosMs >= fromMs && currentPosMs < toMs - 500L) {
+                String key = buildSegmentKey(tc);
+                if (autoSkippedSegmentKeys.contains(key)) {
+                    return false;
+                }
+                autoSkippedSegmentKeys.add(key);
+                lastAutoSkipTimestampMs = now;
+
+                long seekTargetMs = (durationMs > 0) ? Math.min(toMs, durationMs) : toMs;
+                player.seekTo(seekTargetMs);
+                if (timebarSegmentsView != null) {
+                    timebarSegmentsView.setProgress(seekTargetMs, player.getBufferedPosition(), durationMs);
+                }
+                if (context != null) {
+                    CustomToast.showInfo(context, "Автопропуск: " + getSegmentDisplayName(tc.getType()));
+                }
+                Log.d(TAG, "Auto-skipped segment: " + tc.getType() + " (" + tc.getFrom() + "s -> " + tc.getTo() + "s)");
+                return true;
+            }
+        }
+        return false;
+    }
+
     private String getSegmentDisplayName(String type) {
         if (type == null) return "Сегмент";
-        switch (type.toLowerCase()) {
+        switch (type.toLowerCase(Locale.US)) {
             case "opening":
-                return "Оппенинг";
+                return "Опенинг";
             case "ending":
                 return "Эндинг";
             case "splashscreen":
@@ -516,6 +635,7 @@ public class TimecodeManager {
         }
         
         timecodes.clear();
+        autoSkippedSegmentKeys.clear();
         player = null;
         playerListener = null;
         updateHandler = null;

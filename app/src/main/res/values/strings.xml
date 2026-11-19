@@ -25,7 +25,7 @@
     <string name="bs_title_subtitles">Субтитры</string>
     <string name="bs_title_theme">Выбор темы</string>
     <string name="bs_title_resize_mode">Режим отображения</string>
-    <string name="bs_title_skip_duration">Длительность пропуска</string>
+    <string name="bs_title_skip_duration">Пропуск сегментов</string>
     <string name="bs_title_voiceovers">Озвучка</string>
     <string name="bs_title_surround_sound">Объемный звук</string>
     <string name="bs_title_download">Скачивание серий</string>
@@ -85,7 +85,7 @@
     <string name="btn_download_apk">СКАЧАТЬ И УСТАНОВИТЬ APK</string>
     <string name="btn_open_github">Открыть страницу на GitHub</string>
     <string name="btn_reset">Сбросить</string>
-    <string name="player_skip_opening">Пропуск опенинга</string>
+    <string name="player_skip_opening">Пропуск сегментов</string>
     <string name="web_splash_loading_hint">Загрузка сайта…</string>
     <string name="anixart_import_title">Импорт из Anixart</string>
     <string name="anixart_import_subtitle">Импорт просмотренных тайтлов из txt файла</string>

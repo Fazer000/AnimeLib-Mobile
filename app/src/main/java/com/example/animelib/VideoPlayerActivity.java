@@ -152,6 +152,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private boolean autoPlay = true;
     private boolean autoPlayOnPrepare = true;
     private int longSkipDuration = 85;
+    private boolean autoSkipOpening = false;
+    private boolean autoSkipEnding = false;
+    private boolean autoSkipSplashscreen = false;
+    private boolean autoSkipCompilation = false;
     private int currentTheme = ThemeUtils.THEME_SYSTEM;
     private boolean wasCommentsVisibleBeforePiP = false;
     private boolean wasPlayingBeforeBackground = false;
@@ -893,6 +897,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
             autoPlayOnPrepare = autoPlay;
             longSkipDuration = apiService.loadLongSkipDurationSetting();
+            autoSkipOpening = apiService.loadAutoSkipOpeningSetting();
+            autoSkipEnding = apiService.loadAutoSkipEndingSetting();
+            autoSkipSplashscreen = apiService.loadAutoSkipSplashscreenSetting();
+            autoSkipCompilation = apiService.loadAutoSkipCompilationSetting();
             currentTheme = apiService.loadThemeSetting();
             if (playerSubtitlesController != null) {
                 playerSubtitlesController.loadSettingsFromApi(apiService);
@@ -902,6 +910,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
 
             runOnUiThread(() -> {
+                if (timecodeManager != null) {
+                    timecodeManager.setAutoSkipSettings(autoSkipOpening, autoSkipEnding, autoSkipSplashscreen, autoSkipCompilation);
+                }
                 if (playersManager != null) {
                     playersManager.setEnable4K(loaded4K);
                 }
@@ -1740,6 +1751,19 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     }
                     @Override public int getLongSkipDuration() { return longSkipDuration; }
                     @Override public void setLongSkipDuration(int duration) { longSkipDuration = duration; }
+                    @Override public boolean isAutoSkipOpening() { return autoSkipOpening; }
+                    @Override public boolean isAutoSkipEnding() { return autoSkipEnding; }
+                    @Override public boolean isAutoSkipSplashscreen() { return autoSkipSplashscreen; }
+                    @Override public boolean isAutoSkipCompilation() { return autoSkipCompilation; }
+                    @Override public void setAutoSkipSegments(boolean opening, boolean ending, boolean splashscreen, boolean compilation) {
+                        autoSkipOpening = opening;
+                        autoSkipEnding = ending;
+                        autoSkipSplashscreen = splashscreen;
+                        autoSkipCompilation = compilation;
+                        if (timecodeManager != null) {
+                            timecodeManager.setAutoSkipSettings(opening, ending, splashscreen, compilation);
+                        }
+                    }
                     @Override public int getCurrentTheme() { return currentTheme; }
                     @Override public void applyThemeAndOrientation(int themeMode) {
                         currentTheme = themeMode;

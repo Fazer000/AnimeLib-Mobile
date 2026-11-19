@@ -606,7 +606,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Пропуск опенинга"
+                        android:text="Пропуск сегментов"
                         android:textColor="@color/primary_text_color"
                         android:textSize="15.5sp"
                         android:fontFamily="@font/open_sans_bold"/>

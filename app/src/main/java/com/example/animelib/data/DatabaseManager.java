@@ -136,6 +136,10 @@ public class DatabaseManager {
         copy.setDisableCommentsInPlayer(src.isDisableCommentsInPlayer());
         copy.setCommentRepliesLimit(src.getCommentRepliesLimit());
         copy.setVideoResizeMode(src.getVideoResizeMode());
+        copy.setAutoSkipOpening(src.isAutoSkipOpening());
+        copy.setAutoSkipEnding(src.isAutoSkipEnding());
+        copy.setAutoSkipSplashscreen(src.isAutoSkipSplashscreen());
+        copy.setAutoSkipCompilation(src.isAutoSkipCompilation());
         return copy;
     }
 
@@ -474,6 +478,34 @@ public class DatabaseManager {
 
     public int loadVideoResizeModeSetting() {
         return getOrLoadAppSettings().getVideoResizeMode();
+    }
+
+    public void saveAutoSkipSegmentsSettings(boolean opening, boolean ending, boolean splashscreen, boolean compilation) {
+        updateAppSettings(settings -> {
+            settings.setAutoSkipOpening(opening);
+            settings.setAutoSkipEnding(ending);
+            settings.setAutoSkipSplashscreen(splashscreen);
+            settings.setAutoSkipCompilation(compilation);
+        }, "auto-skip segments settings: opening=" + opening
+                + ", ending=" + ending
+                + ", splashscreen=" + splashscreen
+                + ", compilation=" + compilation);
+    }
+
+    public boolean loadAutoSkipOpeningSetting() {
+        return getOrLoadAppSettings().isAutoSkipOpening();
+    }
+
+    public boolean loadAutoSkipEndingSetting() {
+        return getOrLoadAppSettings().isAutoSkipEnding();
+    }
+
+    public boolean loadAutoSkipSplashscreenSetting() {
+        return getOrLoadAppSettings().isAutoSkipSplashscreen();
+    }
+
+    public boolean loadAutoSkipCompilationSetting() {
+        return getOrLoadAppSettings().isAutoSkipCompilation();
     }
 
     // ========== Token операции ==========

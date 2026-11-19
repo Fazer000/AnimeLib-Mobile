@@ -46,7 +46,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Длительность пропуска"
+                android:text="Пропуск сегментов"
                 android:textColor="@color/primary_text_color"
                 android:textStyle="bold"
                 android:fontFamily="@font/open_sans_bold"
@@ -73,12 +73,254 @@
             android:layout_marginTop="4dp"
             android:layout_marginBottom="10dp"/>
 
+        <!-- Auto-skip Segments Section -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Автопропуск сегментов"
+            android:textColor="@color/primary_text_color"
+            android:textSize="14.5sp"
+            android:fontFamily="@font/open_sans_bold"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="8dp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginHorizontal="14dp">
+
+            <!-- 1. Opening -->
+            <LinearLayout
+                android:id="@+id/rowAutoSkipOpening"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="52dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_m3_item_top"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="10dp"
+                android:layout_marginBottom="3dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Опенинг"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="15sp"
+                        android:fontFamily="@font/open_sans_bold"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Автоматически пропускать опенинг"
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="12sp"
+                        android:fontFamily="@font/open_sans"/>
+                </LinearLayout>
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switchAutoSkipOpening"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    app:trackTint="@color/switch_track_tint"
+                    app:thumbTint="@color/switch_thumb_tint"
+                    app:showText="false"
+                    android:showText="false"
+                    android:textOn=""
+                    android:textOff=""
+                    android:checked="false"/>
+            </LinearLayout>
+
+            <!-- 2. Ending -->
+            <LinearLayout
+                android:id="@+id/rowAutoSkipEnding"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="52dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_m3_item_middle"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="10dp"
+                android:layout_marginBottom="3dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Эндинг"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="15sp"
+                        android:fontFamily="@font/open_sans_bold"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Автоматически пропускать эндинг"
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="12sp"
+                        android:fontFamily="@font/open_sans"/>
+                </LinearLayout>
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switchAutoSkipEnding"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    app:trackTint="@color/switch_track_tint"
+                    app:thumbTint="@color/switch_thumb_tint"
+                    app:showText="false"
+                    android:showText="false"
+                    android:textOn=""
+                    android:textOff=""
+                    android:checked="false"/>
+            </LinearLayout>
+
+            <!-- 3. Splashscreen -->
+            <LinearLayout
+                android:id="@+id/rowAutoSkipSplashscreen"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="52dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_m3_item_middle"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="10dp"
+                android:layout_marginBottom="3dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Заставка"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="15sp"
+                        android:fontFamily="@font/open_sans_bold"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Автоматически пропускать заставку"
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="12sp"
+                        android:fontFamily="@font/open_sans"/>
+                </LinearLayout>
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switchAutoSkipSplashscreen"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    app:trackTint="@color/switch_track_tint"
+                    app:thumbTint="@color/switch_thumb_tint"
+                    app:showText="false"
+                    android:showText="false"
+                    android:textOn=""
+                    android:textOff=""
+                    android:checked="false"/>
+            </LinearLayout>
+
+            <!-- 4. Compilation -->
+            <LinearLayout
+                android:id="@+id/rowAutoSkipCompilation"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="52dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_m3_item_bottom"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="10dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Компиляция"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="15sp"
+                        android:fontFamily="@font/open_sans_bold"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Автоматически пропускать компиляцию"
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="12sp"
+                        android:fontFamily="@font/open_sans"/>
+                </LinearLayout>
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switchAutoSkipCompilation"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    app:trackTint="@color/switch_track_tint"
+                    app:thumbTint="@color/switch_thumb_tint"
+                    app:showText="false"
+                    android:showText="false"
+                    android:textOn=""
+                    android:textOff=""
+                    android:checked="false"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Manual Skip Duration Section Title -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Длительность ручного пропуска"
+            android:textColor="@color/primary_text_color"
+            android:textSize="14.5sp"
+            android:fontFamily="@font/open_sans_bold"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"/>
+
         <!-- Main Display & Stepper Card -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingTop="10dp"
+            android:paddingTop="6dp"
             android:paddingBottom="8dp">
 
             <LinearLayout
