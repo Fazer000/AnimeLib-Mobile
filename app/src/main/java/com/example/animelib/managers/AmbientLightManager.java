@@ -26,6 +26,7 @@ import androidx.media3.ui.PlayerView;
 import com.example.animelib.R;
 import com.example.animelib.ui.AmbientLightView;
 import com.example.animelib.ui.AmbientVignetteOverlayView;
+import com.example.animelib.ui.RoundedCornerFrameLayout;
 import com.example.animelib.util.FastBlurUtils;
 
 import java.util.concurrent.ExecutorService;
@@ -135,9 +136,7 @@ public class AmbientLightManager {
 
         this.playerLayoutChangeListener = (v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) {
-                if (isEnabled && !isSuspended && !isFrozen) {
-                    updateBoundsFromPlayer();
-                }
+                updateBoundsFromPlayer();
             }
         };
         if (this.mainPlayerView != null) {
@@ -187,10 +186,10 @@ public class AmbientLightManager {
         }
 
         setupMainPlayerListener();
+        updateBoundsFromPlayer();
 
         if (isEnabled && !isSuspended && !isFrozen) {
             showAmbientContainer(true);
-            updateBoundsFromPlayer();
 
             if (mainPlayer.isPlaying()) {
                 startSamplingLoop();
@@ -463,11 +462,11 @@ public class AmbientLightManager {
 
             @Override
             public void onRenderedFirstFrame() {
+                updateBoundsFromPlayer();
                 if (!isEnabled || isSuspended || isFrozen) return;
                 if (fastBlurUtils != null) {
                     fastBlurUtils.resetHistory();
                 }
-                updateBoundsFromPlayer();
                 captureAndProcessFrame();
                 if (mainPlayer != null && mainPlayer.isPlaying()) {
                     startSamplingLoop();
@@ -527,8 +526,12 @@ public class AmbientLightManager {
                 || rootH > rootW;
 
         float aspect = 16f / 9f;
-        if (mainPlayer != null && mainPlayer.getVideoSize().width > 0 && mainPlayer.getVideoSize().height > 0) {
-            aspect = (float) mainPlayer.getVideoSize().width / (float) mainPlayer.getVideoSize().height;
+        if (mainPlayer != null) {
+            VideoSize vs = mainPlayer.getVideoSize();
+            if (vs.width > 0 && vs.height > 0) {
+                float pixelRatio = vs.pixelWidthHeightRatio > 0f ? vs.pixelWidthHeightRatio : 1f;
+                aspect = ((float) vs.width * pixelRatio) / (float) vs.height;
+            }
         }
 
         int resizeMode = (mainPlayerView != null)
@@ -570,16 +573,29 @@ public class AmbientLightManager {
             float fitW = computeFittedWidth(containerW, containerH, aspect, resizeMode);
             float fitH = computeFittedHeight(containerW, containerH, aspect, resizeMode);
 
-            vL = clamp(actualLeft + (containerW - fitW) * 0.5f, actualLeft, actualLeft + containerW);
-            vT = clamp(actualTop + (containerH - fitH) * 0.5f, actualTop, actualTop + containerH);
-            vR = clamp(actualLeft + (containerW + fitW) * 0.5f, vL, actualLeft + containerW);
-            vB = clamp(actualTop + (containerH + fitH) * 0.5f, vT, actualTop + containerH);
+            float localVL = clamp((containerW - fitW) * 0.5f, 0f, containerW);
+            float localVT = clamp((containerH - fitH) * 0.5f, 0f, containerH);
+            float localVR = clamp((containerW + fitW) * 0.5f, localVL, containerW);
+            float localVB = clamp((containerH + fitH) * 0.5f, localVT, containerH);
+
+            if (playerContainer instanceof RoundedCornerFrameLayout) {
+                ((RoundedCornerFrameLayout) playerContainer).setVideoShadowBounds(localVL, localVT, localVR, localVB);
+            }
+
+            vL = actualLeft + localVL;
+            vT = actualTop + localVT;
+            vR = actualLeft + localVR;
+            vB = actualTop + localVB;
 
             aL = 0f;
             aT = 0f;
             aR = (float) rootW;
             aB = Math.min((float) rootH, actualTop + containerH);
         } else {
+            if (mainPlayerView != null && mainPlayerView.getParent() instanceof RoundedCornerFrameLayout) {
+                ((RoundedCornerFrameLayout) mainPlayerView.getParent()).clearVideoShadowBounds();
+            }
+
             float viewW = (mainPlayerView != null && mainPlayerView.getWidth() > 0)
                     ? mainPlayerView.getWidth()
                     : rootW;
@@ -739,8 +755,8 @@ public class AmbientLightManager {
 
     public void onConfigurationChanged() {
         mainHandler.postDelayed(() -> {
+            updateBoundsFromPlayer();
             if (isEnabled && !isSuspended && !isFrozen) {
-                updateBoundsFromPlayer();
                 captureAndProcessFrame();
             }
         }, 120);

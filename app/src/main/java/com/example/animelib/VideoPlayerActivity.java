@@ -2955,6 +2955,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 if (detected != null && playerQualityController != null) {
                     playerQualityController.onActiveQualityResolved(detected);
                 }
+                if (ambientLightManager != null) {
+                    ambientLightManager.updateBoundsFromPlayer();
+                }
             }
 
             @Override

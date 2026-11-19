@@ -36,6 +36,7 @@ import com.example.animelib.managers.RelatedTitlesManager;
 import com.example.animelib.managers.TimecodeManager;
 import com.example.animelib.managers.VerticalGesturesManager;
 import com.example.animelib.services.DownloadService;
+import com.example.animelib.ui.RoundedCornerFrameLayout;
 
 import java.lang.reflect.Field;
 
@@ -396,6 +397,9 @@ public class PlayerOrientationController {
                         }
                     }
                     ui.playerContainer.setLayoutParams(rawParams);
+                    if (!isPortrait && ui.playerContainer instanceof RoundedCornerFrameLayout) {
+                        ((RoundedCornerFrameLayout) ui.playerContainer).clearVideoShadowBounds();
+                    }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                         ui.playerContainer.invalidateOutline();
                     }
