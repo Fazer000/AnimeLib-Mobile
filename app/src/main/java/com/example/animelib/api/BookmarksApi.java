@@ -311,28 +311,43 @@ public class BookmarksApi {
     }
 
     public AnimeBookmarkResponse fetchAnimeBookmarkSync(String mediaSlug) {
+        ApiService.BookmarkFetchSyncResult result = fetchAnimeBookmarkWithStatusSync(mediaSlug, false);
+        return result != null ? result.response : null;
+    }
+
+    public ApiService.BookmarkFetchSyncResult fetchAnimeBookmarkWithStatusSync(String mediaSlug, boolean forceRefresh) {
         String cleaned = ApiClientCore.cleanUrlSegment(mediaSlug);
         if (cleaned.isEmpty()) {
-            return null;
+            return new ApiService.BookmarkFetchSyncResult(false, false, 0, null);
         }
         final String cacheKey = cleaned.toLowerCase(Locale.ROOT);
-        AnimeBookmarkResponse cached = ApiCacheManager.ANIME_BOOKMARK.getValid(cacheKey, BOOKMARK_CACHE_TTL_MS);
-        if (cached == null && cacheKey.contains("--")) {
-            String numericId = ApiClientCore.extractAnimeId(cacheKey);
-            if (numericId != null && !numericId.isEmpty()) {
-                cached = ApiCacheManager.ANIME_BOOKMARK.getValid(numericId, BOOKMARK_CACHE_TTL_MS);
+        if (forceRefresh) {
+            invalidateAnimeBookmarkCache(cleaned);
+        } else {
+            AnimeBookmarkResponse cached = ApiCacheManager.ANIME_BOOKMARK.getValid(cacheKey, BOOKMARK_CACHE_TTL_MS);
+            if (cached == null && cacheKey.contains("--")) {
+                String numericId = ApiClientCore.extractAnimeId(cacheKey);
+                if (numericId != null && !numericId.isEmpty()) {
+                    cached = ApiCacheManager.ANIME_BOOKMARK.getValid(numericId, BOOKMARK_CACHE_TTL_MS);
+                }
+            }
+            if (cached != null) {
+                return new ApiService.BookmarkFetchSyncResult(true, false, 200, cached);
             }
         }
-        if (cached != null) {
-            return cached;
-        }
         if (!core.isAuthorized()) {
-            return null;
+            return new ApiService.BookmarkFetchSyncResult(false, false, 401, null);
         }
         String apiUrl = ApiClientCore.API_BASE_HAPI + "/anime/" + cacheKey + "/bookmark";
         try {
-            Request request = core.buildApiRequest(apiUrl, true).build();
+            Request.Builder reqBuilder = core.buildApiRequest(apiUrl, true);
+            if (forceRefresh) {
+                reqBuilder.header("Cache-Control", "no-cache, no-store, max-age=0");
+                reqBuilder.header("Pragma", "no-cache");
+            }
+            Request request = reqBuilder.build();
             try (Response response = core.getHttpClient().newCall(request).execute()) {
+                int code = response.code();
                 if (response.isSuccessful() && response.body() != null) {
                     String body = response.body().string();
                     AnimeBookmarkResponse bookmarkResponse = core.getGson().fromJson(body, AnimeBookmarkResponse.class);
@@ -343,13 +358,21 @@ public class BookmarksApi {
                             ApiCacheManager.ANIME_BOOKMARK.put(extractedId, bookmarkResponse);
                         }
                     }
-                    return bookmarkResponse;
+                    return new ApiService.BookmarkFetchSyncResult(true, false, code, bookmarkResponse);
                 }
+                if (code == 408 || code >= 500) {
+                    return new ApiService.BookmarkFetchSyncResult(false, true, code, null);
+                }
+                // HTTP 404 or other 4xx: сервер доступен и явно ответил, что закладки нет
+                return new ApiService.BookmarkFetchSyncResult(true, false, code, null);
             }
+        } catch (IOException e) {
+            Log.d(TAG, "fetchAnimeBookmarkWithStatusSync network failure for " + cacheKey + ": " + e.getMessage());
+            return new ApiService.BookmarkFetchSyncResult(false, true, 0, null);
         } catch (Exception e) {
-            Log.d(TAG, "fetchAnimeBookmarkSync skipped for " + cacheKey + ": " + e.getMessage());
+            Log.d(TAG, "fetchAnimeBookmarkWithStatusSync error for " + cacheKey + ": " + e.getMessage());
+            return new ApiService.BookmarkFetchSyncResult(false, false, 0, null);
         }
-        return null;
     }
 
     public void fetchBookmarksList(ApiService.BookmarksListCallback callback) {

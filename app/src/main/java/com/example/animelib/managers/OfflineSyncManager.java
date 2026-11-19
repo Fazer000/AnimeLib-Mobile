@@ -247,9 +247,11 @@ public class OfflineSyncManager {
             if (activeNetwork == null) return false;
             NetworkCapabilities capabilities = cm.getNetworkCapabilities(activeNetwork);
             return capabilities != null &&
-                    (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                    (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ||
+                     capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
                      capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
-                     capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET));
+                     capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
+                     capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN));
         } catch (Exception e) {
             safeLogError("Error checking network availability", e);
             return false;

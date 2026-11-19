@@ -129,7 +129,7 @@ public class BookmarkEpisodeResolutionUnitTest {
     }
 
     @Test
-    public void testInitialEpisodeStrictlySelectsFirstWhenNoApiOrDbBookmark() {
+    public void testInitialEpisodeOnlineUsesApiOnlyAndIgnoresStaleDbBookmark() {
         List<EpisodesListResponse.EpisodeItem> episodes = Arrays.asList(
                 ep(300, "1"),
                 ep(301, "2"),
@@ -137,58 +137,72 @@ public class BookmarkEpisodeResolutionUnitTest {
                 ep(303, "12")
         );
 
-        EpisodesListResponse.EpisodeItem resolved = BookmarkManager.resolveInitialEpisode(null, null, episodes);
-        assertNotNull(resolved);
-        assertEquals(300, resolved.getId());
-        assertEquals("1", resolved.getNumber());
+        OfflineBookmarkEntity staleDb = new OfflineBookmarkEntity("anime1", 303, "12", "15:00", 900_000L, 1L);
 
-        // Status-only online bookmark without episode reference + no DB bookmark -> first episode
+        // Online + API bookmark deleted (null) + stale DB bookmark -> MUST open first episode, NOT DB episode 12
+        EpisodesListResponse.EpisodeItem resolvedDeletedOnApi =
+                BookmarkManager.resolveInitialEpisode(true, null, staleDb, episodes);
+        assertNotNull(resolvedDeletedOnApi);
+        assertEquals(300, resolvedDeletedOnApi.getId());
+        assertEquals("1", resolvedDeletedOnApi.getNumber());
+
+        // Online + status-only API bookmark + stale DB bookmark -> MUST open first episode, NOT DB episode 12
         AnimeBookmarkResponse.BookmarkData statusOnly = new AnimeBookmarkResponse.BookmarkData();
         statusOnly.setStatus(21);
         statusOnly.setItemId(0);
-        EpisodesListResponse.EpisodeItem resolvedStatusOnly = BookmarkManager.resolveInitialEpisode(statusOnly, null, episodes);
+        EpisodesListResponse.EpisodeItem resolvedStatusOnly =
+                BookmarkManager.resolveInitialEpisode(true, statusOnly, staleDb, episodes);
         assertNotNull(resolvedStatusOnly);
         assertEquals(300, resolvedStatusOnly.getId());
 
-        // Stale online bookmark pointing to missing episode ID + empty DB bookmark -> first episode
-        AnimeBookmarkResponse.BookmarkData missingEpBookmark = new AnimeBookmarkResponse.BookmarkData();
-        missingEpBookmark.setItemId(999999);
-        OfflineBookmarkEntity emptyDb = new OfflineBookmarkEntity("anime1", 0, "", "00:00", 0L, 1L);
-        EpisodesListResponse.EpisodeItem resolvedMissing = BookmarkManager.resolveInitialEpisode(missingEpBookmark, emptyDb, episodes);
-        assertNotNull(resolvedMissing);
-        assertEquals(300, resolvedMissing.getId());
+        // Online + valid API bookmark + different DB bookmark -> API bookmark wins
+        AnimeBookmarkResponse.BookmarkData online = new AnimeBookmarkResponse.BookmarkData();
+        online.setItemId(301);
+        online.setProgress("04:00");
+        EpisodesListResponse.EpisodeItem resolvedFromApi =
+                BookmarkManager.resolveInitialEpisode(true, online, staleDb, episodes);
+        assertNotNull(resolvedFromApi);
+        assertEquals(301, resolvedFromApi.getId());
     }
 
     @Test
-    public void testInitialEpisodePrefersApiThenDbBookmark() {
+    public void testInitialEpisodeOfflineUsesDbBookmarkOrFirstEpisode() {
         List<EpisodesListResponse.EpisodeItem> episodes = Arrays.asList(
                 ep(400, "1"),
                 ep(401, "2"),
                 ep(402, "3")
         );
 
-        AnimeBookmarkResponse.BookmarkData online = new AnimeBookmarkResponse.BookmarkData();
-        online.setItemId(402);
-        online.setProgress("04:00");
-
         OfflineBookmarkEntity offline = new OfflineBookmarkEntity("anime1", 401, "2", "01:30", 90_000L, 1L);
 
-        // Both present -> API bookmark wins
-        EpisodesListResponse.EpisodeItem fromApi = BookmarkManager.resolveInitialEpisode(online, offline, episodes);
-        assertNotNull(fromApi);
-        assertEquals(402, fromApi.getId());
-
-        // Only DB bookmark present -> DB bookmark wins
-        EpisodesListResponse.EpisodeItem fromDb = BookmarkManager.resolveInitialEpisode(null, offline, episodes);
+        // Offline + valid DB bookmark -> DB bookmark wins
+        EpisodesListResponse.EpisodeItem fromDb =
+                BookmarkManager.resolveInitialEpisode(false, null, offline, episodes);
         assertNotNull(fromDb);
         assertEquals(401, fromDb.getId());
 
-        // Status-only API bookmark + DB bookmark -> DB bookmark wins
-        AnimeBookmarkResponse.BookmarkData statusOnly = new AnimeBookmarkResponse.BookmarkData();
-        statusOnly.setStatus(2);
-        EpisodesListResponse.EpisodeItem fromDbWithStatusOnly = BookmarkManager.resolveInitialEpisode(statusOnly, offline, episodes);
-        assertNotNull(fromDbWithStatusOnly);
-        assertEquals(401, fromDbWithStatusOnly.getId());
+        // Offline + no DB bookmark -> first episode
+        EpisodesListResponse.EpisodeItem noDb =
+                BookmarkManager.resolveInitialEpisode(false, null, null, episodes);
+        assertNotNull(noDb);
+        assertEquals(400, noDb.getId());
+
+        // Offline + empty DB bookmark -> first episode
+        OfflineBookmarkEntity emptyDb = new OfflineBookmarkEntity("anime1", 0, "", "00:00", 0L, 1L);
+        EpisodesListResponse.EpisodeItem emptyDbResolved =
+                BookmarkManager.resolveInitialEpisode(false, null, emptyDb, episodes);
+        assertNotNull(emptyDbResolved);
+        assertEquals(400, emptyDbResolved.getId());
+    }
+
+    @Test
+    public void testIsNetworkErrorDistinguishesTransportFailuresFromHttp404() {
+        assertTrue(BookmarkManager.isNetworkError("Ошибка сети: Unable to resolve host"));
+        assertTrue(BookmarkManager.isNetworkError("Ошибка при получении закладки: 503"));
+        assertTrue(BookmarkManager.isNetworkError("timeout"));
+        assertFalse(BookmarkManager.isNetworkError("Ошибка при получении закладки: 404"));
+        assertFalse(BookmarkManager.isNetworkError("Не авторизован"));
+        assertFalse(BookmarkManager.isNetworkError(null));
     }
 }
 

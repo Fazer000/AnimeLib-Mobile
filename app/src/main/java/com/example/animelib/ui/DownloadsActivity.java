@@ -1117,23 +1117,64 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
                 List<DownloadedEpisodeEntity> episodes = databaseManager.getEpisodesForAnimeSync(anime.getAnimeId());
                 if (episodes != null && !episodes.isEmpty()) {
                     DownloadedEpisodeEntity ep = null;
-                    com.example.animelib.data.entity.OfflineBookmarkEntity bookmark = databaseManager.getOfflineBookmarkSync(anime.getAnimeId());
-                    if (bookmark != null) {
-                        for (DownloadedEpisodeEntity dep : episodes) {
-                            if (bookmark.getEpisodeId() > 0 && dep.getEpisodeId() == bookmark.getEpisodeId()) {
-                                ep = dep;
-                                break;
+                    boolean hasInternet = com.example.animelib.managers.OfflineSyncManager.isNetworkAvailable(DownloadsActivity.this);
+                    boolean allowOfflineDbFallback = !hasInternet;
+
+                    if (hasInternet && apiService != null && apiService.isAuthorized()) {
+                        ApiService.BookmarkFetchSyncResult apiResult =
+                                apiService.fetchAnimeBookmarkWithStatusSync(anime.getAnimeId(), true);
+                        if (apiResult != null && apiResult.serverResponded) {
+                            com.example.animelib.models.AnimeBookmarkResponse.BookmarkData apiBm =
+                                    apiResult.response != null ? apiResult.response.getData() : null;
+                            if (com.example.animelib.managers.BookmarkManager.hasExplicitEpisodeReference(apiBm)) {
+                                int apiEpId = apiBm.getItemId();
+                                if (apiEpId <= 0 && apiBm.getItem() != null) {
+                                    apiEpId = apiBm.getItem().getId();
+                                }
+                                String apiEpNum = (apiBm.getItem() != null && apiBm.getItem().getNumber() != null)
+                                        ? apiBm.getItem().getNumber().trim()
+                                        : (apiBm.getMeta() != null && apiBm.getMeta().getItemNumber() > 0
+                                            ? String.valueOf(apiBm.getMeta().getItemNumber()) : null);
+                                for (DownloadedEpisodeEntity dep : episodes) {
+                                    if (apiEpId > 0 && (dep.getEpisodeId() == apiEpId
+                                            || (dep.getId() != null && dep.getId().equals(String.valueOf(apiEpId))))) {
+                                        ep = dep;
+                                        break;
+                                    }
+                                    if (apiEpNum != null && !apiEpNum.isEmpty() && dep.getEpisodeNumber() != null
+                                            && dep.getEpisodeNumber().trim().equals(apiEpNum)) {
+                                        ep = dep;
+                                        break;
+                                    }
+                                }
+                            } else {
+                                databaseManager.deleteStaleOfflineBookmarkIfNoPendingSync(anime.getAnimeId(), null);
                             }
-                            if (bookmark.getEpisodeId() > 0 && dep.getId() != null
-                                    && dep.getId().equals(String.valueOf(bookmark.getEpisodeId()))) {
-                                ep = dep;
-                                break;
-                            }
-                            if (bookmark.getEpisodeNumber() != null && !bookmark.getEpisodeNumber().trim().isEmpty()
-                                    && dep.getEpisodeNumber() != null
-                                    && dep.getEpisodeNumber().trim().equals(bookmark.getEpisodeNumber().trim())) {
-                                ep = dep;
-                                break;
+                        } else if (apiResult != null && apiResult.networkUnavailable) {
+                            allowOfflineDbFallback = true;
+                        }
+                    }
+
+                    if (ep == null && allowOfflineDbFallback) {
+                        com.example.animelib.data.entity.OfflineBookmarkEntity bookmark =
+                                databaseManager.getOfflineBookmarkSync(anime.getAnimeId());
+                        if (bookmark != null) {
+                            for (DownloadedEpisodeEntity dep : episodes) {
+                                if (bookmark.getEpisodeId() > 0 && dep.getEpisodeId() == bookmark.getEpisodeId()) {
+                                    ep = dep;
+                                    break;
+                                }
+                                if (bookmark.getEpisodeId() > 0 && dep.getId() != null
+                                        && dep.getId().equals(String.valueOf(bookmark.getEpisodeId()))) {
+                                    ep = dep;
+                                    break;
+                                }
+                                if (bookmark.getEpisodeNumber() != null && !bookmark.getEpisodeNumber().trim().isEmpty()
+                                        && dep.getEpisodeNumber() != null
+                                        && dep.getEpisodeNumber().trim().equals(bookmark.getEpisodeNumber().trim())) {
+                                    ep = dep;
+                                    break;
+                                }
                             }
                         }
                     }

@@ -1205,12 +1205,42 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
                                 @Override
                                 public void onNoBookmarkFound() {
+                                    onNoBookmarkFound(false);
+                                }
+
+                                @Override
+                                public void onNoBookmarkFound(boolean networkUnavailable) {
                                     if (!java.util.Objects.equals(expectedAnimeId, currentAnimeId)) return;
-                                    resolveEpisodeWhenNoOnlineBookmark(loadedEpisodes, mediaSlug);
+                                    if (networkUnavailable) {
+                                        resolveEpisodeWhenNoOnlineBookmark(loadedEpisodes, mediaSlug);
+                                    } else {
+                                        if (apiService != null && apiService.isAuthorized() && databaseManager != null) {
+                                            databaseManager.deleteStaleOfflineBookmarkIfNoPendingSync(expectedAnimeId, mediaSlug);
+                                        }
+                                        safeRunOnUiThread(() -> {
+                                            if (isFinishing() || isDestroyed()) return;
+                                            if (!java.util.Objects.equals(expectedAnimeId, currentAnimeId)) return;
+                                            if (playerEpisodesController != null && playerEpisodesController.hasUserSwitchedEpisode()) {
+                                                return;
+                                            }
+                                            selectInitialEpisodeWithoutBookmark();
+                                        });
+                                    }
                                 }
                             });
                 } else {
-                    resolveEpisodeWhenNoOnlineBookmark(loadedEpisodes, null);
+                    boolean offline = !com.example.animelib.managers.OfflineSyncManager.isNetworkAvailable(VideoPlayerActivity.this);
+                    if (offline) {
+                        resolveEpisodeWhenNoOnlineBookmark(loadedEpisodes, null);
+                    } else {
+                        safeRunOnUiThread(() -> {
+                            if (isFinishing() || isDestroyed()) return;
+                            if (playerEpisodesController != null && playerEpisodesController.hasUserSwitchedEpisode()) {
+                                return;
+                            }
+                            selectInitialEpisodeWithoutBookmark();
+                        });
+                    }
                 }
             }
 

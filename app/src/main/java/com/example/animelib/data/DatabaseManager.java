@@ -1109,6 +1109,58 @@ public class DatabaseManager {
         });
     }
 
+    public boolean hasPendingBookmarkSyncTaskSync(String animeId, String mediaSlug) {
+        try {
+            java.util.List<com.example.animelib.data.entity.PendingSyncTaskEntity> tasks =
+                    db.pendingSyncTaskDao().getAllTasksSync();
+            if (tasks == null || tasks.isEmpty()) {
+                return false;
+            }
+            String normId = animeId != null ? animeId.trim() : "";
+            String normSlug = mediaSlug != null ? mediaSlug.trim() : "";
+            for (com.example.animelib.data.entity.PendingSyncTaskEntity task : tasks) {
+                if (task == null || !"BOOKMARK".equals(task.getTaskType())) continue;
+                String taskAnimeId = task.getAnimeId() != null ? task.getAnimeId().trim() : "";
+                String taskSlug = task.getMediaSlug() != null ? task.getMediaSlug().trim() : "";
+                if (!normId.isEmpty() && (normId.equals(taskAnimeId) || normId.equals(taskSlug)
+                        || taskSlug.startsWith(normId + "--"))) {
+                    return true;
+                }
+                if (!normSlug.isEmpty() && (normSlug.equals(taskSlug) || normSlug.equals(taskAnimeId))) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to check pending bookmark sync tasks", e);
+        }
+        return false;
+    }
+
+    public void deleteStaleOfflineBookmarkIfNoPendingSync(String animeId, String mediaSlug) {
+        Runnable task = () -> {
+            try {
+                if (hasPendingBookmarkSyncTaskSync(animeId, mediaSlug)) {
+                    Log.d(TAG, "Keeping local offline bookmark because pending sync task exists for anime=" + animeId);
+                    return;
+                }
+                if (animeId != null && !animeId.trim().isEmpty()) {
+                    db.offlineBookmarkDao().deleteBookmark(animeId.trim());
+                }
+                if (mediaSlug != null && !mediaSlug.trim().isEmpty()
+                        && (animeId == null || !mediaSlug.trim().equals(animeId.trim()))) {
+                    db.offlineBookmarkDao().deleteBookmark(mediaSlug.trim());
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to delete stale offline bookmark", e);
+            }
+        };
+        if (executor != null && !executor.isShutdown()) {
+            executor.execute(task);
+        } else {
+            new Thread(task, "stale-bookmark-cleanup").start();
+        }
+    }
+
     // ========== Pending Sync Tasks операции ==========
 
     public void savePendingSyncTask(com.example.animelib.data.entity.PendingSyncTaskEntity task) {

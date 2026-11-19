@@ -702,11 +702,40 @@ public class PlayerOfflineController {
                 }
             }
 
-            // Priority 4: Offline bookmark (only on first launch)
-            OfflineBookmarkEntity offlineBookmark = databaseManager.getOfflineBookmarkSync(animeId);
-            if (currentItem == null && isFirstOfflineLaunch && offlineBookmark != null) {
-                currentItem = com.example.animelib.managers.BookmarkManager
-                        .resolveOfflineBookmarkedEpisode(offlineBookmark, episodeItems);
+            // Priority 4: Bookmark (API when online, local DB only when offline / network unavailable)
+            boolean hasInternet = com.example.animelib.managers.OfflineSyncManager.isNetworkAvailable(activity);
+            boolean allowOfflineDbFallback = !hasInternet;
+            AnimeBookmarkResponse.BookmarkData resolvedOnlineBookmark = null;
+            OfflineBookmarkEntity resolvedOfflineBookmark = null;
+
+            if (hasInternet && apiService.isAuthorized()) {
+                ApiService.BookmarkFetchSyncResult apiResult =
+                        apiService.fetchAnimeBookmarkWithStatusSync(animeId, true);
+                if (apiResult != null && apiResult.serverResponded) {
+                    AnimeBookmarkResponse.BookmarkData apiBm =
+                            apiResult.response != null ? apiResult.response.getData() : null;
+                    if (com.example.animelib.managers.BookmarkManager.hasExplicitEpisodeReference(apiBm)) {
+                        resolvedOnlineBookmark = apiBm;
+                    } else {
+                        databaseManager.deleteStaleOfflineBookmarkIfNoPendingSync(animeId, null);
+                    }
+                } else if (apiResult != null && apiResult.networkUnavailable) {
+                    allowOfflineDbFallback = true;
+                }
+            }
+
+            if (resolvedOnlineBookmark == null && allowOfflineDbFallback) {
+                resolvedOfflineBookmark = databaseManager.getOfflineBookmarkSync(animeId);
+            }
+
+            if (currentItem == null && isFirstOfflineLaunch) {
+                if (resolvedOnlineBookmark != null) {
+                    currentItem = com.example.animelib.managers.BookmarkManager
+                            .resolveBookmarkedEpisode(resolvedOnlineBookmark, episodeItems);
+                } else if (resolvedOfflineBookmark != null) {
+                    currentItem = com.example.animelib.managers.BookmarkManager
+                            .resolveOfflineBookmarkedEpisode(resolvedOfflineBookmark, episodeItems);
+                }
             }
 
             if (currentItem == null && !episodeItems.isEmpty()) {
@@ -715,6 +744,8 @@ public class PlayerOfflineController {
 
             final List<EpisodesListResponse.EpisodeItem> finalItems = episodeItems;
             final EpisodesListResponse.EpisodeItem finalCurrent = currentItem;
+            final AnimeBookmarkResponse.BookmarkData finalOnlineBookmark = resolvedOnlineBookmark;
+            final OfflineBookmarkEntity finalOfflineBookmark = resolvedOfflineBookmark;
 
             host.safeRunOnUiThread(() -> {
                 if (episodesManager != null) {
@@ -723,31 +754,51 @@ public class PlayerOfflineController {
                         episodesManager.setCurrentEpisode(finalCurrent);
                     }
                     PlayerProgressController progressCtrl = host.getProgressController();
-                    if (offlineBookmark != null) {
+                    if (finalOnlineBookmark != null) {
+                        episodesManager.updateBookmarkInAdapter(finalOnlineBookmark);
+                        boolean isCurrentBookmarked = com.example.animelib.managers.BookmarkManager
+                                .isBookmarkForEpisode(finalOnlineBookmark, finalCurrent);
+                        if (progressCtrl != null) {
+                            progressCtrl.updateBookmarkButtonColor(isCurrentBookmarked);
+                        }
+                        long apiPosMs = com.example.animelib.managers.BookmarkManager
+                                .parseTimecodeToMillisecondsStatic(finalOnlineBookmark.getProgress());
+                        if (isCurrentBookmarked && apiPosMs > 0 && isFirstOfflineLaunch) {
+                            PlayerPlaybackController playbackCtrl = host.getPlaybackController();
+                            ExoPlayer player = playbackCtrl != null ? playbackCtrl.getPlayer() : null;
+                            if (player != null) {
+                                player.seekTo(apiPosMs);
+                                Log.d(TAG, "Seeked player to API bookmark position: " + apiPosMs + "ms");
+                            }
+                        }
+                    } else if (finalOfflineBookmark != null) {
                         AnimeBookmarkResponse.BookmarkData bmData = new AnimeBookmarkResponse.BookmarkData();
-                        bmData.setItemId(offlineBookmark.getEpisodeId());
-                        bmData.setProgress(offlineBookmark.getTimecode());
+                        bmData.setItemId(finalOfflineBookmark.getEpisodeId());
+                        bmData.setProgress(finalOfflineBookmark.getTimecode());
                         episodesManager.updateBookmarkInAdapter(bmData);
 
                         boolean isCurrentBookmarked = finalCurrent != null && (
-                                (offlineBookmark.getEpisodeId() > 0 && finalCurrent.getId() == offlineBookmark.getEpisodeId())
-                                        || (offlineBookmark.getEpisodeNumber() != null && !offlineBookmark.getEpisodeNumber().trim().isEmpty()
+                                (finalOfflineBookmark.getEpisodeId() > 0 && finalCurrent.getId() == finalOfflineBookmark.getEpisodeId())
+                                        || (finalOfflineBookmark.getEpisodeNumber() != null && !finalOfflineBookmark.getEpisodeNumber().trim().isEmpty()
                                         && finalCurrent.getNumber() != null
-                                        && finalCurrent.getNumber().trim().equals(offlineBookmark.getEpisodeNumber().trim())));
+                                        && finalCurrent.getNumber().trim().equals(finalOfflineBookmark.getEpisodeNumber().trim())));
 
                         if (progressCtrl != null) {
                             progressCtrl.updateBookmarkButtonColor(isCurrentBookmarked);
                         }
-                        if (isCurrentBookmarked && offlineBookmark.getPositionMs() > 0 && isFirstOfflineLaunch) {
+                        if (isCurrentBookmarked && finalOfflineBookmark.getPositionMs() > 0 && isFirstOfflineLaunch) {
                             PlayerPlaybackController playbackCtrl = host.getPlaybackController();
                             ExoPlayer player = playbackCtrl != null ? playbackCtrl.getPlayer() : null;
                             if (player != null) {
-                                player.seekTo(offlineBookmark.getPositionMs());
-                                Log.d(TAG, "Seeked player to offline bookmark position: " + offlineBookmark.getPositionMs() + "ms");
+                                player.seekTo(finalOfflineBookmark.getPositionMs());
+                                Log.d(TAG, "Seeked player to offline bookmark position: " + finalOfflineBookmark.getPositionMs() + "ms");
                             }
                         }
-                    } else if (progressCtrl != null) {
-                        progressCtrl.updateBookmarkButtonColor(false);
+                    } else {
+                        episodesManager.updateBookmarkInAdapter(null);
+                        if (progressCtrl != null) {
+                            progressCtrl.updateBookmarkButtonColor(false);
+                        }
                     }
                     episodesManager.updateEpisodeNavigationButtonsVisibility();
                 }

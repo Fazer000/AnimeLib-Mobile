@@ -403,28 +403,52 @@ public class BookmarkManager {
     }
 
     /**
+     * Проверяет, вызвана ли ошибка получения закладки отсутствием сети или недоступностью сервера,
+     * в отличие от штатного ответа API об отсутствии закладки (например, HTTP 404).
+     */
+    public static boolean isNetworkError(@Nullable String error) {
+        if (error == null || error.trim().isEmpty()) {
+            return false;
+        }
+        String lower = error.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("ошибка сети")
+                || lower.contains("timeout")
+                || lower.contains("timed out")
+                || lower.contains("unable to resolve host")
+                || lower.contains("failed to connect")
+                || lower.contains("network is unreachable")
+                || lower.contains("connection reset")
+                || lower.contains("software caused connection abort")
+                || lower.contains(": 408")
+                || lower.contains(": 500")
+                || lower.contains(": 502")
+                || lower.contains(": 503")
+                || lower.contains(": 504");
+    }
+
+    /**
      * Разрешает стартовый эпизод при входе в плеер:
-     * 1) Если есть валидная закладка в API — возвращает её эпизод.
-     * 2) Иначе если есть валидная локальная закладка в БД — возвращает её эпизод.
-     * 3) Иначе строго возвращает первый эпизод в списке (episodesList.get(0)).
+     * - Если есть интернет (isOnline = true): источником истины является API.
+     *   Если на API закладки нет (или она удалена) — локальная БД НЕ используется,
+     *   выбирается строго первый эпизод в списке (episodesList.get(0)).
+     * - Если интернета нет (isOnline = false): используется локальная закладка из БД,
+     *   иначе первый эпизод в списке (episodesList.get(0)).
      */
     @Nullable
     public static EpisodesListResponse.EpisodeItem resolveInitialEpisode(
+            boolean isOnline,
             @Nullable AnimeBookmarkResponse.BookmarkData onlineBookmark,
             @Nullable com.example.animelib.data.entity.OfflineBookmarkEntity offlineBookmark,
             @Nullable java.util.List<EpisodesListResponse.EpisodeItem> episodesList) {
         if (episodesList == null || episodesList.isEmpty()) {
             return null;
         }
-        EpisodesListResponse.EpisodeItem onlineEpisode = resolveBookmarkedEpisode(onlineBookmark, episodesList);
-        if (onlineEpisode != null) {
-            return onlineEpisode;
+        if (isOnline) {
+            EpisodesListResponse.EpisodeItem onlineEpisode = resolveBookmarkedEpisode(onlineBookmark, episodesList);
+            return onlineEpisode != null ? onlineEpisode : episodesList.get(0);
         }
         EpisodesListResponse.EpisodeItem offlineEpisode = resolveOfflineBookmarkedEpisode(offlineBookmark, episodesList);
-        if (offlineEpisode != null) {
-            return offlineEpisode;
-        }
-        return episodesList.get(0);
+        return offlineEpisode != null ? offlineEpisode : episodesList.get(0);
     }
 
     /**
@@ -489,10 +513,25 @@ public class BookmarkManager {
      */
     public void getLastEpisodeFromBookmark(String mediaSlug, java.util.List<EpisodesListResponse.EpisodeItem> episodesList,
                                          LastEpisodeCallback callback) {
-        if (episodesList == null || episodesList.isEmpty() || mediaSlug == null || mediaSlug.trim().isEmpty()
-                || apiService == null || !apiService.isAuthorized()) {
+        if (episodesList == null || episodesList.isEmpty() || mediaSlug == null || mediaSlug.trim().isEmpty()) {
             if (callback != null) {
-                callback.onNoBookmarkFound();
+                callback.onNoBookmarkFound(false);
+            }
+            return;
+        }
+
+        final Context effectiveCtx = this.appContext != null ? this.appContext : this.context;
+        if (effectiveCtx != null && !OfflineSyncManager.isNetworkAvailable(effectiveCtx)) {
+            Log.d(TAG, "No internet connection, delegating bookmark lookup to local DB");
+            if (callback != null) {
+                callback.onNoBookmarkFound(true);
+            }
+            return;
+        }
+
+        if (apiService == null || !apiService.isAuthorized()) {
+            if (callback != null) {
+                callback.onNoBookmarkFound(false);
             }
             return;
         }
@@ -502,6 +541,7 @@ public class BookmarkManager {
         fetchAnimeBookmark(mediaSlug, new AnimeBookmarkCallback() {
             @Override
             public void onBookmarkReceived(AnimeBookmarkResponse response) {
+                if (callback == null) return;
                 if (response != null && response.getData() != null) {
                     AnimeBookmarkResponse.BookmarkData bookmark = response.getData();
                     EpisodesListResponse.EpisodeItem foundEpisode = resolveBookmarkedEpisode(bookmark, episodesList);
@@ -512,18 +552,21 @@ public class BookmarkManager {
                         callback.onLastEpisodeFound(foundEpisode, bookmark.getProgress());
                     } else {
                         Log.d(TAG, "Bookmarked episode not found in episodes list (or status-only bookmark)");
-                        callback.onNoBookmarkFound();
+                        callback.onNoBookmarkFound(false);
                     }
                 } else {
-                    Log.d(TAG, "No bookmark data received");
-                    callback.onNoBookmarkFound();
+                    Log.d(TAG, "No bookmark data received from API");
+                    callback.onNoBookmarkFound(false);
                 }
             }
 
             @Override
             public void onError(String error) {
                 Log.d(TAG, "No bookmark resolved: " + error);
-                callback.onNoBookmarkFound();
+                if (callback == null) return;
+                boolean networkUnavailable = (effectiveCtx != null && !OfflineSyncManager.isNetworkAvailable(effectiveCtx))
+                        || isNetworkError(error);
+                callback.onNoBookmarkFound(networkUnavailable);
             }
         });
     }
@@ -585,6 +628,9 @@ public class BookmarkManager {
     public interface LastEpisodeCallback {
         void onLastEpisodeFound(EpisodesListResponse.EpisodeItem episode, String progress);
         void onNoBookmarkFound();
+        default void onNoBookmarkFound(boolean networkUnavailable) {
+            onNoBookmarkFound();
+        }
     }
 
     /**

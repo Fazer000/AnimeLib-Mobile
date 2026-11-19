@@ -133,6 +133,20 @@ public class ApiService {
 
     // ======================== Sync Result Models ========================
 
+    public static class BookmarkFetchSyncResult {
+        public final boolean serverResponded;
+        public final boolean networkUnavailable;
+        public final int httpCode;
+        public final AnimeBookmarkResponse response;
+
+        public BookmarkFetchSyncResult(boolean serverResponded, boolean networkUnavailable, int httpCode, AnimeBookmarkResponse response) {
+            this.serverResponded = serverResponded;
+            this.networkUnavailable = networkUnavailable;
+            this.httpCode = httpCode;
+            this.response = response;
+        }
+    }
+
     public static class BookmarkSaveResult {
         public final boolean success;
         public final boolean retryable;
@@ -452,6 +466,10 @@ public class ApiService {
 
     public AnimeBookmarkResponse fetchAnimeBookmarkSync(String mediaSlug) {
         return bookmarksApi.fetchAnimeBookmarkSync(mediaSlug);
+    }
+
+    public BookmarkFetchSyncResult fetchAnimeBookmarkWithStatusSync(String mediaSlug, boolean forceRefresh) {
+        return bookmarksApi.fetchAnimeBookmarkWithStatusSync(mediaSlug, forceRefresh);
     }
 
     public void fetchBookmarksList(BookmarksListCallback callback) {
