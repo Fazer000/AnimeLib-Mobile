@@ -142,6 +142,7 @@
 
     <!-- Main Content Area -->
     <androidx.core.widget.NestedScrollView
+        android:id="@+id/downloadsScrollView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@color/bs_bg_color"
@@ -152,6 +153,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
+            android:clipChildren="false"
+            android:clipToPadding="false"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
             android:paddingBottom="32dp">
 
             <!-- SECTION 1: QUEUE ("Очередь") -->
@@ -160,6 +165,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
+                android:clipChildren="false"
+                android:clipToPadding="false"
                 android:visibility="gone">
 
                 <TextView
@@ -168,7 +175,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginHorizontal="16dp"
                     android:layout_marginTop="12dp"
-                    android:layout_marginBottom="10dp"
+                    android:layout_marginBottom="8dp"
                     android:text="Очередь"
                     android:textSize="17sp"
                     android:fontFamily="@font/open_sans_bold"
@@ -178,9 +185,13 @@
                     android:id="@+id/rvDownloadQueue"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:clipChildren="false"
                     android:clipToPadding="false"
+                    android:focusable="false"
+                    android:focusableInTouchMode="false"
                     android:nestedScrollingEnabled="false"
                     android:overScrollMode="never"
+                    android:paddingTop="4dp"
                     android:paddingBottom="6dp" />
 
             </LinearLayout>
@@ -209,6 +220,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:clipToPadding="false"
+                    android:focusable="false"
+                    android:focusableInTouchMode="false"
                     android:nestedScrollingEnabled="false"
                     app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 

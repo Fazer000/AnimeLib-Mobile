@@ -24,6 +24,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.ColorUtils;
+import androidx.core.widget.NestedScrollView;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -72,9 +73,13 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
     private volatile ApiService apiService;
     private DatabaseManager databaseManager;
 
+    private static final Object PAYLOAD_PROGRESS = new Object();
+
     // Queue Section Views
+    private NestedScrollView downloadsScrollView;
     private LinearLayout containerQueueSection;
     private RecyclerView rvDownloadQueue;
+    private LinearLayoutManager queueLayoutManager;
     private QueueAdapter queueAdapter;
     private ItemTouchHelper queueItemTouchHelper;
     private final List<DownloadService.TitleQueueInfo> queueList = new ArrayList<>();
@@ -184,11 +189,23 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
         }
 
         // Initialize Queue section views
+        downloadsScrollView = findViewById(R.id.downloadsScrollView);
         containerQueueSection = findViewById(R.id.containerQueueSection);
         rvDownloadQueue = findViewById(R.id.rvDownloadQueue);
         queueAdapter = new QueueAdapter();
         if (rvDownloadQueue != null) {
-            rvDownloadQueue.setLayoutManager(new LinearLayoutManager(this));
+            queueLayoutManager = new LinearLayoutManager(this) {
+                @Override
+                public boolean canScrollVertically() {
+                    return false;
+                }
+
+                @Override
+                public boolean canScrollHorizontally() {
+                    return false;
+                }
+            };
+            rvDownloadQueue.setLayoutManager(queueLayoutManager);
             rvDownloadQueue.setAdapter(queueAdapter);
             if (rvDownloadQueue.getItemAnimator() instanceof SimpleItemAnimator) {
                 ((SimpleItemAnimator) rvDownloadQueue.getItemAnimator()).setSupportsChangeAnimations(false);
@@ -203,6 +220,15 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
                 @Override
                 public boolean isItemViewSwipeEnabled() {
                     return false;
+                }
+
+                @Override
+                public int interpolateOutOfBoundsScroll(@NonNull RecyclerView recyclerView,
+                                                        int viewSize,
+                                                        int viewSizeOutOfBounds,
+                                                        int totalSize,
+                                                        long msSinceStartScroll) {
+                    return 0;
                 }
 
                 @Override
@@ -229,6 +255,41 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
                 }
 
                 @Override
+                public void onMoved(@NonNull RecyclerView recyclerView,
+                                    @NonNull RecyclerView.ViewHolder viewHolder,
+                                    int fromPos,
+                                    @NonNull RecyclerView.ViewHolder target,
+                                    int toPos,
+                                    int x,
+                                    int y) {
+                    // Avoid LinearLayoutManager.prepareForDrop() shifting position 0 off the top
+                    if ((fromPos == 0 || toPos == 0) && queueLayoutManager != null) {
+                        queueLayoutManager.scrollToPositionWithOffset(0, 0);
+                    }
+                }
+
+                @Override
+                public void onChildDraw(@NonNull android.graphics.Canvas c,
+                                        @NonNull RecyclerView recyclerView,
+                                        @NonNull RecyclerView.ViewHolder viewHolder,
+                                        float dX,
+                                        float dY,
+                                        int actionState,
+                                        boolean isCurrentlyActive) {
+                    float clampedDy = dY;
+                    if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && recyclerView.getHeight() > 0) {
+                        int slack = dpToPx(4);
+                        float minDy = (recyclerView.getPaddingTop() - viewHolder.itemView.getTop()) - slack;
+                        float maxDy = ((recyclerView.getHeight() - recyclerView.getPaddingBottom())
+                                - viewHolder.itemView.getBottom()) + slack;
+                        if (minDy <= maxDy) {
+                            clampedDy = Math.max(minDy, Math.min(maxDy, dY));
+                        }
+                    }
+                    super.onChildDraw(c, recyclerView, viewHolder, dX, clampedDy, actionState, isCurrentlyActive);
+                }
+
+                @Override
                 public void onSwiped(@NonNull RecyclerView.ViewHolder viewHolder, int direction) {
                     // Swipe disabled
                 }
@@ -238,17 +299,16 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
                     super.onSelectedChanged(viewHolder, actionState);
                     if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
                         isDraggingQueue = true;
-                        if (rvDownloadQueue != null) {
-                            rvDownloadQueue.requestDisallowInterceptTouchEvent(true);
-                        }
+                        setParentDisallowIntercept(true);
                         if (viewHolder != null) {
-                            viewHolder.itemView.animate()
-                                    .scaleX(1.02f)
-                                    .scaleY(1.02f)
-                                    .alpha(0.94f)
-                                    .setDuration(120)
-                                    .start();
+                            viewHolder.itemView.setTranslationZ(dpToPx(6));
+                            viewHolder.itemView.setAlpha(0.96f);
+                            if (viewHolder instanceof QueueAdapter.QueueViewHolder) {
+                                ((QueueAdapter.QueueViewHolder) viewHolder).cardQueueItem.setCardElevation(dpToPx(6));
+                            }
                         }
+                    } else if (actionState == ItemTouchHelper.ACTION_STATE_IDLE) {
+                        setParentDisallowIntercept(false);
                     }
                 }
 
@@ -256,15 +316,15 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
                 public void clearView(@NonNull RecyclerView recyclerView,
                                       @NonNull RecyclerView.ViewHolder viewHolder) {
                     super.clearView(recyclerView, viewHolder);
-                    viewHolder.itemView.animate()
-                            .scaleX(1f)
-                            .scaleY(1f)
-                            .alpha(1f)
-                            .setDuration(120)
-                            .start();
+                    viewHolder.itemView.setTranslationZ(0f);
+                    viewHolder.itemView.setAlpha(1f);
+                    if (viewHolder instanceof QueueAdapter.QueueViewHolder) {
+                        ((QueueAdapter.QueueViewHolder) viewHolder).cardQueueItem.setCardElevation(0f);
+                    }
                     isDraggingQueue = false;
-                    if (rvDownloadQueue != null) {
-                        rvDownloadQueue.requestDisallowInterceptTouchEvent(false);
+                    setParentDisallowIntercept(false);
+                    if (queueLayoutManager != null) {
+                        queueLayoutManager.scrollToPositionWithOffset(0, 0);
                     }
                     List<String> orderedIds = new ArrayList<>();
                     for (DownloadService.TitleQueueInfo info : queueList) {
@@ -563,16 +623,38 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
         }
     }
 
+    private void setParentDisallowIntercept(boolean disallow) {
+        if (downloadsScrollView != null) {
+            downloadsScrollView.requestDisallowInterceptTouchEvent(disallow);
+        } else if (rvDownloadQueue != null && rvDownloadQueue.getParent() != null) {
+            rvDownloadQueue.getParent().requestDisallowInterceptTouchEvent(disallow);
+        }
+    }
+
     private void updateQueueSection() {
         if (isDraggingQueue) {
             return;
         }
 
         List<DownloadService.TitleQueueInfo> infos = DownloadService.getTitleQueueInfos();
-        queueList.clear();
-        if (infos != null) {
-            queueList.addAll(infos);
+        List<DownloadService.TitleQueueInfo> newItems = infos != null ? infos : Collections.emptyList();
+
+        boolean sameStructure = newItems.size() == queueList.size();
+        if (sameStructure) {
+            for (int i = 0; i < newItems.size(); i++) {
+                DownloadService.TitleQueueInfo oldItem = queueList.get(i);
+                DownloadService.TitleQueueInfo newItem = newItems.get(i);
+                String oldId = oldItem != null ? oldItem.animeId : null;
+                String newId = newItem != null ? newItem.animeId : null;
+                if (oldId == null || !oldId.equals(newId)) {
+                    sameStructure = false;
+                    break;
+                }
+            }
         }
+
+        queueList.clear();
+        queueList.addAll(newItems);
 
         boolean hasQueue = !queueList.isEmpty();
 
@@ -585,7 +667,14 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
         }
 
         if (queueAdapter != null) {
-            queueAdapter.notifyDataSetChanged();
+            if (sameStructure && hasQueue) {
+                queueAdapter.notifyItemRangeChanged(0, queueList.size(), PAYLOAD_PROGRESS);
+            } else {
+                queueAdapter.notifyDataSetChanged();
+                if (hasQueue && queueLayoutManager != null) {
+                    queueLayoutManager.scrollToPositionWithOffset(0, 0);
+                }
+            }
         }
 
         updateEmptyState();
@@ -617,6 +706,18 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
             return new QueueViewHolder(view);
         }
 
+        @Override
+        public void onBindViewHolder(@NonNull QueueViewHolder holder, int position, @NonNull List<Object> payloads) {
+            if (!payloads.isEmpty() && payloads.contains(PAYLOAD_PROGRESS)) {
+                if (position < 0 || position >= queueList.size()) return;
+                DownloadService.TitleQueueInfo info = queueList.get(position);
+                if (info == null) return;
+                bindDynamicState(holder, info, true);
+                return;
+            }
+            onBindViewHolder(holder, position);
+        }
+
         @SuppressLint("ClickableViewAccessibility")
         @Override
         public void onBindViewHolder(@NonNull QueueViewHolder holder, int position) {
@@ -635,6 +736,29 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
                 holder.ivQueuePoster.setImageResource(R.drawable.skeleton_placeholder);
             }
 
+            bindDynamicState(holder, info, animateProgress);
+
+            holder.btnQueueCancel.setOnClickListener(v -> {
+                DownloadService.cancelTitle(DownloadsActivity.this, info.animeId);
+                CustomToast.showInfo(DownloadsActivity.this, "Загрузка отменена");
+                updateQueueSection();
+            });
+
+            holder.ivQueueDragHandle.setOnTouchListener((v, event) -> {
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    if (queueList.size() > 1 && queueItemTouchHelper != null) {
+                        setParentDisallowIntercept(true);
+                        queueItemTouchHelper.startDrag(holder);
+                        return true;
+                    }
+                }
+                return false;
+            });
+        }
+
+        private void bindDynamicState(@NonNull QueueViewHolder holder,
+                                      @NonNull DownloadService.TitleQueueInfo info,
+                                      boolean animateProgress) {
             holder.tvQueueProgressText.setText(info.overallPercent + "%  " + info.completedCount + " из " + info.totalCount);
             holder.tvQueueBadgeProgress.setText(info.completedCount + " / " + info.totalCount);
 
@@ -691,25 +815,7 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
             }
 
             holder.pbQueueProgress.setProgress(info.overallPercent, animateProgress);
-
-            holder.btnQueueCancel.setOnClickListener(v -> {
-                DownloadService.cancelTitle(DownloadsActivity.this, info.animeId);
-                CustomToast.showInfo(DownloadsActivity.this, "Загрузка отменена");
-                updateQueueSection();
-            });
-
             holder.ivQueueDragHandle.setAlpha(queueList.size() > 1 ? 1.0f : 0.45f);
-            holder.ivQueueDragHandle.setOnTouchListener((v, event) -> {
-                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                    if (rvDownloadQueue != null) {
-                        rvDownloadQueue.requestDisallowInterceptTouchEvent(true);
-                    }
-                    if (queueItemTouchHelper != null) {
-                        queueItemTouchHelper.startDrag(holder);
-                    }
-                }
-                return false;
-            });
         }
 
         @Override
