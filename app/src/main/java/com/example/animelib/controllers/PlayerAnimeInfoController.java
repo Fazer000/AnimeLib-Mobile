@@ -243,11 +243,11 @@ public class PlayerAnimeInfoController {
         }
         if (tvPortraitInfoEpisodes != null) {
             tvPortraitInfoEpisodes.setVisibility(View.VISIBLE);
-            SkeletonHelper.showSkeleton(tvPortraitInfoEpisodes, 80);
+            SkeletonHelper.showSkeleton(tvPortraitInfoEpisodes, 56);
         }
         if (tvPortraitInfoReleaseDate != null) {
             tvPortraitInfoReleaseDate.setVisibility(View.VISIBLE);
-            SkeletonHelper.showSkeleton(tvPortraitInfoReleaseDate, 100);
+            SkeletonHelper.showSkeleton(tvPortraitInfoReleaseDate, 72);
         }
         if (llPortraitSummarySection != null) {
             llPortraitSummarySection.setVisibility(View.VISIBLE);

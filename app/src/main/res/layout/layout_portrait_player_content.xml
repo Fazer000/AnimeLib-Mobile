@@ -340,11 +340,12 @@
                             android:visibility="gone" />
                     </FrameLayout>
 
-                    <!-- Правая колонка: Название, оригинальное имя, бейджи статуса -->
+                    <!-- Правая колонка: Название, оригинальное имя, бейджи статуса и блок Эпизоды / Выпуск -->
                     <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
+                        android:minHeight="160dp"
                         android:orientation="vertical">
 
                         <!-- Название на русском -->
@@ -353,9 +354,9 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:textColor="@color/primary_text_color"
-                            android:textSize="17sp"
+                            android:textSize="16.5sp"
                             android:fontFamily="@font/open_sans_bold"
-                            android:maxLines="3"
+                            android:maxLines="2"
                             android:ellipsize="end"
                             android:lineSpacingExtra="1.5dp" />
 
@@ -364,11 +365,11 @@
                             android:id="@+id/tvPortraitInfoEngName"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
+                            android:layout_marginTop="2dp"
                             android:textColor="@color/accent_text_color"
-                            android:textSize="12.5sp"
+                            android:textSize="12sp"
                             android:fontFamily="@font/open_sans"
-                            android:maxLines="2"
+                            android:maxLines="1"
                             android:ellipsize="end"
                             android:visibility="gone" />
 
@@ -387,11 +388,12 @@
                                 android:layout_marginEnd="6dp"
                                 android:background="@drawable/bg_anime_info_accent_pill"
                                 android:paddingHorizontal="8dp"
-                                android:paddingVertical="4dp"
+                                android:paddingVertical="3.5dp"
                                 android:textColor="@color/purple_primary"
-                                android:textSize="11.5sp"
+                                android:textSize="11sp"
                                 android:fontFamily="@font/open_sans_bold"
-                                android:maxLines="1" />
+                                android:maxLines="1"
+                                android:ellipsize="end" />
 
                             <TextView
                                 android:id="@+id/tvPortraitInfoType"
@@ -399,108 +401,121 @@
                                 android:layout_height="wrap_content"
                                 android:background="@drawable/bg_anime_info_stat_pill"
                                 android:paddingHorizontal="8dp"
-                                android:paddingVertical="4dp"
+                                android:paddingVertical="3.5dp"
                                 android:textColor="@color/primary_text_color"
-                                android:textSize="11.5sp"
+                                android:textSize="11sp"
                                 android:fontFamily="@font/open_sans"
-                                android:maxLines="1" />
+                                android:maxLines="1"
+                                android:ellipsize="end" />
                         </LinearLayout>
-                    </LinearLayout>
-                </LinearLayout>
 
-                <!-- 2. Сетка ключевых характеристик (плашки Эпизоды и Выпуск) -->
-                <LinearLayout
-                    android:id="@+id/llPortraitMetadataGrid"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginBottom="14dp">
-
-                    <!-- Плашка 1: Серии -->
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="6dp"
-                        android:background="@drawable/bg_anime_info_stat_pill"
-                        android:orientation="vertical"
-                        android:paddingHorizontal="10dp"
-                        android:paddingVertical="8dp">
-
+                        <!-- Единый компактный блок характеристик (Эпизоды и Выпуск) справа от постера -->
                         <LinearLayout
-                            android:layout_width="wrap_content"
+                            android:id="@+id/llPortraitMetadataGrid"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:gravity="center_vertical">
+                            android:layout_marginTop="10dp"
+                            android:background="@drawable/bg_anime_info_stat_pill"
+                            android:orientation="vertical"
+                            android:paddingHorizontal="10dp"
+                            android:paddingVertical="8dp">
 
-                            <ImageView
-                                android:layout_width="14dp"
-                                android:layout_height="14dp"
-                                android:layout_marginEnd="5dp"
-                                android:src="@drawable/ic_tv"
-                                app:tint="@color/accent_text_color" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
+                            <!-- Строка 1: Эпизоды -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="Эпизоды"
-                                android:textColor="@color/accent_text_color"
-                                android:textSize="11sp" />
-                        </LinearLayout>
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
 
-                        <TextView
-                            android:id="@+id/tvPortraitInfoEpisodes"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:textColor="@color/primary_text_color"
-                            android:textSize="12.5sp"
-                            android:fontFamily="@font/open_sans_bold"
-                            android:maxLines="1"
-                            android:ellipsize="end" />
-                    </LinearLayout>
+                                <FrameLayout
+                                    android:layout_width="22dp"
+                                    android:layout_height="22dp"
+                                    android:background="@drawable/bg_anime_info_icon_badge">
 
-                    <!-- Плашка 2: Выпуск / Сезон -->
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_anime_info_stat_pill"
-                        android:orientation="vertical"
-                        android:paddingHorizontal="10dp"
-                        android:paddingVertical="8dp">
+                                    <ImageView
+                                        android:layout_width="12dp"
+                                        android:layout_height="12dp"
+                                        android:layout_gravity="center"
+                                        android:src="@drawable/ic_tv"
+                                        android:importantForAccessibility="no"
+                                        app:tint="@color/purple_primary" />
+                                </FrameLayout>
 
-                        <LinearLayout
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:gravity="center_vertical">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="8dp"
+                                    android:text="Эпизоды"
+                                    android:textColor="@color/accent_text_color"
+                                    android:textSize="11.5sp"
+                                    android:maxLines="1" />
 
-                            <ImageView
-                                android:layout_width="14dp"
-                                android:layout_height="14dp"
-                                android:layout_marginEnd="5dp"
-                                android:src="@drawable/ic_calendar"
-                                app:tint="@color/accent_text_color" />
+                                <TextView
+                                    android:id="@+id/tvPortraitInfoEpisodes"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginStart="8dp"
+                                    android:gravity="end"
+                                    android:textColor="@color/primary_text_color"
+                                    android:textSize="12sp"
+                                    android:fontFamily="@font/open_sans_bold"
+                                    android:maxLines="1"
+                                    android:ellipsize="end" />
+                            </LinearLayout>
 
-                            <TextView
-                                android:layout_width="wrap_content"
+                            <!-- Тонкий разделитель -->
+                            <View
+                                android:layout_width="match_parent"
+                                android:layout_height="0.5dp"
+                                android:layout_marginVertical="6dp"
+                                android:background="@color/bs_divider_color"
+                                android:alpha="0.6" />
+
+                            <!-- Строка 2: Выпуск -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="Выпуск"
-                                android:textColor="@color/accent_text_color"
-                                android:textSize="11sp" />
-                        </LinearLayout>
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
 
-                        <TextView
-                            android:id="@+id/tvPortraitInfoReleaseDate"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:textColor="@color/primary_text_color"
-                            android:textSize="12.5sp"
-                            android:fontFamily="@font/open_sans_bold"
-                            android:maxLines="1"
-                            android:ellipsize="end" />
+                                <FrameLayout
+                                    android:layout_width="22dp"
+                                    android:layout_height="22dp"
+                                    android:background="@drawable/bg_anime_info_icon_badge">
+
+                                    <ImageView
+                                        android:layout_width="12dp"
+                                        android:layout_height="12dp"
+                                        android:layout_gravity="center"
+                                        android:src="@drawable/ic_calendar"
+                                        android:importantForAccessibility="no"
+                                        app:tint="@color/purple_primary" />
+                                </FrameLayout>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="8dp"
+                                    android:text="Выпуск"
+                                    android:textColor="@color/accent_text_color"
+                                    android:textSize="11.5sp"
+                                    android:maxLines="1" />
+
+                                <TextView
+                                    android:id="@+id/tvPortraitInfoReleaseDate"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginStart="8dp"
+                                    android:gravity="end"
+                                    android:textColor="@color/primary_text_color"
+                                    android:textSize="12sp"
+                                    android:fontFamily="@font/open_sans_bold"
+                                    android:maxLines="1"
+                                    android:ellipsize="end" />
+                            </LinearLayout>
+                        </LinearLayout>
                     </LinearLayout>
                 </LinearLayout>
 

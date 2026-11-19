@@ -37,6 +37,7 @@ public class AppSettings {
     public static final int REPLIES_UNLIMITED = -1;
     private boolean disableCommentsInPlayer = false;
     private int commentRepliesLimit = 3;
+    private int videoResizeMode = 0; // 0 = FIT, 3 = FILL, 4 = ZOOM
 
     public AppSettings() {
     }
@@ -239,5 +240,13 @@ public class AppSettings {
 
     public void setCommentRepliesLimit(int commentRepliesLimit) {
         this.commentRepliesLimit = commentRepliesLimit;
+    }
+
+    public int getVideoResizeMode() {
+        return (videoResizeMode >= 0 && videoResizeMode <= 4) ? videoResizeMode : 0;
+    }
+
+    public void setVideoResizeMode(int videoResizeMode) {
+        this.videoResizeMode = (videoResizeMode >= 0 && videoResizeMode <= 4) ? videoResizeMode : 0;
     }
 }

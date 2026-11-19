@@ -20,7 +20,7 @@ import com.example.animelib.data.entity.DownloadedEpisodeEntity;
 import com.example.animelib.data.entity.OfflineBookmarkEntity;
 import com.example.animelib.data.entity.PendingSyncTaskEntity;
 
-@Database(entities = {AppSettings.class, TokenEntity.class, PlayerPreferences.class, DownloadedAnimeEntity.class, DownloadedEpisodeEntity.class, OfflineBookmarkEntity.class, PendingSyncTaskEntity.class}, version = 29, exportSchema = false)
+@Database(entities = {AppSettings.class, TokenEntity.class, PlayerPreferences.class, DownloadedAnimeEntity.class, DownloadedEpisodeEntity.class, OfflineBookmarkEntity.class, PendingSyncTaskEntity.class}, version = 30, exportSchema = false)
 public abstract class AppDatabase extends RoomDatabase {
     private static volatile AppDatabase INSTANCE;
 
@@ -41,6 +41,13 @@ public abstract class AppDatabase extends RoomDatabase {
         }
     };
 
+    public static final Migration MIGRATION_29_30 = new Migration(29, 30) {
+        @Override
+        public void migrate(@NonNull SupportSQLiteDatabase db) {
+            db.execSQL("ALTER TABLE app_settings ADD COLUMN videoResizeMode INTEGER NOT NULL DEFAULT 0");
+        }
+    };
+
     public abstract AppSettingsDao appSettingsDao();
     public abstract TokenDao tokenDao();
     public abstract PlayerPreferencesDao playerPreferencesDao();
@@ -54,7 +61,7 @@ public abstract class AppDatabase extends RoomDatabase {
                 if (INSTANCE == null) {
                     INSTANCE = Room.databaseBuilder(context.getApplicationContext(),
                                     AppDatabase.class, "animelib_database")
-                            .addMigrations(MIGRATION_28_29)
+                            .addMigrations(MIGRATION_28_29, MIGRATION_29_30)
                             .fallbackToDestructiveMigration()
                             .allowMainThreadQueries()
                             .build();

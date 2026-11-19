@@ -357,6 +357,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
         if (playerSubtitlesController != null) {
             playerSubtitlesController.loadSettingsFromApi(apiService);
         }
+        int savedResizeMode = apiService.loadVideoResizeModeSetting();
+        if (playerPlaybackController != null) {
+            playerPlaybackController.setVideoResizeMode(savedResizeMode);
+        }
+        if (ambientLightManager != null) {
+            ambientLightManager.updateBoundsFromPlayer();
+        }
         loadAsyncSettings();
 
         String localFilePath = getIntent().getStringExtra("EXTRA_LOCAL_FILE_PATH");

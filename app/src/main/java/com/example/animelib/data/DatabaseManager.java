@@ -135,6 +135,7 @@ public class DatabaseManager {
         copy.setFilterHue(src.getFilterHue());
         copy.setDisableCommentsInPlayer(src.isDisableCommentsInPlayer());
         copy.setCommentRepliesLimit(src.getCommentRepliesLimit());
+        copy.setVideoResizeMode(src.getVideoResizeMode());
         return copy;
     }
 
@@ -464,6 +465,15 @@ public class DatabaseManager {
 
     public int loadCommentRepliesLimitSetting() {
         return getOrLoadAppSettings().getCommentRepliesLimit();
+    }
+
+    public void saveVideoResizeModeSetting(int resizeMode) {
+        updateAppSettings(settings -> settings.setVideoResizeMode(resizeMode),
+                "video resize mode setting: " + resizeMode);
+    }
+
+    public int loadVideoResizeModeSetting() {
+        return getOrLoadAppSettings().getVideoResizeMode();
     }
 
     // ========== Token операции ==========

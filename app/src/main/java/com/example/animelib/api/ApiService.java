@@ -534,6 +534,14 @@ public class ApiService {
         return databaseManager.loadAmbientLightSetting();
     }
 
+    public void saveVideoResizeModeSetting(int resizeMode) {
+        databaseManager.saveVideoResizeModeSetting(resizeMode);
+    }
+
+    public int loadVideoResizeModeSetting() {
+        return databaseManager.loadVideoResizeModeSetting();
+    }
+
     public void saveVideoFilters(float brightness, float contrast, float saturation, float gamma, float hue) {
         databaseManager.saveVideoFilters(brightness, contrast, saturation, gamma, hue);
     }

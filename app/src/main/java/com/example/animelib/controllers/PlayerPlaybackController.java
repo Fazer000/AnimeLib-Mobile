@@ -385,13 +385,13 @@ public class PlayerPlaybackController {
             player = builder.build();
             if (playerView != null) {
                 playerView.setPlayer(player);
-                playerView.setResizeMode(resizeMode);
             }
             setupPlayerListener();
         } else {
             player.stop();
             player.clearMediaItems();
         }
+        setVideoResizeMode(resizeMode);
 
         MediaItem itemToPlay = mediaItem != null ? mediaItem : MediaItem.fromUri(videoUrl);
         MediaSource mediaSource = buildMediaSourceForUrl(playerContext, videoUrl, itemToPlay);
@@ -528,8 +528,7 @@ public class PlayerPlaybackController {
     public ExoPlayer switchMediaSource(String videoUrl, MediaItem mediaItem, long startPosition, boolean playWhenReady) {
         cleanupBackgroundPlayer();
         if (player == null) {
-            int resizeMode = playerView != null ? playerView.getResizeMode() : AspectRatioFrameLayout.RESIZE_MODE_FIT;
-            return initializePlayer(videoUrl, mediaItem, resizeMode, playWhenReady, startPosition);
+            return initializePlayer(videoUrl, mediaItem, currentResizeMode, playWhenReady, startPosition);
         }
 
         Context playerContext = callback != null ? callback.getPlayerContext() : context;

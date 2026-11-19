@@ -274,6 +274,7 @@ public class PlayerSettingsBridge implements PlayerDialogsController.SettingsDat
 
     @Override
     public void onResizeModeChanged(int newMode) {
+        host.getApiService().saveVideoResizeModeSetting(newMode);
         PlayerPlaybackController pCtrl = host.getPlayerPlaybackController();
         if (pCtrl != null) {
             pCtrl.setVideoResizeMode(newMode);
