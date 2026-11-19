@@ -69,6 +69,7 @@ public class PlayerControlsOverlayManager {
         void closePlayer();
         void toggleEpisodesMenu();
         void togglePlayersMenu();
+        boolean isCurrentTitleInDownloadQueue();
         void showDownloadBottomSheet();
         void showDownloadProgressBottomSheet();
         void addBookmark();
@@ -357,7 +358,7 @@ public class PlayerControlsOverlayManager {
         if (ui.btnDownloadFromMenu != null) {
             ui.btnDownloadFromMenu.setOnClickListener(v -> {
                 if (callback == null) return;
-                if (DownloadService.isRunning()) {
+                if (callback.isCurrentTitleInDownloadQueue()) {
                     callback.showDownloadProgressBottomSheet();
                 } else {
                     callback.showDownloadBottomSheet();

@@ -43,6 +43,7 @@ public class PlayerDownloadController {
 
     private boolean isDownloading = false;
     private int currentDownloadPercent = 0;
+    private DownloadService.QueueProgressListener queueProgressListener;
 
     public interface DownloadCallback {
         String getAnimeId();
@@ -71,39 +72,63 @@ public class PlayerDownloadController {
         portraitDownloadButton = rootView.findViewById(R.id.portraitDownloadButton);
     }
 
+    public boolean isCurrentTitleInQueue() {
+        return callback != null && DownloadService.isTitleInQueue(callback.getAnimeId());
+    }
+
+    public boolean isCurrentTitleDownloading() {
+        return callback != null && DownloadService.isTitleDownloading(callback.getAnimeId());
+    }
+
+    public void syncDownloadUiState(PlayersManager playersManager) {
+        if (isCurrentTitleDownloading()) {
+            showDownloadProgress(DownloadService.getCurrentTaskPercent(), playersManager);
+        } else {
+            resetDownloadUi(playersManager);
+        }
+    }
+
     public void setupDownloadListener(PlayersManager playersManager) {
         DownloadService.setListener(new DownloadService.ProgressListener() {
             @Override
             public void onProgress(int currentTaskIndex, int totalTasks, int taskPercent, String currentTaskTitle) {
                 if (callback != null) {
-                    callback.safeRunOnUiThread(() -> showDownloadProgress(taskPercent, playersManager));
+                    callback.safeRunOnUiThread(() -> {
+                        if (isCurrentTitleDownloading()) {
+                            showDownloadProgress(taskPercent, playersManager);
+                        } else {
+                            resetDownloadUi(playersManager);
+                        }
+                    });
                 }
             }
 
             @Override
             public void onFinished(int totalDownloaded, int errorCount, boolean wasCancelled) {
                 if (callback != null) {
-                    callback.safeRunOnUiThread(() -> {
-                        resetDownloadUi(playersManager);
-                    });
+                    callback.safeRunOnUiThread(() -> syncDownloadUiState(playersManager));
                 }
             }
 
             @Override
             public void onError(String message) {
                 if (callback != null) {
-                    callback.safeRunOnUiThread(() -> {
-                        resetDownloadUi(playersManager);
-                    });
+                    callback.safeRunOnUiThread(() -> syncDownloadUiState(playersManager));
                 }
             }
         });
 
-        if (DownloadService.isRunning()) {
-            showDownloadProgress(DownloadService.getCurrentTaskPercent(), playersManager);
-        } else {
-            resetDownloadUi(playersManager);
+        if (queueProgressListener != null) {
+            DownloadService.removeQueueProgressListener(queueProgressListener);
         }
+        queueProgressListener = () -> {
+            if (callback != null) {
+                callback.safeRunOnUiThread(() -> syncDownloadUiState(playersManager));
+            }
+        };
+        DownloadService.addQueueProgressListener(queueProgressListener);
+
+        syncDownloadUiState(playersManager);
     }
 
     public void showDownloadProgress(int percent, PlayersManager playersManager) {
@@ -196,7 +221,8 @@ public class PlayerDownloadController {
     }
 
     public void showDownloadProgressBottomSheet(Runnable onBackPressedAction) {
-        DownloadProgressBottomSheet progressSheet = DownloadProgressBottomSheet.newInstance();
+        String animeId = callback != null ? callback.getAnimeId() : null;
+        DownloadProgressBottomSheet progressSheet = DownloadProgressBottomSheet.newInstance(animeId);
         progressSheet.setOnBackPressedAction(onBackPressedAction);
         progressSheet.show(activity.getSupportFragmentManager(), "DownloadProgressBottomSheet");
     }
@@ -335,6 +361,10 @@ public class PlayerDownloadController {
 
     public void cleanup() {
         DownloadService.setListener(null);
+        if (queueProgressListener != null) {
+            DownloadService.removeQueueProgressListener(queueProgressListener);
+            queueProgressListener = null;
+        }
         if (btnDownloadFromMenu != null) {
             DownloadAnimationUtils.stopDownloadAnimation(btnDownloadFromMenu);
         }

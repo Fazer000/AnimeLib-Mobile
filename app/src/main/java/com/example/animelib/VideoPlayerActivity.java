@@ -1874,12 +1874,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             playerQualityController.startBufferingMonitoring();
         }
         if (playerDownloadController != null) {
-            if (com.example.animelib.services.DownloadService.isRunning()) {
-                playerDownloadController.showDownloadProgress(
-                        com.example.animelib.services.DownloadService.getCurrentTaskPercent(), playersManager);
-            } else {
-                playerDownloadController.resetDownloadUi(playersManager);
-            }
+            playerDownloadController.syncDownloadUiState(playersManager);
         }
     }
 
@@ -2122,6 +2117,14 @@ public class VideoPlayerActivity extends AppCompatActivity {
             return databaseManager.loadDisableCommentsInPlayerSetting();
         }
         return apiService != null && apiService.loadDisableCommentsInPlayerSetting();
+    }
+
+    public boolean isCurrentTitleInDownloadQueue() {
+        return com.example.animelib.services.DownloadService.isTitleInQueue(currentAnimeId);
+    }
+
+    public boolean isCurrentTitleDownloading() {
+        return com.example.animelib.services.DownloadService.isTitleDownloading(currentAnimeId);
     }
 
     public void showDownloadBottomSheet() {
@@ -2736,6 +2739,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 if (playersManager != null) {
                     playersManager.toggleMenu();
                 }
+            }
+
+            @Override
+            public boolean isCurrentTitleInDownloadQueue() {
+                return VideoPlayerActivity.this.isCurrentTitleInDownloadQueue();
             }
 
             @Override

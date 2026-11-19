@@ -185,7 +185,7 @@ public class PlayerPortraitController {
                     CustomToast.showInfo(activity, "Воспроизводится скачанный файл");
                     return;
                 }
-                if (DownloadService.isRunning() || DownloadService.isTitleInQueue(host.getCurrentAnimeId())) {
+                if (DownloadService.isTitleInQueue(host.getCurrentAnimeId())) {
                     host.showDownloadProgressBottomSheet();
                 } else {
                     host.showDownloadBottomSheet();

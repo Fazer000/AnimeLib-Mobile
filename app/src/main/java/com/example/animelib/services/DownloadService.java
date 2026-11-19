@@ -182,6 +182,48 @@ public class DownloadService extends Service {
         }
     }
 
+    public static List<TaskProgressItem> getTaskItemsForTitle(@Nullable String animeId) {
+        if (animeId == null || animeId.trim().isEmpty()) {
+            return getActiveTitleTaskItems();
+        }
+        String target = animeId.trim();
+        synchronized (queueLock) {
+            if (activeTaskItems.isEmpty()) {
+                return Collections.emptyList();
+            }
+            List<TaskProgressItem> result = new ArrayList<>();
+            for (TaskProgressItem item : activeTaskItems) {
+                if (target.equals(getTitleKey(item.task))) {
+                    result.add(item);
+                }
+            }
+            return result;
+        }
+    }
+
+    public static boolean isTitleFirstInQueue(@Nullable String animeId) {
+        if (animeId == null || animeId.trim().isEmpty()) return false;
+        String target = animeId.trim();
+        synchronized (queueLock) {
+            if (titleOrder.isEmpty()) {
+                return !activeTaskItems.isEmpty() && target.equals(getTitleKey(activeTaskItems.get(0).task));
+            }
+            return target.equals(titleOrder.get(0));
+        }
+    }
+
+    public static boolean isTitleDownloading(@Nullable String animeId) {
+        if (animeId == null || animeId.trim().isEmpty()) return false;
+        String target = animeId.trim();
+        synchronized (queueLock) {
+            if (!running) return false;
+            if (currentProgressItem != null && target.equals(getTitleKey(currentProgressItem.task))) {
+                return true;
+            }
+            return !titleOrder.isEmpty() && target.equals(titleOrder.get(0)) && hasPendingQueueLocked();
+        }
+    }
+
     public static List<TitleQueueInfo> getTitleQueueInfos() {
         synchronized (queueLock) {
             if (activeTaskItems.isEmpty()) {

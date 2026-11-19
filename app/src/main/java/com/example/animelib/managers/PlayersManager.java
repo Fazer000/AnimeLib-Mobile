@@ -360,7 +360,7 @@ public class PlayersManager {
                     if (context instanceof com.example.animelib.VideoPlayerActivity) {
                         com.example.animelib.VideoPlayerActivity activity = (com.example.animelib.VideoPlayerActivity) context;
                         Runnable returnToVoiceover = this::showVoiceoverBottomSheet;
-                        if (com.example.animelib.services.DownloadService.isRunning()) {
+                        if (activity.isCurrentTitleInDownloadQueue()) {
                             activity.showDownloadProgressBottomSheet(returnToVoiceover);
                         } else {
                             activity.showDownloadBottomSheet(returnToVoiceover);

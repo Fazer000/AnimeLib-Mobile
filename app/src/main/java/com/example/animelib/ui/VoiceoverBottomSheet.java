@@ -105,7 +105,16 @@ public class VoiceoverBottomSheet extends FlexibleBottomSheetDialog {
 
         btnDownloadFromMenu = view.findViewById(R.id.btnDownloadFromMenu);
         if (btnDownloadFromMenu != null) {
-            updateDownloadButtonState(com.example.animelib.services.DownloadService.isRunning());
+            boolean isCurrentDownloading = false;
+            android.content.Context ctx = getContext();
+            while (ctx instanceof android.content.ContextWrapper) {
+                if (ctx instanceof com.example.animelib.VideoPlayerActivity) {
+                    isCurrentDownloading = ((com.example.animelib.VideoPlayerActivity) ctx).isCurrentTitleDownloading();
+                    break;
+                }
+                ctx = ((android.content.ContextWrapper) ctx).getBaseContext();
+            }
+            updateDownloadButtonState(isCurrentDownloading);
             btnDownloadFromMenu.setOnClickListener(v -> {
                 dismiss();
                 if (downloadListener != null) {

@@ -665,11 +665,7 @@ public class PlayerOrientationController {
 
             PlayerDownloadController downloadCtrl = host.getDownloadController();
             if (downloadCtrl != null) {
-                if (DownloadService.isRunning()) {
-                    downloadCtrl.showDownloadProgress(DownloadService.getCurrentTaskPercent(), playersManager);
-                } else {
-                    downloadCtrl.resetDownloadUi(playersManager);
-                }
+                downloadCtrl.syncDownloadUiState(playersManager);
             }
         } catch (Exception e) {
             Log.e(TAG, "Error in applyOrientationLayout", e);
