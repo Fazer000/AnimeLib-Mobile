@@ -228,9 +228,14 @@ public class DownloadsManager {
      * Вычисляет целевой путь локального MP4-файла для задачи (используется также при отмене/очистке).
      */
     public File resolveOutputFileForTask(@NonNull DownloadTask task) {
-        File baseDir = context.getExternalFilesDir("cached_episodes");
+        return resolveOutputFileForTask(context, task);
+    }
+
+    public static File resolveOutputFileForTask(@NonNull Context context, @NonNull DownloadTask task) {
+        Context appContext = context.getApplicationContext();
+        File baseDir = appContext.getExternalFilesDir("cached_episodes");
         if (baseDir == null) {
-            baseDir = new File(context.getFilesDir(), "cached_episodes");
+            baseDir = new File(appContext.getFilesDir(), "cached_episodes");
         }
         File dir = new File(baseDir, task.getAnimeId() != null ? task.getAnimeId() : "unknown");
         if (!dir.exists()) {
@@ -1729,7 +1734,11 @@ public class DownloadsManager {
     }
 
     public void cleanup() {
-        pause();
+        if (!activeCancelFlag.get()) {
+            pause();
+        } else {
+            cancelActiveHttpCalls();
+        }
         if (!executor.isShutdown()) {
             executor.shutdownNow();
         }

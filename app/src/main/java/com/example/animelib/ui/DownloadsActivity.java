@@ -1,5 +1,6 @@
 package com.example.animelib.ui;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
@@ -7,6 +8,7 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
@@ -15,31 +17,32 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
-import android.widget.ProgressBar;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
+import androidx.core.graphics.ColorUtils;
+import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.recyclerview.widget.SimpleItemAnimator;
 
 import com.example.animelib.R;
 import com.example.animelib.VideoPlayerActivity;
+import com.example.animelib.api.ApiClientCore;
+import com.example.animelib.api.ApiService;
 import com.example.animelib.data.DatabaseManager;
 import com.example.animelib.data.entity.DownloadedAnimeEntity;
 import com.example.animelib.data.entity.DownloadedEpisodeEntity;
-import com.example.animelib.models.DownloadTask;
-import com.example.animelib.services.DownloadService;
-import com.example.animelib.api.ApiClientCore;
-import com.example.animelib.api.ApiService;
 import com.example.animelib.models.AnimeInfoResponse;
+import com.example.animelib.services.DownloadService;
 import com.example.animelib.util.CustomToast;
 import com.example.animelib.util.ImageLoader;
 import com.example.animelib.util.ThemeUtils;
-import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.card.MaterialCardView;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -71,16 +74,13 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
 
     // Queue Section Views
     private LinearLayout containerQueueSection;
-    private ImageView ivQueuePoster;
-    private TextView tvQueueAnimeTitle;
-    private TextView tvQueueStatus;
-    private TextView tvQueueProgressText;
-    private ProgressBar pbQueueProgress;
-    private TextView tvQueueBadgeProgress;
-    private LinearLayout btnQueuePause;
-    private ImageView ivQueuePauseIcon;
-    private TextView tvQueuePauseText;
-    private ImageButton btnQueueCancel;
+    private RecyclerView rvDownloadQueue;
+    private QueueAdapter queueAdapter;
+    private ItemTouchHelper queueItemTouchHelper;
+    private final List<DownloadService.TitleQueueInfo> queueList = new ArrayList<>();
+    private final Map<String, Long> queueStableIds = new ConcurrentHashMap<>();
+    private long nextQueueStableId = 1L;
+    private boolean isDraggingQueue = false;
 
     // Search Section Views
     private LinearLayout layoutSearchContainer;
@@ -185,47 +185,100 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
 
         // Initialize Queue section views
         containerQueueSection = findViewById(R.id.containerQueueSection);
-        ivQueuePoster = findViewById(R.id.ivQueuePoster);
-        tvQueueAnimeTitle = findViewById(R.id.tvQueueAnimeTitle);
-        tvQueueStatus = findViewById(R.id.tvQueueStatus);
-        tvQueueProgressText = findViewById(R.id.tvQueueProgressText);
-        pbQueueProgress = findViewById(R.id.pbQueueProgress);
-        tvQueueBadgeProgress = findViewById(R.id.tvQueueBadgeProgress);
-        btnQueuePause = findViewById(R.id.btnQueuePause);
-        ivQueuePauseIcon = findViewById(R.id.ivQueuePauseIcon);
-        tvQueuePauseText = findViewById(R.id.tvQueuePauseText);
-        btnQueueCancel = findViewById(R.id.btnQueueCancel);
+        rvDownloadQueue = findViewById(R.id.rvDownloadQueue);
+        queueAdapter = new QueueAdapter();
+        if (rvDownloadQueue != null) {
+            rvDownloadQueue.setLayoutManager(new LinearLayoutManager(this));
+            rvDownloadQueue.setAdapter(queueAdapter);
+            if (rvDownloadQueue.getItemAnimator() instanceof SimpleItemAnimator) {
+                ((SimpleItemAnimator) rvDownloadQueue.getItemAnimator()).setSupportsChangeAnimations(false);
+            }
+            queueItemTouchHelper = new ItemTouchHelper(new ItemTouchHelper.SimpleCallback(
+                    ItemTouchHelper.UP | ItemTouchHelper.DOWN, 0) {
+                @Override
+                public boolean isLongPressDragEnabled() {
+                    return false;
+                }
 
-        // Queue Action Listeners
-        if (btnQueuePause != null) {
-            btnQueuePause.setOnClickListener(v -> {
-                if (DownloadService.isRunning()) {
-                    DownloadService.pause(this);
-                    com.example.animelib.util.CustomToast.showInfo(this, "Пауза (прогресс сохранён)");
-                } else {
-                    List<DownloadService.TaskProgressItem> items = DownloadService.getActiveTaskItems();
-                    ArrayList<DownloadTask> remainingTasks = new ArrayList<>();
-                    for (DownloadService.TaskProgressItem item : items) {
-                        if (item.status != DownloadService.TaskProgressItem.STATUS_COMPLETED) {
-                            remainingTasks.add(item.task);
+                @Override
+                public boolean isItemViewSwipeEnabled() {
+                    return false;
+                }
+
+                @Override
+                public boolean onMove(@NonNull RecyclerView recyclerView,
+                                      @NonNull RecyclerView.ViewHolder viewHolder,
+                                      @NonNull RecyclerView.ViewHolder target) {
+                    int fromPos = viewHolder.getBindingAdapterPosition();
+                    int toPos = target.getBindingAdapterPosition();
+                    if (fromPos == RecyclerView.NO_POSITION || toPos == RecyclerView.NO_POSITION
+                            || fromPos == toPos) {
+                        return false;
+                    }
+                    if (fromPos < toPos) {
+                        for (int i = fromPos; i < toPos; i++) {
+                            Collections.swap(queueList, i, i + 1);
+                        }
+                    } else {
+                        for (int i = fromPos; i > toPos; i--) {
+                            Collections.swap(queueList, i, i - 1);
                         }
                     }
-                    if (!remainingTasks.isEmpty()) {
-                        DownloadService.startQueue(this, remainingTasks);
-                        com.example.animelib.util.CustomToast.showInfo(this, "Запуск скачивания...");
+                    queueAdapter.notifyItemMoved(fromPos, toPos);
+                    return true;
+                }
+
+                @Override
+                public void onSwiped(@NonNull RecyclerView.ViewHolder viewHolder, int direction) {
+                    // Swipe disabled
+                }
+
+                @Override
+                public void onSelectedChanged(RecyclerView.ViewHolder viewHolder, int actionState) {
+                    super.onSelectedChanged(viewHolder, actionState);
+                    if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
+                        isDraggingQueue = true;
+                        if (rvDownloadQueue != null) {
+                            rvDownloadQueue.requestDisallowInterceptTouchEvent(true);
+                        }
+                        if (viewHolder != null) {
+                            viewHolder.itemView.animate()
+                                    .scaleX(1.02f)
+                                    .scaleY(1.02f)
+                                    .alpha(0.94f)
+                                    .setDuration(120)
+                                    .start();
+                        }
                     }
                 }
-                updateQueueSection();
-            });
-        }
 
-        if (btnQueueCancel != null) {
-            btnQueueCancel.setOnClickListener(v -> {
-                DownloadService.cancel(this);
-                DownloadService.clearQueue();
-                com.example.animelib.util.CustomToast.showInfo(this, "Загрузка отменена");
-                updateQueueSection();
+                @Override
+                public void clearView(@NonNull RecyclerView recyclerView,
+                                      @NonNull RecyclerView.ViewHolder viewHolder) {
+                    super.clearView(recyclerView, viewHolder);
+                    viewHolder.itemView.animate()
+                            .scaleX(1f)
+                            .scaleY(1f)
+                            .alpha(1f)
+                            .setDuration(120)
+                            .start();
+                    isDraggingQueue = false;
+                    if (rvDownloadQueue != null) {
+                        rvDownloadQueue.requestDisallowInterceptTouchEvent(false);
+                    }
+                    List<String> orderedIds = new ArrayList<>();
+                    for (DownloadService.TitleQueueInfo info : queueList) {
+                        if (info != null && info.animeId != null) {
+                            orderedIds.add(info.animeId);
+                        }
+                    }
+                    if (!orderedIds.isEmpty()) {
+                        DownloadService.reorderTitles(DownloadsActivity.this, orderedIds);
+                    }
+                    updateQueueSection();
+                }
             });
+            queueItemTouchHelper.attachToRecyclerView(rvDownloadQueue);
         }
 
         // Initialize Downloaded section views
@@ -427,19 +480,12 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
             }
         }
 
-        if (displayedAnimeList.isEmpty()) {
-            if (containerDownloadedSection != null) containerDownloadedSection.setVisibility(View.GONE);
-            if (layoutEmpty != null) layoutEmpty.setVisibility(View.VISIBLE);
-        } else {
-            if (layoutEmpty != null) layoutEmpty.setVisibility(View.GONE);
-            if (containerDownloadedSection != null) containerDownloadedSection.setVisibility(View.VISIBLE);
-        }
-
         if (animeAdapter != null) {
             animeAdapter.notifyDataSetChanged();
         }
 
         updateQueueSection();
+        updateEmptyState();
     }
 
     @Override
@@ -502,78 +548,205 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
         });
     }
 
-    private void updateQueueSection() {
-        List<DownloadService.TaskProgressItem> activeItems = DownloadService.getActiveTaskItems();
+    private void updateEmptyState() {
+        boolean hasDownloaded;
+        synchronized (animeList) {
+            hasDownloaded = !displayedAnimeList.isEmpty();
+        }
+        boolean hasQueue = !queueList.isEmpty();
 
-        boolean hasQueue = activeItems != null && !activeItems.isEmpty();
+        if (containerDownloadedSection != null) {
+            containerDownloadedSection.setVisibility(hasDownloaded ? View.VISIBLE : View.GONE);
+        }
+        if (layoutEmpty != null) {
+            layoutEmpty.setVisibility(!hasDownloaded && !hasQueue ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    private void updateQueueSection() {
+        if (isDraggingQueue) {
+            return;
+        }
+
+        List<DownloadService.TitleQueueInfo> infos = DownloadService.getTitleQueueInfos();
+        queueList.clear();
+        if (infos != null) {
+            queueList.addAll(infos);
+        }
+
+        boolean hasQueue = !queueList.isEmpty();
 
         if (tvDownloadedSectionHeader != null) {
             tvDownloadedSectionHeader.setVisibility(hasQueue ? View.VISIBLE : View.GONE);
         }
 
-        if (!hasQueue) {
-            if (containerQueueSection != null) containerQueueSection.setVisibility(View.GONE);
-            return;
+        if (containerQueueSection != null) {
+            containerQueueSection.setVisibility(hasQueue ? View.VISIBLE : View.GONE);
         }
 
-        if (containerQueueSection != null) containerQueueSection.setVisibility(View.VISIBLE);
+        if (queueAdapter != null) {
+            queueAdapter.notifyDataSetChanged();
+        }
 
-        int total = activeItems.size();
-        int completed = 0;
-        int activeDownloadingPercent = 0;
-        DownloadTask currentTask = null;
+        updateEmptyState();
+    }
 
-        for (DownloadService.TaskProgressItem item : activeItems) {
-            if (item.status == DownloadService.TaskProgressItem.STATUS_COMPLETED) {
-                completed++;
-            } else if (item.status == DownloadService.TaskProgressItem.STATUS_DOWNLOADING) {
-                activeDownloadingPercent = item.percent;
-                if (currentTask == null) currentTask = item.task;
-            } else if (currentTask == null) {
-                currentTask = item.task;
+    private class QueueAdapter extends RecyclerView.Adapter<QueueAdapter.QueueViewHolder> {
+
+        QueueAdapter() {
+            setHasStableIds(true);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            if (position < 0 || position >= queueList.size()) return RecyclerView.NO_ID;
+            DownloadService.TitleQueueInfo info = queueList.get(position);
+            if (info == null || info.animeId == null) return RecyclerView.NO_ID;
+            Long stableId = queueStableIds.get(info.animeId);
+            if (stableId == null) {
+                stableId = nextQueueStableId++;
+                queueStableIds.put(info.animeId, stableId);
             }
+            return stableId;
         }
 
-        if (currentTask == null && !activeItems.isEmpty()) {
-            currentTask = activeItems.get(0).task;
+        @NonNull
+        @Override
+        public QueueViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_download_queue, parent, false);
+            return new QueueViewHolder(view);
         }
 
-        boolean isRunning = DownloadService.isRunning();
+        @SuppressLint("ClickableViewAccessibility")
+        @Override
+        public void onBindViewHolder(@NonNull QueueViewHolder holder, int position) {
+            if (position < 0 || position >= queueList.size()) return;
+            DownloadService.TitleQueueInfo info = queueList.get(position);
+            if (info == null) return;
 
-        if (currentTask != null) {
-            if (tvQueueAnimeTitle != null) {
-                tvQueueAnimeTitle.setText(currentTask.getAnimeTitle() != null ? currentTask.getAnimeTitle() : "Загрузка");
+            boolean animateProgress = info.animeId != null && info.animeId.equals(holder.lastBoundAnimeId);
+            holder.lastBoundAnimeId = info.animeId;
+
+            holder.tvQueueAnimeTitle.setText(info.animeTitle != null ? info.animeTitle : "Загрузка");
+
+            if (info.posterUrl != null && !info.posterUrl.trim().isEmpty()) {
+                ImageLoader.getInstance().loadInto(holder.ivQueuePoster, info.posterUrl, R.drawable.skeleton_placeholder);
+            } else {
+                holder.ivQueuePoster.setImageResource(R.drawable.skeleton_placeholder);
             }
-            if (ivQueuePoster != null && currentTask.getPosterUrl() != null) {
-                ImageLoader.getInstance().loadInto(ivQueuePoster, currentTask.getPosterUrl(), R.drawable.skeleton_placeholder);
+
+            holder.tvQueueProgressText.setText(info.overallPercent + "%  " + info.completedCount + " из " + info.totalCount);
+            holder.tvQueueBadgeProgress.setText(info.completedCount + " / " + info.totalCount);
+
+            int primaryPurple = ContextCompat.getColor(DownloadsActivity.this, R.color.purple_primary);
+            int purpleTrack = ContextCompat.getColor(DownloadsActivity.this, R.color.purple_alpha_25);
+            int secondaryText = ContextCompat.getColor(DownloadsActivity.this, R.color.secondary_text_color);
+            int mutedTrack = ColorUtils.setAlphaComponent(secondaryText, 64);
+            int accentText = ContextCompat.getColor(DownloadsActivity.this, R.color.accent_text_color);
+            int unselectedStroke = ContextCompat.getColor(DownloadsActivity.this, R.color.chip_unselected_stroke);
+
+            if (info.isFirstInQueue) {
+                if (info.isDownloading) {
+                    holder.tvQueueStatus.setText("Загрузка");
+                    holder.tvQueueStatus.setTextColor(primaryPurple);
+                    holder.cardQueueItem.setStrokeColor(primaryPurple);
+                    holder.cardQueueItem.setStrokeWidth(dpToPx(1));
+                    holder.pbQueueProgress.setIndicatorColor(primaryPurple);
+                    holder.pbQueueProgress.setTrackColor(purpleTrack);
+                    holder.pbQueueProgress.setStopDotColor(primaryPurple);
+                } else {
+                    holder.tvQueueStatus.setText("Пауза");
+                    holder.tvQueueStatus.setTextColor(accentText);
+                    holder.cardQueueItem.setStrokeColor(unselectedStroke);
+                    holder.cardQueueItem.setStrokeWidth(Math.max(1, dpToPx(1) / 2));
+                    holder.pbQueueProgress.setIndicatorColor(secondaryText);
+                    holder.pbQueueProgress.setTrackColor(mutedTrack);
+                    holder.pbQueueProgress.setStopDotColor(secondaryText);
+                }
+
+                holder.btnQueuePause.setVisibility(View.VISIBLE);
+                holder.tvQueuePauseText.setText(info.isDownloading ? "Пауза" : "Продолжить");
+                holder.ivQueuePauseIcon.setImageResource(info.isDownloading ? R.drawable.ic_pause : R.drawable.ic_play);
+                holder.btnQueuePause.setContentDescription(info.isDownloading ? "Поставить загрузку на паузу" : "Продолжить загрузку");
+                holder.btnQueuePause.setOnClickListener(v -> {
+                    if (DownloadService.isRunning()) {
+                        DownloadService.pause(DownloadsActivity.this);
+                        CustomToast.showInfo(DownloadsActivity.this, "Пауза (прогресс сохранён)");
+                    } else if (DownloadService.hasPendingQueue()) {
+                        DownloadService.resume(DownloadsActivity.this);
+                        CustomToast.showInfo(DownloadsActivity.this, "Возобновление загрузки...");
+                    }
+                    updateQueueSection();
+                });
+            } else {
+                holder.tvQueueStatus.setText("В ожидании");
+                holder.tvQueueStatus.setTextColor(accentText);
+                holder.cardQueueItem.setStrokeColor(unselectedStroke);
+                holder.cardQueueItem.setStrokeWidth(Math.max(1, dpToPx(1) / 2));
+                holder.pbQueueProgress.setIndicatorColor(secondaryText);
+                holder.pbQueueProgress.setTrackColor(mutedTrack);
+                holder.pbQueueProgress.setStopDotColor(secondaryText);
+                holder.btnQueuePause.setVisibility(View.GONE);
+                holder.btnQueuePause.setOnClickListener(null);
             }
+
+            holder.pbQueueProgress.setProgress(info.overallPercent, animateProgress);
+
+            holder.btnQueueCancel.setOnClickListener(v -> {
+                DownloadService.cancelTitle(DownloadsActivity.this, info.animeId);
+                CustomToast.showInfo(DownloadsActivity.this, "Загрузка отменена");
+                updateQueueSection();
+            });
+
+            holder.ivQueueDragHandle.setAlpha(queueList.size() > 1 ? 1.0f : 0.45f);
+            holder.ivQueueDragHandle.setOnTouchListener((v, event) -> {
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    if (rvDownloadQueue != null) {
+                        rvDownloadQueue.requestDisallowInterceptTouchEvent(true);
+                    }
+                    if (queueItemTouchHelper != null) {
+                        queueItemTouchHelper.startDrag(holder);
+                    }
+                }
+                return false;
+            });
         }
 
-        int overallProgress = total > 0 ? (int) (((completed * 100.0) + activeDownloadingPercent) / total) : 0;
-        if (overallProgress > 100) overallProgress = 100;
-
-        if (tvQueueStatus != null) {
-            tvQueueStatus.setText(isRunning ? "Загрузка" : "Пауза");
+        @Override
+        public int getItemCount() {
+            return queueList.size();
         }
 
-        if (tvQueueProgressText != null) {
-            tvQueueProgressText.setText(overallProgress + "%  " + completed + " из " + total);
-        }
+        class QueueViewHolder extends RecyclerView.ViewHolder {
+            final MaterialCardView cardQueueItem;
+            final ImageView ivQueuePoster;
+            final TextView tvQueueAnimeTitle;
+            final TextView tvQueueStatus;
+            final TextView tvQueueProgressText;
+            final M3LinearProgressIndicator pbQueueProgress;
+            final ImageButton ivQueueDragHandle;
+            final TextView tvQueueBadgeProgress;
+            final View btnQueuePause;
+            final ImageView ivQueuePauseIcon;
+            final TextView tvQueuePauseText;
+            final View btnQueueCancel;
+            String lastBoundAnimeId;
 
-        if (pbQueueProgress != null) {
-            pbQueueProgress.setProgress(overallProgress);
-        }
-
-        if (tvQueueBadgeProgress != null) {
-            tvQueueBadgeProgress.setText(completed + " / " + total);
-        }
-
-        if (tvQueuePauseText != null) {
-            tvQueuePauseText.setText(isRunning ? "Пауза" : "Продолжить");
-        }
-
-        if (ivQueuePauseIcon != null) {
-            ivQueuePauseIcon.setImageResource(isRunning ? R.drawable.ic_pause : R.drawable.ic_play);
+            QueueViewHolder(@NonNull View itemView) {
+                super(itemView);
+                cardQueueItem = itemView.findViewById(R.id.cardQueueItem);
+                ivQueuePoster = itemView.findViewById(R.id.ivQueuePoster);
+                tvQueueAnimeTitle = itemView.findViewById(R.id.tvQueueAnimeTitle);
+                tvQueueStatus = itemView.findViewById(R.id.tvQueueStatus);
+                tvQueueProgressText = itemView.findViewById(R.id.tvQueueProgressText);
+                pbQueueProgress = itemView.findViewById(R.id.pbQueueProgress);
+                ivQueueDragHandle = itemView.findViewById(R.id.ivQueueDragHandle);
+                tvQueueBadgeProgress = itemView.findViewById(R.id.tvQueueBadgeProgress);
+                btnQueuePause = itemView.findViewById(R.id.btnQueuePause);
+                ivQueuePauseIcon = itemView.findViewById(R.id.ivQueuePauseIcon);
+                tvQueuePauseText = itemView.findViewById(R.id.tvQueuePauseText);
+                btnQueueCancel = itemView.findViewById(R.id.btnQueueCancel);
+            }
         }
     }
 

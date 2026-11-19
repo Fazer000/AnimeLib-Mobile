@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/cardQueueItem"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="16dp"
+    android:layout_marginBottom="10dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="0dp"
+    app:cardBackgroundColor="@color/card_bg_color"
+    app:strokeWidth="0.5dp"
+    app:strokeColor="@color/chip_unselected_stroke">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="14dp"
+        android:paddingTop="14dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="10dp">
+
+        <!-- Top Info Row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="top">
+
+            <!-- Poster Thumbnail -->
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/ivQueuePoster"
+                android:layout_width="58dp"
+                android:layout_height="82dp"
+                android:scaleType="centerCrop"
+                android:src="@drawable/skeleton_placeholder"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.Material3.Corner.Small"
+                android:contentDescription="Постер аниме в очереди" />
+
+            <!-- Details Column -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="12dp"
+                android:layout_marginEnd="4dp">
+
+                <TextView
+                    android:id="@+id/tvQueueAnimeTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Название аниме"
+                    android:textSize="15sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:textColor="@color/primary_text_color"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:id="@+id/tvQueueStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Загрузка"
+                    android:textSize="13sp"
+                    android:fontFamily="@font/open_sans_semibold"
+                    android:textColor="@color/purple_primary"
+                    android:layout_marginTop="2dp" />
+
+                <TextView
+                    android:id="@+id/tvQueueProgressText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0%  0 из 0"
+                    android:textSize="12sp"
+                    android:fontFamily="@font/open_sans"
+                    android:textColor="@color/accent_text_color"
+                    android:layout_marginTop="6dp" />
+
+                <com.example.animelib.ui.M3LinearProgressIndicator
+                    android:id="@+id/pbQueueProgress"
+                    android:layout_width="match_parent"
+                    android:layout_height="14dp"
+                    android:layout_marginTop="4dp"
+                    android:max="100"
+                    android:progress="0"
+                    app:m3TrackHeight="8dp"
+                    app:m3GapSize="4dp"
+                    app:m3StopDotSize="4dp"
+                    app:m3ShowStopDot="true" />
+
+            </LinearLayout>
+
+            <!-- Corner Drag Handle Button (48dp touch target) -->
+            <ImageButton
+                android:id="@+id/ivQueueDragHandle"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginTop="-10dp"
+                android:layout_marginEnd="-10dp"
+                android:padding="13dp"
+                android:scaleType="fitCenter"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_drag_menu"
+                app:tint="@color/secondary_text_color"
+                android:contentDescription="Перетащить для изменения порядка" />
+
+        </LinearLayout>
+
+        <!-- Bottom Controls Row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="8dp">
+
+            <!-- Left Badge: Download icon + episode fraction -->
+            <LinearLayout
+                android:id="@+id/btnQueueBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:background="@drawable/video_time_background"
+                android:backgroundTint="@color/sort_popup_item_selected_bg"
+                android:paddingHorizontal="12dp"
+                android:gravity="center">
+
+                <ImageView
+                    android:id="@+id/ivQueueBadgeIcon"
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:src="@drawable/ic_download"
+                    app:tint="@color/sort_popup_item_selected_text"
+                    android:contentDescription="@null" />
+
+                <TextView
+                    android:id="@+id/tvQueueBadgeProgress"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:text="0 / 0"
+                    android:textSize="13sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:textColor="@color/sort_popup_item_selected_text" />
+
+            </LinearLayout>
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <!-- Pause / Resume Button (48dp touch wrapper with 36dp pill) -->
+            <FrameLayout
+                android:id="@+id/btnQueuePause"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:minHeight="48dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Пауза или продолжить">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:layout_gravity="center_vertical"
+                    android:background="@drawable/video_time_background"
+                    android:backgroundTint="@color/sort_popup_item_selected_bg"
+                    android:paddingHorizontal="14dp"
+                    android:gravity="center"
+                    android:foreground="?attr/selectableItemBackground">
+
+                    <ImageView
+                        android:id="@+id/ivQueuePauseIcon"
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:src="@drawable/ic_pause"
+                        app:tint="@color/sort_popup_item_selected_text"
+                        android:contentDescription="@null" />
+
+                    <TextView
+                        android:id="@+id/tvQueuePauseText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:text="Пауза"
+                        android:textSize="13sp"
+                        android:fontFamily="@font/open_sans_semibold"
+                        android:textColor="@color/sort_popup_item_selected_text" />
+
+                </LinearLayout>
+
+            </FrameLayout>
+
+            <!-- Cancel Button (48dp touch target around 36dp circle) -->
+            <FrameLayout
+                android:id="@+id/btnQueueCancel"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="-6dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Отменить загрузку тайтла">
+
+                <ImageView
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_gravity="center"
+                    android:padding="8dp"
+                    android:background="@drawable/ripple_circle"
+                    android:backgroundTint="@color/stop_btn_bg"
+                    android:src="@drawable/ic_close"
+                    app:tint="@color/stop_btn_text"
+                    android:contentDescription="@null" />
+
+            </FrameLayout>
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

@@ -40,6 +40,7 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
     private ProgressBar pbOverall;
     private RecyclerView rvProgressTasks;
     private MaterialButton btnOpenDownloadSheet;
+    private MaterialButton btnPauseResumeDownload;
     private MaterialButton btnStopDownload;
 
     private final List<DownloadService.TaskProgressItem> taskItems = new ArrayList<>();
@@ -104,6 +105,7 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
         pbOverall = view.findViewById(R.id.pbOverall);
         rvProgressTasks = view.findViewById(R.id.rvProgressTasks);
         btnOpenDownloadSheet = view.findViewById(R.id.btnOpenDownloadSheet);
+        btnPauseResumeDownload = view.findViewById(R.id.btnPauseResumeDownload);
         btnStopDownload = view.findViewById(R.id.btnStopDownload);
 
         if (btnProgressClose != null) {
@@ -144,8 +146,21 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
         adapter = new TaskProgressAdapter();
         rvProgressTasks.setAdapter(adapter);
 
+        if (btnPauseResumeDownload != null) {
+            btnPauseResumeDownload.setOnClickListener(v -> {
+                if (DownloadService.isRunning()) {
+                    DownloadService.pause(requireContext());
+                    com.example.animelib.util.CustomToast.showInfo(requireContext(), "Пауза (прогресс сохранён)");
+                } else if (DownloadService.hasPendingQueue()) {
+                    DownloadService.resume(requireContext());
+                    com.example.animelib.util.CustomToast.showInfo(requireContext(), "Возобновление скачивания...");
+                }
+                updateProgressData();
+            });
+        }
+
         btnStopDownload.setOnClickListener(v -> {
-            if (DownloadService.isRunning()) {
+            if (DownloadService.isRunning() || DownloadService.hasPendingQueue()) {
                 DownloadService.cancel(requireContext());
                 com.example.animelib.util.CustomToast.showInfo(requireContext(), "Скачивание остановлено");
                 dismiss();
@@ -193,7 +208,7 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
     }
 
     private void updateProgressData() {
-        List<DownloadService.TaskProgressItem> activeItems = DownloadService.getActiveTaskItems();
+        List<DownloadService.TaskProgressItem> activeItems = DownloadService.getActiveTitleTaskItems();
         taskItems.clear();
         taskItems.addAll(activeItems);
 
@@ -229,23 +244,30 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
 
         int total = taskItems.size();
         int completed = 0;
-        int activeDownloadingPercent = 0;
+        int pendingCount = 0;
+        int inProgressPercentSum = 0;
 
         for (DownloadService.TaskProgressItem item : taskItems) {
             if (item.status == DownloadService.TaskProgressItem.STATUS_COMPLETED) {
                 completed++;
-            } else if (item.status == DownloadService.TaskProgressItem.STATUS_DOWNLOADING) {
-                activeDownloadingPercent = item.percent;
+            } else if (item.status == DownloadService.TaskProgressItem.STATUS_DOWNLOADING
+                    || item.status == DownloadService.TaskProgressItem.STATUS_WAITING) {
+                pendingCount++;
+                inProgressPercentSum += Math.max(0, Math.min(99, item.percent));
             }
         }
 
         boolean isRunning = DownloadService.isRunning();
+        boolean hasPending = pendingCount > 0 || DownloadService.hasPendingQueue();
 
         if (total == 0) {
             tvProgressHeaderSubtitle.setText("Нет активных скачиваний");
             tvOverallText.setText("Очередь пуста");
             tvOverallPercent.setText("0%");
             pbOverall.setProgress(0);
+            if (btnPauseResumeDownload != null) {
+                btnPauseResumeDownload.setVisibility(View.GONE);
+            }
             if (btnStopDownload != null) {
                 btnStopDownload.setText("Закрыть");
                 btnStopDownload.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
@@ -255,17 +277,36 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
             return;
         }
 
-        int overallProgress = (int) (((completed * 100.0) + activeDownloadingPercent) / total);
+        int overallProgress = (int) (((completed * 100.0) + inProgressPercentSum) / total);
         if (overallProgress > 100) overallProgress = 100;
 
         String animeName = !taskItems.isEmpty() && taskItems.get(0).task.getAnimeTitle() != null ?
                 taskItems.get(0).task.getAnimeTitle() : "";
 
+        tvOverallText.setText("Обработано " + completed + " из " + total + " серий");
+        tvOverallPercent.setText(overallProgress + "%");
+        pbOverall.setProgress(overallProgress);
+
         if (isRunning) {
             tvProgressHeaderSubtitle.setText(animeName.isEmpty() ? "Загрузка серий..." : animeName);
-            tvOverallText.setText("Обработано " + completed + " из " + total + " серий");
-            tvOverallPercent.setText(overallProgress + "%");
-            pbOverall.setProgress(overallProgress);
+            if (btnPauseResumeDownload != null) {
+                btnPauseResumeDownload.setVisibility(View.VISIBLE);
+                btnPauseResumeDownload.setIconResource(R.drawable.ic_pause);
+                btnPauseResumeDownload.setContentDescription("Пауза");
+            }
+            if (btnStopDownload != null) {
+                btnStopDownload.setText("Остановить");
+                btnStopDownload.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
+                        ContextCompat.getColor(requireContext(), R.color.dialog_danger_bg)));
+                btnStopDownload.setTextColor(ContextCompat.getColor(requireContext(), R.color.dialog_danger_text));
+            }
+        } else if (hasPending) {
+            tvProgressHeaderSubtitle.setText(animeName.isEmpty() ? "На паузе" : (animeName + " • Пауза"));
+            if (btnPauseResumeDownload != null) {
+                btnPauseResumeDownload.setVisibility(View.VISIBLE);
+                btnPauseResumeDownload.setIconResource(R.drawable.ic_play);
+                btnPauseResumeDownload.setContentDescription("Продолжить");
+            }
             if (btnStopDownload != null) {
                 btnStopDownload.setText("Остановить");
                 btnStopDownload.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
@@ -274,9 +315,9 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
             }
         } else {
             tvProgressHeaderSubtitle.setText("Завершено");
-            tvOverallText.setText("Обработано " + completed + " из " + total + " серий");
-            tvOverallPercent.setText(overallProgress + "%");
-            pbOverall.setProgress(overallProgress);
+            if (btnPauseResumeDownload != null) {
+                btnPauseResumeDownload.setVisibility(View.GONE);
+            }
             if (btnStopDownload != null) {
                 btnStopDownload.setText("Закрыть");
                 btnStopDownload.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
