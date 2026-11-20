@@ -150,6 +150,38 @@ public final class HlsPlaylistParser {
         return best.url;
     }
 
+    /**
+     * Выбирает самый лёгкий вариант из master-плейлиста (минимальное разрешение / минимальный bandwidth)
+     * для максимально быстрого извлечения аудиодорожки.
+     */
+    @Nullable
+    public static String selectLowestBandwidthVariantUrl(@Nullable String masterPlaylist,
+                                                         @NonNull String baseUrl) {
+        if (masterPlaylist == null || masterPlaylist.trim().isEmpty()) {
+            return null;
+        }
+        List<StreamVariant> variants = parseMasterVariants(masterPlaylist, baseUrl);
+        if (variants.isEmpty()) {
+            return null;
+        }
+        StreamVariant lightest = variants.get(0);
+        for (int i = 1; i < variants.size(); i++) {
+            StreamVariant v = variants.get(i);
+            boolean vHasHeight = v.height > 0;
+            boolean lHasHeight = lightest.height > 0;
+            if (vHasHeight && lHasHeight) {
+                if (v.height < lightest.height
+                        || (v.height == lightest.height && v.bandwidth > 0
+                        && (lightest.bandwidth <= 0 || v.bandwidth < lightest.bandwidth))) {
+                    lightest = v;
+                }
+            } else if (v.bandwidth > 0 && (lightest.bandwidth <= 0 || v.bandwidth < lightest.bandwidth)) {
+                lightest = v;
+            }
+        }
+        return lightest.url;
+    }
+
     @NonNull
     public static List<StreamVariant> parseMasterVariants(@NonNull String masterPlaylist, @NonNull String baseUrl) {
         List<StreamVariant> variants = new ArrayList<>();

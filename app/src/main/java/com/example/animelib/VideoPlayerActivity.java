@@ -141,6 +141,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private PlayerPortraitController playerPortraitController;
     private PlayerGesturesCoordinator playerGesturesCoordinator;
     private OpeningAudioDetectorController openingAudioDetectorController;
+    private boolean isOpeningAnalysisRunning = false;
 
     // Activity / session state
     private String animeUrl;
@@ -2929,6 +2930,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 if (openingAudioDetectorController != null) {
                     openingAudioDetectorController.onEpisodeAttached();
                 }
+                updateOpeningAnalysisIndicatorVisibility();
             }
 
             @Override
@@ -3060,6 +3062,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 if (openingAudioDetectorController != null) {
                     openingAudioDetectorController.onEpisodeAttached();
                 }
+                updateOpeningAnalysisIndicatorVisibility();
                 if (playerSubtitlesController != null) {
                     playerSubtitlesController.applySubtitlesStateToPlayer();
                 }
@@ -3693,6 +3696,65 @@ public class VideoPlayerActivity extends AppCompatActivity {
             public void safeRunOnUiThread(@NonNull Runnable runnable) {
                 VideoPlayerActivity.this.safeRunOnUiThread(runnable);
             }
+
+            @Override
+            public void onAnalysisRunningChanged(boolean running) {
+                isOpeningAnalysisRunning = running;
+                updateOpeningAnalysisIndicatorVisibility();
+            }
         };
+    }
+
+    private void updateOpeningAnalysisIndicatorVisibility() {
+        if (playerUIBinder == null || playerUIBinder.playerView == null) return;
+        View indicator = playerUIBinder.playerView.findViewById(R.id.openingAnalysisIndicator);
+        if (indicator == null) return;
+
+        View timeCodeContainer = playerUIBinder.playerView.findViewById(R.id.timeCodeContainer);
+        if (timeCodeContainer != null) {
+            syncIndicatorSizeToTimeCode(indicator, timeCodeContainer);
+            if (!Boolean.TRUE.equals(timeCodeContainer.getTag(R.id.openingAnalysisIndicator))) {
+                timeCodeContainer.setTag(R.id.openingAnalysisIndicator, Boolean.TRUE);
+                timeCodeContainer.addOnLayoutChangeListener(
+                        (v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+                            int newHeight = bottom - top;
+                            int oldHeight = oldBottom - oldTop;
+                            if (newHeight > 0 && newHeight != oldHeight) {
+                                syncIndicatorSizeToTimeCode(indicator, v);
+                            }
+                        });
+            }
+        }
+
+        indicator.setVisibility(isOpeningAnalysisRunning ? View.VISIBLE : View.GONE);
+    }
+
+    private void syncIndicatorSizeToTimeCode(@NonNull View indicator, @NonNull View timeCodeContainer) {
+        int targetHeight = timeCodeContainer.getHeight();
+        if (targetHeight > 0) {
+            android.view.ViewGroup.LayoutParams lp = indicator.getLayoutParams();
+            if (lp != null && (lp.height != targetHeight || lp.width != targetHeight)) {
+                lp.height = targetHeight;
+                lp.width = targetHeight;
+                indicator.setLayoutParams(lp);
+            }
+            View spinner = indicator.findViewById(R.id.openingAnalysisSpinner);
+            if (spinner instanceof com.google.android.material.progressindicator.CircularProgressIndicator) {
+                int desiredSpinnerPx = Math.max(10, Math.round(targetHeight * 0.56f));
+                com.google.android.material.progressindicator.CircularProgressIndicator cpi =
+                        (com.google.android.material.progressindicator.CircularProgressIndicator) spinner;
+                if (cpi.getIndicatorSize() != desiredSpinnerPx) {
+                    cpi.setIndicatorSize(desiredSpinnerPx);
+                }
+            }
+        } else {
+            timeCodeContainer.post(() -> {
+                if (isClosingOrFinishing || isFinishing() || isDestroyed()) return;
+                int measuredHeight = timeCodeContainer.getHeight();
+                if (measuredHeight > 0) {
+                    syncIndicatorSizeToTimeCode(indicator, timeCodeContainer);
+                }
+            });
+        }
     }
 }

@@ -513,6 +513,501 @@ public final class AudioFingerprintEngine {
         return result != null ? result.confidence : 0f;
     }
 
+    /**
+     * Сверхбыстрый поиск по короткому 16–20с аудио-зонду (Sparse Probe).
+     * Прогоняет короткий фрагмент эпизода по всему шаблону опенинга с шагом 1 кадр (0.25с),
+     * мгновенно вычисляя точный глобальный сдвиг lag и границы опенинга всего за ~0.5 мс CPU.
+     */
+    @Nullable
+    public static MatchResult findProbeMatch(@NonNull Template template,
+                                             @NonNull byte[] probeData,
+                                             int probeFrames,
+                                             double probeStartSec) {
+        if (!template.isValid() || probeFrames < 44 || probeData.length < probeFrames * NUM_BANDS) {
+            return null;
+        }
+
+        final int qFrames = template.frameCount;
+        final boolean[] qActive = buildActiveMask(template.data, qFrames);
+        final boolean[] pActive = buildActiveMask(probeData, probeFrames);
+
+        int activeProbeCount = 0;
+        for (int i = 0; i < probeFrames; i++) {
+            if (pActive[i]) activeProbeCount++;
+        }
+        if (activeProbeCount < 24) {
+            return null;
+        }
+
+        final int minOverlap = Math.max(32, Math.min(44, (int) (probeFrames * 0.55f)));
+        final int minQOffset = -(probeFrames - minOverlap);
+        final int maxQOffset = qFrames - minOverlap;
+        if (maxQOffset < minQOffset) {
+            return null;
+        }
+
+        final int offsetCount = maxQOffset - minQOffset + 1;
+        final float[] scores = new float[offsetCount];
+        int evaluated = 0;
+        double sumScores = 0.0;
+        double sumSqScores = 0.0;
+
+        for (int idx = 0, qOff = minQOffset; qOff <= maxQOffset; idx++, qOff++) {
+            float sum = 0f;
+            int valid = 0;
+            int pStart = Math.max(0, -qOff);
+            int pEnd = Math.min(probeFrames, qFrames - qOff);
+            for (int p = pStart; p < pEnd; p++) {
+                int q = qOff + p;
+                if (qActive[q] && pActive[p]) {
+                    sum += frameDot(template.data, q, probeData, p);
+                    valid++;
+                }
+            }
+            if (valid >= Math.max(24, minOverlap - 10)) {
+                float mean = sum / valid;
+                scores[idx] = mean;
+                sumScores += mean;
+                sumSqScores += (double) mean * mean;
+                evaluated++;
+            } else {
+                scores[idx] = -2f;
+            }
+        }
+
+        if (evaluated < 10) {
+            return null;
+        }
+
+        // Находим топ-4 разделённых пика (не ближе 16 кадров = 4 сек друг к другу)
+        final int maxPeaks = 4;
+        final int suppressRadius = 16;
+        List<Integer> peakOffsets = new ArrayList<>(maxPeaks);
+        boolean[] suppressed = new boolean[offsetCount];
+
+        for (int pk = 0; pk < maxPeaks; pk++) {
+            int bestIdx = -1;
+            float bestVal = -2f;
+            for (int i = 0; i < offsetCount; i++) {
+                if (!suppressed[i] && scores[i] > bestVal) {
+                    bestVal = scores[i];
+                    bestIdx = i;
+                }
+            }
+            if (bestIdx < 0 || bestVal < 0.25f) {
+                break;
+            }
+            peakOffsets.add(minQOffset + bestIdx);
+            int sFrom = Math.max(0, bestIdx - suppressRadius);
+            int sTo = Math.min(offsetCount - 1, bestIdx + suppressRadius);
+            for (int s = sFrom; s <= sTo; s++) {
+                suppressed[s] = true;
+            }
+        }
+
+        if (peakOffsets.isEmpty()) {
+            return null;
+        }
+
+        int primaryOffset = peakOffsets.get(0);
+        double bgSum = 0.0;
+        double bgSq = 0.0;
+        int bgCount = 0;
+        for (int i = 0; i < offsetCount; i++) {
+            int qOff = minQOffset + i;
+            if (scores[i] > -1.5f && Math.abs(qOff - primaryOffset) > 20) {
+                bgSum += scores[i];
+                bgSq += (double) scores[i] * scores[i];
+                bgCount++;
+            }
+        }
+        float bgMean = bgCount > 5 ? (float) (bgSum / bgCount) : (float) (sumScores / evaluated);
+        float bgVar = bgCount > 5
+                ? (float) Math.max(0.0, (bgSq / bgCount) - (double) bgMean * bgMean)
+                : (float) Math.max(0.0, (sumSqScores / evaluated) - (sumScores / evaluated) * (sumScores / evaluated));
+        float bgStd = (float) Math.sqrt(bgVar);
+
+        int probeStartFrame = (int) Math.round(probeStartSec * FRAMES_PER_SECOND);
+        MatchResult bestResult = null;
+        float bestComposite = -1f;
+
+        for (int qOff : peakOffsets) {
+            int offsetIdx = qOff - minQOffset;
+            float peakScore = scores[offsetIdx];
+            float peakMargin = peakScore - bgMean;
+            float peakZ = (bgStd > 0.02f)
+                    ? (peakMargin / bgStd)
+                    : (peakMargin * 20f);
+
+            // Контраст локального пика относительно «плеч» (±1.5..4.5с):
+            // реальный опенинг даёт острый пик синхронизации, а схожий тембр голоса — плоское плато.
+            float shoulderSum = 0f;
+            int shoulderCnt = 0;
+            for (int d = 6; d <= 18; d++) {
+                int leftIdx = offsetIdx - d;
+                if (leftIdx >= 0 && leftIdx < offsetCount && scores[leftIdx] > -1.5f) {
+                    shoulderSum += scores[leftIdx];
+                    shoulderCnt++;
+                }
+                int rightIdx = offsetIdx + d;
+                if (rightIdx >= 0 && rightIdx < offsetCount && scores[rightIdx] > -1.5f) {
+                    shoulderSum += scores[rightIdx];
+                    shoulderCnt++;
+                }
+            }
+            float shoulderMean = shoulderCnt >= 4 ? (shoulderSum / shoulderCnt) : bgMean;
+            float localContrast = peakScore - shoulderMean;
+
+            if (peakZ < 4.2f || peakMargin < 0.17f || localContrast < 0.15f) {
+                continue;
+            }
+
+            float[] rawSim = new float[probeFrames];
+            boolean[] validActive = new boolean[probeFrames];
+            for (int p = 0; p < probeFrames; p++) {
+                int q = qOff + p;
+                if (q >= 0 && q < qFrames && qActive[q] && pActive[p]) {
+                    rawSim[p] = frameDot(template.data, q, probeData, p);
+                    validActive[p] = true;
+                }
+            }
+
+            float[] smoothSim = new float[probeFrames];
+            float peakSmooth = 0f;
+            final int halfWin = 3; // ±0.75s
+            for (int p = 0; p < probeFrames; p++) {
+                int wStart = Math.max(0, p - halfWin);
+                int wEnd = Math.min(probeFrames - 1, p + halfWin);
+                float s = 0f;
+                int c = 0;
+                for (int k = wStart; k <= wEnd; k++) {
+                    if (validActive[k]) {
+                        s += rawSim[k];
+                        c++;
+                    }
+                }
+                if (c >= 2) {
+                    float avg = s / c;
+                    smoothSim[p] = avg;
+                    if (avg > peakSmooth) {
+                        peakSmooth = avg;
+                    }
+                }
+            }
+
+            if (peakSmooth < 0.58f) {
+                continue;
+            }
+
+            float clampedBg = Math.max(0f, bgMean);
+            float thresh = Math.max(0.40f, clampedBg + 0.52f * (peakSmooth - clampedBg));
+
+            List<int[]> spans = new ArrayList<>();
+            int curStart = -1;
+            for (int p = 0; p < probeFrames; p++) {
+                if (smoothSim[p] >= thresh) {
+                    if (curStart < 0) curStart = p;
+                } else if (curStart >= 0) {
+                    spans.add(new int[]{curStart, p - 1});
+                    curStart = -1;
+                }
+            }
+            if (curStart >= 0) {
+                spans.add(new int[]{curStart, probeFrames - 1});
+            }
+            if (spans.isEmpty()) {
+                continue;
+            }
+
+            List<int[]> merged = new ArrayList<>();
+            int[] current = spans.get(0);
+            for (int s = 1; s < spans.size(); s++) {
+                int[] next = spans.get(s);
+                int curLen = current[1] - current[0] + 1;
+                int nextLen = next[1] - next[0] + 1;
+                if (next[0] - current[1] - 1 <= 14 && curLen >= 10 && nextLen >= 10) {
+                    current[1] = next[1];
+                } else {
+                    merged.add(current);
+                    current = next;
+                }
+            }
+            merged.add(current);
+
+            int[] bestSpan = null;
+            int bestSpanLen = 0;
+            for (int[] sp : merged) {
+                int len = sp[1] - sp[0] + 1;
+                if (len > bestSpanLen) {
+                    bestSpanLen = len;
+                    bestSpan = sp;
+                }
+            }
+            if (bestSpan == null) {
+                continue;
+            }
+
+            int spStart = bestSpan[0];
+            int spEnd = bestSpan[1];
+            float edgeThresh = Math.max(0.36f, thresh * 0.90f);
+            while (spStart < spEnd && (!validActive[spStart] || rawSim[spStart] < edgeThresh)) spStart++;
+            while (spEnd > spStart && (!validActive[spEnd] || rawSim[spEnd] < edgeThresh)) spEnd--;
+            while (spStart > 0 && validActive[spStart - 1] && rawSim[spStart - 1] >= edgeThresh) spStart--;
+            while (spEnd < probeFrames - 1 && validActive[spEnd + 1] && rawSim[spEnd + 1] >= edgeThresh) spEnd++;
+
+            int spanFrames = spEnd - spStart + 1;
+            float spanSec = spanFrames * (HOP_MS / 1000f);
+            if (spanSec < 9.5f) {
+                continue;
+            }
+
+            // Убеждаемся, что найденный фрагмент существенно пересекается с ядром опенинга (не только с диалоговым padding)
+            int matchedQStart = qOff + spStart;
+            int matchedQEnd = qOff + spEnd;
+            int coreWinStart = Math.max(0, template.coreStartFrame - 12);
+            int coreWinEnd = Math.min(qFrames - 1, template.coreEndFrame + 12);
+            int coreOverlap = Math.min(matchedQEnd, coreWinEnd) - Math.max(matchedQStart, coreWinStart) + 1;
+            if (coreOverlap < 24) {
+                continue;
+            }
+
+            float sumSim = 0f;
+            int activeSpan = 0;
+            for (int p = spStart; p <= spEnd; p++) {
+                if (validActive[p]) {
+                    sumSim += rawSim[p];
+                    activeSpan++;
+                }
+            }
+            if (activeSpan < 26) {
+                continue;
+            }
+
+            float meanSpanSim = sumSim / activeSpan;
+            boolean strongAbsolute = meanSpanSim >= 0.62f && peakSmooth >= 0.70f
+                    && (meanSpanSim - bgMean) >= 0.26f;
+            boolean strongRelative = meanSpanSim >= 0.52f && peakSmooth >= 0.60f
+                    && (meanSpanSim - bgMean) >= 0.30f && peakZ >= 5.0f;
+
+            if (!strongAbsolute && !strongRelative) {
+                continue;
+            }
+
+            int lag = probeStartFrame - qOff;
+            int estFromSec = Math.max(0, Math.round((lag + template.coreStartFrame) * (HOP_MS / 1000f)));
+            int alignedEndSec = Math.round((lag + template.coreEndFrame + 1) * (HOP_MS / 1000f));
+            int minEstTo = estFromSec + Math.max(25, template.skipDurationSec - 15);
+            int maxEstTo = estFromSec + 150;
+            int estToSec = Math.max(minEstTo, Math.min(maxEstTo, alignedEndSec));
+
+            float composite = meanSpanSim + Math.min(0.25f, peakZ * 0.02f);
+            if (composite > bestComposite) {
+                bestComposite = composite;
+                bestResult = new MatchResult(estFromSec, estToSec, meanSpanSim, peakZ, lag, template.id, true);
+            }
+        }
+
+        return bestResult;
+    }
+
+    /**
+     * Точно уточняет левую и правую границы опенинга по двум коротким краевым окнам (старт и конец),
+     * компенсируя ±1с возможный дрейф #EXTINF в HLS-сегментах и позднее/раннее нажатие ручного пропуска.
+     *
+     * @return массив из 2 элементов: {refinedFromSec, refinedToSec}
+     */
+    @NonNull
+    public static int[] refineEdgesAtLag(@NonNull Template template,
+                                         int initialLag,
+                                         int fallbackFromSec,
+                                         int fallbackToSec,
+                                         @Nullable byte[] startData,
+                                         int startOriginFrame,
+                                         int startFrames,
+                                         @Nullable byte[] endData,
+                                         int endOriginFrame,
+                                         int endFrames) {
+        int refinedFrom = fallbackFromSec;
+        int refinedTo = fallbackToSec;
+        final int qFrames = template.frameCount;
+        final boolean[] qActive = buildActiveMask(template.data, qFrames);
+
+        // 1. Уточнение левой границы (начала опенинга)
+        if (startData != null && startFrames >= 16 && startData.length >= startFrames * NUM_BANDS) {
+            boolean[] sActive = buildActiveMask(startData, startFrames);
+            int qLimit = Math.min(qFrames - 1, template.coreStartFrame + 96);
+            int bestLag = refineMicroLag(template.data, qActive, 0, qLimit,
+                    startData, sActive, startOriginFrame, startFrames, initialLag, 6);
+
+            float[] raw = new float[qLimit + 1];
+            boolean[] valid = new boolean[qLimit + 1];
+            for (int q = 0; q <= qLimit; q++) {
+                int localIdx = (bestLag + q) - startOriginFrame;
+                if (localIdx >= 0 && localIdx < startFrames && qActive[q] && sActive[localIdx]) {
+                    raw[q] = frameDot(template.data, q, startData, localIdx);
+                    valid[q] = true;
+                }
+            }
+            float[] smooth = smoothArray(raw, valid, 3);
+            float peak = 0f;
+            int anchorQ = -1;
+            for (int q = qLimit; q >= 0; q--) {
+                if (smooth[q] > peak) {
+                    peak = smooth[q];
+                }
+                if (anchorQ < 0 && smooth[q] >= 0.50f) {
+                    anchorQ = q;
+                }
+            }
+            if (peak >= 0.54f && anchorQ >= 0) {
+                float thresh = Math.max(0.36f, peak * 0.52f);
+                // Идём влево от внутренней части опенинга к самому началу
+                int startQ = anchorQ;
+                int gap = 0;
+                for (int q = anchorQ; q >= 0; q--) {
+                    if (smooth[q] >= thresh) {
+                        startQ = q;
+                        gap = 0;
+                    } else {
+                        gap++;
+                        if (gap > 12) break;
+                    }
+                }
+                float edgeThresh = Math.max(0.32f, thresh * 0.90f);
+                while (startQ < anchorQ && (!valid[startQ] || raw[startQ] < edgeThresh)) startQ++;
+                while (startQ > 0 && valid[startQ - 1] && raw[startQ - 1] >= edgeThresh) startQ--;
+
+                int candidateFrom = Math.max(0, Math.round((bestLag + startQ) * (HOP_MS / 1000f)));
+                if (Math.abs(candidateFrom - fallbackFromSec) <= 18) {
+                    refinedFrom = candidateFrom;
+                }
+            }
+        }
+
+        // 2. Уточнение правой границы (конца опенинга)
+        if (endData != null && endFrames >= 16 && endData.length >= endFrames * NUM_BANDS) {
+            boolean[] eActive = buildActiveMask(endData, endFrames);
+            int qMin = Math.max(0, template.coreEndFrame - 96);
+            int bestLag = refineMicroLag(template.data, qActive, qMin, qFrames - 1,
+                    endData, eActive, endOriginFrame, endFrames, initialLag, 6);
+
+            int len = qFrames - qMin;
+            float[] raw = new float[len];
+            boolean[] valid = new boolean[len];
+            for (int i = 0; i < len; i++) {
+                int q = qMin + i;
+                int localIdx = (bestLag + q) - endOriginFrame;
+                if (localIdx >= 0 && localIdx < endFrames && qActive[q] && eActive[localIdx]) {
+                    raw[i] = frameDot(template.data, q, endData, localIdx);
+                    valid[i] = true;
+                }
+            }
+            float[] smooth = smoothArray(raw, valid, 3);
+            float peak = 0f;
+            int anchorIdx = -1;
+            for (int i = 0; i < len; i++) {
+                if (smooth[i] > peak) {
+                    peak = smooth[i];
+                }
+                if (anchorIdx < 0 && smooth[i] >= 0.50f) {
+                    anchorIdx = i;
+                }
+            }
+            if (peak >= 0.54f && anchorIdx >= 0) {
+                float thresh = Math.max(0.36f, peak * 0.52f);
+                // Идём вправо от внутренней части опенинга до конца
+                int endIdx = anchorIdx;
+                int gap = 0;
+                int recoveryRun = 0;
+                for (int i = anchorIdx; i < len; i++) {
+                    if (smooth[i] >= thresh) {
+                        if (gap == 0) {
+                            endIdx = i;
+                        } else {
+                            recoveryRun++;
+                            if (recoveryRun >= 8) {
+                                // Устойчивое продолжение (>= 2с) после короткого провала (<= 3с)
+                                endIdx = i;
+                                gap = 0;
+                                recoveryRun = 0;
+                            }
+                        }
+                    } else {
+                        recoveryRun = 0;
+                        gap++;
+                        if (gap > 12) break;
+                    }
+                }
+                float edgeThresh = Math.max(0.32f, thresh * 0.90f);
+                while (endIdx > anchorIdx && (!valid[endIdx] || raw[endIdx] < edgeThresh)) endIdx--;
+                while (endIdx < len - 1 && valid[endIdx + 1] && raw[endIdx + 1] >= edgeThresh) endIdx++;
+
+                int candidateTo = Math.round((bestLag + qMin + endIdx + 1) * (HOP_MS / 1000f));
+                if (Math.abs(candidateTo - fallbackToSec) <= 20) {
+                    refinedTo = candidateTo;
+                }
+            }
+        }
+
+        if (refinedTo < refinedFrom + 20 || refinedTo > refinedFrom + 160) {
+            return new int[]{fallbackFromSec, fallbackToSec};
+        }
+        return new int[]{refinedFrom, refinedTo};
+    }
+
+    private static int refineMicroLag(@NonNull byte[] qData,
+                                      @NonNull boolean[] qActive,
+                                      int qStart,
+                                      int qEnd,
+                                      @NonNull byte[] winData,
+                                      @NonNull boolean[] winActive,
+                                      int winOriginFrame,
+                                      int winFrames,
+                                      int initialLag,
+                                      int radius) {
+        int bestLag = initialLag;
+        float bestScore = -2f;
+        for (int d = -radius; d <= radius; d++) {
+            int candLag = initialLag + d;
+            float sum = 0f;
+            int cnt = 0;
+            for (int q = qStart; q <= qEnd; q++) {
+                int localIdx = (candLag + q) - winOriginFrame;
+                if (localIdx >= 0 && localIdx < winFrames && qActive[q] && winActive[localIdx]) {
+                    sum += frameDot(qData, q, winData, localIdx);
+                    cnt++;
+                }
+            }
+            if (cnt >= 10) {
+                float mean = sum / cnt;
+                if (mean > bestScore) {
+                    bestScore = mean;
+                    bestLag = candLag;
+                }
+            }
+        }
+        return bestLag;
+    }
+
+    private static float[] smoothArray(@NonNull float[] raw, @NonNull boolean[] valid, int halfWin) {
+        int n = raw.length;
+        float[] out = new float[n];
+        for (int i = 0; i < n; i++) {
+            int from = Math.max(0, i - halfWin);
+            int to = Math.min(n - 1, i + halfWin);
+            float sum = 0f;
+            int cnt = 0;
+            for (int k = from; k <= to; k++) {
+                if (valid[k]) {
+                    sum += raw[k];
+                    cnt++;
+                }
+            }
+            out[i] = cnt >= 2 ? (sum / cnt) : 0f;
+        }
+        return out;
+    }
+
     @Nullable
     private static MatchResult refineBoundariesAndValidate(@NonNull Template template,
                                                            @NonNull boolean[] qActive,

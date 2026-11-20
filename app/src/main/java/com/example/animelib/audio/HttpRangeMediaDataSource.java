@@ -32,8 +32,8 @@ import okhttp3.ResponseBody;
 public final class HttpRangeMediaDataSource extends MediaDataSource {
 
     private static final String TAG = "HttpRangeDataSource";
-    private static final int BLOCK_SIZE = 512 * 1024; // 512 KB — меньше HTTP RTT на последовательном чтении
-    private static final int MAX_CACHED_BLOCKS = 6;   // до 3 MB RAM
+    private static final int BLOCK_SIZE = 256 * 1024; // 256 KB — оптимально для быстрых seek-зондов
+    private static final int MAX_CACHED_BLOCKS = 12;  // до 3 MB RAM
 
     private final OkHttpClient client;
     private final String url;

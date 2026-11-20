@@ -13,6 +13,7 @@ import androidx.annotation.Nullable;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.util.HlsPlaylistParser;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -37,19 +38,16 @@ import okhttp3.ResponseBody;
 /**
  * Извлекает компактный спектральный аудио-отпечаток из любого поддерживаемого источника:
  * - локальные скачанные файлы (.mp4 / .ts)
- * - удалённые MP4 потоки AnimeLib (через HttpRangeMediaDataSource с предзагрузкой блоков + MediaExtractor)
- * - удалённые HLS (.m3u8) потоки Kodik (параллельная загрузка сегментов 360p + AES-128 + fMP4 init)
+ * - удалённые MP4 потоки AnimeLib (через HttpRangeMediaDataSource с разовым парсингом moov + прямые seek-прыжки)
+ * - удалённые HLS (.m3u8) потоки Kodik (выборочная параллельная загрузка нужных 360p сегментов + AES-128 + fMP4 init)
+ *
+ * Критично: для MPEG-TS / fMP4 сегментов HLS корректно учитывает ненулевой базовый PTS первого сэмпла,
+ * поэтому извлечение работает стабильно на любой минуте серии (0:00, 1:30, 3:00, 6:00+).
  */
 public final class AudioPcmExtractor {
 
     private static final String TAG = "AudioPcmExtractor";
     private static final long CODEC_IDLE_WAIT_US = 1_500L;
-
-    // Быстрые первые чекпоинты (28с -> 56с), чтобы мгновенно ловить опенинг в начале серии,
-    // далее шаг 36с для экономии накладных расходов при длинном прологе.
-    private static final int FIRST_CHECK_SEC = 28;
-    private static final int SECOND_CHECK_SEC = 56;
-    private static final int LATER_CHECK_STEP_SEC = 36;
     private static final int HLS_PARALLEL_THREADS = 4;
 
     private AudioPcmExtractor() {
@@ -58,19 +56,228 @@ public final class AudioPcmExtractor {
     public static final class ExtractedFingerprint {
         @NonNull public final byte[] data;
         public final int frameCount;
+        public final double actualStartSec;
 
         public ExtractedFingerprint(@NonNull byte[] data, int frameCount) {
+            this(data, frameCount, 0.0);
+        }
+
+        public ExtractedFingerprint(@NonNull byte[] data, int frameCount, double actualStartSec) {
             this.data = data;
             this.frameCount = frameCount;
+            this.actualStartSec = actualStartSec;
         }
     }
 
-    public interface ProgressiveScanCallback {
+    /**
+     * Переиспользуемая сессия быстрого выборочного чтения (Sparse Probing):
+     * - для HLS один раз парсит плейлист минимального качества, кэширует init-сегмент и AES-ключи;
+     * - для MP4 и локальных файлов один раз открывает MediaExtractor (moov парсится один раз!),
+     *   а затем мгновенно прыгает на нужные 18с зонды без скачивания промежутков.
+     */
+    public static final class AudioProbeSession implements Closeable {
+        private final boolean isHls;
+        private final File cacheDir;
+        private final OkHttpClient okHttpClient;
+        private final AtomicBoolean cancelled;
+
+        // HLS state
+        @Nullable private final HlsPlaylistParser.ParsedMediaPlaylist hlsPlaylist;
+        @Nullable private final byte[] hlsInitBytes;
+        @Nullable private final Map<String, byte[]> hlsKeyCache;
+        private final double totalHlsDurationSec;
+
+        // Local / MP4 reusable extractor state
+        @Nullable private final HttpRangeMediaDataSource remoteDataSource;
+        @Nullable private final MediaExtractor sharedExtractor;
+        @Nullable private final MediaFormat audioFormat;
+        @Nullable private final String audioMime;
+        private final int sampleRate;
+        private final int channelCount;
+        private final double totalMediaDurationSec;
+
+        private AudioProbeSession(@NonNull HlsPlaylistParser.ParsedMediaPlaylist playlist,
+                                  @Nullable byte[] initBytes,
+                                  @NonNull OkHttpClient okHttpClient,
+                                  @NonNull File cacheDir,
+                                  @NonNull AtomicBoolean cancelled) {
+            this.isHls = true;
+            this.hlsPlaylist = playlist;
+            this.hlsInitBytes = initBytes;
+            this.hlsKeyCache = new ConcurrentHashMap<>();
+            this.okHttpClient = okHttpClient;
+            this.cacheDir = cacheDir;
+            this.cancelled = cancelled;
+
+            double sum = 0.0;
+            for (HlsPlaylistParser.HlsSegment seg : playlist.segments) {
+                sum += (seg.durationSec > 0.0 ? seg.durationSec : 6.0);
+            }
+            this.totalHlsDurationSec = sum;
+
+            this.remoteDataSource = null;
+            this.sharedExtractor = null;
+            this.audioFormat = null;
+            this.audioMime = null;
+            this.sampleRate = 48000;
+            this.channelCount = 2;
+            this.totalMediaDurationSec = sum;
+        }
+
+        private AudioProbeSession(@Nullable HttpRangeMediaDataSource remoteDataSource,
+                                  @NonNull MediaExtractor extractor,
+                                  @NonNull MediaFormat audioFormat,
+                                  @NonNull String audioMime,
+                                  int sampleRate,
+                                  int channelCount,
+                                  double totalMediaDurationSec,
+                                  @NonNull OkHttpClient okHttpClient,
+                                  @NonNull File cacheDir,
+                                  @NonNull AtomicBoolean cancelled) {
+            this.isHls = false;
+            this.hlsPlaylist = null;
+            this.hlsInitBytes = null;
+            this.hlsKeyCache = null;
+            this.totalHlsDurationSec = 0.0;
+
+            this.remoteDataSource = remoteDataSource;
+            this.sharedExtractor = extractor;
+            this.audioFormat = audioFormat;
+            this.audioMime = audioMime;
+            this.sampleRate = sampleRate;
+            this.channelCount = channelCount;
+            this.totalMediaDurationSec = totalMediaDurationSec;
+            this.okHttpClient = okHttpClient;
+            this.cacheDir = cacheDir;
+            this.cancelled = cancelled;
+        }
+
+        public double getKnownDurationSec() {
+            return isHls ? totalHlsDurationSec : totalMediaDurationSec;
+        }
+
+        @Nullable
+        public static AudioProbeSession open(@NonNull String sourceUrl,
+                                             @NonNull OkHttpClient okHttpClient,
+                                             @NonNull File cacheDir,
+                                             @NonNull AtomicBoolean cancelled) {
+            if (cancelled.get()) return null;
+            try {
+                if (isLocalSource(sourceUrl)) {
+                    String path = resolveLocalPath(sourceUrl);
+                    if (path == null || !new File(path).exists()) return null;
+                    return openExtractorSession(path, null, okHttpClient, cacheDir, cancelled);
+                } else if (isHlsSource(sourceUrl)) {
+                    HlsPlaylistParser.ParsedMediaPlaylist playlist =
+                            resolveLowestQualityMediaPlaylist(sourceUrl, okHttpClient, cancelled);
+                    if (playlist == null || playlist.segments.isEmpty() || cancelled.get()) {
+                        return null;
+                    }
+                    byte[] initBytes = fetchOptionalInitSegment(playlist.initSegmentUrl, okHttpClient, cancelled);
+                    if (cancelled.get()) return null;
+                    return new AudioProbeSession(playlist, initBytes, okHttpClient, cacheDir, cancelled);
+                } else {
+                    HttpRangeMediaDataSource dataSource = new HttpRangeMediaDataSource(okHttpClient, sourceUrl, cancelled);
+                    AudioProbeSession session = openExtractorSession(null, dataSource, okHttpClient, cacheDir, cancelled);
+                    if (session == null) {
+                        dataSource.close();
+                    }
+                    return session;
+                }
+            } catch (Exception e) {
+                if (!cancelled.get()) {
+                    Log.w(TAG, "AudioProbeSession.open failed for " + sourceUrl + ": " + e.getMessage());
+                }
+                return null;
+            }
+        }
+
+        @Nullable
+        private static AudioProbeSession openExtractorSession(@Nullable String localPath,
+                                                              @Nullable HttpRangeMediaDataSource remoteSource,
+                                                              @NonNull OkHttpClient okHttpClient,
+                                                              @NonNull File cacheDir,
+                                                              @NonNull AtomicBoolean cancelled) throws IOException {
+            MediaExtractor extractor = new MediaExtractor();
+            boolean ok = false;
+            try {
+                if (localPath != null) {
+                    extractor.setDataSource(localPath);
+                } else if (remoteSource != null) {
+                    extractor.setDataSource(remoteSource);
+                } else {
+                    return null;
+                }
+                int audioTrack = findAudioTrack(extractor);
+                if (audioTrack < 0) {
+                    Log.w(TAG, "No audio track found in media source");
+                    return null;
+                }
+                extractor.selectTrack(audioTrack);
+                MediaFormat format = extractor.getTrackFormat(audioTrack);
+                String mime = format.getString(MediaFormat.KEY_MIME);
+                if (mime == null) return null;
+
+                int rate = format.containsKey(MediaFormat.KEY_SAMPLE_RATE)
+                        ? format.getInteger(MediaFormat.KEY_SAMPLE_RATE) : 48000;
+                int channels = format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)
+                        ? format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) : 2;
+                double durSec = format.containsKey(MediaFormat.KEY_DURATION)
+                        ? (format.getLong(MediaFormat.KEY_DURATION) / 1_000_000.0) : 0.0;
+
+                ok = true;
+                return new AudioProbeSession(remoteSource, extractor, format, mime, rate, channels,
+                        durSec, okHttpClient, cacheDir, cancelled);
+            } finally {
+                if (!ok) {
+                    try {
+                        extractor.release();
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        }
+
         /**
-         * Вызывается по мере декодирования очередного блока целевой серии (28с, 56с, 92с, ...).
-         * @return true, если опенинг уже полностью найден и можно немедленно остановить сканирование.
+         * Извлекает аудио-отпечаток для точного окна [startSec .. endSec].
          */
-        boolean onProgress(@NonNull byte[] targetData, int targetFrames, boolean isFinalPass);
+        @Nullable
+        public ExtractedFingerprint extractWindow(double startSec, double endSec) {
+            if (cancelled.get() || endSec <= startSec) return null;
+            double safeStart = Math.max(0.0, startSec);
+            try {
+                if (isHls) {
+                    if (hlsPlaylist == null || hlsKeyCache == null) return null;
+                    return extractHlsWindowFromPlaylist(hlsPlaylist, hlsInitBytes, hlsKeyCache,
+                            safeStart, endSec, okHttpClient, cacheDir, cancelled);
+                } else {
+                    if (sharedExtractor == null || audioFormat == null || audioMime == null) return null;
+                    return decodeFromOpenExtractor(sharedExtractor, audioFormat, audioMime,
+                            sampleRate, channelCount, safeStart, endSec, false, cancelled);
+                }
+            } catch (Exception e) {
+                if (!cancelled.get()) {
+                    Log.w(TAG, "extractWindow [" + safeStart + ".." + endSec + "] failed: " + e.getMessage());
+                }
+                return null;
+            }
+        }
+
+        @Override
+        public void close() {
+            if (sharedExtractor != null) {
+                try {
+                    sharedExtractor.release();
+                } catch (Exception ignored) {
+                }
+            }
+            if (remoteDataSource != null) {
+                try {
+                    remoteDataSource.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
     }
 
     public static boolean isLocalSource(@Nullable String sourceUrl) {
@@ -107,21 +314,9 @@ public final class AudioPcmExtractor {
                                                                @NonNull AtomicBoolean cancelled) {
         if (endSec <= startSec || cancelled.get()) return null;
 
-        try {
-            if (isLocalSource(sourceUrl)) {
-                String path = resolveLocalPath(sourceUrl);
-                if (path == null || !new File(path).exists()) return null;
-                return decodeExtractorRange(path, null, startSec, endSec, cancelled, null);
-            } else if (isHlsSource(sourceUrl)) {
-                return extractHlsRange(sourceUrl, startSec, endSec, okHttpClient, cacheDir, cancelled);
-            } else {
-                HttpRangeMediaDataSource dataSource = new HttpRangeMediaDataSource(okHttpClient, sourceUrl, cancelled);
-                try {
-                    return decodeExtractorRange(null, dataSource, startSec, endSec, cancelled, null);
-                } finally {
-                    dataSource.close();
-                }
-            }
+        try (AudioProbeSession session = AudioProbeSession.open(sourceUrl, okHttpClient, cacheDir, cancelled)) {
+            if (session == null) return null;
+            return session.extractWindow(startSec, endSec);
         } catch (Exception e) {
             if (!cancelled.get()) {
                 Log.w(TAG, "extractRangeFingerprint failed for " + sourceUrl + ": " + e.getMessage());
@@ -130,285 +325,15 @@ public final class AudioPcmExtractor {
         }
     }
 
-    /**
-     * Прогрессивно сканирует аудио целевой серии от 0 до maxScanSec,
-     * вызывая callback на быстрых контрольных точках (28с, 56с, 92с...) для мгновенного обнаружения.
-     */
-    public static void scanProgressive(@NonNull String sourceUrl,
-                                       int maxScanSec,
-                                       @NonNull OkHttpClient okHttpClient,
-                                       @NonNull File cacheDir,
-                                       @NonNull AtomicBoolean cancelled,
-                                       @NonNull ProgressiveScanCallback callback) {
-        if (maxScanSec <= 30 || cancelled.get()) return;
-
-        try {
-            if (isLocalSource(sourceUrl)) {
-                String path = resolveLocalPath(sourceUrl);
-                if (path == null || !new File(path).exists()) return;
-                decodeExtractorRange(path, null, 0.0, maxScanSec, cancelled, callback);
-            } else if (isHlsSource(sourceUrl)) {
-                scanHlsProgressive(sourceUrl, maxScanSec, okHttpClient, cacheDir, cancelled, callback);
-            } else {
-                HttpRangeMediaDataSource dataSource = new HttpRangeMediaDataSource(okHttpClient, sourceUrl, cancelled);
-                try {
-                    decodeExtractorRange(null, dataSource, 0.0, maxScanSec, cancelled, callback);
-                } finally {
-                    dataSource.close();
-                }
-            }
-        } catch (Exception e) {
-            if (!cancelled.get()) {
-                Log.w(TAG, "scanProgressive failed for " + sourceUrl + ": " + e.getMessage());
-            }
-        }
-    }
-
-    private static int computeNextCheckFrames(int currentFrames) {
-        int firstFrames = FIRST_CHECK_SEC * AudioFingerprintEngine.FRAMES_PER_SECOND;
-        int secondFrames = SECOND_CHECK_SEC * AudioFingerprintEngine.FRAMES_PER_SECOND;
-        if (currentFrames < firstFrames) {
-            return firstFrames;
-        }
-        if (currentFrames < secondFrames) {
-            return secondFrames;
-        }
-        return currentFrames + (LATER_CHECK_STEP_SEC * AudioFingerprintEngine.FRAMES_PER_SECOND);
-    }
-
     @Nullable
-    private static ExtractedFingerprint decodeExtractorRange(@Nullable String localPath,
-                                                             @Nullable HttpRangeMediaDataSource remoteSource,
-                                                             double startSec,
-                                                             double endSec,
-                                                             @NonNull AtomicBoolean cancelled,
-                                                             @Nullable ProgressiveScanCallback progressiveCallback) throws IOException {
-        MediaExtractor extractor = new MediaExtractor();
-        MediaCodec codec = null;
-        try {
-            if (localPath != null) {
-                extractor.setDataSource(localPath);
-            } else if (remoteSource != null) {
-                extractor.setDataSource(remoteSource);
-            } else {
-                return null;
-            }
-
-            int audioTrackIndex = findAudioTrack(extractor);
-            if (audioTrackIndex < 0) {
-                Log.w(TAG, "No audio track found in media source");
-                return null;
-            }
-
-            extractor.selectTrack(audioTrackIndex);
-            MediaFormat format = extractor.getTrackFormat(audioTrackIndex);
-            String mime = format.getString(MediaFormat.KEY_MIME);
-            if (mime == null) return null;
-
-            int sampleRate = format.containsKey(MediaFormat.KEY_SAMPLE_RATE)
-                    ? format.getInteger(MediaFormat.KEY_SAMPLE_RATE) : 48000;
-            int channelCount = format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)
-                    ? format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) : 2;
-
-            long startUs = Math.max(0L, Math.round(startSec * 1_000_000.0));
-            long endUs = Math.round(endSec * 1_000_000.0);
-
-            if (startUs > 0) {
-                extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
-            }
-
-            codec = MediaCodec.createDecoderByType(mime);
-            codec.configure(format, null, null, 0);
-            codec.start();
-
-            int expectedFrames = (int) Math.ceil((endSec - startSec) * AudioFingerprintEngine.FRAMES_PER_SECOND) + 16;
-            AudioFingerprintEngine.StreamingFingerprintBuilder builder =
-                    new AudioFingerprintEngine.StreamingFingerprintBuilder(sampleRate, expectedFrames);
-
-            MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
-            byte[] transferBuf = new byte[16384];
-            boolean inputDone = false;
-            boolean outputDone = false;
-            boolean earlyStopped = false;
-            int nextProgressCheckFrames = FIRST_CHECK_SEC * AudioFingerprintEngine.FRAMES_PER_SECOND;
-            int idleLoops = 0;
-
-            while (!outputDone && !cancelled.get() && !earlyStopped) {
-                boolean madeProgress = false;
-
-                // 1. Неблокирующая подача всех доступных входных пакетов (без 10ms простоев)
-                while (!inputDone && !cancelled.get()) {
-                    int inIndex = codec.dequeueInputBuffer(0L);
-                    if (inIndex < 0) {
-                        break;
-                    }
-                    madeProgress = true;
-                    ByteBuffer inBuf = codec.getInputBuffer(inIndex);
-                    if (inBuf != null) {
-                        int sampleSize = extractor.readSampleData(inBuf, 0);
-                        long sampleTimeUs = extractor.getSampleTime();
-                        if (sampleSize < 0 || sampleTimeUs > endUs + 500_000L) {
-                            codec.queueInputBuffer(inIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
-                            inputDone = true;
-                        } else {
-                            codec.queueInputBuffer(inIndex, 0, sampleSize, Math.max(0L, sampleTimeUs), 0);
-                            extractor.advance();
-                        }
-                    }
-                }
-
-                // 2. Неблокирующая выгрузка всех готовых PCM-буферов
-                while (!outputDone && !cancelled.get() && !earlyStopped) {
-                    int outIndex = codec.dequeueOutputBuffer(bufferInfo, 0L);
-                    if (outIndex >= 0) {
-                        madeProgress = true;
-                        if (bufferInfo.size > 0) {
-                            ByteBuffer outBuf = codec.getOutputBuffer(outIndex);
-                            if (outBuf != null) {
-                                long ptsUs = bufferInfo.presentationTimeUs;
-                                if (ptsUs >= startUs - 50_000L && ptsUs <= endUs + 50_000L) {
-                                    outBuf.position(bufferInfo.offset);
-                                    outBuf.limit(bufferInfo.offset + bufferInfo.size);
-                                    if (transferBuf.length < bufferInfo.size) {
-                                        transferBuf = new byte[bufferInfo.size];
-                                    }
-                                    outBuf.get(transferBuf, 0, bufferInfo.size);
-                                    builder.feedPcm16(transferBuf, 0, bufferInfo.size, channelCount);
-                                }
-                            }
-                        }
-                        codec.releaseOutputBuffer(outIndex, false);
-
-                        if (progressiveCallback != null && builder.getFrameCount() >= nextProgressCheckFrames) {
-                            byte[] snapshot = builder.copyFramesData();
-                            if (progressiveCallback.onProgress(snapshot, builder.getFrameCount(), false)) {
-                                earlyStopped = true;
-                            } else {
-                                nextProgressCheckFrames = computeNextCheckFrames(builder.getFrameCount());
-                            }
-                        }
-
-                        if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-                                || bufferInfo.presentationTimeUs >= endUs) {
-                            outputDone = true;
-                        }
-                    } else if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                        madeProgress = true;
-                        MediaFormat outFormat = codec.getOutputFormat();
-                        if (outFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
-                            channelCount = outFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
-                        }
-                        if (outFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
-                            int actualRate = outFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
-                            if (actualRate != sampleRate && builder.getFrameCount() == 0) {
-                                sampleRate = actualRate;
-                                builder = new AudioFingerprintEngine.StreamingFingerprintBuilder(sampleRate, expectedFrames);
-                            }
-                        }
-                    } else {
-                        break;
-                    }
-                }
-
-                // 3. Короткое ожидание только когда и вход, и выход временно заняты
-                if (!madeProgress && !outputDone && !earlyStopped && !cancelled.get()) {
-                    int outIndex = codec.dequeueOutputBuffer(bufferInfo, CODEC_IDLE_WAIT_US);
-                    if (outIndex >= 0) {
-                        idleLoops = 0;
-                        if (bufferInfo.size > 0) {
-                            ByteBuffer outBuf = codec.getOutputBuffer(outIndex);
-                            if (outBuf != null) {
-                                long ptsUs = bufferInfo.presentationTimeUs;
-                                if (ptsUs >= startUs - 50_000L && ptsUs <= endUs + 50_000L) {
-                                    outBuf.position(bufferInfo.offset);
-                                    outBuf.limit(bufferInfo.offset + bufferInfo.size);
-                                    if (transferBuf.length < bufferInfo.size) {
-                                        transferBuf = new byte[bufferInfo.size];
-                                    }
-                                    outBuf.get(transferBuf, 0, bufferInfo.size);
-                                    builder.feedPcm16(transferBuf, 0, bufferInfo.size, channelCount);
-                                }
-                            }
-                        }
-                        codec.releaseOutputBuffer(outIndex, false);
-
-                        if (progressiveCallback != null && builder.getFrameCount() >= nextProgressCheckFrames) {
-                            byte[] snapshot = builder.copyFramesData();
-                            if (progressiveCallback.onProgress(snapshot, builder.getFrameCount(), false)) {
-                                earlyStopped = true;
-                            } else {
-                                nextProgressCheckFrames = computeNextCheckFrames(builder.getFrameCount());
-                            }
-                        }
-
-                        if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-                                || bufferInfo.presentationTimeUs >= endUs) {
-                            outputDone = true;
-                        }
-                    } else if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                        idleLoops = 0;
-                        MediaFormat outFormat = codec.getOutputFormat();
-                        if (outFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
-                            channelCount = outFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
-                        }
-                        if (outFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
-                            int actualRate = outFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
-                            if (actualRate != sampleRate && builder.getFrameCount() == 0) {
-                                sampleRate = actualRate;
-                                builder = new AudioFingerprintEngine.StreamingFingerprintBuilder(sampleRate, expectedFrames);
-                            }
-                        }
-                    } else if (inputDone) {
-                        idleLoops++;
-                        if (idleLoops > 250) {
-                            outputDone = true;
-                        }
-                    }
-                } else {
-                    idleLoops = 0;
-                }
-            }
-
-            if (cancelled.get()) {
-                return null;
-            }
-
-            byte[] finalData = builder.copyFramesData();
-            int finalFrames = builder.getFrameCount();
-            if (progressiveCallback != null && !earlyStopped && finalFrames > 0) {
-                progressiveCallback.onProgress(finalData, finalFrames, true);
-            }
-            return finalFrames > 0 ? new ExtractedFingerprint(finalData, finalFrames) : null;
-        } finally {
-            if (codec != null) {
-                try {
-                    codec.stop();
-                } catch (Exception ignored) {
-                }
-                try {
-                    codec.release();
-                } catch (Exception ignored) {
-                }
-            }
-            try {
-                extractor.release();
-            } catch (Exception ignored) {
-            }
-        }
-    }
-
-    @Nullable
-    private static ExtractedFingerprint extractHlsRange(@NonNull String playlistUrl,
-                                                        double startSec,
-                                                        double endSec,
-                                                        @NonNull OkHttpClient okHttpClient,
-                                                        @NonNull File cacheDir,
-                                                        @NonNull AtomicBoolean cancelled) throws Exception {
-        HlsPlaylistParser.ParsedMediaPlaylist playlist = resolveLowestQualityMediaPlaylist(playlistUrl, okHttpClient, cancelled);
-        if (playlist == null || playlist.segments.isEmpty() || cancelled.get()) {
-            return null;
-        }
-
+    private static ExtractedFingerprint extractHlsWindowFromPlaylist(@NonNull HlsPlaylistParser.ParsedMediaPlaylist playlist,
+                                                                     @Nullable byte[] initBytes,
+                                                                     @NonNull Map<String, byte[]> keyCache,
+                                                                     double startSec,
+                                                                     double endSec,
+                                                                     @NonNull OkHttpClient okHttpClient,
+                                                                     @NonNull File cacheDir,
+                                                                     @NonNull AtomicBoolean cancelled) throws Exception {
         List<HlsPlaylistParser.HlsSegment> selected = new ArrayList<>();
         double cumulativeSec = 0.0;
         double firstSegStartSec = 0.0;
@@ -425,91 +350,250 @@ public final class AudioPcmExtractor {
                 selected.add(seg);
             }
             cumulativeSec = segEnd;
-            if (cumulativeSec >= endSec + 1.0) break;
+            if (cumulativeSec >= endSec + 0.5) break;
         }
 
         if (selected.isEmpty() || cancelled.get()) {
             return null;
         }
 
-        byte[] initBytes = fetchOptionalInitSegment(playlist.initSegmentUrl, okHttpClient, cancelled);
-        Map<String, byte[]> keyCache = new ConcurrentHashMap<>();
         File tempFile = writeHlsBatchToTempFile(selected, initBytes, keyCache, okHttpClient, cacheDir, cancelled);
         if (tempFile == null) return null;
 
         try {
             double relStart = Math.max(0.0, startSec - firstSegStartSec);
             double relEnd = Math.max(relStart + 1.0, endSec - firstSegStartSec);
-            return decodeExtractorRange(tempFile.getAbsolutePath(), null, relStart, relEnd, cancelled, null);
+            ExtractedFingerprint fp = decodeTempFileRelative(tempFile.getAbsolutePath(), relStart, relEnd, cancelled);
+            if (fp == null) return null;
+            double actualStart = firstSegStartSec + relStart;
+            return new ExtractedFingerprint(fp.data, fp.frameCount, actualStart);
         } finally {
             safeDelete(tempFile);
         }
     }
 
-    private static void scanHlsProgressive(@NonNull String playlistUrl,
-                                           int maxScanSec,
-                                           @NonNull OkHttpClient okHttpClient,
-                                           @NonNull File cacheDir,
-                                           @NonNull AtomicBoolean cancelled,
-                                           @NonNull ProgressiveScanCallback callback) throws Exception {
-        HlsPlaylistParser.ParsedMediaPlaylist playlist = resolveLowestQualityMediaPlaylist(playlistUrl, okHttpClient, cancelled);
-        if (playlist == null || playlist.segments.isEmpty() || cancelled.get()) {
-            return;
+    @Nullable
+    private static ExtractedFingerprint decodeTempFileRelative(@NonNull String localPath,
+                                                               double relStartSec,
+                                                               double relEndSec,
+                                                               @NonNull AtomicBoolean cancelled) throws IOException {
+        MediaExtractor extractor = new MediaExtractor();
+        try {
+            extractor.setDataSource(localPath);
+            int audioTrack = findAudioTrack(extractor);
+            if (audioTrack < 0) return null;
+            extractor.selectTrack(audioTrack);
+            MediaFormat format = extractor.getTrackFormat(audioTrack);
+            String mime = format.getString(MediaFormat.KEY_MIME);
+            if (mime == null) return null;
+            int sampleRate = format.containsKey(MediaFormat.KEY_SAMPLE_RATE)
+                    ? format.getInteger(MediaFormat.KEY_SAMPLE_RATE) : 48000;
+            int channelCount = format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)
+                    ? format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) : 2;
+            return decodeFromOpenExtractor(extractor, format, mime, sampleRate, channelCount,
+                    relStartSec, relEndSec, true, cancelled);
+        } finally {
+            try {
+                extractor.release();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    /**
+     * Декодирует аудио-окно из открытого MediaExtractor через неблокирующую прокачку MediaCodec.
+     *
+     * @param relativeToFirstSample true для временных HLS (.ts / .mp4) файлов: отсчитывает startSec/endSec
+     *                              относительно фактического PTS первого сэмпла в файле (в MPEG-TS он часто равен 90с, 180с и т.д.!).
+     */
+    @Nullable
+    private static ExtractedFingerprint decodeFromOpenExtractor(@NonNull MediaExtractor extractor,
+                                                                @NonNull MediaFormat format,
+                                                                @NonNull String mime,
+                                                                int initialSampleRate,
+                                                                int initialChannelCount,
+                                                                double startSec,
+                                                                double endSec,
+                                                                boolean relativeToFirstSample,
+                                                                @NonNull AtomicBoolean cancelled) throws IOException {
+        if (cancelled.get() || endSec <= startSec) return null;
+
+        long startUs;
+        long endUs;
+
+        if (relativeToFirstSample) {
+            // КРИТИЧНО для MPEG-TS HLS: читаем реальный базовый PTS первого аудио-пакета!
+            long firstPtsUs = extractor.getSampleTime();
+            long basePtsUs = firstPtsUs > 0L ? firstPtsUs : 0L;
+            startUs = basePtsUs + Math.max(0L, Math.round(startSec * 1_000_000.0));
+            endUs = Double.isInfinite(endSec)
+                    ? Long.MAX_VALUE
+                    : (basePtsUs + Math.round(endSec * 1_000_000.0));
+        } else {
+            startUs = Math.max(0L, Math.round(startSec * 1_000_000.0));
+            endUs = Math.round(endSec * 1_000_000.0);
+            extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
         }
 
-        byte[] initBytes = fetchOptionalInitSegment(playlist.initSegmentUrl, okHttpClient, cancelled);
-        Map<String, byte[]> keyCache = new ConcurrentHashMap<>();
-        AudioFingerprintEngine.PositionedFingerprintBuffer targetBuf =
-                new AudioFingerprintEngine.PositionedFingerprintBuffer(maxScanSec * AudioFingerprintEngine.FRAMES_PER_SECOND + 64);
+        int sampleRate = initialSampleRate;
+        int channelCount = initialChannelCount;
+        MediaCodec codec = null;
+        try {
+            codec = MediaCodec.createDecoderByType(mime);
+            codec.configure(format, null, null, 0);
+            codec.start();
 
-        List<HlsPlaylistParser.HlsSegment> batch = new ArrayList<>();
-        double cumulativeSec = 0.0;
-        double batchStartSec = 0.0;
-        double batchDurationSec = 0.0;
-        int batchIndex = 0;
-        boolean stoppedEarly = false;
+            int expectedFrames = (int) Math.ceil((endSec - startSec) * AudioFingerprintEngine.FRAMES_PER_SECOND) + 16;
+            AudioFingerprintEngine.StreamingFingerprintBuilder builder =
+                    new AudioFingerprintEngine.StreamingFingerprintBuilder(sampleRate, Math.min(expectedFrames, 2048));
 
-        for (int i = 0; i < playlist.segments.size() && !cancelled.get() && !stoppedEarly; i++) {
-            HlsPlaylistParser.HlsSegment seg = playlist.segments.get(i);
-            double segDur = seg.durationSec > 0.0 ? seg.durationSec : 6.0;
+            MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
+            byte[] transferBuf = new byte[16384];
+            boolean inputDone = false;
+            boolean outputDone = false;
+            int idleLoops = 0;
+            long firstEmittedPtsUs = -1L;
 
-            if (batch.isEmpty()) {
-                batchStartSec = cumulativeSec;
-            }
-            batch.add(seg);
-            batchDurationSec += segDur;
-            cumulativeSec += segDur;
+            while (!outputDone && !cancelled.get()) {
+                boolean madeProgress = false;
 
-            boolean reachedMax = cumulativeSec >= maxScanSec;
-            boolean isLastSeg = (i == playlist.segments.size() - 1);
-            double targetBatchDur = (batchIndex < 2) ? FIRST_CHECK_SEC : LATER_CHECK_STEP_SEC;
-
-            if (batchDurationSec >= targetBatchDur || reachedMax || isLastSeg) {
-                File tempFile = writeHlsBatchToTempFile(batch, initBytes, keyCache, okHttpClient, cacheDir, cancelled);
-                if (tempFile != null) {
-                    try {
-                        ExtractedFingerprint chunkFp = decodeExtractorRange(
-                                tempFile.getAbsolutePath(), null, 0.0, batchDurationSec + 2.0, cancelled, null);
-                        if (chunkFp != null && chunkFp.frameCount > 0) {
-                            int targetStartFrame = (int) Math.round(batchStartSec * AudioFingerprintEngine.FRAMES_PER_SECOND);
-                            targetBuf.putFramesAt(targetStartFrame, chunkFp.data, chunkFp.frameCount);
+                // 1. Неблокирующая подача всех доступных входных пакетов
+                while (!inputDone && !cancelled.get()) {
+                    int inIndex = codec.dequeueInputBuffer(0L);
+                    if (inIndex < 0) {
+                        break;
+                    }
+                    madeProgress = true;
+                    ByteBuffer inBuf = codec.getInputBuffer(inIndex);
+                    if (inBuf != null) {
+                        int sampleSize = extractor.readSampleData(inBuf, 0);
+                        long sampleTimeUs = extractor.getSampleTime();
+                        if (sampleSize < 0 || (endUs != Long.MAX_VALUE && sampleTimeUs > endUs + 500_000L)) {
+                            codec.queueInputBuffer(inIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                            inputDone = true;
+                        } else {
+                            codec.queueInputBuffer(inIndex, 0, sampleSize, Math.max(0L, sampleTimeUs), 0);
+                            extractor.advance();
                         }
-                    } finally {
-                        safeDelete(tempFile);
                     }
                 }
-                batch.clear();
-                batchDurationSec = 0.0;
-                batchIndex++;
 
-                if (!cancelled.get() && targetBuf.getFrameCount() > 0) {
-                    boolean isFinal = reachedMax || isLastSeg;
-                    if (callback.onProgress(targetBuf.getBackingArray(), targetBuf.getFrameCount(), isFinal)) {
-                        stoppedEarly = true;
+                // 2. Неблокирующая выгрузка всех готовых PCM-буферов
+                while (!outputDone && !cancelled.get()) {
+                    int outIndex = codec.dequeueOutputBuffer(bufferInfo, 0L);
+                    if (outIndex >= 0) {
+                        madeProgress = true;
+                        if (bufferInfo.size > 0) {
+                            ByteBuffer outBuf = codec.getOutputBuffer(outIndex);
+                            if (outBuf != null) {
+                                long ptsUs = bufferInfo.presentationTimeUs;
+                                if (ptsUs >= startUs - 50_000L && (endUs == Long.MAX_VALUE || ptsUs <= endUs + 50_000L)) {
+                                    if (firstEmittedPtsUs < 0L) {
+                                        firstEmittedPtsUs = ptsUs;
+                                    }
+                                    outBuf.position(bufferInfo.offset);
+                                    outBuf.limit(bufferInfo.offset + bufferInfo.size);
+                                    if (transferBuf.length < bufferInfo.size) {
+                                        transferBuf = new byte[bufferInfo.size];
+                                    }
+                                    outBuf.get(transferBuf, 0, bufferInfo.size);
+                                    builder.feedPcm16(transferBuf, 0, bufferInfo.size, channelCount);
+                                }
+                            }
+                        }
+                        codec.releaseOutputBuffer(outIndex, false);
+
+                        if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+                                || (endUs != Long.MAX_VALUE && bufferInfo.presentationTimeUs >= endUs)) {
+                            outputDone = true;
+                        }
+                    } else if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                        madeProgress = true;
+                        MediaFormat outFormat = codec.getOutputFormat();
+                        if (outFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                            channelCount = outFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
+                        }
+                        if (outFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                            int actualRate = outFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+                            if (actualRate != sampleRate && builder.getFrameCount() == 0) {
+                                sampleRate = actualRate;
+                                builder = new AudioFingerprintEngine.StreamingFingerprintBuilder(sampleRate, Math.min(expectedFrames, 2048));
+                            }
+                        }
+                    } else {
+                        break;
                     }
                 }
-                if (reachedMax) {
-                    break;
+
+                // 3. Короткое ожидание только при реальном простое обоих буферов
+                if (!madeProgress && !outputDone && !cancelled.get()) {
+                    int outIndex = codec.dequeueOutputBuffer(bufferInfo, CODEC_IDLE_WAIT_US);
+                    if (outIndex >= 0) {
+                        idleLoops = 0;
+                        if (bufferInfo.size > 0) {
+                            ByteBuffer outBuf = codec.getOutputBuffer(outIndex);
+                            if (outBuf != null) {
+                                long ptsUs = bufferInfo.presentationTimeUs;
+                                if (ptsUs >= startUs - 50_000L && (endUs == Long.MAX_VALUE || ptsUs <= endUs + 50_000L)) {
+                                    if (firstEmittedPtsUs < 0L) {
+                                        firstEmittedPtsUs = ptsUs;
+                                    }
+                                    outBuf.position(bufferInfo.offset);
+                                    outBuf.limit(bufferInfo.offset + bufferInfo.size);
+                                    if (transferBuf.length < bufferInfo.size) {
+                                        transferBuf = new byte[bufferInfo.size];
+                                    }
+                                    outBuf.get(transferBuf, 0, bufferInfo.size);
+                                    builder.feedPcm16(transferBuf, 0, bufferInfo.size, channelCount);
+                                }
+                            }
+                        }
+                        codec.releaseOutputBuffer(outIndex, false);
+                        if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+                                || (endUs != Long.MAX_VALUE && bufferInfo.presentationTimeUs >= endUs)) {
+                            outputDone = true;
+                        }
+                    } else if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                        idleLoops = 0;
+                        MediaFormat outFormat = codec.getOutputFormat();
+                        if (outFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                            channelCount = outFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
+                        }
+                        if (outFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                            int actualRate = outFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+                            if (actualRate != sampleRate && builder.getFrameCount() == 0) {
+                                sampleRate = actualRate;
+                                builder = new AudioFingerprintEngine.StreamingFingerprintBuilder(sampleRate, Math.min(expectedFrames, 2048));
+                            }
+                        }
+                    } else if (inputDone) {
+                        idleLoops++;
+                        if (idleLoops > 250) {
+                            outputDone = true;
+                        }
+                    }
+                } else {
+                    idleLoops = 0;
+                }
+            }
+
+            if (cancelled.get()) {
+                return null;
+            }
+            int frames = builder.getFrameCount();
+            double actualStartSec = (!relativeToFirstSample && firstEmittedPtsUs >= 0L)
+                    ? (firstEmittedPtsUs / 1_000_000.0)
+                    : startSec;
+            return frames > 0 ? new ExtractedFingerprint(builder.copyFramesData(), frames, actualStartSec) : null;
+        } finally {
+            if (codec != null) {
+                try {
+                    codec.stop();
+                } catch (Exception ignored) {
+                }
+                try {
+                    codec.release();
+                } catch (Exception ignored) {
                 }
             }
         }
@@ -527,7 +611,7 @@ public final class AudioPcmExtractor {
         String mediaUrl = playlistUrl;
         String mediaText = text;
         if (HlsPlaylistParser.isMasterPlaylist(text)) {
-            String lowestVariant = HlsPlaylistParser.selectBestVariantUrl(text, playlistUrl, "360p");
+            String lowestVariant = HlsPlaylistParser.selectLowestBandwidthVariantUrl(text, playlistUrl);
             if (lowestVariant != null && !lowestVariant.isEmpty()) {
                 mediaUrl = lowestVariant;
                 mediaText = fetchText(client, mediaUrl, cancelled);
@@ -557,7 +641,6 @@ public final class AudioPcmExtractor {
                                                 @NonNull AtomicBoolean cancelled) throws Exception {
         if (segments.isEmpty() || cancelled.get()) return null;
 
-        // Заранее подгружаем уникальные AES-128 ключи (обычно 1 ключ на всю серию)
         for (HlsPlaylistParser.HlsSegment seg : segments) {
             if (cancelled.get()) return null;
             if (seg.isAes128Encrypted() && seg.keyUrl != null && !keyCache.containsKey(seg.keyUrl)) {

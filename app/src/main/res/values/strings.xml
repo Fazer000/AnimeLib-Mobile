@@ -95,4 +95,5 @@
     <string name="anixart_import_status_ready">Выберите текстовый файл со списком Anixart</string>
     <string name="anixart_import_status_auth_required">Для импорта в закладки требуется авторизация</string>
     <string name="tag_downloaded">Скачано</string>
+    <string name="opening_analysis_indicator_desc">Анализ и поиск опенинга</string>
 </resources>

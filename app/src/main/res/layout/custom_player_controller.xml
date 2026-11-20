@@ -336,6 +336,35 @@
 
             </LinearLayout>
 
+            <!-- Opening Audio Analysis / Search Indicator -->
+            <FrameLayout
+                android:id="@+id/openingAnalysisIndicator"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="center_vertical"
+                android:layout_marginStart="6dp"
+                android:background="@drawable/video_time_background"
+                android:visibility="gone"
+                android:clickable="false"
+                android:focusable="false"
+                android:contentDescription="@string/opening_analysis_indicator_desc">
+
+                <com.google.android.material.progressindicator.CircularProgressIndicator
+                    android:id="@+id/openingAnalysisSpinner"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:indeterminate="true"
+                    app:indicatorColor="@color/purple_primary"
+                    app:trackColor="#33FFFFFF"
+                    app:trackCornerRadius="2dp"
+                    app:trackThickness="1.8dp"
+                    app:indicatorSize="11dp"
+                    app:indicatorInset="0dp"
+                    android:clickable="false"
+                    android:focusable="false" />
+            </FrameLayout>
+
             <!-- Current Segment Indicator Badge -->
             <TextView
                 android:id="@+id/currentSegmentBadge"

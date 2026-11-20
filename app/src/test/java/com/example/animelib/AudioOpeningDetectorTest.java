@@ -252,7 +252,83 @@ public class AudioOpeningDetectorTest {
     }
 
     @Test
-    public void testHlsPlaylistParserExtinfDurations() {
+    public void testSparseProbeAndDualEdgeRefinement() {
+        float[] opening = synthesizeMusicalTrack(90, 5101L, 0.8f);
+        float[] otherOpening = synthesizeMusicalTrack(90, 5199L, 0.8f);
+
+        // Эпизод 1: опенинг на 40..130с. Пользователь нажал +85с поздно: на 44..129с.
+        // Расширенный шаблон: [34..139с] (захватывает диалог до и после)
+        float[] ep1 = buildEpisodeAudio(200, 40, opening, 5102L, 1.0f, 0.01f);
+        byte[] tplData = fingerprintRange(ep1, 34, 139);
+        int tplFrames = tplData.length / AudioFingerprintEngine.NUM_BANDS;
+        AudioFingerprintEngine.Template template = new AudioFingerprintEngine.Template(
+                10L, tplData, tplFrames,
+                (44 - 34) * AudioFingerprintEngine.FRAMES_PER_SECOND,
+                (129 - 34) * AudioFingerprintEngine.FRAMES_PER_SECOND,
+                85
+        );
+
+        // 1) Эпизод 2: опенинг сразу с 0:00 (0..90с) -> должен пойматься НА ПЕРВОМ ЖЕ 18с ЗОНДЕ (0..18с)!
+        float[] ep2AtZero = buildEpisodeAudio(200, 0, opening, 5103L, 0.6f, 0.05f);
+        byte[] probe0 = fingerprintRange(ep2AtZero, 0, 18);
+        AudioFingerprintEngine.MatchResult hit0 = AudioFingerprintEngine.findProbeMatch(
+                template, probe0, probe0.length / AudioFingerprintEngine.NUM_BANDS, 0.0);
+        assertNotNull("Opening at 0:00 must be found on Probe 0 (0..18s)", hit0);
+        assertTrue("Expected estFrom near 0..4s, got " + hit0.fromSec, hit0.fromSec <= 6);
+        assertTrue("Expected estTo near 85..92s, got " + hit0.toSec, hit0.toSec >= 82 && hit0.toSec <= 94);
+
+        // Уточнение краёв: старт из Probe 0, конец из короткого окна [75..104с]
+        byte[] endWin0 = fingerprintRange(ep2AtZero, 75, 104);
+        int[] refined0 = AudioFingerprintEngine.refineEdgesAtLag(
+                template, hit0.bestLagFrames, hit0.fromSec, hit0.toSec,
+                probe0, 0, probe0.length / AudioFingerprintEngine.NUM_BANDS,
+                endWin0, 75 * AudioFingerprintEngine.FRAMES_PER_SECOND, endWin0.length / AudioFingerprintEngine.NUM_BANDS
+        );
+        assertTrue("Refined start at 0:00 expected <= 2s, got " + refined0[0], refined0[0] <= 2);
+        assertTrue("Refined end expected near 90s, got " + refined0[1], Math.abs(refined0[1] - 90) <= 2);
+
+        // 2) Эпизод 3: опенинг после пролога на 135..225с -> зонды 0, 44, 88 промахиваются, зонд 132..150с ПОПАДАЕТ!
+        float[] ep3ColdOpen = buildEpisodeAudio(300, 135, opening, 5104L, 0.5f, 0.05f);
+        for (int missStart : new int[]{0, 44, 88}) {
+            byte[] missProbe = fingerprintRange(ep3ColdOpen, missStart, missStart + 18);
+            AudioFingerprintEngine.MatchResult miss = AudioFingerprintEngine.findProbeMatch(
+                    template, missProbe, missProbe.length / AudioFingerprintEngine.NUM_BANDS, missStart);
+            assertNull("Dialogue probe at " + missStart + "s must NOT match", miss);
+        }
+
+        byte[] hitProbe = fingerprintRange(ep3ColdOpen, 132, 150);
+        AudioFingerprintEngine.MatchResult hit3 = AudioFingerprintEngine.findProbeMatch(
+                template, hitProbe, hitProbe.length / AudioFingerprintEngine.NUM_BANDS, 132.0);
+        assertNotNull("Sparse probe at 132..150s must detect opening at 135..225s", hit3);
+
+        // Двустороннее уточнение краёв (убирает +4с опоздания из Эпизода 1 и даёт точные 135..225с!)
+        int sFrom = Math.max(0, hit3.fromSec - 12);
+        int sTo = hit3.fromSec + 12;
+        byte[] startWin3 = fingerprintRange(ep3ColdOpen, sFrom, sTo);
+        int eFrom = Math.max(0, hit3.toSec - 14);
+        int eTo = hit3.toSec + 14;
+        byte[] endWin3 = fingerprintRange(ep3ColdOpen, eFrom, eTo);
+
+        int[] refined3 = AudioFingerprintEngine.refineEdgesAtLag(
+                template, hit3.bestLagFrames, hit3.fromSec, hit3.toSec,
+                startWin3, sFrom * AudioFingerprintEngine.FRAMES_PER_SECOND, startWin3.length / AudioFingerprintEngine.NUM_BANDS,
+                endWin3, eFrom * AudioFingerprintEngine.FRAMES_PER_SECOND, endWin3.length / AudioFingerprintEngine.NUM_BANDS
+        );
+        assertTrue("Refined start expected near 135s, got " + refined3[0], Math.abs(refined3[0] - 135) <= 2);
+        assertTrue("Refined end expected near 225s, got " + refined3[1], Math.abs(refined3[1] - 225) <= 2);
+
+        // 3) Эпизод 13: другой опенинг (OP2) — ни один из 8 зондов не должен дать ложное срабатывание!
+        float[] ep13 = buildEpisodeAudio(360, 20, otherOpening, 5105L, 0.8f, 0.02f);
+        for (int pStart = 0; pStart < 340; pStart += 44) {
+            byte[] pData = fingerprintRange(ep13, pStart, pStart + 18);
+            AudioFingerprintEngine.MatchResult fp = AudioFingerprintEngine.findProbeMatch(
+                    template, pData, pData.length / AudioFingerprintEngine.NUM_BANDS, pStart);
+            assertNull("OP2 probe at " + pStart + "s must NOT produce a false positive", fp);
+        }
+    }
+
+    @Test
+    public void testHlsPlaylistParserExtinfDurationsAndLowestVariant() {
         String playlist = "#EXTM3U\n"
                 + "#EXT-X-VERSION:3\n"
                 + "#EXT-X-MEDIA-SEQUENCE:0\n"
@@ -265,5 +341,16 @@ public class AudioOpeningDetectorTest {
         assertEquals(2, parsed.segments.size());
         assertEquals(6.006, parsed.segments.get(0).durationSec, 0.001);
         assertEquals(4.5, parsed.segments.get(1).durationSec, 0.001);
+
+        String masterNoRes = "#EXTM3U\n"
+                + "#EXT-X-STREAM-INF:BANDWIDTH=2400000\n"
+                + "720/index.m3u8\n"
+                + "#EXT-X-STREAM-INF:BANDWIDTH=520000\n"
+                + "360/index.m3u8\n"
+                + "#EXT-X-STREAM-INF:BANDWIDTH=1200000\n"
+                + "480/index.m3u8\n";
+        String lowest = HlsPlaylistParser.selectLowestBandwidthVariantUrl(
+                masterNoRes, "https://example.com/hls/master.m3u8");
+        assertEquals("https://example.com/hls/360/index.m3u8", lowest);
     }
 }

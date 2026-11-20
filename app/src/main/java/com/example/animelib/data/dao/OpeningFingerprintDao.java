@@ -34,4 +34,7 @@ public interface OpeningFingerprintDao {
 
     @Query("DELETE FROM detected_openings WHERE animeId = :animeId AND fromSec < 0")
     void clearNegativeCacheForAnime(String animeId);
+
+    @Query("DELETE FROM detected_openings WHERE fromSec < 0")
+    void clearAllNegativeCache();
 }
