@@ -43,6 +43,7 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
 
     // Список активных вкладок (только с озвучками)
     private List<String> activeTabs;
+    private final java.util.Map<String, PlayerTabViewHolder> boundHolders = new java.util.HashMap<>();
 
     public PlayerTabsAdapter(List<EpisodeResponse.PlayerData> animelibPlayers,
                            List<EpisodeResponse.PlayerData> kodikPlayers,
@@ -88,11 +89,35 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
         this.currentEpisode = currentEpisode;
         this.downloadedEpisodes = downloadedEpisodes;
         updateActiveTabs();
-        
-        Log.d(TAG, "Active tabs: " + (activeTabs != null ? activeTabs.size() : "null") + 
-              ", items: " + (activeTabs != null ? activeTabs : "null"));
-        
-        notifyDataSetChanged();
+
+        if (!boundHolders.isEmpty()) {
+            refreshBoundTabs();
+        } else {
+            notifyDataSetChanged();
+        }
+    }
+
+    public void updateCurrentPlayer(EpisodeResponse.PlayerData currentPlayer, boolean animate) {
+        this.currentPlayer = currentPlayer;
+        for (PlayerTabViewHolder holder : boundHolders.values()) {
+            if (holder != null && holder.playersRecyclerView != null) {
+                RecyclerView.Adapter<?> adapter = holder.playersRecyclerView.getAdapter();
+                if (adapter instanceof PlayerOptionsAdapter) {
+                    ((PlayerOptionsAdapter) adapter).updateCurrentPlayer(currentPlayer, animate);
+                }
+            }
+        }
+    }
+
+    private void refreshBoundTabs() {
+        PlayerTabViewHolder animelibHolder = boundHolders.get("animelib");
+        if (animelibHolder != null) {
+            setupPlayerTab(animelibHolder, animelibPlayers, "animelib");
+        }
+        PlayerTabViewHolder kodikHolder = boundHolders.get("kodik");
+        if (kodikHolder != null) {
+            setupPlayerTab(kodikHolder, kodikPlayers, "kodik");
+        }
     }
 
     @SuppressLint("NotifyDataSetChanged")
@@ -100,7 +125,11 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
                                       List<DownloadedEpisodeEntity> downloadedEpisodes) {
         this.currentEpisode = currentEpisode;
         this.downloadedEpisodes = downloadedEpisodes;
-        notifyDataSetChanged();
+        if (!boundHolders.isEmpty()) {
+            refreshBoundTabs();
+        } else {
+            notifyDataSetChanged();
+        }
     }
     
     /**
@@ -145,7 +174,11 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
         this.kodikPlayers = kodikPlayers;
         this.currentPlayer = currentPlayer;
         updateActiveTabs();
-        notifyDataSetChanged();
+        if (!boundHolders.isEmpty()) {
+            refreshBoundTabs();
+        } else {
+            notifyDataSetChanged();
+        }
     }
 
     @NonNull
@@ -160,7 +193,12 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
     public void onBindViewHolder(@NonNull PlayerTabViewHolder holder, int position) {
         String playerType = getPlayerTypeAtPosition(position);
         Log.d(TAG, "onBindViewHolder position=" + position + ", playerType=" + playerType);
-        
+
+        if (playerType != null) {
+            holder.boundPlayerType = playerType;
+            boundHolders.put(playerType, holder);
+        }
+
         if ("animelib".equals(playerType)) {
             Log.d(TAG, "Setting up AnimeLib tab with " + (animelibPlayers != null ? animelibPlayers.size() : "null") + " players");
             setupPlayerTab(holder, animelibPlayers, "animelib");
@@ -170,17 +208,34 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
         }
     }
 
+    @Override
+    public void onViewRecycled(@NonNull PlayerTabViewHolder holder) {
+        super.onViewRecycled(holder);
+        if (holder.boundPlayerType != null && boundHolders.get(holder.boundPlayerType) == holder) {
+            boundHolders.remove(holder.boundPlayerType);
+        }
+        holder.boundPlayerType = null;
+    }
+
     @SuppressLint("NotifyDataSetChanged")
     public void setFilterQuery(String query) {
         this.filterQuery = query != null ? query : "";
-        notifyDataSetChanged();
+        if (!boundHolders.isEmpty()) {
+            refreshBoundTabs();
+        } else {
+            notifyDataSetChanged();
+        }
     }
 
     @SuppressLint("NotifyDataSetChanged")
     public void setSortType(String sortType) {
         if (sortType != null) {
             this.sortType = sortType;
-            notifyDataSetChanged();
+            if (!boundHolders.isEmpty()) {
+                refreshBoundTabs();
+            } else {
+                notifyDataSetChanged();
+            }
         }
     }
 
@@ -301,14 +356,34 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
                         new androidx.recyclerview.widget.LinearLayoutManager(holder.itemView.getContext())
                     );
                 }
+                RecyclerView.ItemAnimator itemAnimator = holder.playersRecyclerView.getItemAnimator();
+                if (itemAnimator instanceof androidx.recyclerview.widget.SimpleItemAnimator) {
+                    ((androidx.recyclerview.widget.SimpleItemAnimator) itemAnimator).setSupportsChangeAnimations(false);
+                }
                 RecyclerView.Adapter<?> existing = holder.playersRecyclerView.getAdapter();
                 if (existing instanceof PlayerOptionsAdapter) {
-                    ((PlayerOptionsAdapter) existing).updatePlayers(
+                    PlayerOptionsAdapter optionsAdapter = (PlayerOptionsAdapter) existing;
+                    optionsAdapter.setVisualSelectionListener(selected -> syncVisualSelectionAcrossTabs(selected, optionsAdapter));
+                    optionsAdapter.updatePlayers(
                             processedPlayers, currentPlayer, currentEpisode, downloadedEpisodes);
                 } else {
                     PlayerOptionsAdapter adapter = new PlayerOptionsAdapter(
                             processedPlayers, currentPlayer, currentEpisode, downloadedEpisodes, playerListener);
+                    adapter.setVisualSelectionListener(selected -> syncVisualSelectionAcrossTabs(selected, adapter));
                     holder.playersRecyclerView.setAdapter(adapter);
+                }
+            }
+        }
+    }
+
+    private void syncVisualSelectionAcrossTabs(EpisodeResponse.PlayerData selected,
+                                               PlayerOptionsAdapter sourceAdapter) {
+        this.currentPlayer = selected;
+        for (PlayerTabViewHolder tabHolder : boundHolders.values()) {
+            if (tabHolder != null && tabHolder.playersRecyclerView != null) {
+                RecyclerView.Adapter<?> adapter = tabHolder.playersRecyclerView.getAdapter();
+                if (adapter instanceof PlayerOptionsAdapter && adapter != sourceAdapter) {
+                    ((PlayerOptionsAdapter) adapter).updateCurrentPlayer(selected, true);
                 }
             }
         }
@@ -322,6 +397,7 @@ public class PlayerTabsAdapter extends RecyclerView.Adapter<PlayerTabsAdapter.Pl
     public static class PlayerTabViewHolder extends RecyclerView.ViewHolder {
         RecyclerView playersRecyclerView;
         TextView tvEmptyVoiceovers;
+        String boundPlayerType;
 
         PlayerTabViewHolder(@NonNull View itemView) {
             super(itemView);

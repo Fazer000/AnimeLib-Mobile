@@ -69,37 +69,36 @@ public class HorizontalEpisodesAdapter extends RecyclerView.Adapter<HorizontalEp
 
     @SuppressLint("NotifyDataSetChanged")
     public void setAnimeBookmark(com.example.animelib.models.AnimeBookmarkResponse.BookmarkData bookmark) {
-        Integer oldBookmarkedId = (this.animeBookmark != null) ? this.animeBookmark.getItemId() : null;
+        com.example.animelib.models.AnimeBookmarkResponse.BookmarkData previousBookmark = this.animeBookmark;
         this.animeBookmark = bookmark;
-        Integer newBookmarkedId = (bookmark != null) ? bookmark.getItemId() : null;
 
         if (episodes == null || episodes.isEmpty()) {
             notifyDataSetChanged();
             return;
         }
 
-        int oldIndex = -1;
-        int newIndex = -1;
+        boolean anyChanged = false;
+        int matchedNewIndex = -1;
         for (int i = 0; i < episodes.size(); i++) {
             EpisodesListResponse.EpisodeItem ep = episodes.get(i);
-            if (ep != null) {
-                if (oldBookmarkedId != null && ep.getId() == oldBookmarkedId.longValue()) {
-                    oldIndex = i;
-                }
-                if (newBookmarkedId != null && ep.getId() == newBookmarkedId.longValue()) {
-                    newIndex = i;
-                }
+            if (ep == null) continue;
+            boolean hadBookmark = com.example.animelib.managers.BookmarkManager.isBookmarkForEpisode(previousBookmark, ep);
+            boolean hasBookmark = com.example.animelib.managers.BookmarkManager.isBookmarkForEpisode(bookmark, ep);
+            if (hasBookmark) {
+                matchedNewIndex = i;
+            }
+            if (hadBookmark != hasBookmark) {
+                notifyItemChanged(i);
+                anyChanged = true;
             }
         }
-        if (oldIndex != -1 && newIndex != -1) {
-            notifyItemChanged(oldIndex);
-            if (oldIndex != newIndex) notifyItemChanged(newIndex);
-        } else if (newIndex != -1) {
-            notifyItemChanged(newIndex);
-        } else if (oldIndex != -1) {
-            notifyItemChanged(oldIndex);
-        } else {
-            notifyDataSetChanged();
+
+        if (!anyChanged) {
+            if (matchedNewIndex != -1) {
+                notifyItemChanged(matchedNewIndex);
+            } else if (previousBookmark != bookmark) {
+                notifyDataSetChanged();
+            }
         }
     }
 

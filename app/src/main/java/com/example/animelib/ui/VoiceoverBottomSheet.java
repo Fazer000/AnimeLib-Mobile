@@ -223,6 +223,7 @@ public class VoiceoverBottomSheet extends FlexibleBottomSheetDialog {
                     }
                 }
         );
+        viewPager.setOffscreenPageLimit(1);
         viewPager.setAdapter(tabsAdapter);
 
         if (tabLayout != null) {

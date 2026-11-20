@@ -335,9 +335,8 @@ public class PlayerProgressController {
                                 autoBookmarkSaved = true;
                                 updateBookmarkButtonColor(true);
 
-                                AnimeBookmarkResponse.BookmarkData offlineBookmark = new AnimeBookmarkResponse.BookmarkData();
-                                offlineBookmark.setItemId(savedEp.getId());
-                                offlineBookmark.setProgress(timecode);
+                                AnimeBookmarkResponse.BookmarkData offlineBookmark = buildBookmarkData(
+                                        savedEp, savedEp.getId(), timecode, null, em != null ? em.getAnimeBookmark() : null);
                                 if (em != null) {
                                     em.updateBookmarkInAdapter(offlineBookmark);
                                 }
@@ -385,6 +384,9 @@ public class PlayerProgressController {
                 ? em.getBookmarkManager()
                 : new BookmarkManager(context, apiService);
 
+        final EpisodesListResponse.EpisodeItem savedEpisode = currentEpisode;
+        final Object finalEffectiveStatus = effectiveStatus;
+
         bmManager.addBookmark(
                 mediaSlug,
                 currentPlayer,
@@ -396,13 +398,15 @@ public class PlayerProgressController {
                     public void onBookmarkAdded(int episodeId) {
                         updateBookmarkButtonColor(true);
 
-                        AnimeBookmarkResponse.BookmarkData updatedBookmark = new AnimeBookmarkResponse.BookmarkData();
-                        updatedBookmark.setItemId(episodeId);
-                        updatedBookmark.setProgress(timecode);
-                        if (em != null) {
-                            em.updateBookmarkInAdapter(updatedBookmark);
-                        }
-                        updateEpisodesListAfterBookmark();
+                        callback.safeRunOnUiThread(() -> {
+                            AnimeBookmarkResponse.BookmarkData updatedBookmark = buildBookmarkData(
+                                    savedEpisode, episodeId, timecode, finalEffectiveStatus,
+                                    em != null ? em.getAnimeBookmark() : null);
+                            if (em != null) {
+                                em.updateBookmarkInAdapter(updatedBookmark);
+                            }
+                            updateEpisodesListAfterBookmark(episodeId);
+                        });
                     }
 
                     @Override
@@ -536,6 +540,17 @@ public class PlayerProgressController {
                         safePosition,
                         () -> {
                             autoBookmarkSaved = true;
+                            callback.safeRunOnUiThread(() -> {
+                                if (em != null) {
+                                    AnimeBookmarkResponse.BookmarkData offlineBookmark = buildBookmarkData(
+                                            savedEp, savedEp.getId(), timecode, null, em.getAnimeBookmark());
+                                    em.updateBookmarkInAdapter(offlineBookmark);
+                                    EpisodesListResponse.EpisodeItem activeEp = em.getCurrentEpisode();
+                                    if (activeEp != null && activeEp.getId() == savedEp.getId()) {
+                                        updateBookmarkButtonColor(true);
+                                    }
+                                }
+                            });
                             syncOfflineBookmarkWithApiOrWorker(finalAnimeId, savedEp, timecode, finalDbMgr);
                         },
                         () -> {
@@ -594,6 +609,9 @@ public class PlayerProgressController {
             return;
         }
 
+        final EpisodesListResponse.EpisodeItem savedAutoEpisode = currentEpisode;
+        final Object finalAutoStatusId = statusId;
+
         bmManager.addBookmark(
                 mediaSlug,
                 currentPlayer,
@@ -604,6 +622,17 @@ public class PlayerProgressController {
                     @Override
                     public void onBookmarkAdded(int episodeId) {
                         autoBookmarkSaved = true;
+                        callback.safeRunOnUiThread(() -> {
+                            if (em != null) {
+                                AnimeBookmarkResponse.BookmarkData updatedBookmark = buildBookmarkData(
+                                        savedAutoEpisode, episodeId, timecode, finalAutoStatusId, em.getAnimeBookmark());
+                                em.updateBookmarkInAdapter(updatedBookmark);
+                                EpisodesListResponse.EpisodeItem activeEp = em.getCurrentEpisode();
+                                if (activeEp != null && activeEp.getId() == episodeId) {
+                                    updateBookmarkButtonColor(true);
+                                }
+                            }
+                        });
                     }
 
                     @Override
@@ -716,7 +745,48 @@ public class PlayerProgressController {
         });
     }
 
+    private AnimeBookmarkResponse.BookmarkData buildBookmarkData(
+            @Nullable EpisodesListResponse.EpisodeItem episode,
+            int episodeId,
+            @Nullable String timecode,
+            @Nullable Object statusObj,
+            @Nullable AnimeBookmarkResponse.BookmarkData existingBookmark) {
+        AnimeBookmarkResponse.BookmarkData data = new AnimeBookmarkResponse.BookmarkData();
+        data.setItemId(episodeId);
+        data.setProgress(timecode);
+
+        int resolvedStatus = 0;
+        if (statusObj instanceof Number) {
+            resolvedStatus = ((Number) statusObj).intValue();
+        } else if (statusObj != null) {
+            try {
+                resolvedStatus = Integer.parseInt(statusObj.toString().trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        if (resolvedStatus <= 0 && existingBookmark != null && existingBookmark.getStatus() > 0) {
+            resolvedStatus = existingBookmark.getStatus();
+        }
+        if (resolvedStatus > 0) {
+            data.setStatus(resolvedStatus);
+        }
+
+        if (episode != null || episodeId > 0) {
+            AnimeBookmarkResponse.ItemData itemData = new AnimeBookmarkResponse.ItemData();
+            itemData.setId(episodeId > 0 ? episodeId : (episode != null ? episode.getId() : 0));
+            if (episode != null && episode.getNumber() != null) {
+                itemData.setNumber(episode.getNumber());
+            }
+            data.setItem(itemData);
+        }
+        return data;
+    }
+
     public void updateEpisodesListAfterBookmark() {
+        updateEpisodesListAfterBookmark(-1);
+    }
+
+    public void updateEpisodesListAfterBookmark(int expectedEpisodeId) {
         if (callback == null) return;
         callback.safeRunOnUiThread(() -> {
             EpisodesManager em = callback.getEpisodesManager();
@@ -730,6 +800,12 @@ public class PlayerProgressController {
                         AnimeBookmarkResponse.BookmarkData bookmarkData = new AnimeBookmarkResponse.BookmarkData();
                         bookmarkData.setItemId(bm.getEpisodeId());
                         bookmarkData.setProgress(bm.getTimecode());
+                        if (bm.getEpisodeNumber() != null) {
+                            AnimeBookmarkResponse.ItemData itemData = new AnimeBookmarkResponse.ItemData();
+                            itemData.setId(bm.getEpisodeId());
+                            itemData.setNumber(bm.getEpisodeNumber());
+                            bookmarkData.setItem(itemData);
+                        }
                         em.updateBookmarkInAdapter(bookmarkData);
                     }
                 }
@@ -743,7 +819,19 @@ public class PlayerProgressController {
                     public void onBookmarkReceived(AnimeBookmarkResponse response) {
                         callback.safeRunOnUiThread(() -> {
                             if (response != null && response.getData() != null) {
-                                em.updateBookmarkInAdapter(response.getData());
+                                AnimeBookmarkResponse.BookmarkData fetched = response.getData();
+                                if (expectedEpisodeId > 0) {
+                                    int fetchedEpId = fetched.getItemId();
+                                    if (fetchedEpId <= 0 && fetched.getItem() != null) {
+                                        fetchedEpId = fetched.getItem().getId();
+                                    }
+                                    if (fetchedEpId > 0 && fetchedEpId != expectedEpisodeId) {
+                                        Log.w(TAG, "Ignoring stale bookmark response for ep " + fetchedEpId
+                                                + " while expected ep " + expectedEpisodeId);
+                                        return;
+                                    }
+                                }
+                                em.updateBookmarkInAdapter(fetched);
                             }
                         });
                     }

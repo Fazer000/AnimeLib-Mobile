@@ -152,6 +152,8 @@ public class PlayersManager {
                     tvSortText.setText(com.example.animelib.util.VoiceoverSortHelper.getSortLabel(sidePanelTabsAdapter.getSortType()));
                 }
 
+                sidePanelViewPager.setOffscreenPageLimit(1);
+
                 if (tabLayout != null) {
                     new TabLayoutMediator(tabLayout, sidePanelViewPager, (tab, position) -> {
                         if (position == 0) {
@@ -222,9 +224,19 @@ public class PlayersManager {
         
         // Update current player data
         currentPlayerData = playerData;
-        
-        // Обновляем меню с новым currentPlayerData для правильной подсветки
-        updateMenuWithData();
+
+        // Обновляем подсветку без резкого пересоздания страниц перед закрытием меню
+        if (sidePanelTabsAdapter != null) {
+            sidePanelTabsAdapter.updateCurrentPlayer(playerData, false);
+        }
+        if (playerData.getPlayer() != null) {
+            String p = playerData.getPlayer().toLowerCase();
+            if ("kodik".equals(p)) {
+                sidePanelActiveTab = "kodik";
+            } else if ("animelib".equals(p)) {
+                sidePanelActiveTab = "animelib";
+            }
+        }
         
         // Save user preference
         if (playerData.getPlayer() != null) {

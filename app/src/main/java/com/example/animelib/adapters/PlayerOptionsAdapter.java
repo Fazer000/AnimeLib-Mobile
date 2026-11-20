@@ -1,16 +1,23 @@
 package com.example.animelib.adapters;
 
-import android.content.res.Resources;
+import android.animation.ArgbEvaluator;
+import android.animation.ValueAnimator;
+import android.annotation.SuppressLint;
+import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
-import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.OptIn;
+import androidx.core.content.ContextCompat;
 import androidx.media3.common.util.UnstableApi;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -25,15 +32,29 @@ import java.util.List;
 
 public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdapter.PlayerViewHolder> {
     private static final String TAG = "PlayerOptionsAdapter";
+    private static final Object PAYLOAD_SELECTION = new Object();
+    private static final long SELECTION_ANIM_DURATION_MS = 180L;
+    private static final long CLICK_DISPATCH_DELAY_MS = 190L;
+    private static final long SAME_ITEM_CLICK_DELAY_MS = 120L;
 
     private List<EpisodeResponse.PlayerData> players;
     private EpisodeResponse.PlayerData currentPlayer;
     private EpisodesListResponse.EpisodeItem currentEpisode;
     private List<DownloadedEpisodeEntity> downloadedEpisodes;
-    private OnPlayerSelectedListener listener;
+    private final OnPlayerSelectedListener listener;
+    @Nullable
+    private OnVisualSelectionListener visualSelectionListener;
+
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    @Nullable
+    private Runnable pendingSelectionRunnable;
 
     public interface OnPlayerSelectedListener {
         void onPlayerSelected(EpisodeResponse.PlayerData player);
+    }
+
+    public interface OnVisualSelectionListener {
+        void onVisualPlayerSelected(EpisodeResponse.PlayerData player);
     }
 
     public PlayerOptionsAdapter(List<EpisodeResponse.PlayerData> players,
@@ -52,30 +73,107 @@ public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdap
         this.currentEpisode = currentEpisode;
         this.downloadedEpisodes = downloadedEpisodes;
         this.listener = listener;
-        
+
         Log.d(TAG, "Constructor - players: " + (players != null ? players.size() : "null"));
-        if (players != null) {
-            for (int i = 0; i < players.size(); i++) {
-                EpisodeResponse.PlayerData p = players.get(i);
-                Log.d(TAG, "  [" + i + "] " + p.getPlayer() + " - " + 
-                      (p.getTeam() != null ? p.getTeam().getName() : "no team"));
-            }
-        }
+    }
+
+    public void setVisualSelectionListener(@Nullable OnVisualSelectionListener visualSelectionListener) {
+        this.visualSelectionListener = visualSelectionListener;
     }
 
     public void updatePlayers(List<EpisodeResponse.PlayerData> players, EpisodeResponse.PlayerData currentPlayer) {
         updatePlayers(players, currentPlayer, this.currentEpisode, this.downloadedEpisodes);
     }
 
+    @SuppressLint("NotifyDataSetChanged")
     public void updatePlayers(List<EpisodeResponse.PlayerData> players,
                               EpisodeResponse.PlayerData currentPlayer,
                               EpisodesListResponse.EpisodeItem currentEpisode,
                               List<DownloadedEpisodeEntity> downloadedEpisodes) {
+        boolean sameEpisode = (this.currentEpisode == currentEpisode)
+                || (this.currentEpisode != null && currentEpisode != null
+                && this.currentEpisode.getId() == currentEpisode.getId());
+        boolean sameDownloaded = (this.downloadedEpisodes == downloadedEpisodes);
+        boolean sameList = isSamePlayersList(this.players, players);
+
         this.players = players;
-        this.currentPlayer = currentPlayer;
         this.currentEpisode = currentEpisode;
         this.downloadedEpisodes = downloadedEpisodes;
-        notifyDataSetChanged();
+
+        if (sameList && sameEpisode && sameDownloaded) {
+            updateCurrentPlayer(currentPlayer, false);
+        } else {
+            this.currentPlayer = currentPlayer;
+            notifyDataSetChanged();
+        }
+    }
+
+    public void updateCurrentPlayer(@Nullable EpisodeResponse.PlayerData newPlayer, boolean animate) {
+        EpisodeResponse.PlayerData previousPlayer = this.currentPlayer;
+        this.currentPlayer = newPlayer;
+
+        if (players == null || players.isEmpty()) {
+            return;
+        }
+
+        for (int i = 0; i < players.size(); i++) {
+            EpisodeResponse.PlayerData item = players.get(i);
+            boolean wasSelected = isMatchingPlayer(item, previousPlayer);
+            boolean isSelected = isMatchingPlayer(item, newPlayer);
+            if (wasSelected != isSelected) {
+                if (animate) {
+                    notifyItemChanged(i, PAYLOAD_SELECTION);
+                } else {
+                    notifyItemChanged(i);
+                }
+            }
+        }
+    }
+
+    private boolean isSamePlayersList(@Nullable List<EpisodeResponse.PlayerData> a,
+                                      @Nullable List<EpisodeResponse.PlayerData> b) {
+        if (a == b) return true;
+        if (a == null || b == null || a.size() != b.size()) return false;
+        for (int i = 0; i < a.size(); i++) {
+            if (!isMatchingPlayer(a.get(i), b.get(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static boolean isMatchingPlayer(@Nullable EpisodeResponse.PlayerData player,
+                                           @Nullable EpisodeResponse.PlayerData target) {
+        if (player == null || target == null) {
+            return false;
+        }
+        if (player == target) {
+            return true;
+        }
+        if (player.getId() > 0 && target.getId() > 0 && player.getId() == target.getId()) {
+            return true;
+        }
+
+        String playerTeam = (player.getTeam() != null && player.getTeam().getName() != null)
+                ? player.getTeam().getName().trim() : "";
+        String targetTeam = (target.getTeam() != null && target.getTeam().getName() != null)
+                ? target.getTeam().getName().trim() : "";
+
+        int playerTeamId = player.getTeam() != null ? player.getTeam().getId() : 0;
+        int targetTeamId = target.getTeam() != null ? target.getTeam().getId() : 0;
+
+        boolean teamMatch = (!playerTeam.isEmpty() && playerTeam.equalsIgnoreCase(targetTeam))
+                || (playerTeamId > 0 && playerTeamId == targetTeamId);
+
+        boolean playerTypeMatch = (player.getPlayer() == null || target.getPlayer() == null
+                || player.getPlayer().isEmpty() || target.getPlayer().isEmpty()
+                || player.getPlayer().equalsIgnoreCase(target.getPlayer()));
+
+        int playerTransId = player.getTranslationType() != null ? player.getTranslationType().getId() : 0;
+        int targetTransId = target.getTranslationType() != null ? target.getTranslationType().getId() : 0;
+        boolean translationMatch = (playerTransId <= 0 || targetTransId <= 0 || playerTransId == targetTransId);
+
+        return teamMatch && playerTypeMatch && translationMatch;
     }
 
     public static boolean isVoiceoverDownloaded(EpisodeResponse.PlayerData player,
@@ -95,20 +193,23 @@ public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdap
         return new PlayerViewHolder(view);
     }
 
+    @Override
+    public void onBindViewHolder(@NonNull PlayerViewHolder holder, int position, @NonNull List<Object> payloads) {
+        if (!payloads.isEmpty() && payloads.contains(PAYLOAD_SELECTION)) {
+            EpisodeResponse.PlayerData player = players.get(position);
+            boolean isCurrentPlayer = isMatchingPlayer(player, currentPlayer);
+            applySelectionState(holder, isCurrentPlayer, true);
+            return;
+        }
+        super.onBindViewHolder(holder, position, payloads);
+    }
+
     @OptIn(markerClass = UnstableApi.class)
     @Override
     public void onBindViewHolder(@NonNull PlayerViewHolder holder, int position) {
         EpisodeResponse.PlayerData player = players.get(position);
 
-        // Set translation name as main title
-        String translationName = "";
-        if (player.getTranslationType() != null && player.getTranslationType().getLabel() != null) {
-            translationName = player.getTranslationType().getLabel();
-        } else {
-            translationName = "Неизвестный перевод";
-        }
-
-        // Set team info as subtitle
+        // Set team info as main title
         String teamInfo = "";
         if (player.getTeam() != null && player.getTeam().getName() != null) {
             teamInfo = player.getTeam().getName();
@@ -175,57 +276,87 @@ public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdap
             holder.downloadedTag.setVisibility(isDownloaded ? View.VISIBLE : View.GONE);
         }
 
-        // Show current player indicator
-        boolean isCurrentPlayer = false;
-        if (currentPlayer != null && player != null) {
-            String playerTeam = (player.getTeam() != null && player.getTeam().getName() != null)
-                    ? player.getTeam().getName().trim() : "";
-            String currentTeam = (currentPlayer.getTeam() != null && currentPlayer.getTeam().getName() != null)
-                    ? currentPlayer.getTeam().getName().trim() : "";
-
-            int playerTeamId = player.getTeam() != null ? player.getTeam().getId() : 0;
-            int currentTeamId = currentPlayer.getTeam() != null ? currentPlayer.getTeam().getId() : 0;
-
-            boolean teamMatch = (!playerTeam.isEmpty() && playerTeam.equalsIgnoreCase(currentTeam)) ||
-                    (playerTeamId > 0 && playerTeamId == currentTeamId);
-
-            boolean playerTypeMatch = (player.getPlayer() == null || currentPlayer.getPlayer() == null ||
-                    player.getPlayer().isEmpty() || currentPlayer.getPlayer().isEmpty() ||
-                    player.getPlayer().equalsIgnoreCase(currentPlayer.getPlayer()));
-
-            isCurrentPlayer = teamMatch && playerTypeMatch;
-        }
-
-        // Set selected state and text color
-        holder.itemView.setSelected(isCurrentPlayer);
-
-        android.content.Context context = holder.itemView.getContext();
-        if (isCurrentPlayer) {
-            holder.firstRow.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.purple_primary));
-        } else {
-            holder.firstRow.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.primary_text_color));
-        }
-
-        // Smooth transition for active vs inactive state without scaling
+        // Apply active/inactive state cleanly without jerky alpha blinks
+        boolean isCurrentPlayer = isMatchingPlayer(player, currentPlayer);
+        holder.itemView.animate().cancel();
         holder.itemView.setScaleX(1.0f);
         holder.itemView.setScaleY(1.0f);
-        com.example.animelib.util.ItemAnimationUtils.animateItemStateTransition(holder.itemView, isCurrentPlayer);
+        holder.itemView.setAlpha(1.0f);
+        applySelectionState(holder, isCurrentPlayer, false);
 
-        // Set click listener
+        // Set click listener with native ripple + smooth highlight transfer
         holder.itemView.setOnClickListener(v -> {
-            com.example.animelib.util.ItemAnimationUtils.animateItemClick(v, () -> {
+            if (pendingSelectionRunnable != null) {
+                mainHandler.removeCallbacks(pendingSelectionRunnable);
+                pendingSelectionRunnable = null;
+            }
+
+            boolean alreadySelected = isMatchingPlayer(player, currentPlayer);
+            if (!alreadySelected) {
+                updateCurrentPlayer(player, true);
+                if (visualSelectionListener != null) {
+                    visualSelectionListener.onVisualPlayerSelected(player);
+                }
+            }
+
+            long dispatchDelay = alreadySelected ? SAME_ITEM_CLICK_DELAY_MS : CLICK_DISPATCH_DELAY_MS;
+            pendingSelectionRunnable = () -> {
+                pendingSelectionRunnable = null;
                 if (listener != null) {
                     listener.onPlayerSelected(player);
                 }
-            });
+            };
+            mainHandler.postDelayed(pendingSelectionRunnable, dispatchDelay);
         });
+    }
+
+    private void applySelectionState(@NonNull PlayerViewHolder holder, boolean isSelected, boolean animate) {
+        Context context = holder.itemView.getContext();
+        int targetTextColor = ContextCompat.getColor(
+                context,
+                isSelected ? R.color.purple_primary : R.color.primary_text_color
+        );
+
+        holder.cancelColorAnimator();
+
+        if (animate) {
+            holder.itemView.setSelected(isSelected);
+            int startColor = holder.firstRow.getCurrentTextColor();
+            if (startColor != targetTextColor) {
+                ValueAnimator animator = ValueAnimator.ofObject(new ArgbEvaluator(), startColor, targetTextColor);
+                animator.setDuration(SELECTION_ANIM_DURATION_MS);
+                animator.setInterpolator(new DecelerateInterpolator());
+                animator.addUpdateListener(anim -> holder.firstRow.setTextColor((int) anim.getAnimatedValue()));
+                holder.textColorAnimator = animator;
+                animator.start();
+            } else {
+                holder.firstRow.setTextColor(targetTextColor);
+            }
+        } else {
+            holder.itemView.setSelected(isSelected);
+            holder.itemView.jumpDrawablesToCurrentState();
+            holder.firstRow.setTextColor(targetTextColor);
+        }
+    }
+
+    @Override
+    public void onViewRecycled(@NonNull PlayerViewHolder holder) {
+        super.onViewRecycled(holder);
+        holder.cancelColorAnimator();
+    }
+
+    @Override
+    public void onDetachedFromRecyclerView(@NonNull RecyclerView recyclerView) {
+        super.onDetachedFromRecyclerView(recyclerView);
+        if (pendingSelectionRunnable != null) {
+            mainHandler.removeCallbacks(pendingSelectionRunnable);
+            pendingSelectionRunnable = null;
+        }
     }
 
     @Override
     public int getItemCount() {
-        int count = players != null ? players.size() : 0;
-        Log.d(TAG, "getItemCount: " + count);
-        return count;
+        return players != null ? players.size() : 0;
     }
 
     public static class PlayerViewHolder extends RecyclerView.ViewHolder {
@@ -235,6 +366,8 @@ public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdap
         TextView subTag;
         View downloadedTag;
         ImageView teamIcon;
+        @Nullable
+        ValueAnimator textColorAnimator;
 
         PlayerViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -244,6 +377,13 @@ public class PlayerOptionsAdapter extends RecyclerView.Adapter<PlayerOptionsAdap
             subTag = itemView.findViewById(R.id.subTag);
             downloadedTag = itemView.findViewById(R.id.downloadedTag);
             teamIcon = itemView.findViewById(R.id.teamIcon);
+        }
+
+        void cancelColorAnimator() {
+            if (textColorAnimator != null) {
+                textColorAnimator.cancel();
+                textColorAnimator = null;
+            }
         }
     }
 }
