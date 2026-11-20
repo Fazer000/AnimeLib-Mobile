@@ -31,7 +31,6 @@ public class AmbientLightView extends View {
     private final float[] meshVerts = new float[32]; // 4x4 vertices * (x, y)
 
     private Bitmap displayBitmap;
-    private int[] displayPixels;
 
     private float currentIntensity = 1.0f;
     private ValueAnimator intensityAnimator;
@@ -66,19 +65,15 @@ public class AmbientLightView extends View {
         }
 
         try {
-            int total = width * height;
-
-            if (displayBitmap == null || displayBitmap.getWidth() != width || displayBitmap.getHeight() != height) {
+            if (displayBitmap == null || displayBitmap.isRecycled()
+                    || displayBitmap.getWidth() != width || displayBitmap.getHeight() != height) {
                 if (displayBitmap != null && !displayBitmap.isRecycled()) {
                     displayBitmap.recycle();
                 }
                 displayBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-                displayPixels = new int[total];
             }
 
-            System.arraycopy(pixels, 0, displayPixels, 0, total);
-            displayBitmap.setPixels(displayPixels, 0, width, 0, 0, width, height);
-
+            displayBitmap.setPixels(pixels, 0, width, 0, 0, width, height);
             invalidate();
         } catch (Exception e) {
             Log.e(TAG, "Error updating sample pixels", e);

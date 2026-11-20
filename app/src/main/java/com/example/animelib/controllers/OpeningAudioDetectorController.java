@@ -22,7 +22,6 @@ import com.example.animelib.managers.TimecodeManager;
 import com.example.animelib.models.EpisodeResponse;
 import com.example.animelib.models.KodikResponse;
 import com.example.animelib.ui.VideoUrlHelper;
-import com.example.animelib.util.CustomToast;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -122,7 +121,6 @@ public class OpeningAudioDetectorController {
     private volatile boolean isCleanedUp = false;
     private volatile long lastLearnTriggerMs = 0L;
     private volatile String lastScheduledScanKey = null;
-    private volatile String lastToastShownEpisodeKey = null;
     private Runnable pendingScanRunnable = null;
 
     public OpeningAudioDetectorController(@NonNull Context context, @NonNull Host host) {
@@ -204,9 +202,6 @@ public class OpeningAudioDetectorController {
         TimecodeManager tm = host.getTimecodeManager();
         if (tm != null && !tm.hasOfficialOpeningTimecode()) {
             tm.addDetectedOpeningTimecode(fromSec, toSec);
-            if (sourceEpisodeId > 0) {
-                lastToastShownEpisodeKey = animeId + ":" + sourceEpisodeId;
-            }
         }
 
         // Отменяем предыдущую задачу обучения, если она ещё шла
@@ -313,10 +308,6 @@ public class OpeningAudioDetectorController {
 
                 host.safeRunOnUiThread(() -> {
                     if (isCleanedUp || host.isActivityFinishingOrDestroyed()) return;
-                    Context uiCtx = host.getContext();
-                    if (uiCtx != null) {
-                        CustomToast.showInfo(uiCtx, "Опенинг запомнен — будет искаться в следующих сериях");
-                    }
                     // Если пользователь уже успел переключиться на другую серию без опенинга, сразу запускаем поиск!
                     if (host.getCurrentEpisodeId() != sourceEpisodeId) {
                         lastScheduledScanKey = null;
@@ -424,7 +415,7 @@ public class OpeningAudioDetectorController {
             try {
                 cached = dao.getDetectedOpening(cacheKey);
                 if (cached != null && cached.isValidDetection()) {
-                    applyDetectedOpeningOnUi(gen, episodeKey, cached.getFromSec(), cached.getToSec(), true);
+                    applyDetectedOpeningOnUi(gen, cached.getFromSec(), cached.getToSec());
                     return;
                 }
             } catch (Exception e) {
@@ -582,15 +573,15 @@ public class OpeningAudioDetectorController {
                             + " conf=" + String.format(Locale.US, "%.2f", probeHit.confidence)
                             + " z=" + String.format(Locale.US, "%.1f", probeHit.zScore));
 
-                    // Сразу скрываем индикатор, подсвечиваем опенинг на таймбаре, показываем тост и пишем в кэш!
+                    // Сразу скрываем индикатор, подсвечиваем опенинг на таймбаре и пишем в кэш
                     releaseIndicator.run();
-                    applyDetectedOpeningOnUi(gen, episodeKey, estFrom, estTo, true);
+                    applyDetectedOpeningOnUi(gen, estFrom, estTo);
                     saveDetectedOpeningCache(cacheKey, animeId, episodeId,
                             estFrom, estTo, probeHit.confidence, matchedTemplate.id);
 
                     // Этап 2 (тихо в фоне): уточняем точную левую и правую границу всего по двум коротким краевым окнам
                     refineEdgesSilently(session, matchedTemplate, probeHit, estFrom, estTo,
-                            episodeDurationSec, probe0Window, gen, episodeKey, cacheKey, animeId, episodeId, cancelFlag);
+                            episodeDurationSec, probe0Window, gen, cacheKey, animeId, episodeId, cancelFlag);
                 } else {
                     // Записываем отрицательный кэш ТОЛЬКО если реально удалось декодировать аудио (>= 2 зондов),
                     // чтобы временный сбой сети никогда не блокировал повторный поиск.
@@ -624,7 +615,6 @@ public class OpeningAudioDetectorController {
                                      int episodeDurationSec,
                                      @Nullable AudioPcmExtractor.ExtractedFingerprint probe0Window,
                                      int gen,
-                                     @NonNull String episodeKey,
                                      @NonNull String cacheKey,
                                      @NonNull String animeId,
                                      int episodeId,
@@ -677,8 +667,8 @@ public class OpeningAudioDetectorController {
                     + ": [" + estFromSec + ".." + estToSec + "] -> [" + refinedFrom + ".." + refinedTo + "]");
             saveDetectedOpeningCache(cacheKey, animeId, episodeId,
                     refinedFrom, refinedTo, probeHit.confidence, template.id);
-            // Тихо уточняем границы на таймбаре без повторного тоста
-            applyDetectedOpeningOnUi(gen, episodeKey, refinedFrom, refinedTo, false);
+            // Тихо уточняем границы на таймбаре
+            applyDetectedOpeningOnUi(gen, refinedFrom, refinedTo);
         }
     }
 
@@ -713,24 +703,15 @@ public class OpeningAudioDetectorController {
     }
 
     private void applyDetectedOpeningOnUi(int expectedGen,
-                                          @NonNull String episodeKey,
                                           int fromSec,
-                                          int toSec,
-                                          boolean allowToast) {
+                                          int toSec) {
         host.safeRunOnUiThread(() -> {
             if (isCleanedUp || expectedGen != scanGeneration.get() || host.isActivityFinishingOrDestroyed()) {
                 return;
             }
             TimecodeManager tm = host.getTimecodeManager();
-            if (tm != null && tm.addDetectedOpeningTimecode(fromSec, toSec)) {
-                if (allowToast && !episodeKey.equals(lastToastShownEpisodeKey)) {
-                    lastToastShownEpisodeKey = episodeKey;
-                    Context uiCtx = host.getContext();
-                    if (uiCtx != null) {
-                        CustomToast.showSuccess(uiCtx, "Опенинг найден: "
-                                + formatSec(fromSec) + " – " + formatSec(toSec));
-                    }
-                }
+            if (tm != null) {
+                tm.addDetectedOpeningTimecode(fromSec, toSec);
             }
         });
     }
@@ -823,12 +804,6 @@ public class OpeningAudioDetectorController {
         if (animeId == null) return null;
         String trimmed = animeId.trim();
         return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private static String formatSec(int totalSec) {
-        int m = totalSec / 60;
-        int s = totalSec % 60;
-        return String.format(Locale.US, "%d:%02d", m, s);
     }
 
     public void cancelActiveScan() {

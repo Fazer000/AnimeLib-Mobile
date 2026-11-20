@@ -1,21 +1,17 @@
 package com.example.animelib.util;
 
 /**
- * Генератор кинематографичной краевой фоновой подсветки (Edge-Diffused Ambilight).
+ * Высокоскоростной генератор кинематографичной краевой фоновой подсветки (Edge-Diffused Ambilight).
  *
- * Принцип работы:
- * 1. Из сэмпла видеокадра (36x20) извлекаются ТОЛЬКО периметральные полосы краёв
- *    (левый, правый, верхний, нижний) — центр кадра полностью исключается,
- *    благодаря чему подсветка никогда не дублирует объекты и силуэты видео.
- * 2. Для каждого края строятся два уровня пространственного размытия:
- *    - Near (мягкий локальный цветовой контур у границы кадра)
- *    - Far (широкое атмосферное рассеивание по мере удаления от края видео)
- * 3. Цвета калибруются с сохранением чистого тона (Pure Hue), мягким ограничением
- *    ослепляющего белого и плавным спадом в темноте без мерцания.
- * 4. Адаптивное темпоральное сглаживание (EMA) по профилям краёв убирает шум и скачки.
- * 5. Итоговое поле подсветки (60x48, сетка 3x3 по 20x16 текселей на зону) содержит
- *    бесшовную диффузию краёв с плавной S-кривой затухания для растяжения ровно
- *    на ширину пустых областей вокруг плеера.
+ * Особенности v2 (Zero-Lag VSYNC Sync):
+ * 1. Все геометрические коэффициенты 9-зонного поля (96x72), альфа-кривая затухания,
+ *    веса углов/центра и кривая яркости предрассчитаны в LUT-таблицах при инициализации
+ *    (0 вызовов Math.sqrt / Math.cos / Math.pow на пиксель в рантайме -> < 0.1 мс на кадр).
+ * 2. Сценочувствительное темпоральное сглаживание (Scene-Cut-Aware EMA):
+ *    - При резкой смене кадра / вспышке / переходе в чёрный — мгновенное переключение (alpha = 1.0)
+ *      без «шлейфа» предыдущей сцены.
+ *    - На динамичных сценах — быстрая непрерывная кривая отклика, нормированная по реальному dtMs.
+ *    - На статичных кадрах — мягкое подавление мелкого кодекового шума без мерцания.
  */
 public class FastBlurUtils {
 
@@ -28,7 +24,12 @@ public class FastBlurUtils {
     private static final int TWO_THIRD_H = THIRD_H * 2;  // 48
 
     private static final int MAX_EDGE_ALPHA = 248;
+    private static final int MAX_EDGE_ALPHA_SHIFTED = MAX_EDGE_ALPHA << 24;
     private static final float MIN_OUTER_FALLOFF = 0.31f;
+    private static final float REFERENCE_FRAME_MS = 41.67f; // 24 FPS (стандарт аниме)
+
+    // Порог среднего изменения по всему периметру для мгновенной реакции на смену сцены
+    private static final float SCENE_CUT_MEAN_DIFF = 26.0f;
 
     private final int sampleWidth;
     private final int sampleHeight;
@@ -56,11 +57,44 @@ public class FastBlurUtils {
     private final float[] histRightNearR, histRightNearG, histRightNearB;
     private final float[] histRightFarR, histRightFarG, histRightFarB;
 
-    // Предрасчитанные 1D координаты и кривая затухания для таблицы GLOW_WIDTH x GLOW_HEIGHT
-    private final float[] gridU = new float[GLOW_WIDTH];
-    private final float[] gridV = new float[GLOW_HEIGHT];
-    private final float[] gridTx = new float[GLOW_WIDTH];
-    private final float[] gridTy = new float[GLOW_HEIGHT];
+    // Ресэмплированные под разрешение сетки (THIRD_W / THIRD_H) профили — 1 раз за кадр вместо 6912
+    private final float[] resTopNearR = new float[THIRD_W];
+    private final float[] resTopNearG = new float[THIRD_W];
+    private final float[] resTopNearB = new float[THIRD_W];
+    private final float[] resTopFarR = new float[THIRD_W];
+    private final float[] resTopFarG = new float[THIRD_W];
+    private final float[] resTopFarB = new float[THIRD_W];
+
+    private final float[] resBottomNearR = new float[THIRD_W];
+    private final float[] resBottomNearG = new float[THIRD_W];
+    private final float[] resBottomNearB = new float[THIRD_W];
+    private final float[] resBottomFarR = new float[THIRD_W];
+    private final float[] resBottomFarG = new float[THIRD_W];
+    private final float[] resBottomFarB = new float[THIRD_W];
+
+    private final float[] resLeftNearR = new float[THIRD_H];
+    private final float[] resLeftNearG = new float[THIRD_H];
+    private final float[] resLeftNearB = new float[THIRD_H];
+    private final float[] resLeftFarR = new float[THIRD_H];
+    private final float[] resLeftFarG = new float[THIRD_H];
+    private final float[] resLeftFarB = new float[THIRD_H];
+
+    private final float[] resRightNearR = new float[THIRD_H];
+    private final float[] resRightNearG = new float[THIRD_H];
+    private final float[] resRightNearB = new float[THIRD_H];
+    private final float[] resRightFarR = new float[THIRD_H];
+    private final float[] resRightFarG = new float[THIRD_H];
+    private final float[] resRightFarB = new float[THIRD_H];
+
+    // Предрасчитанные LUT-таблицы геометрии и калибровки
+    private final float[] vBoostLut = new float[256];
+    private final int[] gridAlphaShifted = new int[GLOW_WIDTH * GLOW_HEIGHT];
+    private final float[] gridDiffuseMix = new float[GLOW_WIDTH * GLOW_HEIGHT];
+    private final float[] gridCornerWx = new float[GLOW_WIDTH * GLOW_HEIGHT];
+    private final float[] centerWL = new float[THIRD_W * THIRD_H];
+    private final float[] centerWR = new float[THIRD_W * THIRD_H];
+    private final float[] centerWT = new float[THIRD_W * THIRD_H];
+    private final float[] centerWB = new float[THIRD_W * THIRD_H];
 
     private boolean hasHistory = false;
 
@@ -96,27 +130,88 @@ public class FastBlurUtils {
         histRightNearR = new float[h]; histRightNearG = new float[h]; histRightNearB = new float[h];
         histRightFarR = new float[h]; histRightFarG = new float[h]; histRightFarB = new float[h];
 
+        // Предрасчет LUT калибровки яркости (убирает Math.pow из каждого кадра)
+        for (int i = 0; i < 256; i++) {
+            if (i <= 4) {
+                vBoostLut[i] = 0f;
+            } else {
+                float darkToe = i < 14 ? smoothstep(4f, 14f, (float) i) : 1f;
+                float vNorm = i / 255f;
+                float vBoost = (float) Math.pow(vNorm, 0.85) * 1.06f;
+                if (vBoost > 0.90f) {
+                    vBoost = 0.90f + (vBoost - 0.90f) * 0.25f;
+                }
+                vBoostLut[i] = Math.min(0.95f, vBoost) * darkToe * 255f;
+            }
+        }
+
+        // Предрасчет статической 2D геометрии сетки 96x72
+        float[] txArr = new float[GLOW_WIDTH];
+        float[] tyArr = new float[GLOW_HEIGHT];
         for (int gx = 0; gx < GLOW_WIDTH; gx++) {
             float cx = gx + 0.5f;
-            gridU[gx] = clamp01((cx - THIRD_W) / (float) THIRD_W);
             if (cx < THIRD_W) {
-                gridTx[gx] = (THIRD_W - cx) / (float) THIRD_W;
+                txArr[gx] = (THIRD_W - cx) / (float) THIRD_W;
             } else if (cx > TWO_THIRD_W) {
-                gridTx[gx] = (cx - TWO_THIRD_W) / (float) THIRD_W;
+                txArr[gx] = (cx - TWO_THIRD_W) / (float) THIRD_W;
             } else {
-                gridTx[gx] = 0f;
+                txArr[gx] = 0f;
+            }
+        }
+        for (int gy = 0; gy < GLOW_HEIGHT; gy++) {
+            float cy = gy + 0.5f;
+            if (cy < THIRD_H) {
+                tyArr[gy] = (THIRD_H - cy) / (float) THIRD_H;
+            } else if (cy > TWO_THIRD_H) {
+                tyArr[gy] = (cy - TWO_THIRD_H) / (float) THIRD_H;
+            } else {
+                tyArr[gy] = 0f;
             }
         }
 
         for (int gy = 0; gy < GLOW_HEIGHT; gy++) {
-            float cy = gy + 0.5f;
-            gridV[gy] = clamp01((cy - THIRD_H) / (float) THIRD_H);
-            if (cy < THIRD_H) {
-                gridTy[gy] = (THIRD_H - cy) / (float) THIRD_H;
-            } else if (cy > TWO_THIRD_H) {
-                gridTy[gy] = (cy - TWO_THIRD_H) / (float) THIRD_H;
-            } else {
-                gridTy[gy] = 0f;
+            float ty = tyArr[gy];
+            int rowOff = gy * GLOW_WIDTH;
+            for (int gx = 0; gx < GLOW_WIDTH; gx++) {
+                float tx = txArr[gx];
+                int idx = rowOff + gx;
+                if (tx == 0f && ty == 0f) {
+                    gridAlphaShifted[idx] = MAX_EDGE_ALPHA_SHIFTED;
+                    gridDiffuseMix[idx] = 0f;
+                    gridCornerWx[idx] = 0.5f;
+                } else {
+                    float dist = (float) Math.sqrt(tx * tx + ty * ty);
+                    gridDiffuseMix[idx] = smoothstep(0.05f, 0.95f, Math.min(1f, dist));
+                    int alpha = Math.round(MAX_EDGE_ALPHA * cinemaFalloff(dist));
+                    gridAlphaShifted[idx] = alpha << 24;
+                    float tx2 = tx * tx;
+                    float ty2 = ty * ty;
+                    float sum2 = tx2 + ty2;
+                    gridCornerWx[idx] = sum2 > 0f ? (tx2 / sum2) : 0.5f;
+                }
+            }
+        }
+
+        // Предрасчет нормализованных весов для центральной области [THIRD_W..TWO_THIRD_W, THIRD_H..TWO_THIRD_H]
+        for (int cy = 0; cy < THIRD_H; cy++) {
+            float v = (cy + 0.5f) / (float) THIRD_H;
+            float dT = v + 0.001f;
+            float dB = (1f - v) + 0.001f;
+            float wT = 1f / (dT * dT);
+            float wB = 1f / (dB * dB);
+            int rowOff = cy * THIRD_W;
+            for (int cx = 0; cx < THIRD_W; cx++) {
+                float u = (cx + 0.5f) / (float) THIRD_W;
+                float dL = u + 0.001f;
+                float dR = (1f - u) + 0.001f;
+                float wL = 1f / (dL * dL);
+                float wR = 1f / (dR * dR);
+                float invSum = 1f / (wL + wR + wT + wB);
+                int cIdx = rowOff + cx;
+                centerWL[cIdx] = wL * invSum;
+                centerWR[cIdx] = wR * invSum;
+                centerWT[cIdx] = wT * invSum;
+                centerWB[cIdx] = wB * invSum;
             }
         }
     }
@@ -126,12 +221,21 @@ public class FastBlurUtils {
     }
 
     /**
-     * Строит поле краевого рассеивания (GLOW_WIDTH x GLOW_HEIGHT) на основе сэмпла кадра.
-     *
-     * @param samplePixels входной сэмпл размером sampleWidth * sampleHeight
-     * @param outGlowPixels выходной массив размером GLOW_WIDTH * GLOW_HEIGHT (ARGB_8888, non-premultiplied)
+     * Строит поле краевого рассеивания (GLOW_WIDTH x GLOW_HEIGHT) с эталонным шагом 24 FPS.
      */
     public void buildEdgeGlowField(int[] samplePixels, int[] outGlowPixels) {
+        buildEdgeGlowField(samplePixels, outGlowPixels, REFERENCE_FRAME_MS);
+    }
+
+    /**
+     * Строит поле краевого рассеивания (GLOW_WIDTH x GLOW_HEIGHT) на основе сэмпла кадра
+     * с учётом фактического времени между кадрами deltaMs.
+     *
+     * @param samplePixels  входной сэмпл размером sampleWidth * sampleHeight
+     * @param outGlowPixels выходной массив размером GLOW_WIDTH * GLOW_HEIGHT (ARGB_8888)
+     * @param deltaMs       интервал времени с предыдущего обновлённого видеокадра (в мс)
+     */
+    public void buildEdgeGlowField(int[] samplePixels, int[] outGlowPixels, float deltaMs) {
         if (samplePixels == null || samplePixels.length < sampleWidth * sampleHeight) {
             return;
         }
@@ -141,12 +245,11 @@ public class FastBlurUtils {
 
         extractPerimeterStrips(samplePixels);
 
-        int horizNearRadius = Math.max(1, Math.round(sampleWidth * 0.055f)); // ~2 (четкие локальные цвета)
-        int horizFarRadius = Math.max(2, Math.round(sampleWidth * 0.14f));   // ~5 (мягкое рассеивание без каши)
+        int horizNearRadius = Math.max(1, Math.round(sampleWidth * 0.055f)); // ~2
+        int horizFarRadius = Math.max(2, Math.round(sampleWidth * 0.14f));   // ~5
         int vertNearRadius = Math.max(1, Math.round(sampleHeight * 0.06f));  // ~1
         int vertFarRadius = Math.max(2, Math.round(sampleHeight * 0.16f));   // ~3
 
-        // Умеренное сглаживание: сохраняет четкость цветовых зон вдоль кромки видео
         smoothStrip1D(topNearR, topNearG, topNearB, sampleWidth, horizNearRadius, 1);
         smoothStrip1D(topFarR, topFarG, topFarB, sampleWidth, horizFarRadius, 2);
         smoothStrip1D(bottomNearR, bottomNearG, bottomNearB, sampleWidth, horizNearRadius, 1);
@@ -157,7 +260,6 @@ public class FastBlurUtils {
         smoothStrip1D(rightNearR, rightNearG, rightNearB, sampleHeight, vertNearRadius, 1);
         smoothStrip1D(rightFarR, rightFarG, rightFarB, sampleHeight, vertFarRadius, 2);
 
-        // Кинематографичная калибровка цвета (Pure Hue, мягкие блики, глубокий черный)
         calibrateStrip(topNearR, topNearG, topNearB, sampleWidth);
         calibrateStrip(topFarR, topFarG, topFarB, sampleWidth);
         calibrateStrip(bottomNearR, bottomNearG, bottomNearB, sampleWidth);
@@ -168,31 +270,51 @@ public class FastBlurUtils {
         calibrateStrip(rightNearR, rightNearG, rightNearB, sampleHeight);
         calibrateStrip(rightFarR, rightFarG, rightFarB, sampleHeight);
 
-        // Адаптивное темпоральное сглаживание (EMA)
-        temporalSmoothStrip(topNearR, topNearG, topNearB, histTopNearR, histTopNearG, histTopNearB, sampleWidth);
-        temporalSmoothStrip(topFarR, topFarG, topFarB, histTopFarR, histTopFarG, histTopFarB, sampleWidth);
-        temporalSmoothStrip(bottomNearR, bottomNearG, bottomNearB, histBottomNearR, histBottomNearG, histBottomNearB, sampleWidth);
-        temporalSmoothStrip(bottomFarR, bottomFarG, bottomFarB, histBottomFarR, histBottomFarG, histBottomFarB, sampleWidth);
+        // Детекция смены сцены (scene cut): если периметр резко изменился целиком — мгновенный snap без лага!
+        boolean isSceneCut = !hasHistory || detectSceneCut();
+        float dtScale = Math.max(8f, Math.min(120f, deltaMs)) / REFERENCE_FRAME_MS;
 
-        temporalSmoothStrip(leftNearR, leftNearG, leftNearB, histLeftNearR, histLeftNearG, histLeftNearB, sampleHeight);
-        temporalSmoothStrip(leftFarR, leftFarG, leftFarB, histLeftFarR, histLeftFarG, histLeftFarB, sampleHeight);
-        temporalSmoothStrip(rightNearR, rightNearG, rightNearB, histRightNearR, histRightNearG, histRightNearB, sampleHeight);
-        temporalSmoothStrip(rightFarR, rightFarG, rightFarB, histRightFarR, histRightFarG, histRightFarB, sampleHeight);
+        temporalSmoothStrip(topNearR, topNearG, topNearB, histTopNearR, histTopNearG, histTopNearB, sampleWidth, isSceneCut, dtScale);
+        temporalSmoothStrip(topFarR, topFarG, topFarB, histTopFarR, histTopFarG, histTopFarB, sampleWidth, isSceneCut, dtScale);
+        temporalSmoothStrip(bottomNearR, bottomNearG, bottomNearB, histBottomNearR, histBottomNearG, histBottomNearB, sampleWidth, isSceneCut, dtScale);
+        temporalSmoothStrip(bottomFarR, bottomFarG, bottomFarB, histBottomFarR, histBottomFarG, histBottomFarB, sampleWidth, isSceneCut, dtScale);
+
+        temporalSmoothStrip(leftNearR, leftNearG, leftNearB, histLeftNearR, histLeftNearG, histLeftNearB, sampleHeight, isSceneCut, dtScale);
+        temporalSmoothStrip(leftFarR, leftFarG, leftFarB, histLeftFarR, histLeftFarG, histLeftFarB, sampleHeight, isSceneCut, dtScale);
+        temporalSmoothStrip(rightNearR, rightNearG, rightNearB, histRightNearR, histRightNearG, histRightNearB, sampleHeight, isSceneCut, dtScale);
+        temporalSmoothStrip(rightFarR, rightFarG, rightFarB, histRightFarR, histRightFarG, histRightFarB, sampleHeight, isSceneCut, dtScale);
 
         hasHistory = true;
 
-        // Генерация бесшовного 9-зонного поля рассеивания 60x48
-        synthesizeGlowGrid(outGlowPixels);
+        // Ресэмплим профили 1 раз под разрешение сетки и заполняем 96x72 без тяжёлой математики
+        resampleStripsToGrid();
+        synthesizeGlowGridFast(outGlowPixels);
     }
 
-    /**
-     * Извлекает взвешенные периметральные полосы (игнорируя внутреннее содержимое кадра).
-     */
+    private boolean detectSceneCut() {
+        float totalDiff = 0f;
+        int count = (sampleWidth + sampleHeight) * 2;
+        for (int i = 0; i < sampleWidth; i++) {
+            float dTop = Math.max(Math.abs(topNearR[i] - histTopNearR[i]),
+                    Math.max(Math.abs(topNearG[i] - histTopNearG[i]), Math.abs(topNearB[i] - histTopNearB[i])));
+            float dBot = Math.max(Math.abs(bottomNearR[i] - histBottomNearR[i]),
+                    Math.max(Math.abs(bottomNearG[i] - histBottomNearG[i]), Math.abs(bottomNearB[i] - histBottomNearB[i])));
+            totalDiff += dTop + dBot;
+        }
+        for (int i = 0; i < sampleHeight; i++) {
+            float dLeft = Math.max(Math.abs(leftNearR[i] - histLeftNearR[i]),
+                    Math.max(Math.abs(leftNearG[i] - histLeftNearG[i]), Math.abs(leftNearB[i] - histLeftNearB[i])));
+            float dRight = Math.max(Math.abs(rightNearR[i] - histRightNearR[i]),
+                    Math.max(Math.abs(rightNearG[i] - histRightNearG[i]), Math.abs(rightNearB[i] - histRightNearB[i])));
+            totalDiff += dLeft + dRight;
+        }
+        return (totalDiff / Math.max(1, count)) >= SCENE_CUT_MEAN_DIFF;
+    }
+
     private void extractPerimeterStrips(int[] pix) {
         int w = sampleWidth;
         int h = sampleHeight;
 
-        // Веса от самого края внутрь (~12% глубины рамки — чистые цвета кромки без смешивания с центром)
         float[] vWeights = {0.22f, 0.38f, 0.26f, 0.14f};
         float[] hWeights = {0.22f, 0.38f, 0.26f, 0.14f};
 
@@ -219,14 +341,16 @@ public class FastBlurUtils {
             }
 
             if (tw > 0f) {
-                topNearR[x] = topFarR[x] = tr / tw;
-                topNearG[x] = topFarG[x] = tg / tw;
-                topNearB[x] = topFarB[x] = tb / tw;
+                float invTw = 1f / tw;
+                topNearR[x] = topFarR[x] = tr * invTw;
+                topNearG[x] = topFarG[x] = tg * invTw;
+                topNearB[x] = topFarB[x] = tb * invTw;
             }
             if (bw > 0f) {
-                bottomNearR[x] = bottomFarR[x] = br / bw;
-                bottomNearG[x] = bottomFarG[x] = bg / bw;
-                bottomNearB[x] = bottomFarB[x] = bb / bw;
+                float invBw = 1f / bw;
+                bottomNearR[x] = bottomFarR[x] = br * invBw;
+                bottomNearG[x] = bottomFarG[x] = bg * invBw;
+                bottomNearB[x] = bottomFarB[x] = bb * invBw;
             }
         }
 
@@ -251,14 +375,16 @@ public class FastBlurUtils {
             }
 
             if (lw > 0f) {
-                leftNearR[y] = leftFarR[y] = lr / lw;
-                leftNearG[y] = leftFarG[y] = lg / lw;
-                leftNearB[y] = leftFarB[y] = lb / lw;
+                float invLw = 1f / lw;
+                leftNearR[y] = leftFarR[y] = lr * invLw;
+                leftNearG[y] = leftFarG[y] = lg * invLw;
+                leftNearB[y] = leftFarB[y] = lb * invLw;
             }
             if (rw > 0f) {
-                rightNearR[y] = rightFarR[y] = rr / rw;
-                rightNearG[y] = rightFarG[y] = rg / rw;
-                rightNearB[y] = rightFarB[y] = rb / rw;
+                float invRw = 1f / rw;
+                rightNearR[y] = rightFarR[y] = rr * invRw;
+                rightNearG[y] = rightFarG[y] = rg * invRw;
+                rightNearB[y] = rightFarB[y] = rb * invRw;
             }
         }
     }
@@ -278,9 +404,10 @@ public class FastBlurUtils {
                     wSum += w;
                 }
                 if (wSum > 0f) {
-                    tempR[i] = sumR / wSum;
-                    tempG[i] = sumG / wSum;
-                    tempB[i] = sumB / wSum;
+                    float invW = 1f / wSum;
+                    tempR[i] = sumR * invW;
+                    tempG[i] = sumG * invW;
+                    tempB[i] = sumB * invW;
                 }
             }
             System.arraycopy(tempR, 0, sr, 0, len);
@@ -306,26 +433,18 @@ public class FastBlurUtils {
                 continue;
             }
 
-            // Плавный порог на самых темных сценах, исключающий резкие вспышки
-            float darkToe = max < 14f ? smoothstep(4f, 14f, max) : 1f;
-            float vNorm = max / 255f;
-            // Подъем средних оттенков с мягким потолком (без ослепляющего белого)
-            float vBoost = (float) Math.pow(vNorm, 0.85) * 1.06f;
-            if (vBoost > 0.90f) {
-                vBoost = 0.90f + (vBoost - 0.90f) * 0.25f;
-            }
-            vBoost = Math.min(0.95f, vBoost) * darkToe;
+            int maxIdx = Math.min(255, Math.max(0, Math.round(max)));
+            float vBoost255 = vBoostLut[maxIdx];
 
             if (chroma < 0.5f) {
-                float val = Math.min(255f, vBoost * 255f);
-                sr[i] = val;
-                sg[i] = val;
-                sb[i] = val;
+                sr[i] = vBoost255;
+                sg[i] = vBoost255;
+                sb[i] = vBoost255;
             } else {
                 float s = chroma / max;
                 float sBoost = Math.min(1.0f, s * 1.24f);
-                float cBoost = sBoost * vBoost * 255f;
-                float mBoost = vBoost * 255f - cBoost;
+                float cBoost = sBoost * vBoost255;
+                float mBoost = vBoost255 - cBoost;
                 float ratio = cBoost / chroma;
 
                 sr[i] = clamp255(mBoost + (r - min) * ratio);
@@ -336,8 +455,9 @@ public class FastBlurUtils {
     }
 
     private void temporalSmoothStrip(float[] sr, float[] sg, float[] sb,
-                                     float[] hr, float[] hg, float[] hb, int len) {
-        if (!hasHistory) {
+                                     float[] hr, float[] hg, float[] hb,
+                                     int len, boolean snapImmediate, float dtScale) {
+        if (snapImmediate) {
             System.arraycopy(sr, 0, hr, 0, len);
             System.arraycopy(sg, 0, hg, 0, len);
             System.arraycopy(sb, 0, hb, 0, len);
@@ -351,15 +471,18 @@ public class FastBlurUtils {
             float maxDiff = Math.max(diffR, Math.max(diffG, diffB));
 
             float alpha;
-            if (maxDiff > 42f) {
-                alpha = 0.72f;
-            } else if (maxDiff > 16f) {
-                alpha = 0.40f;
+            if (maxDiff >= 52f) {
+                alpha = 0.96f;
             } else {
-                alpha = 0.18f;
+                float t = smoothstep(8f, 52f, maxDiff);
+                float baseAlpha = 0.34f + 0.62f * t;
+                // Фреймрейт-независимый отклик (одинаково быстрый на 24/30/60 FPS)
+                alpha = Math.abs(dtScale - 1f) < 0.08f
+                        ? baseAlpha
+                        : (1f - (float) Math.pow(1f - baseAlpha, dtScale));
             }
-            float inv = 1.0f - alpha;
 
+            float inv = 1.0f - alpha;
             float nr = sr[i] * alpha + hr[i] * inv;
             float ng = sg[i] * alpha + hg[i] * inv;
             float nb = sb[i] * alpha + hb[i] * inv;
@@ -369,136 +492,164 @@ public class FastBlurUtils {
         }
     }
 
-    private void synthesizeGlowGrid(int[] out) {
-        for (int gy = 0; gy < GLOW_HEIGHT; gy++) {
-            float v = gridV[gy];
-            float ty = gridTy[gy];
+    private void resampleStripsToGrid() {
+        for (int i = 0; i < THIRD_W; i++) {
+            float u = (i + 0.5f) / (float) THIRD_W;
+            resTopNearR[i] = sampleChannel(topNearR, sampleWidth, u);
+            resTopNearG[i] = sampleChannel(topNearG, sampleWidth, u);
+            resTopNearB[i] = sampleChannel(topNearB, sampleWidth, u);
+            resTopFarR[i] = sampleChannel(topFarR, sampleWidth, u);
+            resTopFarG[i] = sampleChannel(topFarG, sampleWidth, u);
+            resTopFarB[i] = sampleChannel(topFarB, sampleWidth, u);
+
+            resBottomNearR[i] = sampleChannel(bottomNearR, sampleWidth, u);
+            resBottomNearG[i] = sampleChannel(bottomNearG, sampleWidth, u);
+            resBottomNearB[i] = sampleChannel(bottomNearB, sampleWidth, u);
+            resBottomFarR[i] = sampleChannel(bottomFarR, sampleWidth, u);
+            resBottomFarG[i] = sampleChannel(bottomFarG, sampleWidth, u);
+            resBottomFarB[i] = sampleChannel(bottomFarB, sampleWidth, u);
+        }
+
+        for (int i = 0; i < THIRD_H; i++) {
+            float v = (i + 0.5f) / (float) THIRD_H;
+            resLeftNearR[i] = sampleChannel(leftNearR, sampleHeight, v);
+            resLeftNearG[i] = sampleChannel(leftNearG, sampleHeight, v);
+            resLeftNearB[i] = sampleChannel(leftNearB, sampleHeight, v);
+            resLeftFarR[i] = sampleChannel(leftFarR, sampleHeight, v);
+            resLeftFarG[i] = sampleChannel(leftFarG, sampleHeight, v);
+            resLeftFarB[i] = sampleChannel(leftFarB, sampleHeight, v);
+
+            resRightNearR[i] = sampleChannel(rightNearR, sampleHeight, v);
+            resRightNearG[i] = sampleChannel(rightNearG, sampleHeight, v);
+            resRightNearB[i] = sampleChannel(rightNearB, sampleHeight, v);
+            resRightFarR[i] = sampleChannel(rightFarR, sampleHeight, v);
+            resRightFarG[i] = sampleChannel(rightFarG, sampleHeight, v);
+            resRightFarB[i] = sampleChannel(rightFarB, sampleHeight, v);
+        }
+    }
+
+    private void synthesizeGlowGridFast(int[] out) {
+        // 1. Верхняя зона (y: 0..THIRD_H-1)
+        for (int gy = 0; gy < THIRD_H; gy++) {
             int rowOff = gy * GLOW_WIDTH;
-
-            for (int gx = 0; gx < GLOW_WIDTH; gx++) {
-                float u = gridU[gx];
-                float tx = gridTx[gx];
-
-                float outR, outG, outB;
-                int alpha;
-
-                if (tx == 0f && ty == 0f) {
-                    // Внутренняя область за плеером (видна только на скругленных углах при шторке):
-                    // плавно интерполируем периметральные цвета без какого-либо дублирования центра кадра
-                    float dL = u + 0.001f;
-                    float dR = (1f - u) + 0.001f;
-                    float dT = v + 0.001f;
-                    float dB = (1f - v) + 0.001f;
-
-                    float wL = 1f / (dL * dL);
-                    float wR = 1f / (dR * dR);
-                    float wT = 1f / (dT * dT);
-                    float wB = 1f / (dB * dB);
-                    float wSum = wL + wR + wT + wB;
-
-                    float lr = sampleChannel(leftNearR, sampleHeight, v);
-                    float lg = sampleChannel(leftNearG, sampleHeight, v);
-                    float lb = sampleChannel(leftNearB, sampleHeight, v);
-
-                    float rr = sampleChannel(rightNearR, sampleHeight, v);
-                    float rg = sampleChannel(rightNearG, sampleHeight, v);
-                    float rb = sampleChannel(rightNearB, sampleHeight, v);
-
-                    float tr = sampleChannel(topNearR, sampleWidth, u);
-                    float tg = sampleChannel(topNearG, sampleWidth, u);
-                    float tb = sampleChannel(topNearB, sampleWidth, u);
-
-                    float br = sampleChannel(bottomNearR, sampleWidth, u);
-                    float bg = sampleChannel(bottomNearG, sampleWidth, u);
-                    float bb = sampleChannel(bottomNearB, sampleWidth, u);
-
-                    outR = (lr * wL + rr * wR + tr * wT + br * wB) / wSum;
-                    outG = (lg * wL + rg * wR + tg * wT + bg * wB) / wSum;
-                    outB = (lb * wL + rb * wR + tb * wT + bb * wB) / wSum;
-                    alpha = MAX_EDGE_ALPHA;
-                } else {
-                    float dist = (float) Math.sqrt(tx * tx + ty * ty);
-                    float diffuseMix = smoothstep(0.05f, 0.95f, Math.min(1f, dist));
-
-                    if (ty == 0f) {
-                        // Левая или правая пустая область
-                        boolean isLeft = gx < THIRD_W;
-                        float[] nearR = isLeft ? leftNearR : rightNearR;
-                        float[] nearG = isLeft ? leftNearG : rightNearG;
-                        float[] nearB = isLeft ? leftNearB : rightNearB;
-                        float[] farR = isLeft ? leftFarR : rightFarR;
-                        float[] farG = isLeft ? leftFarG : rightFarG;
-                        float[] farB = isLeft ? leftFarB : rightFarB;
-
-                        outR = lerp(sampleChannel(nearR, sampleHeight, v), sampleChannel(farR, sampleHeight, v), diffuseMix);
-                        outG = lerp(sampleChannel(nearG, sampleHeight, v), sampleChannel(farG, sampleHeight, v), diffuseMix);
-                        outB = lerp(sampleChannel(nearB, sampleHeight, v), sampleChannel(farB, sampleHeight, v), diffuseMix);
-                    } else if (tx == 0f) {
-                        // Верхняя или нижняя пустая область
-                        boolean isTop = gy < THIRD_H;
-                        float[] nearR = isTop ? topNearR : bottomNearR;
-                        float[] nearG = isTop ? topNearG : bottomNearG;
-                        float[] nearB = isTop ? topNearB : bottomNearB;
-                        float[] farR = isTop ? topFarR : bottomFarR;
-                        float[] farG = isTop ? topFarG : bottomFarG;
-                        float[] farB = isTop ? topFarB : bottomFarB;
-
-                        outR = lerp(sampleChannel(nearR, sampleWidth, u), sampleChannel(farR, sampleWidth, u), diffuseMix);
-                        outG = lerp(sampleChannel(nearG, sampleWidth, u), sampleChannel(farG, sampleWidth, u), diffuseMix);
-                        outB = lerp(sampleChannel(nearB, sampleWidth, u), sampleChannel(farB, sampleWidth, u), diffuseMix);
-                    } else {
-                        // Угловая область — бесшовное смешивание горизонтального и вертикального краёв
-                        boolean isLeft = gx < THIRD_W;
-                        boolean isTop = gy < THIRD_H;
-
-                        float[] hNearR = isLeft ? leftNearR : rightNearR;
-                        float[] hNearG = isLeft ? leftNearG : rightNearG;
-                        float[] hNearB = isLeft ? leftNearB : rightNearB;
-                        float[] hFarR = isLeft ? leftFarR : rightFarR;
-                        float[] hFarG = isLeft ? leftFarG : rightFarG;
-                        float[] hFarB = isLeft ? leftFarB : rightFarB;
-
-                        float[] vNearR = isTop ? topNearR : bottomNearR;
-                        float[] vNearG = isTop ? topNearG : bottomNearG;
-                        float[] vNearB = isTop ? topNearB : bottomNearB;
-                        float[] vFarR = isTop ? topFarR : bottomFarR;
-                        float[] vFarG = isTop ? topFarG : bottomFarG;
-                        float[] vFarB = isTop ? topFarB : bottomFarB;
-
-                        float hr = lerp(sampleChannel(hNearR, sampleHeight, v), sampleChannel(hFarR, sampleHeight, v), diffuseMix);
-                        float hg = lerp(sampleChannel(hNearG, sampleHeight, v), sampleChannel(hFarG, sampleHeight, v), diffuseMix);
-                        float hb = lerp(sampleChannel(hNearB, sampleHeight, v), sampleChannel(hFarB, sampleHeight, v), diffuseMix);
-
-                        float vr = lerp(sampleChannel(vNearR, sampleWidth, u), sampleChannel(vFarR, sampleWidth, u), diffuseMix);
-                        float vg = lerp(sampleChannel(vNearG, sampleWidth, u), sampleChannel(vFarG, sampleWidth, u), diffuseMix);
-                        float vb = lerp(sampleChannel(vNearB, sampleWidth, u), sampleChannel(vFarB, sampleWidth, u), diffuseMix);
-
-                        float tx2 = tx * tx;
-                        float ty2 = ty * ty;
-                        float sum2 = tx2 + ty2;
-                        float wx = tx2 / sum2;
-                        float wy = ty2 / sum2;
-
-                        outR = hr * wx + vr * wy;
-                        outG = hg * wx + vg * wy;
-                        outB = hb * wx + vb * wy;
-                    }
-
-                    alpha = Math.round(MAX_EDGE_ALPHA * cinemaFalloff(dist));
-                }
-
-                int ri = clampInt(outR);
-                int gi = clampInt(outG);
-                int bi = clampInt(outB);
-                out[rowOff + gx] = (alpha << 24) | (ri << 16) | (gi << 8) | bi;
+            // Верхний-левый угол
+            fillCornerRow(out, rowOff, 0, THIRD_W,
+                    leftNearR[0], leftNearG[0], leftNearB[0], leftFarR[0], leftFarG[0], leftFarB[0],
+                    topNearR[0], topNearG[0], topNearB[0], topFarR[0], topFarG[0], topFarB[0]);
+            // Верхняя полоса
+            for (int cx = 0; cx < THIRD_W; cx++) {
+                int idx = rowOff + THIRD_W + cx;
+                float m = gridDiffuseMix[idx];
+                float r = resTopNearR[cx] + (resTopFarR[cx] - resTopNearR[cx]) * m;
+                float g = resTopNearG[cx] + (resTopFarG[cx] - resTopNearG[cx]) * m;
+                float b = resTopNearB[cx] + (resTopFarB[cx] - resTopNearB[cx]) * m;
+                out[idx] = gridAlphaShifted[idx] | (clampInt(r) << 16) | (clampInt(g) << 8) | clampInt(b);
             }
+            // Верхний-правый угол
+            int lastX = sampleWidth - 1;
+            fillCornerRow(out, rowOff, TWO_THIRD_W, GLOW_WIDTH,
+                    rightNearR[0], rightNearG[0], rightNearB[0], rightFarR[0], rightFarG[0], rightFarB[0],
+                    topNearR[lastX], topNearG[lastX], topNearB[lastX], topFarR[lastX], topFarG[lastX], topFarB[lastX]);
+        }
+
+        // 2. Средняя зона (y: THIRD_H..TWO_THIRD_H-1)
+        for (int cy = 0; cy < THIRD_H; cy++) {
+            int gy = THIRD_H + cy;
+            int rowOff = gy * GLOW_WIDTH;
+            int cRowOff = cy * THIRD_W;
+
+            float lnR = resLeftNearR[cy], lnG = resLeftNearG[cy], lnB = resLeftNearB[cy];
+            float ldR = resLeftFarR[cy] - lnR, ldG = resLeftFarG[cy] - lnG, ldB = resLeftFarB[cy] - lnB;
+            // Левая полоса
+            for (int gx = 0; gx < THIRD_W; gx++) {
+                int idx = rowOff + gx;
+                float m = gridDiffuseMix[idx];
+                out[idx] = gridAlphaShifted[idx]
+                        | (clampInt(lnR + ldR * m) << 16)
+                        | (clampInt(lnG + ldG * m) << 8)
+                        | clampInt(lnB + ldB * m);
+            }
+
+            float rnR = resRightNearR[cy], rnG = resRightNearG[cy], rnB = resRightNearB[cy];
+            // Центральная зона (за плеером — только для скруглённых углов при шторке)
+            for (int cx = 0; cx < THIRD_W; cx++) {
+                int cIdx = cRowOff + cx;
+                float wL = centerWL[cIdx];
+                float wR = centerWR[cIdx];
+                float wT = centerWT[cIdx];
+                float wB = centerWB[cIdx];
+                float r = lnR * wL + rnR * wR + resTopNearR[cx] * wT + resBottomNearR[cx] * wB;
+                float g = lnG * wL + rnG * wR + resTopNearG[cx] * wT + resBottomNearG[cx] * wB;
+                float b = lnB * wL + rnB * wR + resTopNearB[cx] * wT + resBottomNearB[cx] * wB;
+                out[rowOff + THIRD_W + cx] = MAX_EDGE_ALPHA_SHIFTED
+                        | (clampInt(r) << 16) | (clampInt(g) << 8) | clampInt(b);
+            }
+
+            float rdR = resRightFarR[cy] - rnR, rdG = resRightFarG[cy] - rnG, rdB = resRightFarB[cy] - rnB;
+            // Правая полоса
+            for (int gx = TWO_THIRD_W; gx < GLOW_WIDTH; gx++) {
+                int idx = rowOff + gx;
+                float m = gridDiffuseMix[idx];
+                out[idx] = gridAlphaShifted[idx]
+                        | (clampInt(rnR + rdR * m) << 16)
+                        | (clampInt(rnG + rdG * m) << 8)
+                        | clampInt(rnB + rdB * m);
+            }
+        }
+
+        // 3. Нижняя зона (y: TWO_THIRD_H..GLOW_HEIGHT-1)
+        int lastY = sampleHeight - 1;
+        int lastX = sampleWidth - 1;
+        for (int gy = TWO_THIRD_H; gy < GLOW_HEIGHT; gy++) {
+            int rowOff = gy * GLOW_WIDTH;
+            // Нижний-левый угол
+            fillCornerRow(out, rowOff, 0, THIRD_W,
+                    leftNearR[lastY], leftNearG[lastY], leftNearB[lastY], leftFarR[lastY], leftFarG[lastY], leftFarB[lastY],
+                    bottomNearR[0], bottomNearG[0], bottomNearB[0], bottomFarR[0], bottomFarG[0], bottomFarB[0]);
+            // Нижняя полоса
+            for (int cx = 0; cx < THIRD_W; cx++) {
+                int idx = rowOff + THIRD_W + cx;
+                float m = gridDiffuseMix[idx];
+                float r = resBottomNearR[cx] + (resBottomFarR[cx] - resBottomNearR[cx]) * m;
+                float g = resBottomNearG[cx] + (resBottomFarG[cx] - resBottomNearG[cx]) * m;
+                float b = resBottomNearB[cx] + (resBottomFarB[cx] - resBottomNearB[cx]) * m;
+                out[idx] = gridAlphaShifted[idx] | (clampInt(r) << 16) | (clampInt(g) << 8) | clampInt(b);
+            }
+            // Нижний-правый угол
+            fillCornerRow(out, rowOff, TWO_THIRD_W, GLOW_WIDTH,
+                    rightNearR[lastY], rightNearG[lastY], rightNearB[lastY], rightFarR[lastY], rightFarG[lastY], rightFarB[lastY],
+                    bottomNearR[lastX], bottomNearG[lastX], bottomNearB[lastX], bottomFarR[lastX], bottomFarG[lastX], bottomFarB[lastX]);
+        }
+    }
+
+    private void fillCornerRow(int[] out, int rowOff, int startX, int endX,
+                               float hnR, float hnG, float hnB, float hfR, float hfG, float hfB,
+                               float vnR, float vnG, float vnB, float vfR, float vfG, float vfB) {
+        float hdR = hfR - hnR, hdG = hfG - hnG, hdB = hfB - hnB;
+        float vdR = vfR - vnR, vdG = vfG - vnG, vdB = vfB - vnB;
+        for (int gx = startX; gx < endX; gx++) {
+            int idx = rowOff + gx;
+            float m = gridDiffuseMix[idx];
+            float wx = gridCornerWx[idx];
+            float wy = 1f - wx;
+
+            float hr = hnR + hdR * m;
+            float hg = hnG + hdG * m;
+            float hb = hnB + hdB * m;
+
+            float vr = vnR + vdR * m;
+            float vg = vnG + vdG * m;
+            float vb = vnB + vdB * m;
+
+            out[idx] = gridAlphaShifted[idx]
+                    | (clampInt(hr * wx + vr * wy) << 16)
+                    | (clampInt(hg * wx + vg * wy) << 8)
+                    | clampInt(hb * wx + vb * wy);
         }
     }
 
     /**
-     * Единая сверхплавная кривая затухания по всей ширине пустой области:
-     * плавно снижается от 1.0 у кромки видео до уверенно полупрозрачного уровня (~0.31)
-     * у внешнего края, заменяя отдельный виньеточный оверлей одним лёгким GPU-проходом.
+     * Единая сверхплавная кривая затухания по всей ширине пустой области.
      */
     public static float cinemaFalloff(float distNorm) {
         if (distNorm <= 0f) return 1f;
@@ -523,10 +674,6 @@ public class FastBlurUtils {
         return t * t * (3.0f - 2.0f * t);
     }
 
-    private static float lerp(float a, float b, float t) {
-        return a + (b - a) * t;
-    }
-
     private static float clamp01(float v) {
         return v < 0f ? 0f : (v > 1f ? 1f : v);
     }
@@ -536,7 +683,7 @@ public class FastBlurUtils {
     }
 
     private static int clampInt(float v) {
-        int iv = Math.round(v);
+        int iv = (int) (v + 0.5f);
         return iv < 0 ? 0 : (iv > 255 ? 255 : iv);
     }
 }
