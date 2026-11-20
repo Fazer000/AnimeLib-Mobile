@@ -242,11 +242,16 @@ public class PlayerPlaybackController {
         return directNonVpnStreamingClient;
     }
 
-    public HttpDataSource.Factory buildStreamHttpDataSourceFactory(String targetUrl) {
+    public OkHttpClient getStreamingOkHttpClientForUrl(String targetUrl) {
         boolean isKodik = ApiService.isKodikStreamUrl(targetUrl);
-        OkHttpClient activeClient = (isKodik && KodikLinksExtractor.didLastExtractionUseDirectNetwork())
+        return (isKodik && KodikLinksExtractor.didLastExtractionUseDirectNetwork())
                 ? getOrCreateDirectNonVpnStreamingClient()
                 : getOrCreateStreamingOkHttpClient();
+    }
+
+    public HttpDataSource.Factory buildStreamHttpDataSourceFactory(String targetUrl) {
+        boolean isKodik = ApiService.isKodikStreamUrl(targetUrl);
+        OkHttpClient activeClient = getStreamingOkHttpClientForUrl(targetUrl);
         OkHttpDataSource.Factory okFactory = new OkHttpDataSource.Factory(activeClient)
                 .setUserAgent(STREAM_USER_AGENT);
         if (isKodik) {

@@ -32,6 +32,7 @@ import com.example.animelib.api.ApiService;
 import com.example.animelib.controllers.PlayerAnimeInfoController;
 import com.example.animelib.controllers.PlayerApiController;
 import com.example.animelib.controllers.PlayerAudioController;
+import com.example.animelib.controllers.OpeningAudioDetectorController;
 import com.example.animelib.controllers.PlayerChronologyController;
 import com.example.animelib.controllers.PlayerCommentsController;
 import com.example.animelib.controllers.PlayerContextHelper;
@@ -139,6 +140,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private PlayerOfflineController playerOfflineController;
     private PlayerPortraitController playerPortraitController;
     private PlayerGesturesCoordinator playerGesturesCoordinator;
+    private OpeningAudioDetectorController openingAudioDetectorController;
 
     // Activity / session state
     private String animeUrl;
@@ -414,6 +416,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
         gesturesManager.setVerticalGesturesManager(verticalGesturesManager);
         verticalGesturesManager.setGesturesManager(gesturesManager);
         timecodeManager = new TimecodeManager(this);
+        openingAudioDetectorController = new OpeningAudioDetectorController(this, createOpeningDetectorHost());
 
         playerAudioController = new PlayerAudioController();
         playerAudioController.init(this, apiService);
@@ -2108,6 +2111,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
             playerLockController.cleanup();
             playerLockController = null;
         }
+        if (openingAudioDetectorController != null) {
+            openingAudioDetectorController.cleanup();
+            openingAudioDetectorController = null;
+        }
 
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
@@ -2727,6 +2734,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
             }
 
             @Override
+            public void onManualSkipForward(long fromPositionMs, long toPositionMs, int skipDurationSec) {
+                if (openingAudioDetectorController != null) {
+                    openingAudioDetectorController.onManualSkipForward(fromPositionMs, toPositionMs, skipDurationSec);
+                }
+            }
+
+            @Override
             public boolean isAutoPlayEnabled() {
                 return autoPlay;
             }
@@ -2912,6 +2926,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 if (playerProgressController != null) {
                     playerProgressController.capturePlaybackSnapshot();
                 }
+                if (openingAudioDetectorController != null) {
+                    openingAudioDetectorController.onEpisodeAttached();
+                }
             }
 
             @Override
@@ -2929,6 +2946,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 }
                 if (playerNextEpisodeController != null) {
                     playerNextEpisodeController.scheduleNextEpisodePrefetch();
+                }
+                if (openingAudioDetectorController != null) {
+                    openingAudioDetectorController.onEpisodeFirstFrameRendered();
                 }
             }
 
@@ -3036,6 +3056,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     playerControlsOverlayManager.setHasRenderedFirstFrame(true);
                     playerControlsOverlayManager.hideLoading();
                     playerControlsOverlayManager.updatePlayPauseAndLoadingState(true);
+                }
+                if (openingAudioDetectorController != null) {
+                    openingAudioDetectorController.onEpisodeAttached();
                 }
                 if (playerSubtitlesController != null) {
                     playerSubtitlesController.applySubtitlesStateToPlayer();
@@ -3582,6 +3605,93 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 if (playerQualityController != null) {
                     playerQualityController.switchMediaSourceInternal(newVideoUrl, startPosition, playWhenReady);
                 }
+                if (openingAudioDetectorController != null) {
+                    openingAudioDetectorController.onEpisodeAttached();
+                }
+            }
+        };
+    }
+
+    private OpeningAudioDetectorController.Host createOpeningDetectorHost() {
+        return new OpeningAudioDetectorController.Host() {
+            @Override
+            public Context getContext() {
+                return VideoPlayerActivity.this;
+            }
+
+            @Override
+            public String getCurrentAnimeId() {
+                if (currentAnimeId != null && !currentAnimeId.trim().isEmpty()) {
+                    return currentAnimeId;
+                }
+                Intent intent = getIntent();
+                return intent != null ? intent.getStringExtra("EXTRA_ANIME_ID") : null;
+            }
+
+            @Override
+            public int getCurrentEpisodeId() {
+                if (episodesManager != null && episodesManager.getCurrentEpisode() != null) {
+                    return episodesManager.getCurrentEpisode().getId();
+                }
+                Intent intent = getIntent();
+                String epNum = intent != null ? intent.getStringExtra("EXTRA_EPISODE_NUMBER") : null;
+                if (epNum != null && !epNum.trim().isEmpty()) {
+                    int hash = epNum.trim().hashCode();
+                    return hash == Integer.MIN_VALUE ? 1 : Math.abs(hash);
+                }
+                return 0;
+            }
+
+            @Override
+            public long getCurrentDurationMs() {
+                ExoPlayer p = getActivePlayer();
+                return p != null ? p.getDuration() : 0L;
+            }
+
+            @Override
+            public boolean isPlayingDownloadedVideo() {
+                return VideoPlayerActivity.this.isPlayingDownloadedVideo();
+            }
+
+            @Override
+            public String getCurrentVideoUrl() {
+                return playerQualityController != null ? playerQualityController.getCurrentVideoUrl() : null;
+            }
+
+            @Override
+            public String getCurrentVideoDomain() {
+                return playerQualityController != null ? playerQualityController.getCurrentVideoDomain() : null;
+            }
+
+            @Override
+            public EpisodeResponse.PlayerData getCurrentPlayerData() {
+                return playersManager != null ? playersManager.getCurrentPlayerData() : null;
+            }
+
+            @Override
+            public KodikResponse getCurrentKodikResponse() {
+                return playerQualityController != null ? playerQualityController.getCurrentKodikResponse() : null;
+            }
+
+            @Override
+            public TimecodeManager getTimecodeManager() {
+                return timecodeManager;
+            }
+
+            @Override
+            public okhttp3.OkHttpClient getStreamingOkHttpClientForUrl(@NonNull String url) {
+                return playerPlaybackController != null
+                        ? playerPlaybackController.getStreamingOkHttpClientForUrl(url) : null;
+            }
+
+            @Override
+            public boolean isActivityFinishingOrDestroyed() {
+                return isClosingOrFinishing || isFinishing() || isDestroyed();
+            }
+
+            @Override
+            public void safeRunOnUiThread(@NonNull Runnable runnable) {
+                VideoPlayerActivity.this.safeRunOnUiThread(runnable);
             }
         };
     }

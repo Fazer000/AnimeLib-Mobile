@@ -52,15 +52,23 @@ public final class HlsPlaylistParser {
         public final String encryptionMethod; // "NONE" or "AES-128"
         @Nullable public final String keyUrl;
         @Nullable public final byte[] iv;
+        public final double durationSec;
 
         public HlsSegment(int index, int mediaSequence, String url,
                           String encryptionMethod, @Nullable String keyUrl, @Nullable byte[] iv) {
+            this(index, mediaSequence, url, encryptionMethod, keyUrl, iv, 0.0);
+        }
+
+        public HlsSegment(int index, int mediaSequence, String url,
+                          String encryptionMethod, @Nullable String keyUrl, @Nullable byte[] iv,
+                          double durationSec) {
             this.index = index;
             this.mediaSequence = mediaSequence;
             this.url = url;
             this.encryptionMethod = encryptionMethod;
             this.keyUrl = keyUrl;
             this.iv = iv;
+            this.durationSec = durationSec;
         }
 
         public boolean isAes128Encrypted() {
@@ -204,6 +212,7 @@ public final class HlsPlaylistParser {
 
         String[] lines = mediaPlaylist.split("\\r?\\n");
         int segIndex = 0;
+        double pendingDurationSec = 0.0;
 
         for (String rawLine : lines) {
             String line = rawLine.trim();
@@ -212,6 +221,19 @@ public final class HlsPlaylistParser {
             if (line.startsWith("#EXT-X-MEDIA-SEQUENCE:")) {
                 try {
                     mediaSequence = Integer.parseInt(line.substring("#EXT-X-MEDIA-SEQUENCE:".length()).trim());
+                } catch (NumberFormatException ignored) {
+                }
+            } else if (line.startsWith("#EXTINF:")) {
+                try {
+                    String durPart = line.substring("#EXTINF:".length()).trim();
+                    int commaIdx = durPart.indexOf(',');
+                    if (commaIdx >= 0) {
+                        durPart = durPart.substring(0, commaIdx).trim();
+                    }
+                    double parsedDur = Double.parseDouble(durPart);
+                    if (parsedDur > 0.0 && Double.isFinite(parsedDur)) {
+                        pendingDurationSec = parsedDur;
+                    }
                 } catch (NumberFormatException ignored) {
                 }
             } else if (line.startsWith("#EXT-X-MAP:")) {
@@ -246,7 +268,8 @@ public final class HlsPlaylistParser {
                 if ("AES-128".equals(currentMethod)) {
                     effectiveIv = explicitIv != null ? explicitIv : sequenceNumberToIv(seqNum);
                 }
-                segments.add(new HlsSegment(segIndex, seqNum, segUrl, currentMethod, currentKeyUrl, effectiveIv));
+                segments.add(new HlsSegment(segIndex, seqNum, segUrl, currentMethod, currentKeyUrl, effectiveIv, pendingDurationSec));
+                pendingDurationSec = 0.0;
                 segIndex++;
             }
         }

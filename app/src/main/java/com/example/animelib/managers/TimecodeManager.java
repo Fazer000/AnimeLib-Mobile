@@ -261,6 +261,42 @@ public class TimecodeManager {
     }
 
     /**
+     * Проверяет, есть ли уже сегмент опенинга среди текущих таймкодов.
+     */
+    public boolean hasOpeningTimecode() {
+        for (EpisodeResponse.TimecodeData tc : timecodes) {
+            if (tc != null && "opening".equalsIgnoreCase(tc.getType()) && tc.getTo() > tc.getFrom()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Добавляет автоматически найденный аудио-опенинг на таймбар,
+     * если в API для этого эпизода опенинг не указан.
+     */
+    public boolean addDetectedOpeningTimecode(int fromSec, int toSec) {
+        if (fromSec < 0 || toSec <= fromSec || hasOpeningTimecode()) {
+            return false;
+        }
+        EpisodeResponse.TimecodeData detected = new EpisodeResponse.TimecodeData();
+        detected.setType("opening");
+        detected.setFrom(fromSec);
+        detected.setTo(toSec);
+
+        List<EpisodeResponse.TimecodeData> updated = new ArrayList<>(this.timecodes);
+        updated.add(detected);
+        updated.sort((a, b) -> Integer.compare(a.getFrom(), b.getFrom()));
+        this.timecodes = updated;
+
+        updateTimecodeSegmentsOnBar();
+        updateTimecodeButtonsVisibility();
+        Log.d(TAG, "Injected detected opening segment: " + fromSec + "s -> " + toSec + "s");
+        return true;
+    }
+
+    /**
      * Обновляет отображение сегментов на самом таймбаре и устанавливает маркера
      */
     public void updateTimecodeSegmentsOnBar() {

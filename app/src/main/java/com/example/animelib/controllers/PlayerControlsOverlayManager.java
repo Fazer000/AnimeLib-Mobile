@@ -56,6 +56,7 @@ public class PlayerControlsOverlayManager {
         boolean isPlayingDownloadedVideo();
         boolean isCommentsDisabledInPlayer();
         int getLongSkipDuration();
+        default void onManualSkipForward(long fromPositionMs, long toPositionMs, int skipDurationSec) {}
         boolean isAutoPlayEnabled();
         boolean isAutoPlayOnPrepare();
         void startBufferingMonitoring();
@@ -439,6 +440,9 @@ public class PlayerControlsOverlayManager {
                     startSeekingState();
                     p.seekTo(newPosition);
                     scheduleEndSeekingState(600);
+                    if (callback != null && newPosition > currentPosition) {
+                        callback.onManualSkipForward(currentPosition, newPosition, skipSec);
+                    }
                 }
             });
         }
