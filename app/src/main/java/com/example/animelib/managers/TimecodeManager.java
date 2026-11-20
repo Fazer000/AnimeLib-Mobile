@@ -58,6 +58,7 @@ public class TimecodeManager {
     private final Set<String> autoSkippedSegmentKeys = new HashSet<>();
     private long lastAutoSkipTimestampMs = 0L;
     private static final long AUTO_SKIP_COOLDOWN_MS = 500L;
+    private EpisodeResponse.TimecodeData injectedDetectedOpening = null;
 
     public TimecodeManager(Context context) {
         this.context = context;
@@ -247,6 +248,7 @@ public class TimecodeManager {
     public void setTimecodes(List<EpisodeResponse.TimecodeData> newTimecodes) {
         autoSkippedSegmentKeys.clear();
         lastAutoSkipTimestampMs = 0L;
+        injectedDetectedOpening = null;
         if (newTimecodes != null && !newTimecodes.isEmpty()) {
             this.timecodes = new ArrayList<>(newTimecodes);
             Log.d(TAG, "Timecodes set: " + timecodes.size() + " items");
@@ -261,7 +263,7 @@ public class TimecodeManager {
     }
 
     /**
-     * Проверяет, есть ли уже сегмент опенинга среди текущих таймкодов.
+     * Проверяет, есть ли уже любой сегмент опенинга среди текущих таймкодов (из API или найденный).
      */
     public boolean hasOpeningTimecode() {
         for (EpisodeResponse.TimecodeData tc : timecodes) {
@@ -273,17 +275,46 @@ public class TimecodeManager {
     }
 
     /**
-     * Добавляет автоматически найденный аудио-опенинг на таймбар,
-     * если в API для этого эпизода опенинг не указан.
+     * Проверяет, задан ли официальный опенинг из API (не вставленный локальным аудиодетектором).
+     */
+    public boolean hasOfficialOpeningTimecode() {
+        for (EpisodeResponse.TimecodeData tc : timecodes) {
+            if (tc != null && tc != injectedDetectedOpening
+                    && "opening".equalsIgnoreCase(tc.getType()) && tc.getTo() > tc.getFrom()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Добавляет или уточняет автоматически найденный аудио-опенинг на таймбаре,
+     * не перезаписывая официальный таймкод из API.
      */
     public boolean addDetectedOpeningTimecode(int fromSec, int toSec) {
-        if (fromSec < 0 || toSec <= fromSec || hasOpeningTimecode()) {
+        if (fromSec < 0 || toSec <= fromSec || hasOfficialOpeningTimecode()) {
             return false;
         }
+        if (injectedDetectedOpening != null && timecodes.contains(injectedDetectedOpening)) {
+            if (injectedDetectedOpening.getFrom() == fromSec && injectedDetectedOpening.getTo() == toSec) {
+                return false;
+            }
+            injectedDetectedOpening.setFrom(fromSec);
+            injectedDetectedOpening.setTo(toSec);
+            List<EpisodeResponse.TimecodeData> updated = new ArrayList<>(this.timecodes);
+            updated.sort((a, b) -> Integer.compare(a.getFrom(), b.getFrom()));
+            this.timecodes = updated;
+            updateTimecodeSegmentsOnBar();
+            updateTimecodeButtonsVisibility();
+            Log.d(TAG, "Refined detected opening segment: " + fromSec + "s -> " + toSec + "s");
+            return true;
+        }
+
         EpisodeResponse.TimecodeData detected = new EpisodeResponse.TimecodeData();
         detected.setType("opening");
         detected.setFrom(fromSec);
         detected.setTo(toSec);
+        injectedDetectedOpening = detected;
 
         List<EpisodeResponse.TimecodeData> updated = new ArrayList<>(this.timecodes);
         updated.add(detected);
@@ -672,6 +703,7 @@ public class TimecodeManager {
         
         timecodes.clear();
         autoSkippedSegmentKeys.clear();
+        injectedDetectedOpening = null;
         player = null;
         playerListener = null;
         updateHandler = null;

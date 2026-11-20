@@ -145,7 +145,7 @@ public class AudioOpeningDetectorTest {
     }
 
     @Test
-    public void testProgressiveRightEdgeGuardPreventsTruncatedDetection() {
+    public void testProgressiveRightEdgeReturnsProvisionalThenRefinesExact() {
         float[] opening = synthesizeMusicalTrack(90, 7001L, 0.8f);
 
         float[] ep1 = buildEpisodeAudio(200, 20, opening, 7002L, 1.0f, 0.01f);
@@ -161,19 +161,70 @@ public class AudioOpeningDetectorTest {
         // В Эпизоде 2 опенинг на 75..165с.
         float[] ep2 = buildEpisodeAudio(220, 75, opening, 7003L, 0.8f, 0.03f);
 
-        // Проход 1: декодировано только 0..120с (опенинг обрезан на правом краю!)
+        // Проход 1: декодировано 0..120с (опенинг идёт и упирается в правый край -> Stage 1 provisional, не обрезанный до 120с!)
         byte[] pass1Data = fingerprintRange(ep2, 0, 120);
         AudioFingerprintEngine.MatchResult pass1 = AudioFingerprintEngine.findMatch(
                 template, pass1Data, pass1Data.length / AudioFingerprintEngine.NUM_BANDS, false);
-        assertNull("Progressive pass should NOT stop early while opening touches right edge", pass1);
+        assertNotNull("Stage 1 should return immediate provisional opening match", pass1);
+        assertTrue("Pass 1 must be marked provisional so background refinement continues", pass1.isProvisional);
+        assertTrue("Expected provisional start near 75s, got " + pass1.fromSec, Math.abs(pass1.fromSec - 75) <= 2);
+        assertTrue("Expected provisional end estimated near 160..165s (not truncated to 120s), got " + pass1.toSec,
+                pass1.toSec >= 155 && pass1.toSec <= 168);
 
-        // Проход 2: декодировано 0..190с (опенинг целиком внутри с запасом > 8с)
+        // Проход 2: декодировано 0..190с (опенинг целиком внутри -> Stage 2 exact, isProvisional = false)
         byte[] pass2Data = fingerprintRange(ep2, 0, 190);
         AudioFingerprintEngine.MatchResult pass2 = AudioFingerprintEngine.findMatch(
                 template, pass2Data, pass2Data.length / AudioFingerprintEngine.NUM_BANDS, false);
         assertNotNull("Progressive pass 2 should detect full opening and stop early", pass2);
+        assertTrue("Pass 2 must be final (not provisional)", !pass2.isProvisional);
         assertTrue("Expected start near 75s, got " + pass2.fromSec, Math.abs(pass2.fromSec - 75) <= 2);
         assertTrue("Expected end near 165s, got " + pass2.toSec, Math.abs(pass2.toSec - 165) <= 2);
+    }
+
+    @Test
+    public void testInstantEarlyDetectionAtEpisodeStart() {
+        float[] opening = synthesizeMusicalTrack(90, 6101L, 0.8f);
+        float[] otherOpening = synthesizeMusicalTrack(90, 6199L, 0.8f);
+
+        // Эпизод 1: опенинг после пролога (60..150с), пользователь нажал +85с (60..145с)
+        float[] ep1 = buildEpisodeAudio(210, 60, opening, 6102L, 1.0f, 0.01f);
+        byte[] tplData = fingerprintRange(ep1, 50, 155);
+        int tplFrames = tplData.length / AudioFingerprintEngine.NUM_BANDS;
+        AudioFingerprintEngine.Template template = new AudioFingerprintEngine.Template(
+                5L, tplData, tplFrames,
+                10 * AudioFingerprintEngine.FRAMES_PER_SECOND,
+                95 * AudioFingerprintEngine.FRAMES_PER_SECOND,
+                85
+        );
+
+        // Эпизод 2: опенинг сразу с 0:00 (0..90с) — декодировано ТОЛЬКО 28 секунд!
+        float[] ep2AtZero = buildEpisodeAudio(160, 0, opening, 6103L, 0.65f, 0.04f);
+        byte[] first28sZero = fingerprintRange(ep2AtZero, 0, 28);
+        AudioFingerprintEngine.MatchResult earlyZero = AudioFingerprintEngine.findMatch(
+                template, first28sZero, first28sZero.length / AudioFingerprintEngine.NUM_BANDS, false);
+        assertNotNull("Opening at 0:00 should be early-detected within first 28s", earlyZero);
+        assertTrue("Early match at 28s must be provisional", earlyZero.isProvisional);
+        assertTrue("Expected start near 0s, got " + earlyZero.fromSec, earlyZero.fromSec <= 2);
+        assertTrue("Expected estimated end near 85..90s, got " + earlyZero.toSec,
+                earlyZero.toSec >= 80 && earlyZero.toSec <= 92);
+
+        // Эпизод 3: опенинг почти сразу на 0:06 (6..96с) — декодировано ТОЛЬКО 28 секунд!
+        float[] ep3AtSix = buildEpisodeAudio(160, 6, opening, 6104L, 0.7f, 0.04f);
+        byte[] first28sSix = fingerprintRange(ep3AtSix, 0, 28);
+        AudioFingerprintEngine.MatchResult earlySix = AudioFingerprintEngine.findMatch(
+                template, first28sSix, first28sSix.length / AudioFingerprintEngine.NUM_BANDS, false);
+        assertNotNull("Opening at 0:06 should be early-detected within first 28s", earlySix);
+        assertTrue("Early match at 28s must be provisional", earlySix.isProvisional);
+        assertTrue("Expected start near 6s, got " + earlySix.fromSec, Math.abs(earlySix.fromSec - 6) <= 2);
+        assertTrue("Expected estimated end near 91..96s, got " + earlySix.toSec,
+                earlySix.toSec >= 86 && earlySix.toSec <= 98);
+
+        // Эпизод 13: другой опенинг (OP2) сразу с 0:00 — НЕ должно быть ложного раннего срабатывания на 28с!
+        float[] ep13OtherOp = buildEpisodeAudio(160, 0, otherOpening, 6105L, 0.8f, 0.02f);
+        byte[] first28sOther = fingerprintRange(ep13OtherOp, 0, 28);
+        AudioFingerprintEngine.MatchResult falseMatch = AudioFingerprintEngine.findMatch(
+                template, first28sOther, first28sOther.length / AudioFingerprintEngine.NUM_BANDS, false);
+        assertNull("Different OP2 at 0:00 must NOT trigger early provisional false positive", falseMatch);
     }
 
     @Test

@@ -103,14 +103,21 @@ public final class AudioFingerprintEngine {
         public final float zScore;
         public final int bestLagFrames;
         public final long templateId;
+        public final boolean isProvisional;
 
         public MatchResult(int fromSec, int toSec, float confidence, float zScore, int bestLagFrames, long templateId) {
+            this(fromSec, toSec, confidence, zScore, bestLagFrames, templateId, false);
+        }
+
+        public MatchResult(int fromSec, int toSec, float confidence, float zScore, int bestLagFrames, long templateId,
+                           boolean isProvisional) {
             this.fromSec = fromSec;
             this.toSec = toSec;
             this.confidence = confidence;
             this.zScore = zScore;
             this.bestLagFrames = bestLagFrames;
             this.templateId = templateId;
+            this.isProvisional = isProvisional;
         }
     }
 
@@ -353,7 +360,7 @@ public final class AudioFingerprintEngine {
                                         @NonNull byte[] targetData,
                                         int targetFrames,
                                         boolean isFinalPass) {
-        if (!template.isValid() || targetFrames < 80 || targetData.length < targetFrames * NUM_BANDS) {
+        if (!template.isValid() || targetFrames < 64 || targetData.length < targetFrames * NUM_BANDS) {
             return null;
         }
 
@@ -365,7 +372,10 @@ public final class AudioFingerprintEngine {
             return null;
         }
 
-        final int minOverlapFrames = Math.max(40, Math.min(coreLen / 2, 100));
+        final int baseMinOverlap = Math.max(40, Math.min(coreLen / 2, 100));
+        final int minOverlapFrames = (!isFinalPass && targetFrames < 180)
+                ? Math.max(48, Math.min(baseMinOverlap, (int) (targetFrames * 0.60f)))
+                : baseMinOverlap;
         final int minLag = -(coreEnd - minOverlapFrames);
         final int maxLag = targetFrames - coreStart - minOverlapFrames;
         if (maxLag < minLag) {
@@ -635,12 +645,12 @@ public final class AudioFingerprintEngine {
             spanEnd++;
         }
 
+        int targetStartFrame = Math.max(0, lag + spanStart);
+        int targetEndFrame = Math.min(targetFrames, lag + spanEnd + 1);
+        boolean touchesRightEdge = !isFinalPass && targetEndFrame >= targetFrames - (8 * FRAMES_PER_SECOND);
+
         int finalSpanFrames = spanEnd - spanStart + 1;
         float spanDurationSec = finalSpanFrames * (HOP_MS / 1000f);
-        float minRequiredSec = Math.max(24f, Math.min(38f, template.skipDurationSec * 0.52f));
-        if (spanDurationSec < minRequiredSec || spanDurationSec > 165f) {
-            return null;
-        }
 
         // Вычисляем среднюю схожесть на активных кадрах найденного опенинга
         float sumSpanSim = 0f;
@@ -651,7 +661,7 @@ public final class AudioFingerprintEngine {
                 activeSpanFrames++;
             }
         }
-        if (activeSpanFrames < minRequiredSec * 2.2f) {
+        if (activeSpanFrames == 0) {
             return null;
         }
         float meanSpanSim = sumSpanSim / activeSpanFrames;
@@ -659,6 +669,39 @@ public final class AudioFingerprintEngine {
         float zScore = (bgStd > 0.015f)
                 ? (Math.max(coreScore, meanSpanSim) - bgMean) / bgStd
                 : (Math.max(coreScore, meanSpanSim) - bgMean) * 20f;
+
+        if (touchesRightEdge) {
+            // Этап 1 (мгновенное раннее обнаружение): опенинг уже уверенно идёт на правом краю
+            // декодированного буфера (например, начинается сразу с 0:00). Не ждём загрузки всех 90с:
+            // возвращаем предварительный результат с точным стартом и расчётным концом по шаблону,
+            // а фоновый скан тихо уточнит точную секунду конца, когда догрузит остаток.
+            boolean startsNearOpeningBegin = spanStart <= template.coreStartFrame + 28;
+            if (!startsNearOpeningBegin || spanDurationSec < 13.5f || activeSpanFrames < 36) {
+                return null;
+            }
+            boolean strongEarlyAbsolute = meanSpanSim >= 0.65f && peakSmooth >= 0.72f;
+            boolean strongEarlyRelative = meanSpanSim >= 0.54f && peakSmooth >= 0.64f
+                    && (meanSpanSim - bgMean) >= 0.25f && zScore >= 4.0f;
+            if (!strongEarlyAbsolute && !strongEarlyRelative) {
+                return null;
+            }
+
+            int fromSec = Math.max(0, Math.round(targetStartFrame * (HOP_MS / 1000f)));
+            int alignedCoreEndSec = Math.round((lag + template.coreEndFrame + 1) * (HOP_MS / 1000f));
+            int minEstToSec = fromSec + Math.max(30, template.skipDurationSec - 10);
+            int maxEstToSec = fromSec + 150;
+            int estToSec = Math.max(minEstToSec, Math.min(maxEstToSec, alignedCoreEndSec));
+            return new MatchResult(fromSec, estToSec, meanSpanSim, zScore, lag, template.id, true);
+        }
+
+        // Этап 2 (полное точное совпадение): опенинг целиком поместился в буфер
+        float minRequiredSec = Math.max(24f, Math.min(38f, template.skipDurationSec * 0.52f));
+        if (spanDurationSec < minRequiredSec || spanDurationSec > 165f) {
+            return null;
+        }
+        if (activeSpanFrames < minRequiredSec * 2.2f) {
+            return null;
+        }
 
         boolean strongAbsolute = meanSpanSim >= 0.62f && peakSmooth >= 0.68f;
         boolean strongRelative = meanSpanSim >= 0.48f && peakSmooth >= 0.58f
@@ -668,22 +711,13 @@ public final class AudioFingerprintEngine {
             return null;
         }
 
-        int targetStartFrame = Math.max(0, lag + spanStart);
-        int targetEndFrame = Math.min(targetFrames, lag + spanEnd + 1);
-
-        // Защита при прогрессивном сканировании: если найденный опенинг упирается в правый край
-        // ещё не полностью декодированного буфера, не обрезаем его раньше времени — ждём следующий чанк!
-        if (!isFinalPass && targetEndFrame >= targetFrames - (8 * FRAMES_PER_SECOND)) {
-            return null;
-        }
-
         int fromSec = Math.max(0, Math.round(targetStartFrame * (HOP_MS / 1000f)));
         int toSec = Math.round(targetEndFrame * (HOP_MS / 1000f));
         if (toSec <= fromSec + 15) {
             return null;
         }
 
-        return new MatchResult(fromSec, toSec, meanSpanSim, zScore, lag, template.id);
+        return new MatchResult(fromSec, toSec, meanSpanSim, zScore, lag, template.id, false);
     }
 
     private static float computeCoreMeanSim(@NonNull byte[] qData,

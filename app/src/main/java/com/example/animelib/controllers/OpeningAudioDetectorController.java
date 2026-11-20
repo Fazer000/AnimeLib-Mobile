@@ -35,21 +35,20 @@ import java.util.concurrent.atomic.AtomicInteger;
 import okhttp3.OkHttpClient;
 
 /**
- * Контроллер автоматического запоминания и поиска опенингов по аудиодорожке
+ * Контроллер автоматического запоминания и быстрого поиска опенингов по аудиодорожке
  * для эпизодов, в которых таймкод опенинга отсутствует в API.
  *
  * Логика работы:
- * 1. Когда пользователь нажимает ручную кнопку пропуска (skipForwardButton) в начале серии
- *    (первые 8 минут, длительность пропуска 25–150с), контроллер в фоне извлекает компактный
- *    спектральный отпечаток расширенного окна [skipStart - 10с .. skipEnd + 10с] из самого
- *    лёгкого качества (360p / локальный файл) и сохраняет шаблон для этого аниме (до 3 шаблонов,
- *    чтобы поддерживать смену OP1 -> OP2 -> OP3).
- * 2. При запуске следующей серии без API-таймкода опенинга:
- *    - Сначала мгновенно проверяется кэш найденных опенингов в БД (0 мс, 0 байт сети).
- *    - Если кэша нет, после старта воспроизведения запускается прогрессивный скан первых 8 минут
- *      в минимальном качестве (360p), который останавливается сразу после нахождения полного опенинга.
- *    - Найденный сегмент с уточнёнными границами выделяется на таймбаре через TimecodeManager
- *      (и автоматически работает с кнопкой пропуска и автопропуском опенингов).
+ * 1. При ручном нажатии кнопки перемотки (skipForwardButton) в первые 8 минут серии (25–150с)
+ *    в фоне извлекается компактный спектральный отпечаток расширенного окна [skipStart - 10с .. skipEnd + 10с]
+ *    из самого лёгкого качества (360p / локальный файл) и сохраняется шаблон (до 3 на аниме: OP1/OP2/OP3).
+ * 2. При открытии следующей серии без официального API-опенинга:
+ *    - Поиск стартует сразу на onEpisodeAttached() без ожидания первого кадра и искусственной паузы.
+ *    - Сначала мгновенно проверяется кэш найденных опенингов в БД.
+ *    - Если кэша нет, запускается двухэтапное прогрессивное сканирование (параллельный HLS / 512KB prefetch MP4):
+ *      * Этап 1 (первые ~28с): как только найден уверенный префикс опенинга (например, прямо с 0:00),
+ *        опенинг МГНОВЕННО выделяется на таймбаре с расчётным концом и показывается тост.
+ *      * Этап 2 (в фоне): догружается остаток опенинга для тихого уточнения точной секунды конца и кэширования.
  */
 public class OpeningAudioDetectorController {
 
@@ -61,7 +60,6 @@ public class OpeningAudioDetectorController {
     private static final int REFERENCE_PADDING_SEC = 10;
     private static final int MAX_SCAN_SEC = 480; // Ищем опенинг в первых 8 минутах
     private static final int MAX_TEMPLATES_PER_ANIME = 3;
-    private static final long SCAN_START_DELAY_MS = 1200L;
 
     public interface Host {
         @Nullable Context getContext();
@@ -110,6 +108,7 @@ public class OpeningAudioDetectorController {
     private volatile boolean isCleanedUp = false;
     private volatile long lastLearnTriggerMs = 0L;
     private volatile String lastScheduledScanKey = null;
+    private volatile String lastToastShownEpisodeKey = null;
     private Runnable pendingScanRunnable = null;
 
     public OpeningAudioDetectorController(@NonNull Context context, @NonNull Host host) {
@@ -160,10 +159,13 @@ public class OpeningAudioDetectorController {
             return;
         }
 
-        // Если в текущей серии нет опенинга из API, сразу подсветим пропущенный участок на таймбаре
+        // Если в текущей серии нет официального опенинга из API, сразу подсветим пропущенный участок на таймбаре
         TimecodeManager tm = host.getTimecodeManager();
-        if (tm != null && !tm.hasOpeningTimecode()) {
+        if (tm != null && !tm.hasOfficialOpeningTimecode()) {
             tm.addDetectedOpeningTimecode(fromSec, toSec);
+            if (sourceEpisodeId > 0) {
+                lastToastShownEpisodeKey = animeId + ":" + sourceEpisodeId;
+            }
         }
 
         // Отменяем предыдущую задачу обучения, если она ещё шла
@@ -265,7 +267,7 @@ public class OpeningAudioDetectorController {
                     // Если пользователь уже успел переключиться на другую серию без опенинга, сразу запускаем поиск!
                     if (host.getCurrentEpisodeId() != sourceEpisodeId) {
                         lastScheduledScanKey = null;
-                        scheduleScanForActiveEpisode(200L);
+                        scheduleScanForActiveEpisode(0L);
                     }
                 });
             } catch (Exception e) {
@@ -276,51 +278,24 @@ public class OpeningAudioDetectorController {
 
     /**
      * Вызывается сразу при прикреплении плеера к эпизоду / смене источника / бесшовном переключении.
-     * Мгновенно применяет кэшированный опенинг (если есть) и отменяет старый фоновый скан.
+     * Мгновенно отменяет старый скан, проверяет кэш и БЕЗ ЗАДЕРЖКИ запускает быстрый поиск опенинга.
      */
     public void onEpisodeAttached() {
-        if (isCleanedUp) return;
+        if (isCleanedUp || host.isActivityFinishingOrDestroyed()) return;
 
         cancelActiveScan();
         lastScheduledScanKey = null;
 
-        final String animeId = normalizeAnimeId(host.getCurrentAnimeId());
-        final int episodeId = host.getCurrentEpisodeId();
-        if (animeId == null || episodeId <= 0) return;
-
-        TimecodeManager tm = host.getTimecodeManager();
-        if (tm != null && tm.hasOpeningTimecode()) {
-            return; // В API уже есть опенинг
-        }
-
-        // Мгновенная проверка кэша (Room разрешает быстрое чтение, но выполним на scanExecutor, чтобы не грузить UI)
-        final int gen = scanGeneration.get();
-        scanExecutor.execute(() -> {
-            if (isCleanedUp || gen != scanGeneration.get()) return;
-            try {
-                String cacheKey = DetectedOpeningEntity.buildCacheKey(animeId, episodeId);
-                DetectedOpeningEntity cached = dao.getDetectedOpening(cacheKey);
-                if (cached != null && cached.isValidDetection()) {
-                    host.safeRunOnUiThread(() -> {
-                        if (isCleanedUp || gen != scanGeneration.get() || host.isActivityFinishingOrDestroyed()) return;
-                        TimecodeManager liveTm = host.getTimecodeManager();
-                        if (liveTm != null && !liveTm.hasOpeningTimecode()) {
-                            liveTm.addDetectedOpeningTimecode(cached.getFromSec(), cached.getToSec());
-                        }
-                    });
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "Failed checking detected opening cache", e);
-            }
-        });
+        scheduleScanForActiveEpisode(0L);
     }
 
     /**
-     * Вызывается после рендера первого кадра серии, чтобы фоновое сканирование не мешало старту буферизации.
+     * Страховочный вызов после рендера первого кадра: если на момент onEpisodeAttached URL ещё не был готов,
+     * запускает поиск немедленно. Если поиск уже идёт — ничего не дублирует.
      */
     public void onEpisodeFirstFrameRendered() {
         if (isCleanedUp || host.isActivityFinishingOrDestroyed()) return;
-        scheduleScanForActiveEpisode(SCAN_START_DELAY_MS);
+        scheduleScanForActiveEpisode(0L);
     }
 
     private void scheduleScanForActiveEpisode(long delayMs) {
@@ -331,18 +306,24 @@ public class OpeningAudioDetectorController {
         if (animeId == null || episodeId <= 0) return;
 
         TimecodeManager tm = host.getTimecodeManager();
-        if (tm != null && tm.hasOpeningTimecode()) {
-            return; // Опенинг уже есть (из API или кэша)
+        if (tm != null && tm.hasOfficialOpeningTimecode()) {
+            return; // Официальный опенинг уже есть в API
+        }
+
+        final String sourceUrl = resolveLowestQualityAudioSourceUrl();
+        if (sourceUrl == null || sourceUrl.isEmpty()) {
+            return; // URL ещё не разрешён — дождёмся onEpisodeFirstFrameRendered
         }
 
         final String scanKey = animeId + ":" + episodeId;
         if (scanKey.equals(lastScheduledScanKey)) {
-            return;
+            return; // Для этого эпизода скан уже запущен или завершён
         }
         lastScheduledScanKey = scanKey;
 
         if (pendingScanRunnable != null) {
             mainHandler.removeCallbacks(pendingScanRunnable);
+            pendingScanRunnable = null;
         }
 
         final int expectedGen = scanGeneration.incrementAndGet();
@@ -350,12 +331,18 @@ public class OpeningAudioDetectorController {
         final AtomicBoolean cancelFlag = new AtomicBoolean(false);
         activeScanCancelFlag = cancelFlag;
 
-        pendingScanRunnable = () -> startProgressiveScan(animeId, episodeId, expectedGen, cancelFlag);
-        mainHandler.postDelayed(pendingScanRunnable, Math.max(0L, delayMs));
+        if (delayMs <= 0L) {
+            startProgressiveScan(animeId, episodeId, scanKey, sourceUrl, expectedGen, cancelFlag);
+        } else {
+            pendingScanRunnable = () -> startProgressiveScan(animeId, episodeId, scanKey, sourceUrl, expectedGen, cancelFlag);
+            mainHandler.postDelayed(pendingScanRunnable, delayMs);
+        }
     }
 
     private void startProgressiveScan(@NonNull String animeId,
                                       int episodeId,
+                                      @NonNull String episodeKey,
+                                      @NonNull String sourceUrl,
                                       int gen,
                                       @NonNull AtomicBoolean cancelFlag) {
         if (isCleanedUp || gen != scanGeneration.get() || cancelFlag.get() || host.isActivityFinishingOrDestroyed()) {
@@ -363,27 +350,39 @@ public class OpeningAudioDetectorController {
         }
 
         TimecodeManager tm = host.getTimecodeManager();
-        if (tm != null && tm.hasOpeningTimecode()) {
+        if (tm != null && tm.hasOfficialOpeningTimecode()) {
             return;
         }
 
-        final String sourceUrl = resolveLowestQualityAudioSourceUrl();
-        if (sourceUrl == null || sourceUrl.isEmpty()) {
-            return;
-        }
         final OkHttpClient client = host.getStreamingOkHttpClientForUrl(sourceUrl);
         if (client == null && !AudioPcmExtractor.isLocalSource(sourceUrl)) {
             return;
         }
 
         final long durationMs = host.getCurrentDurationMs();
-        final int maxScanSec = (durationMs > 0)
-                ? (int) Math.min(MAX_SCAN_SEC, Math.max(90L, durationMs / 1000L))
+        final int episodeDurationSec = durationMs > 0 ? (int) (durationMs / 1000L) : -1;
+        final int maxScanSec = (episodeDurationSec > 0)
+                ? Math.min(MAX_SCAN_SEC, Math.max(90, episodeDurationSec))
                 : MAX_SCAN_SEC;
 
         scanExecutor.execute(() -> {
             if (isCleanedUp || gen != scanGeneration.get() || cancelFlag.get()) return;
 
+            String cacheKey = DetectedOpeningEntity.buildCacheKey(animeId, episodeId);
+
+            // 1. Мгновенная проверка положительного кэша в БД (0 байт сети)
+            DetectedOpeningEntity cached = null;
+            try {
+                cached = dao.getDetectedOpening(cacheKey);
+                if (cached != null && cached.isValidDetection()) {
+                    applyDetectedOpeningOnUi(gen, episodeKey, cached.getFromSec(), cached.getToSec(), true);
+                    return;
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Error reading detected opening cache", e);
+            }
+
+            // 2. Загружаем запомненные шаблоны опенингов для этого аниме
             List<OpeningFingerprintEntity> savedEntities;
             try {
                 savedEntities = dao.getFingerprintsForAnime(animeId);
@@ -396,23 +395,11 @@ public class OpeningAudioDetectorController {
             }
 
             long latestTemplateId = savedEntities.get(0).getId();
-            String cacheKey = DetectedOpeningEntity.buildCacheKey(animeId, episodeId);
 
-            try {
-                DetectedOpeningEntity cached = dao.getDetectedOpening(cacheKey);
-                if (cached != null) {
-                    if (cached.isValidDetection()) {
-                        applyDetectedOpeningOnUi(gen, cached.getFromSec(), cached.getToSec(), false);
-                        return;
-                    }
-                    // Если серия уже сканировалась тем же (или более новым) шаблоном и опенинга не нашлось — не качаем повторно
-                    if (cached.getFingerprintId() == latestTemplateId) {
-                        Log.d(TAG, "Skipping scan for ep=" + episodeId + " (negative cache hit for template=" + latestTemplateId + ")");
-                        return;
-                    }
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "Error reading detected opening cache", e);
+            // Если серия уже сканировалась последним шаблоном и опенинга не нашлось — не качаем повторно
+            if (cached != null && !cached.isValidDetection() && cached.getFingerprintId() == latestTemplateId) {
+                Log.d(TAG, "Skipping scan for ep=" + episodeId + " (negative cache hit for template=" + latestTemplateId + ")");
+                return;
             }
 
             List<AudioFingerprintEngine.Template> templates = new ArrayList<>();
@@ -426,11 +413,15 @@ public class OpeningAudioDetectorController {
                 return;
             }
 
-            Log.d(TAG, "Starting progressive opening scan for anime=" + animeId
+            long scanStartMs = System.currentTimeMillis();
+            Log.d(TAG, "Starting fast progressive opening scan for anime=" + animeId
                     + " ep=" + episodeId + " templates=" + templates.size()
                     + " maxScanSec=" + maxScanSec + " url=" + sourceUrl);
 
-            final AudioFingerprintEngine.MatchResult[] foundHolder = new AudioFingerprintEngine.MatchResult[1];
+            final AudioFingerprintEngine.MatchResult[] finalHolder = new AudioFingerprintEngine.MatchResult[1];
+            final AudioFingerprintEngine.MatchResult[] provisionalHolder = new AudioFingerprintEngine.MatchResult[1];
+            final boolean[] provisionalApplied = new boolean[]{false};
+
             OkHttpClient safeClient = client != null ? client : new OkHttpClient();
             File cacheDir = appContext.getCacheDir();
 
@@ -444,17 +435,50 @@ public class OpeningAudioDetectorController {
                         if (isCleanedUp || gen != scanGeneration.get() || cancelFlag.get()) {
                             return true;
                         }
+
+                        AudioFingerprintEngine.MatchResult bestProvisional = null;
                         for (AudioFingerprintEngine.Template tpl : templates) {
                             AudioFingerprintEngine.MatchResult match =
                                     AudioFingerprintEngine.findMatch(tpl, targetData, targetFrames, isFinalPass);
                             if (match != null) {
-                                foundHolder[0] = match;
-                                Log.d(TAG, "Found opening for ep=" + episodeId
-                                        + ": [" + match.fromSec + "s .. " + match.toSec + "s]"
-                                        + " conf=" + String.format(Locale.US, "%.2f", match.confidence)
-                                        + " z=" + String.format(Locale.US, "%.1f", match.zScore)
-                                        + " finalPass=" + isFinalPass);
-                                return true; // Мгновенно останавливаем скачивание и декодирование!
+                                if (!match.isProvisional) {
+                                    finalHolder[0] = match;
+                                    Log.d(TAG, "Found exact opening for ep=" + episodeId
+                                            + " in " + (System.currentTimeMillis() - scanStartMs) + "ms"
+                                            + ": [" + match.fromSec + "s .. " + match.toSec + "s]"
+                                            + " conf=" + String.format(Locale.US, "%.2f", match.confidence)
+                                            + " z=" + String.format(Locale.US, "%.1f", match.zScore));
+                                    return true; // Точные границы получены — немедленно останавливаем загрузку!
+                                } else if (bestProvisional == null || match.confidence > bestProvisional.confidence) {
+                                    bestProvisional = match;
+                                }
+                            }
+                        }
+
+                        if (bestProvisional != null) {
+                            int clampedTo = clampToEpisodeDuration(bestProvisional.toSec, episodeDurationSec, bestProvisional.fromSec);
+                            provisionalHolder[0] = bestProvisional;
+                            if (!provisionalApplied[0]) {
+                                provisionalApplied[0] = true;
+                                Log.d(TAG, "Early-detected opening for ep=" + episodeId
+                                        + " in " + (System.currentTimeMillis() - scanStartMs) + "ms"
+                                        + " (decoded " + (targetFrames / AudioFingerprintEngine.FRAMES_PER_SECOND) + "s)"
+                                        + ": [" + bestProvisional.fromSec + "s .. ~" + clampedTo + "s]"
+                                        + " conf=" + String.format(Locale.US, "%.2f", bestProvisional.confidence));
+                                // Мгновенно подсвечиваем на таймбаре и показываем тост!
+                                applyDetectedOpeningOnUi(gen, episodeKey, bestProvisional.fromSec, clampedTo, true);
+                                // Сразу сохраняем в БД, чтобы даже при раннем выходе результат не потерялся
+                                saveDetectedOpeningCache(cacheKey, animeId, episodeId,
+                                        bestProvisional.fromSec, clampedTo, bestProvisional.confidence, bestProvisional.templateId);
+                            }
+                        }
+
+                        // Если ранний опенинг уже показан и мы просканировали далеко за его расчётный конец,
+                        // не тратим лишний трафик на остальные 5–6 минут серии.
+                        if (provisionalHolder[0] != null) {
+                            int decodedSec = targetFrames / AudioFingerprintEngine.FRAMES_PER_SECOND;
+                            if (decodedSec >= provisionalHolder[0].toSec + 24) {
+                                return true;
                             }
                         }
                         return false;
@@ -465,50 +489,76 @@ public class OpeningAudioDetectorController {
                 return;
             }
 
-            AudioFingerprintEngine.MatchResult result = foundHolder[0];
-            DetectedOpeningEntity cacheEntry = new DetectedOpeningEntity();
-            cacheEntry.setCacheKey(cacheKey);
-            cacheEntry.setAnimeId(animeId);
-            cacheEntry.setEpisodeId(episodeId);
-            cacheEntry.setDetectedAt(System.currentTimeMillis());
-
-            if (result != null) {
-                cacheEntry.setFromSec(result.fromSec);
-                cacheEntry.setToSec(result.toSec);
-                cacheEntry.setConfidence(result.confidence);
-                cacheEntry.setFingerprintId(result.templateId);
-                try {
-                    dao.upsertDetectedOpening(cacheEntry);
-                } catch (Exception e) {
-                    Log.w(TAG, "Failed caching detected opening", e);
+            AudioFingerprintEngine.MatchResult exactResult = finalHolder[0];
+            if (exactResult != null) {
+                int clampedTo = clampToEpisodeDuration(exactResult.toSec, episodeDurationSec, exactResult.fromSec);
+                saveDetectedOpeningCache(cacheKey, animeId, episodeId,
+                        exactResult.fromSec, clampedTo, exactResult.confidence, exactResult.templateId);
+                // Если ранний этап уже показал тост — тихо уточняем точный край; если нет — показываем тост!
+                applyDetectedOpeningOnUi(gen, episodeKey, exactResult.fromSec, clampedTo, !provisionalApplied[0]);
+            } else if (provisionalHolder[0] != null) {
+                // Оставляем уже применённый ранний результат (и гарантируем запись в кэш)
+                AudioFingerprintEngine.MatchResult prov = provisionalHolder[0];
+                int clampedTo = clampToEpisodeDuration(prov.toSec, episodeDurationSec, prov.fromSec);
+                saveDetectedOpeningCache(cacheKey, animeId, episodeId,
+                        prov.fromSec, clampedTo, prov.confidence, prov.templateId);
+                if (!provisionalApplied[0]) {
+                    applyDetectedOpeningOnUi(gen, episodeKey, prov.fromSec, clampedTo, true);
                 }
-                applyDetectedOpeningOnUi(gen, result.fromSec, result.toSec, true);
             } else {
-                cacheEntry.setFromSec(-1);
-                cacheEntry.setToSec(-1);
-                cacheEntry.setConfidence(0f);
-                cacheEntry.setFingerprintId(latestTemplateId);
-                try {
-                    dao.upsertDetectedOpening(cacheEntry);
-                } catch (Exception e) {
-                    Log.w(TAG, "Failed caching negative opening result", e);
-                }
-                Log.d(TAG, "No opening match found for ep=" + episodeId);
+                saveDetectedOpeningCache(cacheKey, animeId, episodeId, -1, -1, 0f, latestTemplateId);
+                Log.d(TAG, "No opening match found for ep=" + episodeId
+                        + " (" + (System.currentTimeMillis() - scanStartMs) + "ms)");
             }
         });
     }
 
-    private void applyDetectedOpeningOnUi(int expectedGen, int fromSec, int toSec, boolean showToast) {
+    private void saveDetectedOpeningCache(@NonNull String cacheKey,
+                                          @NonNull String animeId,
+                                          int episodeId,
+                                          int fromSec,
+                                          int toSec,
+                                          float confidence,
+                                          long fingerprintId) {
+        try {
+            DetectedOpeningEntity cacheEntry = new DetectedOpeningEntity();
+            cacheEntry.setCacheKey(cacheKey);
+            cacheEntry.setAnimeId(animeId);
+            cacheEntry.setEpisodeId(episodeId);
+            cacheEntry.setFromSec(fromSec);
+            cacheEntry.setToSec(toSec);
+            cacheEntry.setConfidence(confidence);
+            cacheEntry.setFingerprintId(fingerprintId);
+            cacheEntry.setDetectedAt(System.currentTimeMillis());
+            dao.upsertDetectedOpening(cacheEntry);
+        } catch (Exception e) {
+            Log.w(TAG, "Failed caching detected opening", e);
+        }
+    }
+
+    private static int clampToEpisodeDuration(int toSec, int episodeDurationSec, int fromSec) {
+        if (episodeDurationSec > 0 && toSec > episodeDurationSec) {
+            return Math.max(fromSec + 10, episodeDurationSec);
+        }
+        return toSec;
+    }
+
+    private void applyDetectedOpeningOnUi(int expectedGen,
+                                          @NonNull String episodeKey,
+                                          int fromSec,
+                                          int toSec,
+                                          boolean allowToast) {
         host.safeRunOnUiThread(() -> {
             if (isCleanedUp || expectedGen != scanGeneration.get() || host.isActivityFinishingOrDestroyed()) {
                 return;
             }
             TimecodeManager tm = host.getTimecodeManager();
             if (tm != null && tm.addDetectedOpeningTimecode(fromSec, toSec)) {
-                if (showToast) {
+                if (allowToast && !episodeKey.equals(lastToastShownEpisodeKey)) {
+                    lastToastShownEpisodeKey = episodeKey;
                     Context uiCtx = host.getContext();
                     if (uiCtx != null) {
-                        CustomToast.showInfo(uiCtx, "Найден опенинг: "
+                        CustomToast.showSuccess(uiCtx, "Опенинг найден: "
                                 + formatSec(fromSec) + " – " + formatSec(toSec));
                     }
                 }
