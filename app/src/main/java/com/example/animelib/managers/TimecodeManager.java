@@ -102,18 +102,18 @@ public class TimecodeManager {
             skipSegmentButton.setOnClickListener(v -> {
                 if (this.player != null) {
                     long currentPositionMs = this.player.getCurrentPosition();
-                    int currentPositionSeconds = (int) (currentPositionMs / 1000);
-                    
+
                     // Ищем активный сегмент
                     for (EpisodeResponse.TimecodeData timecode : timecodes) {
-                        if (currentPositionSeconds >= timecode.getFrom() && 
-                            currentPositionSeconds <= timecode.getTo()) {
-                            long seekPosition = timecode.getTo() * 1000L; // Конвертируем секунды в миллисекунды
+                        if (timecode != null
+                                && currentPositionMs >= timecode.getFromMs()
+                                && currentPositionMs <= timecode.getToMs()) {
+                            long seekPosition = timecode.getToMs();
                             this.player.seekTo(seekPosition);
                             if (timebarSegmentsView != null) {
                                 timebarSegmentsView.setProgress(seekPosition, this.player.getBufferedPosition(), this.player.getDuration());
                             }
-                            Log.d(TAG, "Skipping segment: " + timecode.getType() + " from " + timecode.getFrom() + "s to " + timecode.getTo() + "s at " + seekPosition + "ms");
+                            Log.d(TAG, "Skipping segment: " + timecode.getType() + " from " + timecode.getFromSeconds() + "s to " + timecode.getToSeconds() + "s at " + seekPosition + "ms");
                             break;
                         }
                     }
@@ -267,7 +267,7 @@ public class TimecodeManager {
      */
     public boolean hasOpeningTimecode() {
         for (EpisodeResponse.TimecodeData tc : timecodes) {
-            if (tc != null && "opening".equalsIgnoreCase(tc.getType()) && tc.getTo() > tc.getFrom()) {
+            if (tc != null && "opening".equalsIgnoreCase(tc.getType()) && tc.getToMs() > tc.getFromMs()) {
                 return true;
             }
         }
@@ -280,7 +280,7 @@ public class TimecodeManager {
     public boolean hasOfficialOpeningTimecode() {
         for (EpisodeResponse.TimecodeData tc : timecodes) {
             if (tc != null && tc != injectedDetectedOpening
-                    && "opening".equalsIgnoreCase(tc.getType()) && tc.getTo() > tc.getFrom()) {
+                    && "opening".equalsIgnoreCase(tc.getType()) && tc.getToMs() > tc.getFromMs()) {
                 return true;
             }
         }
@@ -302,7 +302,7 @@ public class TimecodeManager {
             injectedDetectedOpening.setFrom(fromSec);
             injectedDetectedOpening.setTo(toSec);
             List<EpisodeResponse.TimecodeData> updated = new ArrayList<>(this.timecodes);
-            updated.sort((a, b) -> Integer.compare(a.getFrom(), b.getFrom()));
+            updated.sort((a, b) -> Long.compare(a.getFromMs(), b.getFromMs()));
             this.timecodes = updated;
             updateTimecodeSegmentsOnBar();
             updateTimecodeButtonsVisibility();
@@ -318,7 +318,7 @@ public class TimecodeManager {
 
         List<EpisodeResponse.TimecodeData> updated = new ArrayList<>(this.timecodes);
         updated.add(detected);
-        updated.sort((a, b) -> Integer.compare(a.getFrom(), b.getFrom()));
+        updated.sort((a, b) -> Long.compare(a.getFromMs(), b.getFromMs()));
         this.timecodes = updated;
 
         updateTimecodeSegmentsOnBar();
@@ -367,13 +367,13 @@ public class TimecodeManager {
         }
         
         long currentPositionMs = player.getCurrentPosition();
-        int currentPositionSeconds = (int) (currentPositionMs / 1000);
-        
+
         // Ищем активный сегмент
         EpisodeResponse.TimecodeData activeSegment = null;
         for (EpisodeResponse.TimecodeData timecode : timecodes) {
-            if (currentPositionSeconds >= timecode.getFrom() && 
-                currentPositionSeconds <= timecode.getTo()) {
+            if (timecode != null
+                    && currentPositionMs >= timecode.getFromMs()
+                    && currentPositionMs <= timecode.getToMs()) {
                 activeSegment = timecode;
                 break;
             }
@@ -426,10 +426,9 @@ public class TimecodeManager {
     private void updateSegmentBadgeForPosition(long positionMs) {
         if (currentSegmentBadge == null || timecodes.isEmpty()) return;
 
-        int posSeconds = (int) (positionMs / 1000);
         EpisodeResponse.TimecodeData targetSegment = null;
         for (EpisodeResponse.TimecodeData tc : timecodes) {
-            if (posSeconds >= tc.getFrom() && posSeconds <= tc.getTo()) {
+            if (tc != null && positionMs >= tc.getFromMs() && positionMs <= tc.getToMs()) {
                 targetSegment = tc;
                 break;
             }
@@ -545,15 +544,14 @@ public class TimecodeManager {
 
     private String buildSegmentKey(EpisodeResponse.TimecodeData tc) {
         String safeType = tc.getType() != null ? tc.getType().toLowerCase(Locale.US) : "";
-        return safeType + ":" + tc.getFrom() + ":" + tc.getTo();
+        return safeType + ":" + tc.getFromMs() + ":" + tc.getToMs();
     }
 
     private void markActiveSegmentAsAutoSkippedAt(long positionMs) {
         if (timecodes.isEmpty()) return;
-        int posSeconds = (int) (positionMs / 1000L);
         for (EpisodeResponse.TimecodeData tc : timecodes) {
-            if (tc != null && tc.getTo() > tc.getFrom()
-                    && posSeconds >= tc.getFrom() && posSeconds <= tc.getTo()) {
+            if (tc != null && tc.getToMs() > tc.getFromMs()
+                    && positionMs >= tc.getFromMs() && positionMs <= tc.getToMs()) {
                 autoSkippedSegmentKeys.add(buildSegmentKey(tc));
                 break;
             }
@@ -579,14 +577,14 @@ public class TimecodeManager {
         long durationMs = player.getDuration();
 
         for (EpisodeResponse.TimecodeData tc : timecodes) {
-            if (tc == null || tc.getFrom() < 0 || tc.getTo() <= tc.getFrom()) {
+            if (tc == null || tc.getFromSeconds() < 0 || tc.getToMs() <= tc.getFromMs()) {
                 continue;
             }
             if (!isAutoSkipEnabledForType(tc.getType())) {
                 continue;
             }
-            long fromMs = tc.getFrom() * 1000L;
-            long toMs = tc.getTo() * 1000L;
+            long fromMs = tc.getFromMs();
+            long toMs = tc.getToMs();
             if (currentPosMs >= fromMs && currentPosMs < toMs - 500L) {
                 String key = buildSegmentKey(tc);
                 if (autoSkippedSegmentKeys.contains(key)) {

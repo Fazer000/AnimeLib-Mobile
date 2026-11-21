@@ -385,10 +385,60 @@ public class EpisodeResponse {
         }
     }
 
+    public static class LenientSecondsAdapter extends com.google.gson.TypeAdapter<Double> {
+        @Override
+        public void write(com.google.gson.stream.JsonWriter out, Double value) throws java.io.IOException {
+            if (value == null || value.isNaN() || value.isInfinite()) {
+                out.value(0);
+            } else {
+                out.value(value);
+            }
+        }
+
+        @Override
+        public Double read(com.google.gson.stream.JsonReader in) throws java.io.IOException {
+            com.google.gson.stream.JsonToken token = in.peek();
+            if (token == com.google.gson.stream.JsonToken.NULL) {
+                in.nextNull();
+                return 0.0;
+            }
+            if (token == com.google.gson.stream.JsonToken.NUMBER) {
+                return in.nextDouble();
+            }
+            if (token == com.google.gson.stream.JsonToken.STRING) {
+                String raw = in.nextString();
+                if (raw == null) return 0.0;
+                String trimmed = raw.trim();
+                if (trimmed.isEmpty()) return 0.0;
+                try {
+                    return Double.parseDouble(trimmed.replace(',', '.'));
+                } catch (NumberFormatException ignored) {
+                    String[] parts = trimmed.split(":");
+                    if (parts.length == 2 || parts.length == 3) {
+                        try {
+                            double total = 0.0;
+                            for (String part : parts) {
+                                total = total * 60.0 + Double.parseDouble(part.trim().replace(',', '.'));
+                            }
+                            return total;
+                        } catch (NumberFormatException ignoredAgain) {
+                            return 0.0;
+                        }
+                    }
+                    return 0.0;
+                }
+            }
+            in.skipValue();
+            return 0.0;
+        }
+    }
+
     public static class TimecodeData {
         private String type;
-        private int from;
-        private int to;
+        @com.google.gson.annotations.JsonAdapter(LenientSecondsAdapter.class)
+        private double from;
+        @com.google.gson.annotations.JsonAdapter(LenientSecondsAdapter.class)
+        private double to;
 
         public TimecodeData() {}
 
@@ -401,18 +451,42 @@ public class EpisodeResponse {
         }
 
         public int getFrom() {
+            return (int) Math.round(from);
+        }
+
+        public double getFromSeconds() {
             return from;
+        }
+
+        public long getFromMs() {
+            return Math.max(0L, Math.round(from * 1000.0));
         }
 
         public void setFrom(int from) {
             this.from = from;
         }
 
+        public void setFrom(double from) {
+            this.from = from;
+        }
+
         public int getTo() {
+            return (int) Math.round(to);
+        }
+
+        public double getToSeconds() {
             return to;
         }
 
+        public long getToMs() {
+            return Math.max(0L, Math.round(to * 1000.0));
+        }
+
         public void setTo(int to) {
+            this.to = to;
+        }
+
+        public void setTo(double to) {
             this.to = to;
         }
     }

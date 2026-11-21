@@ -140,7 +140,7 @@ public final class OfflineEpisodeMetadata {
         }
         List<EpisodeResponse.TimecodeData> clean = new ArrayList<>();
         for (EpisodeResponse.TimecodeData tc : timecodes) {
-            if (tc != null && tc.getType() != null && !tc.getType().trim().isEmpty() && tc.getTo() > tc.getFrom()) {
+            if (tc != null && tc.getType() != null && !tc.getType().trim().isEmpty() && tc.getToMs() > tc.getFromMs()) {
                 clean.add(tc);
             }
         }
@@ -164,7 +164,7 @@ public final class OfflineEpisodeMetadata {
             if (parsed == null) return Collections.emptyList();
             List<EpisodeResponse.TimecodeData> valid = new ArrayList<>();
             for (EpisodeResponse.TimecodeData tc : parsed) {
-                if (tc != null && tc.getType() != null && !tc.getType().trim().isEmpty() && tc.getTo() > tc.getFrom()) {
+                if (tc != null && tc.getType() != null && !tc.getType().trim().isEmpty() && tc.getToMs() > tc.getFromMs()) {
                     valid.add(tc);
                 }
             }

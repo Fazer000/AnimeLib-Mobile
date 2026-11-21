@@ -74,7 +74,7 @@ public class TimebarSegmentsView extends View {
         this.timecodes.clear();
         if (timecodes != null) {
             this.timecodes.addAll(timecodes);
-            Collections.sort(this.timecodes, (t1, t2) -> Integer.compare(t1.getFrom(), t2.getFrom()));
+            Collections.sort(this.timecodes, (t1, t2) -> Long.compare(t1.getFromMs(), t2.getFromMs()));
         }
         if (durationMs > 0) {
             this.durationMs = durationMs;
@@ -106,8 +106,9 @@ public class TimebarSegmentsView extends View {
         long currentPointer = 0;
 
         for (EpisodeResponse.TimecodeData tc : timecodes) {
-            long from = Math.max(0, tc.getFrom() * 1000L);
-            long to = Math.min(durationMs, tc.getTo() * 1000L);
+            if (tc == null) continue;
+            long from = Math.max(0, tc.getFromMs());
+            long to = Math.min(durationMs, tc.getToMs());
 
             if (to <= from || from >= durationMs) continue;
 
