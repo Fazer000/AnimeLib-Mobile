@@ -82,6 +82,7 @@ public class PlayerUIBinder {
     public View landscapeEpisodesContainer;
     public View btnLandscapeEpisodeSearch;
     public EditText etLandscapeEpisodeNumber;
+    public View landscapeEpisodeNumpadRoot;
 
     public ImageButton menuToggleButton;
     public View playersControlBar;
@@ -160,6 +161,9 @@ public class PlayerUIBinder {
         if (etLandscapeEpisodeNumber == null) {
             etLandscapeEpisodeNumber = rootView.findViewById(R.id.etLandscapeEpisodeNumber);
         }
+        if (landscapeEpisodeNumpadRoot == null) {
+            landscapeEpisodeNumpadRoot = rootView.findViewById(R.id.landscapeEpisodeNumpadRoot);
+        }
         if (skipSegmentButton == null) {
             skipSegmentButton = rootView.findViewById(R.id.skipSegmentButton);
         }
@@ -188,6 +192,7 @@ public class PlayerUIBinder {
         landscapeEpisodesContainer = controllerView.findViewById(R.id.landscapeEpisodesContainer);
         btnLandscapeEpisodeSearch = controllerView.findViewById(R.id.btnLandscapeEpisodeSearch);
         etLandscapeEpisodeNumber = controllerView.findViewById(R.id.etLandscapeEpisodeNumber);
+        landscapeEpisodeNumpadRoot = controllerView.findViewById(R.id.landscapeEpisodeNumpadRoot);
 
         menuToggleButton = controllerView.findViewById(R.id.menuToggleButton);
         playersControlBar = controllerView.findViewById(R.id.playersControlBar);

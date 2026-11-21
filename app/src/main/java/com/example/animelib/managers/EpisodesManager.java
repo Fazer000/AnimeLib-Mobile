@@ -65,6 +65,10 @@ public class EpisodesManager {
     private RecyclerView portraitEpisodesRecyclerView;
     private HorizontalEpisodesAdapter portraitEpisodesAdapter;
     private View portraitSearchContainer;
+    private View landscapeSearchContainer;
+    private View landscapeSearchButton;
+    private EditText landscapeSearchInput;
+    private com.example.animelib.ui.LandscapeEpisodeNumpadView landscapeEpisodeNumpad;
     private boolean hasInitialScrolledLandscape = false;
     private boolean hasInitialScrolledPortrait = false;
 
@@ -280,14 +284,206 @@ public class EpisodesManager {
             if (portraitSearchContainer != null) {
                 portraitSearchContainer.setVisibility((episodes != null && !episodes.isEmpty()) ? View.VISIBLE : View.GONE);
             }
+            if (isLandscapeSearchActive()) {
+                String currentQuery = landscapeSearchInput != null && landscapeSearchInput.getText() != null
+                        ? landscapeSearchInput.getText().toString()
+                        : "";
+                updateLandscapeNumpadPreview(currentQuery);
+            }
         });
     }
 
     /**
-     * Настройка поиска серии для альбомного режима
+     * Настройка поиска серии для альбомного режима (с кастомной числовой клавиатурой)
      */
     public void setupLandscapeSearchViews(View searchBtn, EditText inputEt) {
-        setupSearchUI(searchBtn, inputEt);
+        setupLandscapeSearchViews(searchBtn, inputEt, null);
+    }
+
+    public void setupLandscapeSearchViews(View searchBtn, EditText inputEt, @androidx.annotation.Nullable View numpadRoot) {
+        this.landscapeSearchButton = searchBtn;
+        this.landscapeSearchInput = inputEt;
+        if (searchBtn != null) {
+            if (searchBtn.getParent() instanceof View) {
+                this.landscapeSearchContainer = (View) searchBtn.getParent();
+            } else if (searchBtn.getRootView() != null) {
+                this.landscapeSearchContainer = searchBtn.getRootView().findViewById(R.id.landscapeSearchContainer);
+            }
+        }
+        if (numpadRoot != null && searchBtn != null && inputEt != null) {
+            setupLandscapeCustomNumpadSearch(searchBtn, inputEt, numpadRoot);
+        } else {
+            setupSearchUI(searchBtn, inputEt);
+        }
+    }
+
+    private void setupLandscapeCustomNumpadSearch(@NonNull View searchBtn,
+                                                  @NonNull EditText inputEt,
+                                                  @NonNull View numpadRoot) {
+        inputEt.setShowSoftInputOnFocus(false);
+        inputEt.setCursorVisible(false);
+        inputEt.setLongClickable(false);
+
+        landscapeEpisodeNumpad = new com.example.animelib.ui.LandscapeEpisodeNumpadView(numpadRoot);
+        landscapeEpisodeNumpad.setListener(new com.example.animelib.ui.LandscapeEpisodeNumpadView.Listener() {
+            @Override
+            public void onDigitPressed(char digit) {
+                String current = inputEt.getText() != null ? inputEt.getText().toString() : "";
+                if (current.length() >= 4) {
+                    return;
+                }
+                if ("0".equals(current) && digit == '0') {
+                    return;
+                }
+                String updated = "0".equals(current) ? String.valueOf(digit) : (current + digit);
+                inputEt.setText(updated);
+                inputEt.setSelection(updated.length());
+            }
+
+            @Override
+            public void onBackspacePressed() {
+                String current = inputEt.getText() != null ? inputEt.getText().toString() : "";
+                if (!current.isEmpty()) {
+                    String updated = current.substring(0, current.length() - 1);
+                    inputEt.setText(updated);
+                    inputEt.setSelection(updated.length());
+                }
+            }
+
+            @Override
+            public void onClearPressed() {
+                inputEt.setText("");
+            }
+
+            @Override
+            public void onConfirmPressed() {
+                String query = inputEt.getText() != null ? inputEt.getText().toString().trim() : "";
+                if (query.isEmpty()) {
+                    closeLandscapeSearch(false);
+                    return;
+                }
+                boolean found = scrollToEpisodeNumber(query, true);
+                if (found) {
+                    closeLandscapeSearch(false);
+                    hideEpisodesMenu();
+                } else {
+                    CustomToast.showWarning(context, "Серия №" + query + " не найдена");
+                }
+            }
+
+            @Override
+            public void onDismissRequested() {
+                closeLandscapeSearch(false);
+            }
+        });
+
+        searchBtn.setOnClickListener(v -> {
+            if (isPortrait()) {
+                return;
+            }
+            hideKeyboard(inputEt);
+            searchBtn.setVisibility(View.GONE);
+            inputEt.setVisibility(View.VISIBLE);
+            inputEt.setText("");
+            if (landscapeSearchContainer != null) {
+                landscapeSearchContainer.setBackgroundResource(R.drawable.player_episode_item_horizontal_selected);
+            }
+            inputEt.requestFocus();
+            updateLandscapeNumpadPreview("");
+            landscapeEpisodeNumpad.show();
+        });
+
+        inputEt.setOnClickListener(v -> {
+            hideKeyboard(inputEt);
+            if (landscapeEpisodeNumpad != null && !landscapeEpisodeNumpad.isVisible() && !isPortrait()) {
+                updateLandscapeNumpadPreview(inputEt.getText() != null ? inputEt.getText().toString() : "");
+                landscapeEpisodeNumpad.show();
+            }
+        });
+
+        inputEt.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                hideKeyboard(inputEt);
+            } else if (isLandscapeSearchActive()) {
+                closeLandscapeSearch(false);
+            }
+        });
+
+        inputEt.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                String query = s != null ? s.toString().trim() : "";
+                if (!query.isEmpty()) {
+                    scrollToEpisodeNumber(query, false);
+                }
+                updateLandscapeNumpadPreview(query);
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {}
+        });
+    }
+
+    public boolean isLandscapeSearchActive() {
+        return (landscapeEpisodeNumpad != null && landscapeEpisodeNumpad.isVisible())
+                || (landscapeSearchInput != null && landscapeSearchInput.getVisibility() == View.VISIBLE);
+    }
+
+    public void closeLandscapeSearch(boolean immediate) {
+        if (landscapeEpisodeNumpad != null) {
+            landscapeEpisodeNumpad.hide(immediate);
+        }
+        if (landscapeSearchInput != null) {
+            landscapeSearchInput.setVisibility(View.GONE);
+            if (landscapeSearchInput.hasFocus()) {
+                landscapeSearchInput.clearFocus();
+            }
+        }
+        if (landscapeSearchButton != null) {
+            landscapeSearchButton.setVisibility(View.VISIBLE);
+        }
+        if (landscapeSearchContainer != null) {
+            landscapeSearchContainer.setBackgroundResource(R.drawable.player_episode_item_horizontal_normal);
+        }
+    }
+
+    private void updateLandscapeNumpadPreview(@androidx.annotation.Nullable String query) {
+        if (landscapeEpisodeNumpad == null) return;
+        String trimmed = query != null ? query.trim() : "";
+        String rangeLabel = buildEpisodesRangeLabel();
+        if (trimmed.isEmpty()) {
+            landscapeEpisodeNumpad.updatePreview("", false, null, rangeLabel);
+            return;
+        }
+        int matchedIndex = findEpisodeIndexByQuery(trimmed);
+        if (matchedIndex != -1 && matchedIndex < episodes.size()) {
+            EpisodesListResponse.EpisodeItem matchedEp = episodes.get(matchedIndex);
+            String matchedNum = matchedEp != null ? matchedEp.getNumber() : trimmed;
+            landscapeEpisodeNumpad.updatePreview(trimmed, true, matchedNum, rangeLabel);
+        } else {
+            landscapeEpisodeNumpad.updatePreview(trimmed, false, null, rangeLabel);
+        }
+    }
+
+    @androidx.annotation.Nullable
+    private String buildEpisodesRangeLabel() {
+        if (episodes == null || episodes.isEmpty()) {
+            return null;
+        }
+        EpisodesListResponse.EpisodeItem first = episodes.get(0);
+        EpisodesListResponse.EpisodeItem last = episodes.get(episodes.size() - 1);
+        String firstNum = first != null && first.getNumber() != null ? first.getNumber().trim() : null;
+        String lastNum = last != null && last.getNumber() != null ? last.getNumber().trim() : null;
+        if (firstNum != null && !firstNum.isEmpty() && lastNum != null && !lastNum.isEmpty()) {
+            if (firstNum.equals(lastNum)) {
+                return firstNum + " сер.";
+            }
+            return firstNum + "–" + lastNum;
+        }
+        return episodes.size() + " сер.";
     }
 
     /**
@@ -356,53 +552,54 @@ public class EpisodesManager {
     }
 
     /**
-     * Прокрутка и выбор серии по введённому номеру
+     * Поиск индекса серии по номеру
      */
-    public boolean scrollToEpisodeNumber(String queryNumber, boolean autoSelect) {
-        if (episodes == null || episodes.isEmpty() || queryNumber == null || queryNumber.isEmpty()) return false;
+    private int findEpisodeIndexByQuery(String queryNumber) {
+        if (episodes == null || episodes.isEmpty() || queryNumber == null || queryNumber.isEmpty()) return -1;
 
-        int foundIndex = -1;
         // 1. Точное совпадение по номеру
         for (int i = 0; i < episodes.size(); i++) {
             EpisodesListResponse.EpisodeItem item = episodes.get(i);
             if (item != null && item.getNumber() != null) {
                 String num = item.getNumber().trim();
                 if (num.equalsIgnoreCase(queryNumber)) {
-                    foundIndex = i;
-                    break;
+                    return i;
                 }
             }
         }
 
         // 2. Если не найдено, ищем по числовому значению
-        if (foundIndex == -1) {
-            try {
-                int parsedTarget = Integer.parseInt(queryNumber);
-                for (int i = 0; i < episodes.size(); i++) {
-                    EpisodesListResponse.EpisodeItem item = episodes.get(i);
-                    if (item != null && item.getNumber() != null) {
-                        try {
-                            int num = Integer.parseInt(item.getNumber().trim());
-                            if (num == parsedTarget) {
-                                foundIndex = i;
-                                break;
-                            }
-                        } catch (NumberFormatException ignored) {}
-                    }
-                }
-            } catch (NumberFormatException ignored) {}
-        }
-
-        // 3. Если не найдено, ищем по совпадению с начала
-        if (foundIndex == -1) {
+        try {
+            int parsedTarget = Integer.parseInt(queryNumber);
             for (int i = 0; i < episodes.size(); i++) {
                 EpisodesListResponse.EpisodeItem item = episodes.get(i);
-                if (item != null && item.getNumber() != null && item.getNumber().trim().startsWith(queryNumber)) {
-                    foundIndex = i;
-                    break;
+                if (item != null && item.getNumber() != null) {
+                    try {
+                        int num = Integer.parseInt(item.getNumber().trim());
+                        if (num == parsedTarget) {
+                            return i;
+                        }
+                    } catch (NumberFormatException ignored) {}
                 }
             }
+        } catch (NumberFormatException ignored) {}
+
+        // 3. Если не найдено, ищем по совпадению с начала
+        for (int i = 0; i < episodes.size(); i++) {
+            EpisodesListResponse.EpisodeItem item = episodes.get(i);
+            if (item != null && item.getNumber() != null && item.getNumber().trim().startsWith(queryNumber)) {
+                return i;
+            }
         }
+
+        return -1;
+    }
+
+    /**
+     * Прокрутка и выбор серии по введённому номеру
+     */
+    public boolean scrollToEpisodeNumber(String queryNumber, boolean autoSelect) {
+        int foundIndex = findEpisodeIndexByQuery(queryNumber);
 
         if (foundIndex != -1) {
             final int indexToScroll = foundIndex;
@@ -518,6 +715,7 @@ public class EpisodesManager {
      * Скрыть меню эпизодов (опустить весь playersControlBar)
      */
     public void hideEpisodesMenu() {
+        closeLandscapeSearch(false);
         if (episodesRecyclerView == null || playersControlBar == null) return;
 
         Log.d(TAG, "Hiding episodes horizontal list - lowering playersControlBar");
@@ -1095,6 +1293,7 @@ public class EpisodesManager {
      * Сбрасывает позицию контроллера (используется при конфликтах со связанными тайтлами)
      */
     public void resetControllerPosition() {
+        closeLandscapeSearch(true);
         if (playersControlBar != null) {
             playersControlBar.animate().cancel();
             playersControlBar.setTranslationY(0f);
@@ -1109,6 +1308,7 @@ public class EpisodesManager {
      * Скрытие всех UI элементов эпизодов (для PiP режима)
      */
     public void hideAllEpisodesUI() {
+        closeLandscapeSearch(true);
         if (episodesRecyclerView != null) {
             episodesRecyclerView.setVisibility(View.GONE);
         }
@@ -1124,6 +1324,7 @@ public class EpisodesManager {
      * Скрытие UI элементов эпизодов для PiP режима (НЕ трогаем playersControlBar)
      */
     public void hideEpisodesUIForPiP() {
+        closeLandscapeSearch(true);
         Log.d(TAG, "EpisodesManager: Hiding episodes UI for PiP (keeping playersControlBar)");
         if (prevEpisodeButton != null) {
             prevEpisodeButton.setVisibility(View.GONE);

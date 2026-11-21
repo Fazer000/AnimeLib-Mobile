@@ -598,10 +598,11 @@
                     android:hint="№"
                     android:textColorHint="@color/player_item_inactive_text"
                     android:textColor="@color/white_color"
-                    android:textSize="13sp"
+                    android:textSize="12.5sp"
                     android:fontFamily="@font/open_sans_bold"
                     android:inputType="number"
-                    android:maxLength="3"
+                    android:maxLength="4"
+                    android:cursorVisible="false"
                     android:gravity="center"
                     android:imeOptions="actionSearch|actionDone|flagNoExtractUi"
                     android:singleLine="true"
@@ -627,5 +628,8 @@
         android:contentDescription="Блокировка экрана"
         android:padding="6dp"
         android:visibility="gone" />
+
+    <!-- Компактная кастомная числовая клавиатура поиска серий (только ландшафтный режим) -->
+    <include layout="@layout/view_landscape_episode_numpad" />
 
 </FrameLayout>

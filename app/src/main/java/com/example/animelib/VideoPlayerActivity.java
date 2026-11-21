@@ -1033,7 +1033,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
             episodesManager.setLandscapeEpisodesContainer(playerUIBinder.landscapeEpisodesContainer);
         }
         if (playerUIBinder.btnLandscapeEpisodeSearch != null && playerUIBinder.etLandscapeEpisodeNumber != null) {
-            episodesManager.setupLandscapeSearchViews(playerUIBinder.btnLandscapeEpisodeSearch, playerUIBinder.etLandscapeEpisodeNumber);
+            episodesManager.setupLandscapeSearchViews(
+                    playerUIBinder.btnLandscapeEpisodeSearch,
+                    playerUIBinder.etLandscapeEpisodeNumber,
+                    playerUIBinder.landscapeEpisodeNumpadRoot
+            );
         }
 
         ambientLightManager = new AmbientLightManager(
@@ -2005,6 +2009,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
     @Override
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+        if (newConfig.orientation == Configuration.ORIENTATION_PORTRAIT && episodesManager != null) {
+            episodesManager.closeLandscapeSearch(true);
+        }
         if (playerOrientationController != null) {
             playerOrientationController.onConfigurationChanged(newConfig);
         }
@@ -2053,6 +2060,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     @Override
     public void onBackPressed() {
+        if (episodesManager != null && episodesManager.isLandscapeSearchActive()) {
+            episodesManager.closeLandscapeSearch(false);
+            return;
+        }
         if (playerLockController != null && playerLockController.isLocked()) {
             playerLockController.unlockScreen();
             return;

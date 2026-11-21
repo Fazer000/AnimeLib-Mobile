@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/landscapeEpisodeNumpadRoot"
+    android:layout_width="216dp"
+    android:layout_height="wrap_content"
+    android:layout_gravity="bottom|end"
+    android:layout_marginEnd="16dp"
+    android:layout_marginBottom="64dp"
+    android:background="@drawable/bg_landscape_numpad_panel"
+    android:clickable="true"
+    android:elevation="16dp"
+    android:focusable="false"
+    android:orientation="vertical"
+    android:paddingHorizontal="7dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="7dp"
+    android:visibility="gone">
+
+    <!-- Compact Header Strip: Live match preview + range + close -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="28dp"
+        android:layout_marginBottom="5dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="5dp"
+        android:paddingEnd="1dp">
+
+        <TextView
+            android:id="@+id/tvNumpadPreview"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:fontFamily="@font/open_sans_bold"
+            android:includeFontPadding="false"
+            android:singleLine="true"
+            android:text="Поиск серии"
+            android:textColor="@color/player_item_inactive_text"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tvNumpadRange"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="6dp"
+            android:fontFamily="@font/open_sans_semibold"
+            android:includeFontPadding="false"
+            android:singleLine="true"
+            android:textColor="#99CBD5E1"
+            android:textSize="11sp"
+            android:visibility="gone" />
+
+        <ImageButton
+            android:id="@+id/btnNumpadClose"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:background="@drawable/ripple_circle"
+            android:contentDescription="Закрыть клавиатуру"
+            android:focusable="false"
+            android:padding="5dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_close"
+            app:tint="@color/player_item_inactive_text" />
+    </LinearLayout>
+
+    <!-- Row 1: 1 2 3 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:layout_marginBottom="5dp"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/numpadKey1"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="5dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_numpad_key"
+            android:clickable="true"
+            android:focusable="false"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:text="1"
+            android:textColor="@color/white_color"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/numpadKey2"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="5dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_numpad_key"
+            android:clickable="true"
+            android:focusable="false"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:text="2"
+            android:textColor="@color/white_color"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/numpadKey3"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/bg_numpad_key"
+            android:clickable="true"
+            android:focusable="false"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:text="3"
+            android:textColor="@color/white_color"
+            android:textSize="16sp" />
+    </LinearLayout>
+
+    <!-- Row 2: 4 5 6 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:layout_marginBottom="5dp"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/numpadKey4"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="5dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_numpad_key"
+            android:clickable="true"
+            android:focusable="false"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:text="4"
+            android:textColor="@color/white_color"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/numpadKey5"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="5dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_numpad_key"
+            android:clickable="true"
+            android:focusable="false"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:text="5"
+            android:textColor="@color/white_color"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/numpadKey6"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/bg_numpad_key"
+            android:clickable="true"
+            android:focusable="false"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:text="6"
+            android:textColor="@color/white_color"
+            android:textSize="16sp" />
+    </LinearLayout>
+
+    <!-- Row 3: 7 8 9 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:layout_marginBottom="5dp"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/numpadKey7"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="5dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_numpad_key"
+            android:clickable="true"
+            android:focusable="false"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:text="7"
+            android:textColor="@color/white_color"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/numpadKey8"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="5dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_numpad_key"
+            android:clickable="true"
+            android:focusable="false"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:text="8"
+            android:textColor="@color/white_color"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/numpadKey9"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/bg_numpad_key"
+            android:clickable="true"
+            android:focusable="false"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:text="9"
+            android:textColor="@color/white_color"
+            android:textSize="16sp" />
+    </LinearLayout>
+
+    <!-- Row 4: Backspace | 0 | Confirm -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:orientation="horizontal">
+
+        <FrameLayout
+            android:id="@+id/numpadKeyBackspace"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="5dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_numpad_key"
+            android:clickable="true"
+            android:contentDescription="Удалить цифру"
+            android:focusable="false">
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_backspace"
+                app:tint="@color/white_color" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/numpadKey0"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="5dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_numpad_key"
+            android:clickable="true"
+            android:focusable="false"
+            android:fontFamily="@font/open_sans_bold"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:text="0"
+            android:textColor="@color/white_color"
+            android:textSize="16sp" />
+
+        <FrameLayout
+            android:id="@+id/numpadKeyConfirm"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/bg_numpad_confirm_key"
+            android:clickable="true"
+            android:contentDescription="Перейти к серии"
+            android:focusable="false">
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_check"
+                app:tint="@color/white_color" />
+        </FrameLayout>
+    </LinearLayout>
+
+</LinearLayout>
