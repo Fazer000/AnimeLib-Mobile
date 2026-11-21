@@ -11,6 +11,7 @@ import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.ImageView;
@@ -164,6 +165,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private boolean wasPlayingBeforeBackground = false;
     private boolean isClosingOrFinishing = false;
     private boolean suppressUserLeavePip = false;
+    private boolean swallowingOutsideNumpadTouch = false;
 
     public static void closeAllExistingInstances() {
         closeOtherInstances(null);
@@ -2056,6 +2058,33 @@ public class VideoPlayerActivity extends AppCompatActivity {
             playerProgressController.autoSaveBookmark();
         }
         super.finish();
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (ev != null) {
+            int action = ev.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                swallowingOutsideNumpadTouch = false;
+                if (episodesManager != null && episodesManager.isLandscapeSearchActive()) {
+                    float rawX = ev.getRawX();
+                    float rawY = ev.getRawY();
+                    if (!episodesManager.isTouchOnLandscapeNumpadArea(rawX, rawY)) {
+                        episodesManager.closeLandscapeSearch(false);
+                        if (!episodesManager.isTouchOnLandscapeEpisodesCarousel(rawX, rawY)) {
+                            swallowingOutsideNumpadTouch = true;
+                            return true;
+                        }
+                    }
+                }
+            } else if (swallowingOutsideNumpadTouch) {
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    swallowingOutsideNumpadTouch = false;
+                }
+                return true;
+            }
+        }
+        return super.dispatchTouchEvent(ev);
     }
 
     @Override

@@ -3,14 +3,14 @@
     android:color="@color/purple_alpha_25">
     <item android:id="@android:id/mask">
         <shape android:shape="rectangle">
-            <corners android:radius="11dp" />
+            <corners android:radius="10dp" />
             <solid android:color="@android:color/white" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
-            <corners android:radius="11dp" />
-            <solid android:color="#1EFFFFFF" />
+            <corners android:radius="10dp" />
+            <solid android:color="@color/player_glass_bg" />
             <stroke
                 android:width="0.5dp"
                 android:color="#26FFFFFF" />

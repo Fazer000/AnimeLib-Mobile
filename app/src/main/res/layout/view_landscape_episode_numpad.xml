@@ -9,12 +9,9 @@
     android:layout_marginBottom="64dp"
     android:background="@drawable/bg_landscape_numpad_panel"
     android:clickable="true"
-    android:elevation="16dp"
     android:focusable="false"
     android:orientation="vertical"
-    android:paddingHorizontal="7dp"
-    android:paddingTop="6dp"
-    android:paddingBottom="7dp"
+    android:padding="6dp"
     android:visibility="gone">
 
     <!-- Compact Header Strip: Live match preview + range + close -->

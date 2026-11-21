@@ -450,6 +450,30 @@ public class EpisodesManager {
         }
     }
 
+    public boolean isTouchOnLandscapeNumpadArea(float rawX, float rawY) {
+        if (landscapeEpisodeNumpad != null && landscapeEpisodeNumpad.isPointInside(rawX, rawY)) {
+            return true;
+        }
+        return isPointInsideView(landscapeSearchContainer, rawX, rawY);
+    }
+
+    public boolean isTouchOnLandscapeEpisodesCarousel(float rawX, float rawY) {
+        return isPointInsideView(episodesRecyclerView, rawX, rawY);
+    }
+
+    private static boolean isPointInsideView(@androidx.annotation.Nullable View view, float rawX, float rawY) {
+        if (view == null || view.getVisibility() != View.VISIBLE) {
+            return false;
+        }
+        int[] location = new int[2];
+        view.getLocationOnScreen(location);
+        float left = location[0];
+        float top = location[1];
+        float right = left + view.getWidth() * view.getScaleX();
+        float bottom = top + view.getHeight() * view.getScaleY();
+        return rawX >= left && rawX <= right && rawY >= top && rawY <= bottom;
+    }
+
     private void updateLandscapeNumpadPreview(@androidx.annotation.Nullable String query) {
         if (landscapeEpisodeNumpad == null) return;
         String trimmed = query != null ? query.trim() : "";

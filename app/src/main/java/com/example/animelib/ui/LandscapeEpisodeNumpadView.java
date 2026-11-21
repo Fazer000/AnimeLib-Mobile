@@ -113,6 +113,19 @@ public class LandscapeEpisodeNumpadView {
         return isVisible;
     }
 
+    public boolean isPointInside(float rawX, float rawY) {
+        if (!isVisible || rootView.getVisibility() != View.VISIBLE) {
+            return false;
+        }
+        int[] location = new int[2];
+        rootView.getLocationOnScreen(location);
+        float left = location[0];
+        float top = location[1];
+        float right = left + rootView.getWidth() * rootView.getScaleX();
+        float bottom = top + rootView.getHeight() * rootView.getScaleY();
+        return rawX >= left && rawX <= right && rawY >= top && rawY <= bottom;
+    }
+
     public void show() {
         if (isVisible && rootView.getVisibility() == View.VISIBLE) {
             return;
