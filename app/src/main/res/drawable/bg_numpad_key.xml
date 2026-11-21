@@ -10,10 +10,10 @@
     <item>
         <shape android:shape="rectangle">
             <corners android:radius="10dp" />
-            <solid android:color="#380B0E16" />
+            <solid android:color="#2E080A10" />
             <stroke
                 android:width="0.5dp"
-                android:color="#30FFFFFF" />
+                android:color="#24FFFFFF" />
         </shape>
     </item>
 </ripple>

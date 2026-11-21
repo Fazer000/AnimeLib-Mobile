@@ -43,12 +43,12 @@ import java.util.List;
  */
 public class PlayerBackdropBlurManager {
 
-    public static final int BLUR_WIDTH = 112;
-    public static final int BLUR_HEIGHT = 63;
+    public static final int BLUR_WIDTH = 192;
+    public static final int BLUR_HEIGHT = 108;
 
-    private static final int BLUR_RADIUS = 3;
-    private static final int BLUR_DIV = BLUR_RADIUS * 2 + 1; // 7
-    private static final int BLUR_INV_DIV = (65536 + (BLUR_DIV / 2)) / BLUR_DIV; // 9363
+    private static final int BLUR_RADIUS = 2;
+    private static final int BLUR_DIV = BLUR_RADIUS * 2 + 1; // 5
+    private static final int BLUR_INV_DIV = 13108; // ceil(65536 / 5) -> exact [0..255]
     private static final int GRAIN_SIZE = 128;
     private static final long MIN_CAPTURE_INTERVAL_MS = 32L; // ~30 FPS cap
 
@@ -446,9 +446,7 @@ public class PlayerBackdropBlurManager {
             }
             captured.getPixels(bufA, 0, BLUR_WIDTH, 0, 0, BLUR_WIDTH, BLUR_HEIGHT);
 
-            // 2-проходный O(1) сепарабельный box-блюр (r=3 -> плавное матовое боке) + усиление насыщенности
-            boxBlurHorizontal(bufA, bufB, BLUR_WIDTH, BLUR_HEIGHT);
-            boxBlurVertical(bufB, bufA, BLUR_WIDTH, BLUR_HEIGHT, false);
+            // 1-проходный O(1) сепарабельный box-блюр (192x108, r=2 -> более чёткое, менее мыльное стекло)
             boxBlurHorizontal(bufA, bufB, BLUR_WIDTH, BLUR_HEIGHT);
             boxBlurVertical(bufB, bufA, BLUR_WIDTH, BLUR_HEIGHT, true);
 
@@ -530,9 +528,9 @@ public class PlayerBackdropBlurManager {
 
                 if (applyVibrancy) {
                     int luma = (77 * outR + 150 * outG + 29 * outB) >> 8;
-                    outR = clamp255(luma + (((outR - luma) * 308) >> 8));
-                    outG = clamp255(luma + (((outG - luma) * 308) >> 8));
-                    outB = clamp255(luma + (((outB - luma) * 308) >> 8));
+                    outR = clamp255(luma + (((outR - luma) * 274) >> 8));
+                    outG = clamp255(luma + (((outG - luma) * 274) >> 8));
+                    outB = clamp255(luma + (((outB - luma) * 274) >> 8));
                 }
 
                 dst[y * w + x] = 0xFF000000 | (outR << 16) | (outG << 8) | outB;
@@ -632,14 +630,14 @@ public class PlayerBackdropBlurManager {
                 seed ^= (seed << 5);
                 int r2 = seed & 0xFF;
 
-                // Треугольное распределение (мягкий органичный пескоструйный шум без артефактов)
+                // Треугольное распределение (деликатное мелкое матовое зерно без лишней яркости)
                 int delta = (r1 + r2) - 255; // [-255..+255]
                 if (delta >= 0) {
-                    int alpha = (delta * 46) / 255;
+                    int alpha = (delta * 30) / 255;
                     pixels[i] = (alpha << 24) | 0x00FFFFFF;
                 } else {
-                    int alpha = ((-delta) * 40) / 255;
-                    pixels[i] = (alpha << 24) | 0x0007090F;
+                    int alpha = ((-delta) * 30) / 255;
+                    pixels[i] = (alpha << 24) | 0x0006080D;
                 }
             }
             bmp.setPixels(pixels, 0, GRAIN_SIZE, 0, 0, GRAIN_SIZE, GRAIN_SIZE);

@@ -34,10 +34,10 @@ import java.lang.ref.WeakReference;
  */
 public class FrostedGlassDrawable extends Drawable {
 
-    private static final int FALLBACK_BG_NORMAL = 0x9910131C;
-    private static final int FALLBACK_BG_SELECTED = 0xAA1B122E;
-    private static final int TINT_OVERLAY_NORMAL = 0x760D1018;
-    private static final int TINT_OVERLAY_SELECTED = 0x8A1A112E;
+    private static final int FALLBACK_BG_NORMAL = 0xBD0A0C12;
+    private static final int FALLBACK_BG_SELECTED = 0xC8160E28;
+    private static final int TINT_OVERLAY_NORMAL = 0x9E090B11;
+    private static final int TINT_OVERLAY_SELECTED = 0xA8160E28;
     private static final int STROKE_SELECTED_COLOR = 0xFF8852DE; // @color/purple_primary
 
     // AGSL-шейдер оптического матового зернистого стекла (API 33+)
@@ -292,18 +292,18 @@ public class FrostedGlassDrawable extends Drawable {
             shader.setInputShader("uBackdrop", backdropShader);
             shader.setFloatUniform("uSize", (float) width, (float) height);
             shader.setFloatUniform("uDensity", density);
-            shader.setFloatUniform("uScatterPx", 12.5f * density);
+            shader.setFloatUniform("uScatterPx", 4.5f * density);
 
             if (isSelected) {
-                // Тёмное стекло с мягким фирменным фиолетовым оттенком
-                shader.setFloatUniform("uTintColor", 0.115f, 0.075f, 0.205f, 0.54f);
-                shader.setFloatUniform("uGrainStrength", 0.058f);
-                shader.setFloatUniform("uSheenStrength", 0.085f);
+                // Приглушённое тёмное матовое стекло с аккуратным фиолетовым акцентом
+                shader.setFloatUniform("uTintColor", 0.082f, 0.052f, 0.152f, 0.66f);
+                shader.setFloatUniform("uGrainStrength", 0.040f);
+                shader.setFloatUniform("uSheenStrength", 0.034f);
             } else {
-                // Глубокое тёмное матовое стекло
-                shader.setFloatUniform("uTintColor", 0.052f, 0.064f, 0.098f, 0.46f);
-                shader.setFloatUniform("uGrainStrength", 0.062f);
-                shader.setFloatUniform("uSheenStrength", 0.070f);
+                // Тёмное дымчатое матовое стекло в тон интерфейса плеера
+                shader.setFloatUniform("uTintColor", 0.034f, 0.041f, 0.062f, 0.62f);
+                shader.setFloatUniform("uGrainStrength", 0.042f);
+                shader.setFloatUniform("uSheenStrength", 0.026f);
             }
 
             agslPaint.setShader(shader);
@@ -322,8 +322,8 @@ public class FrostedGlassDrawable extends Drawable {
             lastSheenHeight = height;
             sheenPaint.setShader(new LinearGradient(
                     0f, boundsRect.top,
-                    0f, boundsRect.top + height * 0.55f,
-                    0x1CFFFFFF,
+                    0f, boundsRect.top + height * 0.45f,
+                    0x0CFFFFFF,
                     0x00FFFFFF,
                     Shader.TileMode.CLAMP
             ));
@@ -354,23 +354,23 @@ public class FrostedGlassDrawable extends Drawable {
 
         if (isSelected) {
             strokePaint.setShader(null);
-            strokePaint.setStrokeWidth(1.15f * density);
+            strokePaint.setStrokeWidth(1.0f * density);
             strokePaint.setColor(STROKE_SELECTED_COLOR);
             strokePaint.setAlpha(drawableAlpha);
         } else {
-            strokePaint.setStrokeWidth(0.75f * density);
+            strokePaint.setStrokeWidth(0.55f * density);
             strokePaint.setColor(0xFFFFFFFF);
             if (height > 1f) {
                 strokePaint.setShader(new LinearGradient(
                         0f, boundsRect.top,
                         0f, boundsRect.bottom,
-                        0x54FFFFFF,
-                        0x24FFFFFF,
+                        0x38FFFFFF,
+                        0x1CFFFFFF,
                         Shader.TileMode.CLAMP
                 ));
             } else {
                 strokePaint.setShader(null);
-                strokePaint.setColor(0x3DFFFFFF);
+                strokePaint.setColor(0x2EFFFFFF);
             }
             strokePaint.setAlpha(drawableAlpha);
         }
