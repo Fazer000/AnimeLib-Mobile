@@ -25,6 +25,11 @@ public class HorizontalEpisodesAdapter extends RecyclerView.Adapter<HorizontalEp
     private final OnEpisodeSelectedListener listener;
     private final boolean isHorizontalInPlayer;
     private com.example.animelib.models.AnimeBookmarkResponse.BookmarkData animeBookmark;
+    private com.example.animelib.ui.PlayerBackdropBlurManager backdropBlurManager;
+
+    public void setBackdropBlurManager(com.example.animelib.ui.PlayerBackdropBlurManager backdropBlurManager) {
+        this.backdropBlurManager = backdropBlurManager;
+    }
 
     public interface OnEpisodeSelectedListener {
         void onEpisodeSelected(EpisodesListResponse.EpisodeItem episode);
@@ -205,9 +210,14 @@ public class HorizontalEpisodesAdapter extends RecyclerView.Adapter<HorizontalEp
         if (isHorizontalInPlayer) {
             if (isCurrentEpisode) {
                 holder.episodeText.setTextColor(ContextCompat.getColor(context, R.color.purple_primary));
-                holder.itemView.setBackgroundResource(R.drawable.player_episode_item_horizontal_selected);
             } else {
                 holder.episodeText.setTextColor(ContextCompat.getColor(context, R.color.player_item_inactive_text));
+            }
+            if (backdropBlurManager != null) {
+                backdropBlurManager.applyOrUpdateInteractiveGlass(holder.itemView, 12f, isCurrentEpisode);
+            } else if (isCurrentEpisode) {
+                holder.itemView.setBackgroundResource(R.drawable.player_episode_item_horizontal_selected);
+            } else {
                 holder.itemView.setBackgroundResource(R.drawable.player_episode_item_horizontal_normal);
             }
         } else {

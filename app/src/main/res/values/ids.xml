@@ -5,4 +5,6 @@
     <item name="tag_skeleton_color" type="id" />
     <item name="tag_skeleton_bg" type="id" />
     <item name="tag_skeleton_image_drawable" type="id" />
+    <item name="tag_frosted_glass_drawable" type="id" />
+    <item name="tag_frosted_glass_ripple" type="id" />
 </resources>

@@ -69,6 +69,7 @@ public class EpisodesManager {
     private View landscapeSearchButton;
     private EditText landscapeSearchInput;
     private com.example.animelib.ui.LandscapeEpisodeNumpadView landscapeEpisodeNumpad;
+    private com.example.animelib.ui.PlayerBackdropBlurManager backdropBlurManager;
     private boolean hasInitialScrolledLandscape = false;
     private boolean hasInitialScrolledPortrait = false;
 
@@ -147,6 +148,21 @@ public class EpisodesManager {
         this.landscapeEpisodesContainer = container;
     }
 
+    public void setBackdropBlurManager(@androidx.annotation.Nullable com.example.animelib.ui.PlayerBackdropBlurManager blurManager) {
+        this.backdropBlurManager = blurManager;
+        if (episodesAdapter != null) {
+            episodesAdapter.setBackdropBlurManager(blurManager);
+        }
+        if (blurManager != null) {
+            if (episodesRecyclerView != null) {
+                blurManager.attachScrollableGlassContainer(episodesRecyclerView);
+            }
+            if (landscapeSearchContainer != null) {
+                blurManager.applyOrUpdateInteractiveGlass(landscapeSearchContainer, 12f, isLandscapeSearchActive());
+            }
+        }
+    }
+
     private View getLandscapeEpisodesView() {
         if (landscapeEpisodesContainer != null) {
             return landscapeEpisodesContainer;
@@ -215,11 +231,15 @@ public class EpisodesManager {
             }
             hideEpisodesMenu();
         });
+        episodesAdapter.setBackdropBlurManager(backdropBlurManager);
 
         LinearLayoutManager layoutManager = new LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false);
         episodesRecyclerView.setLayoutManager(layoutManager);
         episodesRecyclerView.setAdapter(episodesAdapter);
         setupTouchInterception(episodesRecyclerView);
+        if (backdropBlurManager != null) {
+            backdropBlurManager.attachScrollableGlassContainer(episodesRecyclerView);
+        }
     }
 
     /**
@@ -312,8 +332,14 @@ public class EpisodesManager {
         }
         if (numpadRoot != null && searchBtn != null && inputEt != null) {
             setupLandscapeCustomNumpadSearch(searchBtn, inputEt, numpadRoot);
+            if (backdropBlurManager != null) {
+                backdropBlurManager.applyRoundedGlass(numpadRoot, 16f);
+            }
         } else {
             setupSearchUI(searchBtn, inputEt);
+        }
+        if (backdropBlurManager != null && landscapeSearchContainer != null) {
+            backdropBlurManager.applyOrUpdateInteractiveGlass(landscapeSearchContainer, 12f, false);
         }
     }
 
@@ -386,7 +412,11 @@ public class EpisodesManager {
             inputEt.setVisibility(View.VISIBLE);
             inputEt.setText("");
             if (landscapeSearchContainer != null) {
-                landscapeSearchContainer.setBackgroundResource(R.drawable.player_episode_item_horizontal_selected);
+                if (backdropBlurManager != null) {
+                    backdropBlurManager.applyOrUpdateInteractiveGlass(landscapeSearchContainer, 12f, true);
+                } else {
+                    landscapeSearchContainer.setBackgroundResource(R.drawable.player_episode_item_horizontal_selected);
+                }
             }
             inputEt.requestFocus();
             updateLandscapeNumpadPreview("");
@@ -446,7 +476,11 @@ public class EpisodesManager {
             landscapeSearchButton.setVisibility(View.VISIBLE);
         }
         if (landscapeSearchContainer != null) {
-            landscapeSearchContainer.setBackgroundResource(R.drawable.player_episode_item_horizontal_normal);
+            if (backdropBlurManager != null) {
+                backdropBlurManager.applyOrUpdateInteractiveGlass(landscapeSearchContainer, 12f, false);
+            } else {
+                landscapeSearchContainer.setBackgroundResource(R.drawable.player_episode_item_horizontal_normal);
+            }
         }
     }
 
@@ -1064,8 +1098,10 @@ public class EpisodesManager {
                     }
                     hideEpisodesMenu();
                 });
+                episodesAdapter.setBackdropBlurManager(backdropBlurManager);
                 episodesRecyclerView.setAdapter(episodesAdapter);
             } else {
+                episodesAdapter.setBackdropBlurManager(backdropBlurManager);
                 episodesAdapter.setCurrentEpisode(currentEpisode);
             }
             

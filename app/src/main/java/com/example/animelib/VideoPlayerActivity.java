@@ -113,6 +113,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private VerticalGesturesManager verticalGesturesManager;
     private TimecodeManager timecodeManager;
     private AmbientLightManager ambientLightManager;
+    private com.example.animelib.ui.PlayerBackdropBlurManager backdropBlurManager;
 
     // Controllers
     private PlayerUIBinder playerUIBinder;
@@ -340,6 +341,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
                     if (ambientLightManager != null) {
                         ambientLightManager.updateTransform(1f, 0f, 0f, false);
                         ambientLightManager.refreshAmbientFrame();
+                    }
+                    if (backdropBlurManager != null) {
+                        backdropBlurManager.requestImmediateRefresh();
                     }
                 }
             });
@@ -1042,6 +1046,12 @@ public class VideoPlayerActivity extends AppCompatActivity {
             );
         }
 
+        if (playerUIBinder.playerView != null) {
+            backdropBlurManager = new com.example.animelib.ui.PlayerBackdropBlurManager(this, playerUIBinder.playerView);
+            episodesManager.setBackdropBlurManager(backdropBlurManager);
+            applyActiveFrostedGlassToPlayerHud(rootView);
+        }
+
         ambientLightManager = new AmbientLightManager(
                 this,
                 playerUIBinder.playerView,
@@ -1099,6 +1109,35 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 playerPortraitController.loadAnimeInfoForPlaceholder();
             }
         }
+    }
+
+    /**
+     * Применяет активное матовое зернистое стекло ко всем HUD-плашкам поверх видео
+     * (регулировка яркости/громкости, 2x скорость, перемотка, таймкод, бейджи, блокировка, нумпад).
+     * Элементы портретной карусели серий намеренно не затрагиваются.
+     */
+    private void applyActiveFrostedGlassToPlayerHud(@Nullable View rootView) {
+        if (backdropBlurManager == null || rootView == null) return;
+
+        backdropBlurManager.applyPillGlass(rootView.findViewById(R.id.seekPreviewPlaque));
+        backdropBlurManager.applyPillGlass(rootView.findViewById(R.id.holdSpeedPlaque));
+        backdropBlurManager.applyPillGlass(rootView.findViewById(R.id.skipTextLeft));
+        backdropBlurManager.applyPillGlass(rootView.findViewById(R.id.skipTextRight));
+        backdropBlurManager.applyPillGlass(rootView.findViewById(R.id.gestureIndicatorPlaque));
+        backdropBlurManager.applyPillGlass(rootView.findViewById(R.id.lockedStatusBadge));
+        backdropBlurManager.applyPillGlass(rootView.findViewById(R.id.swipeUnlockPill));
+
+        View ctrl = (playerUIBinder != null && playerUIBinder.controllerView != null)
+                ? playerUIBinder.controllerView
+                : rootView;
+        backdropBlurManager.applyPillGlass(ctrl.findViewById(R.id.downloadProgressText));
+        backdropBlurManager.applyPillGlass(ctrl.findViewById(R.id.timeCodeContainer));
+        backdropBlurManager.applyPillGlass(ctrl.findViewById(R.id.openingAnalysisIndicator));
+        backdropBlurManager.applyPillGlass(ctrl.findViewById(R.id.currentSegmentBadge));
+        backdropBlurManager.applyRoundedGlass(
+                playerUIBinder != null ? playerUIBinder.landscapeEpisodeNumpadRoot : ctrl.findViewById(R.id.landscapeEpisodeNumpadRoot),
+                16f
+        );
     }
 
     private void setupManagerCallbacks() {
@@ -1965,11 +2004,17 @@ public class VideoPlayerActivity extends AppCompatActivity {
         if (playerDownloadController != null) {
             playerDownloadController.syncDownloadUiState(playersManager);
         }
+        if (backdropBlurManager != null) {
+            backdropBlurManager.onResume();
+        }
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        if (backdropBlurManager != null) {
+            backdropBlurManager.onPause();
+        }
         if (playerQualityController != null) {
             playerQualityController.stopBufferingMonitoring();
         }
@@ -2021,6 +2066,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
         checkAndUpdateOrientation();
         if (ambientLightManager != null) {
             ambientLightManager.onConfigurationChanged();
+        }
+        if (backdropBlurManager != null) {
+            backdropBlurManager.onConfigurationChanged();
         }
     }
 
@@ -2183,6 +2231,10 @@ public class VideoPlayerActivity extends AppCompatActivity {
         }
         if (ambientLightManager != null) {
             ambientLightManager.cleanup();
+        }
+        if (backdropBlurManager != null) {
+            backdropBlurManager.cleanup();
+            backdropBlurManager = null;
         }
         if (playerAudioController != null) {
             playerAudioController.release();
