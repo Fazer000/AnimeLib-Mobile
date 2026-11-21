@@ -27,6 +27,7 @@
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="1"
+        android:clipToOutline="true"
         app:cardBackgroundColor="@color/bs_bg_color"
         app:cardElevation="6dp"
         app:cardCornerRadius="20dp">
@@ -146,6 +147,12 @@
 
             </LinearLayout>
 
+            <!-- Line under header bar -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0.5dp"
+                android:background="@color/bs_divider_color" />
+
             <FrameLayout
                 android:id="@+id/commentsContainer"
                 android:layout_width="match_parent"
@@ -159,7 +166,18 @@
                     android:clipToPadding="false"
                     android:overScrollMode="never"
                     android:scrollbars="vertical"
-                    android:padding="8dp" />
+                    android:paddingHorizontal="8dp"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="4dp" />
+
+                <!-- Shadow overlay under header -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="4dp"
+                    android:layout_gravity="top"
+                    android:background="@drawable/bg_tab_shadow"
+                    android:clickable="false"
+                    android:focusable="false" />
 
                     <!-- Landscape Comments Disabled Notice -->
                     <LinearLayout
@@ -280,16 +298,27 @@
                     </FrameLayout>
             </FrameLayout>
 
-            <!-- Comment Input Container -->
+            <!-- Comment Input Container (frameless, flush to bottom) -->
             <LinearLayout
                 android:id="@+id/commentInputContainer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginHorizontal="12dp"
-                android:layout_marginVertical="6dp"
-                android:background="@drawable/bg_comment_input"
-                android:orientation="vertical"
-                android:padding="8dp">
+                android:background="@color/comment_input_bg"
+                android:orientation="vertical">
+
+                <!-- Top divider above frameless input -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:background="@color/bs_divider_color" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="10dp"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="8dp">
 
                 <!-- Reply Bar (Hidden by default) -->
                 <LinearLayout
@@ -504,9 +533,9 @@
                     </FrameLayout>
                 </LinearLayout>
 
+                </LinearLayout>
+
             </LinearLayout>
-
-
 
         </LinearLayout>
     </androidx.cardview.widget.CardView>

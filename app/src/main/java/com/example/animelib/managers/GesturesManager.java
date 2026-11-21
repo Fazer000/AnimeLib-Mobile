@@ -3,7 +3,6 @@ package com.example.animelib.managers;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.util.Log;
-import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
@@ -24,6 +23,8 @@ import java.util.Locale;
 public class GesturesManager {
     private static final String TAG = "GesturesManager";
     private static final int DOUBLE_TAP_SKIP_SECONDS = 10;
+    private static final long SKIP_INDICATOR_HIDE_DELAY_MS = 750L;
+    private static final long MAX_TAP_DURATION_MS = 250L;
     
     // Контекст и зависимости
     private final Context context;
@@ -79,8 +80,22 @@ public class GesturesManager {
     private int bottomZoneHeightPx = 0;
     private int topZoneHeightPx = 0;
     
-    // GestureDetector для двойного нажатия
-    private GestureDetector doubleTapDetector;
+    // Точный детектор двойного нажатия и накопительной серии перемотки (+10 -> +20 -> +30 ...)
+    private int doubleTapSlopPx = 0;
+    private int doubleTapTimeoutMs = 300;
+    private boolean isTapCandidateValid = false;
+    private boolean isPendingSkipTap = false;
+    private boolean pendingSkipForward = false;
+    private long currentDownTimeMs = 0L;
+    private float currentDownX = 0f;
+    private float currentDownY = 0f;
+    private long lastCleanTapUpTimeMs = 0L;
+    private float lastCleanTapX = 0f;
+    private float lastCleanTapY = 0f;
+    private boolean lastCleanTapForward = false;
+    private boolean isSkipStreakActive = false;
+    private boolean skipStreakForward = false;
+    private int accumulatedSkipSeconds = 0;
     private Runnable hideLeftSkipRunnable;
     private Runnable hideRightSkipRunnable;
     
@@ -128,9 +143,11 @@ public class GesturesManager {
     public GesturesManager(Context context) {
         this.context = context;
         
-        // Получаем минимальное расстояние для распознавания свайпа
+        // Получаем минимальное расстояние для распознавания свайпа и двойного нажатия
         ViewConfiguration config = ViewConfiguration.get(context);
         swipeTouchSlopPx = config.getScaledTouchSlop();
+        doubleTapSlopPx = config.getScaledDoubleTapSlop();
+        doubleTapTimeoutMs = ViewConfiguration.getDoubleTapTimeout();
         
         // Конвертируем dp в пиксели для edge swipes
         float density = context.getResources().getDisplayMetrics().density;
@@ -188,10 +205,9 @@ public class GesturesManager {
             Log.w(TAG, "PlayerView is null, cannot setup gestures");
             return;
         }
-        
-        setupDoubleTapDetector();
+
         setupCombinedGestures();
-        
+
         Log.d(TAG, "Gestures setup completed");
     }
     
@@ -230,40 +246,57 @@ public class GesturesManager {
         rawEvent.recycle();
     }
 
-    /**
-     * Настройка детектора двойного нажатия
-     */
-    private void setupDoubleTapDetector() {
-        doubleTapDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
-            @Override
-            public boolean onDoubleTap(MotionEvent e) {
-                // Не обрабатываем двойное нажатие если активен другой жест
-                if (isSwipingSeek || isHoldToSpeed || isEdgeSwipe) {
-                    Log.d(TAG, "Double tap ignored - another gesture is active");
-                    return false;
-                }
-                
-                float tapX = e.getX();
-                boolean isLeftSide = tapX < (getEffectiveWidth() / 2f);
-                
-                Log.d(TAG, "Double tap detected at x=" + tapX + ", isLeftSide=" + isLeftSide);
-                
-                // Показываем индикатор и вызываем callback
-                if (isLeftSide) {
-                    showSkipIndicator(false); // Назад
-                } else {
-                    showSkipIndicator(true); // Вперед
-                }
-                
-                return true;
+    private void resetTapTracking() {
+        isTapCandidateValid = false;
+        isPendingSkipTap = false;
+        lastCleanTapUpTimeMs = 0L;
+    }
+
+    private void hideOppositeSkipIndicator(boolean isForward) {
+        View otherIndicator = isForward ? skipIndicatorLeft : skipIndicatorRight;
+        if (otherIndicator == null) return;
+        if (isForward) {
+            if (hideLeftSkipRunnable != null) {
+                otherIndicator.removeCallbacks(hideLeftSkipRunnable);
+                hideLeftSkipRunnable = null;
             }
-            
-            @Override
-            public boolean onSingleTapConfirmed(MotionEvent e) {
-                // Пропускаем - обработка кликов остается стандартной
-                return false;
+        } else {
+            if (hideRightSkipRunnable != null) {
+                otherIndicator.removeCallbacks(hideRightSkipRunnable);
+                hideRightSkipRunnable = null;
             }
-        });
+        }
+        GesturePlaqueAnimationHelper.hide(otherIndicator);
+    }
+
+    private void resetSkipStreak(boolean hideIndicatorsImmediately) {
+        isSkipStreakActive = false;
+        accumulatedSkipSeconds = 0;
+        if (skipIndicatorLeft != null) {
+            if (hideLeftSkipRunnable != null) {
+                skipIndicatorLeft.removeCallbacks(hideLeftSkipRunnable);
+                hideLeftSkipRunnable = null;
+            }
+            if (hideIndicatorsImmediately) {
+                GesturePlaqueAnimationHelper.hideImmediate(skipIndicatorLeft);
+            }
+        }
+        if (skipIndicatorRight != null) {
+            if (hideRightSkipRunnable != null) {
+                skipIndicatorRight.removeCallbacks(hideRightSkipRunnable);
+                hideRightSkipRunnable = null;
+            }
+            if (hideIndicatorsImmediately) {
+                GesturePlaqueAnimationHelper.hideImmediate(skipIndicatorRight);
+            }
+        }
+    }
+
+    private boolean isWithinDoubleTapSlop(float x1, float y1, float x2, float y2) {
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        long maxDistSq = (long) doubleTapSlopPx * (long) doubleTapSlopPx;
+        return (dx * dx + dy * dy) <= maxDistSq;
     }
     
     /**
@@ -302,34 +335,35 @@ public class GesturesManager {
         if (playerView == null) return;
         
         playerView.setOnTouchListener((v, event) -> {
-            if (isScreenLocked) return false;
-            if (player == null) return false;
-            
-            // ПРИОРИТЕТ 1: Вертикальные жесты (эпизоды и панель с инфо) обрабатываются ПЕРВЫМИ
+            if (isScreenLocked || player == null) {
+                resetTapTracking();
+                return false;
+            }
+
+            if (event.getPointerCount() > 1 || event.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN) {
+                resetTapTracking();
+            }
+
+            // ПРИОРИТЕТ 1: Вертикальные жесты (эпизоды, яркость и громкость) обрабатываются ПЕРВЫМИ
             // НО: блокируем если уже активен горизонтальный жест
             if (!isHorizontalGestureActive && verticalGesturesManager != null && verticalGesturesManager.onTouchEvent(event)) {
                 Log.d(TAG, "Event handled by VerticalGesturesManager");
-                // Если вертикальный жест обработан, не продолжаем с другими жестами
+                resetTapTracking();
                 return true;
             }
-            
-            // Если активен вертикальный жест, блокируем горизонтальные
+
+            // Если активен вертикальный жест, блокируем горизонтальные и тапы
             if (verticalGesturesManager != null && verticalGesturesManager.isDragging()) {
-                return false; // Пропускаем горизонтальную обработку
-            }
-            
-            // ПРИОРИТЕТ 2: Пробуем обработать через GestureDetector для двойного нажатия
-            if (doubleTapDetector != null && doubleTapDetector.onTouchEvent(event)) {
-                Log.d(TAG, "Event handled by GestureDetector");
-                // Если это двойное нажатие, не продолжаем обработку других жестов
-                return true;
-            }
-            
-            // Если активен cooldown после жестов, не перехватываем события
-            if (isGestureCooldown) {
+                resetTapTracking();
                 return false;
             }
-            
+
+            // Если активен cooldown после жестов, не перехватываем события и сбрасываем историю тапов
+            if (isGestureCooldown) {
+                resetTapTracking();
+                return false;
+            }
+
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     if (velocityTracker == null) {
@@ -344,7 +378,7 @@ public class GesturesManager {
                         Log.d(TAG, "Force reset hold-to-speed on new touch");
                         resetHoldToSpeed();
                     }
-                    
+
                     // Инициализируем переменные для жестов
                     isSwipingSeek = false;
                     isEdgeSwipe = false;
@@ -353,7 +387,6 @@ public class GesturesManager {
                     currentEdgeSwipeType = EdgeSwipeType.NONE;
                     isSpeedAdjustmentMode = false;
                     swipeAccumulatedDx = 0f;
-                    assert player != null;
                     basePositionMs = player.getCurrentPosition();
                     lastSwipeX = event.getX();
                     swipeStartX = event.getX();
@@ -365,7 +398,33 @@ public class GesturesManager {
                     speedAdjustmentStartX = event.getX();
                     holdStartTime = System.currentTimeMillis();
                     currentSpeedMultiplier = 1.0f; // Сбрасываем скорость на 1.0x при новом касании
-                    
+
+                    // Определяем, является ли касание кандидатом на двойной тап или продолжение серии перемотки
+                    currentDownTimeMs = event.getEventTime();
+                    currentDownX = event.getX();
+                    currentDownY = event.getY();
+                    isTapCandidateValid = (event.getPointerCount() == 1);
+
+                    boolean isForwardSide = currentDownX >= (getEffectiveWidth() / 2f);
+                    boolean continueActiveStreak = isSkipStreakActive && (isForwardSide == skipStreakForward);
+                    boolean secondTapOfDoubleTap = !isSkipStreakActive
+                            && lastCleanTapUpTimeMs > 0L
+                            && (currentDownTimeMs - lastCleanTapUpTimeMs) <= doubleTapTimeoutMs
+                            && (isForwardSide == lastCleanTapForward)
+                            && isWithinDoubleTapSlop(lastCleanTapX, lastCleanTapY, currentDownX, currentDownY);
+
+                    if (continueActiveStreak || secondTapOfDoubleTap) {
+                        isPendingSkipTap = true;
+                        pendingSkipForward = isForwardSide;
+                    } else {
+                        isPendingSkipTap = false;
+                        if (isSkipStreakActive && isForwardSide != skipStreakForward) {
+                            hideOppositeSkipIndicator(isForwardSide);
+                            isSkipStreakActive = false;
+                            accumulatedSkipSeconds = 0;
+                        }
+                    }
+
                     // Запускаем таймер для hold-to-speed
                     if (holdToSpeedRunnable != null) {
                         v.removeCallbacks(holdToSpeedRunnable);
@@ -377,7 +436,7 @@ public class GesturesManager {
                         }
                     };
                     v.postDelayed(holdToSpeedRunnable, 500); // 500ms для активации hold-to-speed
-                    
+
                     updateSeekPreviewText(0, basePositionMs, player != null ? player.getDuration() : 0);
                     return false; // НЕ перехватываем событие, позволяем контролам работать
                     
@@ -391,6 +450,15 @@ public class GesturesManager {
                     float absDeltaRawX = Math.abs(deltaRawX);
                     float absDeltaRawY = Math.abs(deltaRawY);
 
+                    if (isTapCandidateValid) {
+                        float tapMoveDx = event.getX() - currentDownX;
+                        float tapMoveDy = event.getY() - currentDownY;
+                        if ((tapMoveDx * tapMoveDx + tapMoveDy * tapMoveDy) > (swipeTouchSlopPx * swipeTouchSlopPx)) {
+                            isTapCandidateValid = false;
+                            isPendingSkipTap = false;
+                        }
+                    }
+
                     // Проверяем edge swipe строго в экранных raw-координатах до трансформации playerContainer
                     if (!isEdgeSwipe && !isBlockedEdgeSwipe && !isSwipingSeek && !isHoldToSpeed
                             && !isPortraitMode
@@ -399,6 +467,7 @@ public class GesturesManager {
                             && absDeltaRawX > absDeltaRawY * 1.15f) {
                         EdgeSwipeType swipeType = detectEdgeSwipeType(swipeStartRawY);
                         if (swipeType != EdgeSwipeType.NONE) {
+                            resetTapTracking();
                             if (holdToSpeedRunnable != null) {
                                 v.removeCallbacks(holdToSpeedRunnable);
                                 holdToSpeedRunnable = null;
@@ -465,6 +534,7 @@ public class GesturesManager {
 
                     if (!isSwipingSeek && !isEdgeSwipe) {
                         if (passedDeadZone) {
+                            resetTapTracking();
                             isSwipingSeek = true; // Устанавливаем сразу без задержки
                             isHorizontalGestureActive = true; // Блокируем вертикальные жесты
                             // блокируем перехват родителями (ViewPager и т.п.)
@@ -586,6 +656,33 @@ public class GesturesManager {
                         handledGesture = true;
                     }
                     
+                    // Обрабатываем двойной тап / продолжение серии перемотки только если это чистый короткий тап
+                    if (handledGesture || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+                        resetTapTracking();
+                    } else {
+                        long tapDurationMs = event.getEventTime() - currentDownTimeMs;
+                        boolean cleanTap = isTapCandidateValid && tapDurationMs >= 0L && tapDurationMs <= MAX_TAP_DURATION_MS;
+                        boolean shouldSkip = cleanTap && isPendingSkipTap;
+                        boolean skipForward = pendingSkipForward;
+                        isTapCandidateValid = false;
+                        isPendingSkipTap = false;
+
+                        if (shouldSkip) {
+                            lastCleanTapUpTimeMs = 0L;
+                            if (showSkipIndicator(skipForward)) {
+                                v.setPressed(false);
+                                handledGesture = true;
+                            }
+                        } else if (cleanTap) {
+                            lastCleanTapUpTimeMs = event.getEventTime();
+                            lastCleanTapX = currentDownX;
+                            lastCleanTapY = currentDownY;
+                            lastCleanTapForward = currentDownX >= (getEffectiveWidth() / 2f);
+                        } else {
+                            lastCleanTapUpTimeMs = 0L;
+                        }
+                    }
+
                     // Сбрасываем состояние
                     isSwipingSeek = false;
                     isEdgeSwipe = false;
@@ -594,7 +691,7 @@ public class GesturesManager {
                     currentEdgeSwipeType = EdgeSwipeType.NONE;
                     swipeAccumulatedDx = 0f;
                     lastSwipeX = null;
-                    
+
                     return handledGesture;
             }
             return false;
@@ -657,6 +754,7 @@ public class GesturesManager {
      * Активирует режим ускорения с начальной скоростью 2x
      */
     private void activateHoldToSpeed() {
+        resetTapTracking();
         isHoldToSpeed = true;
         isHorizontalGestureActive = true; // Блокируем вертикальные жесты
         currentSpeedMultiplier = 2.0f;
@@ -804,38 +902,83 @@ public class GesturesManager {
     }
     
     /**
-     * Показывает индикатор длинной перемотки с анимацией
+     * Показывает индикатор перемотки с накоплением секунд за серию нажатий и выполняет перемотку.
      * @param isForward true - вперед, false - назад
+     * @return true если перемотка была выполнена и индикатор показан
      */
-    private void showSkipIndicator(boolean isForward) {
-        View indicator = isForward ? skipIndicatorRight : skipIndicatorLeft;
-        
-        if (indicator == null) {
-            Log.w(TAG, "Skip indicator is null");
-            return;
+    private boolean showSkipIndicator(boolean isForward) {
+        if (player == null
+                || gestureCallback == null
+                || player.getPlaybackState() == Player.STATE_IDLE
+                || !player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) {
+            Log.d(TAG, "Skip ignored - player is not ready/seekable");
+            resetSkipStreak(false);
+            return false;
         }
 
-        if (gestureCallback != null) {
-            gestureCallback.onDoubleTapSkip(isForward, DOUBLE_TAP_SKIP_SECONDS);
+        View indicator = isForward ? skipIndicatorRight : skipIndicatorLeft;
+        android.widget.TextView textView = isForward ? skipTextRight : skipTextLeft;
+
+        if (indicator == null) {
+            Log.w(TAG, "Skip indicator is null");
+            return false;
         }
+
+        if (!isSkipStreakActive || skipStreakForward != isForward) {
+            hideOppositeSkipIndicator(isForward);
+            accumulatedSkipSeconds = DOUBLE_TAP_SKIP_SECONDS;
+        } else {
+            accumulatedSkipSeconds += DOUBLE_TAP_SKIP_SECONDS;
+        }
+        isSkipStreakActive = true;
+        skipStreakForward = isForward;
+
+        if (textView != null) {
+            textView.setText((isForward ? "+" : "-") + accumulatedSkipSeconds + " сек");
+            if (accumulatedSkipSeconds > DOUBLE_TAP_SKIP_SECONDS) {
+                textView.animate().cancel();
+                textView.setScaleX(1.08f);
+                textView.setScaleY(1.08f);
+                textView.animate()
+                        .scaleX(1.0f)
+                        .scaleY(1.0f)
+                        .setDuration(120)
+                        .start();
+            }
+        }
+
+        gestureCallback.onDoubleTapSkip(isForward, DOUBLE_TAP_SKIP_SECONDS);
 
         if (isForward) {
             if (hideRightSkipRunnable != null) {
                 indicator.removeCallbacks(hideRightSkipRunnable);
             }
-            hideRightSkipRunnable = () -> GesturePlaqueAnimationHelper.hide(indicator);
+            hideRightSkipRunnable = () -> {
+                if (isSkipStreakActive && skipStreakForward) {
+                    isSkipStreakActive = false;
+                    accumulatedSkipSeconds = 0;
+                }
+                GesturePlaqueAnimationHelper.hide(indicator);
+            };
             GesturePlaqueAnimationHelper.show(indicator);
-            indicator.postDelayed(hideRightSkipRunnable, 680);
+            indicator.postDelayed(hideRightSkipRunnable, SKIP_INDICATOR_HIDE_DELAY_MS);
         } else {
             if (hideLeftSkipRunnable != null) {
                 indicator.removeCallbacks(hideLeftSkipRunnable);
             }
-            hideLeftSkipRunnable = () -> GesturePlaqueAnimationHelper.hide(indicator);
+            hideLeftSkipRunnable = () -> {
+                if (isSkipStreakActive && !skipStreakForward) {
+                    isSkipStreakActive = false;
+                    accumulatedSkipSeconds = 0;
+                }
+                GesturePlaqueAnimationHelper.hide(indicator);
+            };
             GesturePlaqueAnimationHelper.show(indicator);
-            indicator.postDelayed(hideLeftSkipRunnable, 680);
+            indicator.postDelayed(hideLeftSkipRunnable, SKIP_INDICATOR_HIDE_DELAY_MS);
         }
-        
-        Log.d(TAG, "Skip indicator shown: " + (isForward ? "forward" : "backward"));
+
+        Log.d(TAG, "Skip indicator shown: " + (isForward ? "+" : "-") + accumulatedSkipSeconds + "s");
+        return true;
     }
     
     /**
@@ -861,12 +1004,14 @@ public class GesturesManager {
      * @param player Новый экземпляр плеера
      */
     public void updatePlayer(Player player) {
-        // Принудительно сбрасываем hold-to-speed при смене плеера
+        // Принудительно сбрасываем hold-to-speed и серию перемотки при смене плеера
         if (isHoldToSpeed && this.player != null) {
             Log.d(TAG, "Resetting hold-to-speed on player update");
             resetHoldToSpeed();
         }
-        
+        resetTapTracking();
+        resetSkipStreak(true);
+
         this.player = player;
         Log.d(TAG, "Player updated");
     }
@@ -939,6 +1084,8 @@ public class GesturesManager {
         isHorizontalGestureActive = false; // Разблокируем вертикальные жесты
         isGestureCooldown = false; // Сбрасываем cooldown
         currentEdgeSwipeType = EdgeSwipeType.NONE;
+        resetTapTracking();
+        resetSkipStreak(false);
         if (velocityTracker != null) {
             velocityTracker.recycle();
             velocityTracker = null;
@@ -976,19 +1123,9 @@ public class GesturesManager {
         GesturePlaqueAnimationHelper.hideImmediate(holdSpeedToast);
         GesturePlaqueAnimationHelper.hideImmediate(seekPreviewText);
         
-        // Скрываем skip индикаторы
-        if (skipIndicatorLeft != null) {
-            if (hideLeftSkipRunnable != null) {
-                skipIndicatorLeft.removeCallbacks(hideLeftSkipRunnable);
-            }
-            GesturePlaqueAnimationHelper.hideImmediate(skipIndicatorLeft);
-        }
-        if (skipIndicatorRight != null) {
-            if (hideRightSkipRunnable != null) {
-                skipIndicatorRight.removeCallbacks(hideRightSkipRunnable);
-            }
-            GesturePlaqueAnimationHelper.hideImmediate(skipIndicatorRight);
-        }
+        // Скрываем skip индикаторы и сбрасываем серию
+        resetTapTracking();
+        resetSkipStreak(true);
         
         // Stop any active gestures
         stopAllGestures();
@@ -1140,6 +1277,7 @@ public class GesturesManager {
      * Отменяет таймер hold-to-speed (вызывается из VerticalGesturesManager)
      */
     public void cancelHoldToSpeedTimer() {
+        resetTapTracking();
         if (holdToSpeedRunnable != null && playerView != null) {
             playerView.removeCallbacks(holdToSpeedRunnable);
             holdToSpeedRunnable = null;
@@ -1177,7 +1315,6 @@ public class GesturesManager {
         skipIndicatorRight = null;
         skipTextLeft = null;
         skipTextRight = null;
-        doubleTapDetector = null;
         gestureCallback = null;
         
         Log.d(TAG, "GesturesManager cleaned up");

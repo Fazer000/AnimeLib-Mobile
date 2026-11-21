@@ -294,6 +294,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
+                    android:baselineAligned="false"
                     android:gravity="top"
                     android:layout_marginBottom="14dp">
 
@@ -343,7 +344,7 @@
                     <!-- Правая колонка: Название, оригинальное имя, бейджи статуса и блок Эпизоды / Выпуск -->
                     <LinearLayout
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
                         android:layout_weight="1"
                         android:minHeight="160dp"
                         android:orientation="vertical">
@@ -409,12 +410,17 @@
                                 android:ellipsize="end" />
                         </LinearLayout>
 
+                        <Space
+                            android:layout_width="match_parent"
+                            android:layout_height="0dp"
+                            android:layout_weight="1" />
+
                         <!-- Единый компактный блок характеристик (Эпизоды и Выпуск) справа от постера -->
                         <LinearLayout
                             android:id="@+id/llPortraitMetadataGrid"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
+                            android:layout_marginTop="8dp"
                             android:background="@drawable/bg_anime_info_stat_pill"
                             android:orientation="vertical"
                             android:paddingHorizontal="10dp"
