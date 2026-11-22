@@ -69,6 +69,8 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
     private boolean autoSkipSplashscreen = false;
     private boolean autoSkipCompilation = false;
     private SkipDurationBottomSheet.OnAutoSkipChangedListener onAutoSkipChangedListener;
+    private boolean openingDetectionEnabled = true;
+    private SkipDurationBottomSheet.OnOpeningDetectionChangedListener onOpeningDetectionChangedListener;
     private int currentTheme = ThemeUtils.THEME_SYSTEM;
     private final OnThemeChangedListener onThemeChangedListener;
     private int currentResizeMode = 0; // RESIZE_MODE_FIT
@@ -166,6 +168,12 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
         if (currentSkipDurationText != null) {
             currentSkipDurationText.setText(formatSkipSummary());
         }
+    }
+
+    public void setOpeningDetectionSettings(boolean enabled,
+                                            SkipDurationBottomSheet.OnOpeningDetectionChangedListener listener) {
+        this.openingDetectionEnabled = enabled;
+        this.onOpeningDetectionChangedListener = listener;
     }
 
     public void setOfflineMode(boolean offlineMode) {
@@ -665,6 +673,7 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
                 autoSkipEnding,
                 autoSkipSplashscreen,
                 autoSkipCompilation,
+                openingDetectionEnabled,
                 duration -> {
                     longSkipDuration = duration;
                     TextView currentSkipDurationText = findViewById(R.id.currentSkipDurationText);
@@ -686,6 +695,12 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
                     }
                     if (onAutoSkipChangedListener != null) {
                         onAutoSkipChangedListener.onAutoSkipChanged(opening, ending, splashscreen, compilation);
+                    }
+                },
+                enabled -> {
+                    openingDetectionEnabled = enabled;
+                    if (onOpeningDetectionChangedListener != null) {
+                        onOpeningDetectionChangedListener.onOpeningDetectionChanged(enabled);
                     }
                 }
         );

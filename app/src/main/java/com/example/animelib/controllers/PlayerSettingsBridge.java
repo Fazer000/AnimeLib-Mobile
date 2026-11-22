@@ -55,6 +55,9 @@ public class PlayerSettingsBridge implements PlayerDialogsController.SettingsDat
         boolean isAutoSkipCompilation();
         void setAutoSkipSegments(boolean opening, boolean ending, boolean splashscreen, boolean compilation);
 
+        boolean isOpeningDetectionEnabled();
+        void setOpeningDetectionEnabled(boolean enabled);
+
         int getCurrentTheme();
         void applyThemeAndOrientation(int themeMode);
     }
@@ -209,6 +212,16 @@ public class PlayerSettingsBridge implements PlayerDialogsController.SettingsDat
     public void onAutoSkipSegmentsChanged(boolean opening, boolean ending, boolean splashscreen, boolean compilation) {
         host.setAutoSkipSegments(opening, ending, splashscreen, compilation);
         host.getApiService().saveAutoSkipSegmentsSettings(opening, ending, splashscreen, compilation);
+    }
+
+    @Override
+    public boolean isOpeningDetectionEnabled() {
+        return host.isOpeningDetectionEnabled();
+    }
+
+    @Override
+    public void onOpeningDetectionChanged(boolean enabled) {
+        host.setOpeningDetectionEnabled(enabled);
     }
 
     @Override

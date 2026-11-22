@@ -58,6 +58,7 @@ public class OpeningAudioDetectorController {
     private static final String TAG = "OpeningAudioDetector";
     private static final String PREFS_NAME = "opening_audio_detector_prefs";
     private static final String KEY_ENGINE_VERSION = "engine_version";
+    private static final String KEY_OPENING_DETECTION_ENABLED = "opening_detection_enabled";
     private static final int CURRENT_ENGINE_VERSION = 2;
 
     private static final int MAX_OPENING_START_LEARN_SEC = 480; // Первые 8 минут
@@ -129,12 +130,52 @@ public class OpeningAudioDetectorController {
         this.dao = AppDatabase.getDatabase(this.appContext).openingFingerprintDao();
     }
 
+    public static boolean isOpeningDetectionEnabled(@NonNull Context context) {
+        return context.getApplicationContext()
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_OPENING_DETECTION_ENABLED, true);
+    }
+
+    public static void setOpeningDetectionEnabled(@NonNull Context context, boolean enabled) {
+        context.getApplicationContext()
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_OPENING_DETECTION_ENABLED, enabled)
+                .apply();
+    }
+
+    public boolean isDetectionEnabled() {
+        return isOpeningDetectionEnabled(appContext);
+    }
+
+    public void setDetectionEnabled(boolean enabled) {
+        setOpeningDetectionEnabled(appContext, enabled);
+        if (!enabled) {
+            cancelActiveScan();
+            activeLearnCancelFlag.set(true);
+            lastScheduledScanKey = null;
+            notifyAnalysisStateChanged();
+            host.safeRunOnUiThread(() -> {
+                if (!host.isActivityFinishingOrDestroyed()) {
+                    TimecodeManager tm = host.getTimecodeManager();
+                    if (tm != null) {
+                        tm.removeDetectedOpeningTimecode();
+                    }
+                }
+            });
+        } else {
+            lastScheduledScanKey = null;
+            scheduleScanForActiveEpisode(0L);
+        }
+    }
+
     public boolean isAnalysisRunning() {
-        return activeLearnOps.get() > 0 || activeScanOps.get() > 0;
+        return isDetectionEnabled() && (activeLearnOps.get() > 0 || activeScanOps.get() > 0);
     }
 
     private void notifyAnalysisStateChanged() {
-        boolean running = !isCleanedUp && (activeLearnOps.get() > 0 || activeScanOps.get() > 0);
+        boolean running = !isCleanedUp && isDetectionEnabled()
+                && (activeLearnOps.get() > 0 || activeScanOps.get() > 0);
         if (lastReportedRunning.getAndSet(running) != running) {
             host.safeRunOnUiThread(() -> {
                 if (!host.isActivityFinishingOrDestroyed()) {
@@ -165,7 +206,7 @@ public class OpeningAudioDetectorController {
      * Запоминает аудио-отпечаток пропущенного опенинга для поиска в следующих сериях.
      */
     public void onManualSkipForward(long fromPositionMs, long toPositionMs, int skipDurationSec) {
-        if (isCleanedUp || host.isActivityFinishingOrDestroyed()) return;
+        if (isCleanedUp || !isDetectionEnabled() || host.isActivityFinishingOrDestroyed()) return;
 
         final String animeId = normalizeAnimeId(host.getCurrentAnimeId());
         if (animeId == null) return;
@@ -333,6 +374,7 @@ public class OpeningAudioDetectorController {
         cancelActiveScan();
         lastScheduledScanKey = null;
 
+        if (!isDetectionEnabled()) return;
         scheduleScanForActiveEpisode(0L);
     }
 
@@ -341,12 +383,12 @@ public class OpeningAudioDetectorController {
      * запускает поиск немедленно. Если поиск уже идёт — ничего не дублирует.
      */
     public void onEpisodeFirstFrameRendered() {
-        if (isCleanedUp || host.isActivityFinishingOrDestroyed()) return;
+        if (isCleanedUp || !isDetectionEnabled() || host.isActivityFinishingOrDestroyed()) return;
         scheduleScanForActiveEpisode(0L);
     }
 
     private void scheduleScanForActiveEpisode(long delayMs) {
-        if (isCleanedUp || host.isActivityFinishingOrDestroyed()) return;
+        if (isCleanedUp || !isDetectionEnabled() || host.isActivityFinishingOrDestroyed()) return;
 
         final String animeId = normalizeAnimeId(host.getCurrentAnimeId());
         final int episodeId = host.getCurrentEpisodeId();
@@ -706,7 +748,7 @@ public class OpeningAudioDetectorController {
                                           int fromSec,
                                           int toSec) {
         host.safeRunOnUiThread(() -> {
-            if (isCleanedUp || expectedGen != scanGeneration.get() || host.isActivityFinishingOrDestroyed()) {
+            if (isCleanedUp || !isDetectionEnabled() || expectedGen != scanGeneration.get() || host.isActivityFinishingOrDestroyed()) {
                 return;
             }
             TimecodeManager tm = host.getTimecodeManager();

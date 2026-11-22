@@ -328,6 +328,27 @@ public class TimecodeManager {
     }
 
     /**
+     * Удаляет автоматически найденный аудио-опенинг с таймбара (не затрагивая официальные таймкоды из API).
+     */
+    public boolean removeDetectedOpeningTimecode() {
+        if (injectedDetectedOpening == null) {
+            return false;
+        }
+        EpisodeResponse.TimecodeData toRemove = injectedDetectedOpening;
+        injectedDetectedOpening = null;
+        if (this.timecodes.contains(toRemove)) {
+            List<EpisodeResponse.TimecodeData> updated = new ArrayList<>(this.timecodes);
+            updated.remove(toRemove);
+            this.timecodes = updated;
+            updateTimecodeSegmentsOnBar();
+            updateTimecodeButtonsVisibility();
+            Log.d(TAG, "Removed detected opening segment");
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * Обновляет отображение сегментов на самом таймбаре и устанавливает маркера
      */
     public void updateTimecodeSegmentsOnBar() {

@@ -1816,6 +1816,18 @@ public class VideoPlayerActivity extends AppCompatActivity {
                             timecodeManager.setAutoSkipSettings(opening, ending, splashscreen, compilation);
                         }
                     }
+                    @Override public boolean isOpeningDetectionEnabled() {
+                        return openingAudioDetectorController != null
+                                ? openingAudioDetectorController.isDetectionEnabled()
+                                : OpeningAudioDetectorController.isOpeningDetectionEnabled(VideoPlayerActivity.this);
+                    }
+                    @Override public void setOpeningDetectionEnabled(boolean enabled) {
+                        if (openingAudioDetectorController != null) {
+                            openingAudioDetectorController.setDetectionEnabled(enabled);
+                        } else {
+                            OpeningAudioDetectorController.setOpeningDetectionEnabled(VideoPlayerActivity.this, enabled);
+                        }
+                    }
                     @Override public int getCurrentTheme() { return currentTheme; }
                     @Override public void applyThemeAndOrientation(int themeMode) {
                         currentTheme = themeMode;

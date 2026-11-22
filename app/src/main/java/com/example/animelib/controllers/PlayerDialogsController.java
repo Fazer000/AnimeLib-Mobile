@@ -249,6 +249,8 @@ public class PlayerDialogsController {
         default boolean isAutoSkipSplashscreen() { return false; }
         default boolean isAutoSkipCompilation() { return false; }
         default void onAutoSkipSegmentsChanged(boolean opening, boolean ending, boolean splashscreen, boolean compilation) {}
+        default boolean isOpeningDetectionEnabled() { return true; }
+        default void onOpeningDetectionChanged(boolean enabled) {}
         int getCurrentTheme();
         void onThemeChanged(int themeMode);
         float[] getVideoFilters();
@@ -323,6 +325,10 @@ public class PlayerDialogsController {
                 provider.isAutoSkipSplashscreen(),
                 provider.isAutoSkipCompilation(),
                 provider::onAutoSkipSegmentsChanged
+        );
+        dialog.setOpeningDetectionSettings(
+                provider.isOpeningDetectionEnabled(),
+                provider::onOpeningDetectionChanged
         );
 
         float[] filters = provider.getVideoFilters();
