@@ -46,17 +46,18 @@ import java.util.List;
  */
 public class PlayerBackdropBlurManager {
 
-    public static final int BLUR_WIDTH = 128;
-    public static final int BLUR_HEIGHT = 72;
+    public static final int BLUR_WIDTH = 160;
+    public static final int BLUR_HEIGHT = 90;
     public static final int COMPOSITE_WIDTH = 256;
     public static final int COMPOSITE_HEIGHT = 128;
 
-    private static final int BLUR_RADIUS = 1;
-    private static final int BLUR_DIV = BLUR_RADIUS * 2 + 1; // 3
-    private static final int BLUR_INV_DIV = 21846; // ceil(65536 / 3) -> exact [0..255]
+    private static final int COMPOSITE_RING_SIZE = 3;
+    private static final int BLUR_RADIUS = 2;
+    private static final int BLUR_DIV = BLUR_RADIUS * 2 + 1; // 5
+    private static final int BLUR_INV_DIV = 13108; // ceil(65536 / 5) -> exact [0..255]
     private static final int GRAIN_SIZE = 128;
     private static final long MIN_CAPTURE_INTERVAL_MS = 40L; // ~25 FPS (matches 24 FPS anime)
-    private static final long SCROLL_CAPTURE_INTERVAL_MS = 100L; // Avoid GPU readback stalls during 120Hz scroll/drag
+    private static final long SCROLL_CAPTURE_INTERVAL_MS = 64L; // Avoid GPU readback stalls during 120Hz scroll/drag
 
     private static volatile Bitmap sSharedGrainBitmap;
 
@@ -69,12 +70,15 @@ public class PlayerBackdropBlurManager {
 
     private Bitmap sampleBitmap;
     private Bitmap blurredBitmap;
-    private Bitmap compositeBitmap;
-    private Canvas compositeCanvas;
+    private final Bitmap[] compositeBitmaps = new Bitmap[COMPOSITE_RING_SIZE];
+    private final Canvas[] compositeCanvases = new Canvas[COMPOSITE_RING_SIZE];
+    private int frontCompositeIndex = 0;
     private final Paint compositeVideoPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final RectF tmpVideoDstRect = new RectF();
     private final int[] bufA;
     private final int[] bufB;
+    private final int[] stabilizedPixels;
+    private boolean hasStabilizedPixels = false;
 
     private final List<WeakReference<FrostedGlassDrawable>> targets = new ArrayList<>();
     private final int[] tmpVideoLoc = new int[2];
@@ -176,10 +180,13 @@ public class PlayerBackdropBlurManager {
         int pixelCount = BLUR_WIDTH * BLUR_HEIGHT;
         this.bufA = new int[pixelCount];
         this.bufB = new int[pixelCount];
+        this.stabilizedPixels = new int[pixelCount];
         this.sampleBitmap = Bitmap.createBitmap(BLUR_WIDTH, BLUR_HEIGHT, Bitmap.Config.ARGB_8888);
         this.blurredBitmap = Bitmap.createBitmap(BLUR_WIDTH, BLUR_HEIGHT, Bitmap.Config.ARGB_8888);
-        this.compositeBitmap = Bitmap.createBitmap(COMPOSITE_WIDTH, COMPOSITE_HEIGHT, Bitmap.Config.ARGB_8888);
-        this.compositeCanvas = new Canvas(this.compositeBitmap);
+        for (int i = 0; i < COMPOSITE_RING_SIZE; i++) {
+            this.compositeBitmaps[i] = Bitmap.createBitmap(COMPOSITE_WIDTH, COMPOSITE_HEIGHT, Bitmap.Config.ARGB_8888);
+            this.compositeCanvases[i] = new Canvas(this.compositeBitmaps[i]);
+        }
         ensureSharedGrainBitmap();
     }
 
@@ -413,6 +420,7 @@ public class PlayerBackdropBlurManager {
     public void requestImmediateRefresh() {
         if (isReleased) return;
         forceNextCapture = true;
+        hasStabilizedPixels = false;
         lastComposedAmbientGen = -1L;
         updateVideoBounds();
         if (!isPaused) {
@@ -427,6 +435,7 @@ public class PlayerBackdropBlurManager {
         if (isReleased) return;
         cachedTextureView = null;
         forceNextCapture = true;
+        hasStabilizedPixels = false;
         lastComposedAmbientGen = -1L;
         videoScreenW = 0f;
         videoScreenH = 0f;
@@ -447,6 +456,7 @@ public class PlayerBackdropBlurManager {
         if (isReleased) return;
         isPaused = false;
         forceNextCapture = true;
+        hasStabilizedPixels = false;
         invalidateVisibleTargets();
     }
 
@@ -471,18 +481,20 @@ public class PlayerBackdropBlurManager {
             blurredBitmap.recycle();
         }
         blurredBitmap = null;
-        if (compositeBitmap != null && !compositeBitmap.isRecycled()) {
-            compositeBitmap.recycle();
+        for (int i = 0; i < COMPOSITE_RING_SIZE; i++) {
+            if (compositeBitmaps[i] != null && !compositeBitmaps[i].isRecycled()) {
+                compositeBitmaps[i].recycle();
+            }
+            compositeBitmaps[i] = null;
+            compositeCanvases[i] = null;
         }
-        compositeBitmap = null;
-        compositeCanvas = null;
     }
 
     @Nullable
     Bitmap getCompositeBackdropBitmap() {
-        return (hasCompositeFrame && compositeBitmap != null && !compositeBitmap.isRecycled())
-                ? compositeBitmap
-                : null;
+        if (!hasCompositeFrame || isReleased) return null;
+        Bitmap front = compositeBitmaps[frontCompositeIndex];
+        return (front != null && !front.isRecycled()) ? front : null;
     }
 
     long getFrameGeneration() {
@@ -575,7 +587,13 @@ public class PlayerBackdropBlurManager {
     }
 
     private boolean composeUnifiedBackdropIfNeeded(boolean videoUpdated) {
-        if (isReleased || compositeBitmap == null || compositeBitmap.isRecycled() || compositeCanvas == null) {
+        if (isReleased) {
+            return false;
+        }
+        int nextIndex = hasCompositeFrame ? ((frontCompositeIndex + 1) % COMPOSITE_RING_SIZE) : 0;
+        Bitmap targetBitmap = compositeBitmaps[nextIndex];
+        Canvas targetCanvas = compositeCanvases[nextIndex];
+        if (targetBitmap == null || targetBitmap.isRecycled() || targetCanvas == null) {
             return false;
         }
         if (backdropScreenW <= 1f || backdropScreenH <= 1f) {
@@ -604,14 +622,16 @@ public class PlayerBackdropBlurManager {
             return false;
         }
 
+        // Композитим все 3 слоя строго в свободный back-буфер кольца, чтобы HWUI RenderThread
+        // никогда не прочитал кадр между drawColor(BLACK) и drawBitmap(blurredBitmap).
         // 1. Чёрная подложка плеера (как фон activity_video_player)
-        compositeCanvas.drawColor(Color.BLACK);
+        targetCanvas.drawColor(Color.BLACK);
 
         // 2. Реальная краевая подсветка AmbientLightView (1:1 цвета, диффузия и затухание)
         boolean ambientDrawn = false;
         if (ambientLightView != null && ambAlpha > 0.005f) {
             ambientDrawn = ambientLightView.drawIntoBackdrop(
-                    compositeCanvas,
+                    targetCanvas,
                     backdropScreenX,
                     backdropScreenY,
                     backdropScreenW,
@@ -631,7 +651,7 @@ public class PlayerBackdropBlurManager {
             float dstR = dstL + videoScreenW * scaleX;
             float dstB = dstT + videoScreenH * scaleY;
             tmpVideoDstRect.set(dstL, dstT, dstR, dstB);
-            compositeCanvas.drawBitmap(blurredBitmap, null, tmpVideoDstRect, compositeVideoPaint);
+            targetCanvas.drawBitmap(blurredBitmap, null, tmpVideoDstRect, compositeVideoPaint);
         }
 
         if (ambAlpha <= 0.005f || ambientDrawn) {
@@ -650,6 +670,7 @@ public class PlayerBackdropBlurManager {
         lastComposedBackdropW = backdropScreenW;
         lastComposedBackdropH = backdropScreenH;
 
+        frontCompositeIndex = nextIndex;
         hasCompositeFrame = true;
         frameGeneration++;
         return true;
@@ -684,20 +705,66 @@ public class PlayerBackdropBlurManager {
             if (captured == null) {
                 return false;
             }
+            long postTs = (st != null) ? st.getTimestamp() : ts;
             captured.getPixels(bufA, 0, BLUR_WIDTH, 0, 0, BLUR_WIDTH, BLUR_HEIGHT);
 
-            // 1-проходный O(1) сепарабельный box-блюр (192x108, r=2 -> более чёткое, менее мыльное стекло)
+            // 1-проходный O(1) сепарабельный box-блюр (160x90, r=2 -> умеренно размытое стекло без алиасинга)
             boxBlurHorizontal(bufA, bufB, BLUR_WIDTH, BLUR_HEIGHT);
             boxBlurVertical(bufB, bufA, BLUR_WIDTH, BLUR_HEIGHT, true);
 
-            blurredBitmap.setPixels(bufA, 0, BLUR_WIDTH, 0, 0, BLUR_WIDTH, BLUR_HEIGHT);
-            lastSurfaceTimestamp = ts;
+            stabilizeBlurredPixels(bufA, stabilizedPixels, BLUR_WIDTH * BLUR_HEIGHT, forced || !hasStabilizedPixels);
+            hasStabilizedPixels = true;
+
+            blurredBitmap.setPixels(stabilizedPixels, 0, BLUR_WIDTH, 0, 0, BLUR_WIDTH, BLUR_HEIGHT);
+            lastSurfaceTimestamp = (postTs != Long.MIN_VALUE) ? postTs : ts;
             lastCaptureUptimeMs = nowMs;
             forceNextCapture = false;
             hasCapturedFrame = true;
             return true;
         } catch (Throwable ignored) {
             return false;
+        }
+    }
+
+    /**
+     * Темпоральная анти-мерцательная стабилизация видеозоны без шлейфов:
+     * - Мелкое дрожание из-за даунсэмплинга/квантования кодека (diff < 24) мягко сглаживается;
+     * - Резкое движение и смена сцены (diff >= 24) применяются мгновенно без задержки.
+     */
+    private static void stabilizeBlurredPixels(int[] src, int[] dst, int count, boolean snapImmediate) {
+        if (snapImmediate) {
+            System.arraycopy(src, 0, dst, 0, count);
+            return;
+        }
+        for (int i = 0; i < count; i++) {
+            int cur = src[i];
+            int prev = dst[i];
+
+            int r = (cur >>> 16) & 0xFF;
+            int g = (cur >>> 8) & 0xFF;
+            int b = cur & 0xFF;
+
+            int pr = (prev >>> 16) & 0xFF;
+            int pg = (prev >>> 8) & 0xFF;
+            int pb = prev & 0xFF;
+
+            int dr = Math.abs(r - pr);
+            int dg = Math.abs(g - pg);
+            int db = Math.abs(b - pb);
+            int maxDiff = Math.max(dr, Math.max(dg, db));
+
+            if (maxDiff <= 2) {
+                continue;
+            }
+            if (maxDiff >= 24) {
+                dst[i] = cur;
+            } else {
+                int w = 80 + (maxDiff * 5); // 95..195 / 256
+                int outR = pr + (((r - pr) * w) >> 8);
+                int outG = pg + (((g - pg) * w) >> 8);
+                int outB = pb + (((b - pb) * w) >> 8);
+                dst[i] = 0xFF000000 | (outR << 16) | (outG << 8) | outB;
+            }
         }
     }
 
