@@ -94,6 +94,7 @@ public class FrostedGlassDrawable extends Drawable {
     private final Matrix backdropMatrix = new Matrix();
     private final Matrix grainMatrix = new Matrix();
     private final int[] tmpViewLoc = new int[2];
+    private final float[] tmpTotalScale = new float[2];
 
     private final Paint agslPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint backdropPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -158,12 +159,11 @@ public class FrostedGlassDrawable extends Drawable {
         View host = hostViewRef.get();
         if (host == null) return false;
         host.getLocationOnScreen(tmpViewLoc);
-        float scaleX = computeTotalScaleX(host);
-        float scaleY = computeTotalScaleY(host);
+        computeTotalScale(host, tmpTotalScale);
         return Math.abs(tmpViewLoc[0] - lastDrawnViewX) >= 1
                 || Math.abs(tmpViewLoc[1] - lastDrawnViewY) >= 1
-                || Math.abs(scaleX - lastDrawnScaleX) > 0.005f
-                || Math.abs(scaleY - lastDrawnScaleY) > 0.005f
+                || Math.abs(tmpTotalScale[0] - lastDrawnScaleX) > 0.005f
+                || Math.abs(tmpTotalScale[1] - lastDrawnScaleY) > 0.005f
                 || Math.abs(videoX - lastDrawnVideoX) >= 1f
                 || Math.abs(videoY - lastDrawnVideoY) >= 1f
                 || Math.abs(videoW - lastDrawnVideoW) >= 1f
@@ -207,8 +207,9 @@ public class FrostedGlassDrawable extends Drawable {
             host.getLocationOnScreen(tmpViewLoc);
             float viewX = tmpViewLoc[0];
             float viewY = tmpViewLoc[1];
-            float totalScaleX = computeTotalScaleX(host);
-            float totalScaleY = computeTotalScaleY(host);
+            computeTotalScale(host, tmpTotalScale);
+            float totalScaleX = tmpTotalScale[0];
+            float totalScaleY = tmpTotalScale[1];
             float backdropX = manager.getBackdropScreenX();
             float backdropY = manager.getBackdropScreenY();
 
@@ -380,30 +381,20 @@ public class FrostedGlassDrawable extends Drawable {
         return (baseAlpha * drawableAlpha) / 255;
     }
 
-    private static float computeTotalScaleX(@NonNull View view) {
-        float scale = 1f;
+    private static void computeTotalScale(@NonNull View view, @NonNull float[] outScale) {
+        float sx = 1f;
+        float sy = 1f;
         View current = view;
         int depth = 0;
         while (current != null && depth < 12) {
-            scale *= current.getScaleX();
+            sx *= current.getScaleX();
+            sy *= current.getScaleY();
             ViewParent parent = current.getParent();
             current = (parent instanceof View) ? (View) parent : null;
             depth++;
         }
-        return scale;
-    }
-
-    private static float computeTotalScaleY(@NonNull View view) {
-        float scale = 1f;
-        View current = view;
-        int depth = 0;
-        while (current != null && depth < 12) {
-            scale *= current.getScaleY();
-            ViewParent parent = current.getParent();
-            current = (parent instanceof View) ? (View) parent : null;
-            depth++;
-        }
-        return scale;
+        outScale[0] = sx;
+        outScale[1] = sy;
     }
 
     @Override

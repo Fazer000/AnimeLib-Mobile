@@ -1,7 +1,5 @@
 package com.example.animelib.ui;
 
-import android.animation.Animator;
-import android.animation.AnimatorListenerAdapter;
 import android.content.Context;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
@@ -38,6 +36,7 @@ public class LandscapeEpisodeNumpadView {
     @Nullable
     private Listener listener;
     private boolean isVisible = false;
+    private boolean isHiding = false;
 
     public LandscapeEpisodeNumpadView(@NonNull View rootView) {
         this.rootView = rootView;
@@ -127,11 +126,12 @@ public class LandscapeEpisodeNumpadView {
     }
 
     public void show() {
-        if (isVisible && rootView.getVisibility() == View.VISIBLE) {
+        if (isVisible && rootView.getVisibility() == View.VISIBLE && !isHiding) {
             return;
         }
         isVisible = true;
-        rootView.animate().cancel();
+        isHiding = false;
+        rootView.animate().setListener(null).cancel();
         rootView.setVisibility(View.VISIBLE);
         rootView.setAlpha(0f);
         rootView.setScaleX(0.94f);
@@ -142,19 +142,20 @@ public class LandscapeEpisodeNumpadView {
                 .scaleX(1f)
                 .scaleY(1f)
                 .translationY(0f)
-                .setDuration(180L)
+                .setDuration(160L)
                 .setInterpolator(new DecelerateInterpolator())
-                .setListener(null)
+                .withLayer()
                 .start();
     }
 
     public void hide(boolean immediate) {
-        if (!isVisible && rootView.getVisibility() == View.GONE) {
+        if (!isVisible && (rootView.getVisibility() == View.GONE || (!immediate && isHiding))) {
             return;
         }
         isVisible = false;
-        rootView.animate().cancel();
+        rootView.animate().setListener(null).cancel();
         if (immediate) {
+            isHiding = false;
             rootView.setAlpha(0f);
             rootView.setScaleX(1f);
             rootView.setScaleY(1f);
@@ -162,22 +163,22 @@ public class LandscapeEpisodeNumpadView {
             rootView.setVisibility(View.GONE);
             return;
         }
+        isHiding = true;
         rootView.animate()
                 .alpha(0f)
                 .scaleX(0.95f)
                 .scaleY(0.95f)
                 .translationY(dpToPx(rootView.getContext(), 12f))
-                .setDuration(130L)
+                .setDuration(110L)
                 .setInterpolator(new AccelerateInterpolator())
-                .setListener(new AnimatorListenerAdapter() {
-                    @Override
-                    public void onAnimationEnd(Animator animation) {
-                        if (!isVisible) {
-                            rootView.setVisibility(View.GONE);
-                            rootView.setScaleX(1f);
-                            rootView.setScaleY(1f);
-                            rootView.setTranslationY(0f);
-                        }
+                .withLayer()
+                .withEndAction(() -> {
+                    isHiding = false;
+                    if (!isVisible) {
+                        rootView.setVisibility(View.GONE);
+                        rootView.setScaleX(1f);
+                        rootView.setScaleY(1f);
+                        rootView.setTranslationY(0f);
                     }
                 })
                 .start();

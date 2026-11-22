@@ -72,6 +72,7 @@ public class EpisodesManager {
     private com.example.animelib.ui.PlayerBackdropBlurManager backdropBlurManager;
     private boolean hasInitialScrolledLandscape = false;
     private boolean hasInitialScrolledPortrait = false;
+    private boolean isVerticalDragging = false;
 
     // Смещение в dp (понятное значение)
     private final float totalOffsetDp = 60f;
@@ -346,9 +347,16 @@ public class EpisodesManager {
     private void setupLandscapeCustomNumpadSearch(@NonNull View searchBtn,
                                                   @NonNull EditText inputEt,
                                                   @NonNull View numpadRoot) {
+        // Кастомный нумпад не использует системную клавиатуру — полностью отключаем фокус/IME/Editor,
+        // чтобы Android VRR / InputMethodManager не снижали герцовку экрана и не перехватывали фокус при закрытии.
+        searchBtn.setFocusable(false);
+        searchBtn.setFocusableInTouchMode(false);
         inputEt.setShowSoftInputOnFocus(false);
         inputEt.setCursorVisible(false);
         inputEt.setLongClickable(false);
+        inputEt.setFocusable(false);
+        inputEt.setFocusableInTouchMode(false);
+        inputEt.setKeyListener(null);
 
         landscapeEpisodeNumpad = new com.example.animelib.ui.LandscapeEpisodeNumpadView(numpadRoot);
         landscapeEpisodeNumpad.setListener(new com.example.animelib.ui.LandscapeEpisodeNumpadView.Listener() {
@@ -363,7 +371,6 @@ public class EpisodesManager {
                 }
                 String updated = "0".equals(current) ? String.valueOf(digit) : (current + digit);
                 inputEt.setText(updated);
-                inputEt.setSelection(updated.length());
             }
 
             @Override
@@ -372,7 +379,6 @@ public class EpisodesManager {
                 if (!current.isEmpty()) {
                     String updated = current.substring(0, current.length() - 1);
                     inputEt.setText(updated);
-                    inputEt.setSelection(updated.length());
                 }
             }
 
@@ -407,7 +413,6 @@ public class EpisodesManager {
             if (isPortrait()) {
                 return;
             }
-            hideKeyboard(inputEt);
             searchBtn.setVisibility(View.GONE);
             inputEt.setVisibility(View.VISIBLE);
             inputEt.setText("");
@@ -418,24 +423,14 @@ public class EpisodesManager {
                     landscapeSearchContainer.setBackgroundResource(R.drawable.player_episode_item_horizontal_selected);
                 }
             }
-            inputEt.requestFocus();
             updateLandscapeNumpadPreview("");
             landscapeEpisodeNumpad.show();
         });
 
         inputEt.setOnClickListener(v -> {
-            hideKeyboard(inputEt);
             if (landscapeEpisodeNumpad != null && !landscapeEpisodeNumpad.isVisible() && !isPortrait()) {
                 updateLandscapeNumpadPreview(inputEt.getText() != null ? inputEt.getText().toString() : "");
                 landscapeEpisodeNumpad.show();
-            }
-        });
-
-        inputEt.setOnFocusChangeListener((v, hasFocus) -> {
-            if (hasFocus) {
-                hideKeyboard(inputEt);
-            } else if (isLandscapeSearchActive()) {
-                closeLandscapeSearch(false);
             }
         });
 
@@ -466,13 +461,10 @@ public class EpisodesManager {
         if (landscapeEpisodeNumpad != null) {
             landscapeEpisodeNumpad.hide(immediate);
         }
-        if (landscapeSearchInput != null) {
+        if (landscapeSearchInput != null && landscapeSearchInput.getVisibility() != View.GONE) {
             landscapeSearchInput.setVisibility(View.GONE);
-            if (landscapeSearchInput.hasFocus()) {
-                landscapeSearchInput.clearFocus();
-            }
         }
-        if (landscapeSearchButton != null) {
+        if (landscapeSearchButton != null && landscapeSearchButton.getVisibility() != View.VISIBLE) {
             landscapeSearchButton.setVisibility(View.VISIBLE);
         }
         if (landscapeSearchContainer != null) {
@@ -773,6 +765,12 @@ public class EpisodesManager {
      * Скрыть меню эпизодов (опустить весь playersControlBar)
      */
     public void hideEpisodesMenu() {
+        if (isVerticalDragging) {
+            isVerticalDragging = false;
+            if (backdropBlurManager != null) {
+                backdropBlurManager.setVerticalDragActive(false);
+            }
+        }
         closeLandscapeSearch(false);
         if (episodesRecyclerView == null || playersControlBar == null) return;
 
@@ -1458,56 +1456,63 @@ public class EpisodesManager {
      */
     public void setDragProgress(float progress) {
         if (isPortrait() || playersControlBar == null || episodesRecyclerView == null) return;
-        
+
         // Ограничиваем progress от 0.0 до 1.0
         progress = Math.max(0f, Math.min(1f, progress));
-        
+
         View targetView = getLandscapeEpisodesView();
         if (targetView == null) targetView = episodesRecyclerView;
 
-        // Показываем элементы если progress > 0
-        if (progress > 0f) {
-            targetView.setVisibility(View.VISIBLE);
-            if (episodesRecyclerView != null) episodesRecyclerView.setVisibility(View.VISIBLE);
+        if (!isVerticalDragging) {
+            isVerticalDragging = true;
+            if (isLandscapeSearchActive()) {
+                closeLandscapeSearch(true);
+            }
+            if (backdropBlurManager != null) {
+                backdropBlurManager.setVerticalDragActive(true);
+            }
+            // Останавливаем текущие анимации только в начале жеста
+            playersControlBar.animate().cancel();
+            targetView.animate().cancel();
         }
-        
-        // Останавливаем текущие анимации
-        playersControlBar.animate().cancel();
-        targetView.animate().cancel();
-        
-        // Вычисляем смещение: 
+
+        // Показываем/скрываем элементы только при фактической смене видимости
+        if (progress > 0f) {
+            if (targetView.getVisibility() != View.VISIBLE) {
+                targetView.setVisibility(View.VISIBLE);
+            }
+            if (episodesRecyclerView.getVisibility() != View.VISIBLE) {
+                episodesRecyclerView.setVisibility(View.VISIBLE);
+            }
+        } else if (targetView.getVisibility() == View.VISIBLE) {
+            targetView.setVisibility(View.INVISIBLE);
+        }
+
+        // Вычисляем смещение:
         // progress = 0 (закрыто): translationY = totalOffsetPx (опущено вниз)
         // progress = 1 (открыто): translationY = 0 (на своей позиции)
-        // Строго ограничиваем: от 0 до totalOffsetPx (60dp)
         float translationY = Math.max(0f, Math.min(totalOffsetPx, totalOffsetPx * (1f - progress)));
         playersControlBar.setTranslationY(translationY);
-        
+
         // Обновляем прозрачность и масштаб списка эпизодов
         targetView.setAlpha(progress);
-        targetView.setScaleX(0.95f + 0.05f * progress);
-        targetView.setScaleY(0.95f + 0.05f * progress);
-        
-        // НЕ используем GONE - это ломает layout!
-        // Используем INVISIBLE чтобы сохранить место в layout
-        if (progress == 0f && targetView.getVisibility() == View.VISIBLE) {
-            targetView.setVisibility(View.INVISIBLE);
-        } else if (progress > 0f && targetView.getVisibility() == View.INVISIBLE) {
-            targetView.setVisibility(View.VISIBLE);
-            if (episodesRecyclerView != null) episodesRecyclerView.setVisibility(View.VISIBLE);
-        }
-        
-        Log.d(TAG, "Episodes drag progress: " + progress + ", translationY: " + translationY + 
-              ", isVisible=" + isEpisodesMenuVisible);
+        float scale = 0.95f + 0.05f * progress;
+        targetView.setScaleX(scale);
+        targetView.setScaleY(scale);
     }
-    
+
     /**
      * Завершает drag жест с решением открыть или закрыть панель эпизодов
      */
     public void completeDrag(boolean shouldOpen) {
+        if (isVerticalDragging) {
+            isVerticalDragging = false;
+            if (backdropBlurManager != null) {
+                backdropBlurManager.setVerticalDragActive(false);
+            }
+        }
         if (isPortrait() || playersControlBar == null || episodesRecyclerView == null) return;
-        
-        Log.d(TAG, "Complete episodes drag: shouldOpen=" + shouldOpen + ", current isVisible=" + isEpisodesMenuVisible);
-        
+
         View targetView = getLandscapeEpisodesView();
         if (targetView == null) targetView = episodesRecyclerView;
 
@@ -1592,6 +1597,12 @@ public class EpisodesManager {
      * Обновляет состояние после drag без повторной анимации
      */
     public void updateDragState(boolean shouldOpen) {
+        if (isVerticalDragging) {
+            isVerticalDragging = false;
+            if (backdropBlurManager != null) {
+                backdropBlurManager.setVerticalDragActive(false);
+            }
+        }
         if (isPortrait()) return;
         Log.d(TAG, "Update episodes drag state: shouldOpen=" + shouldOpen);
         

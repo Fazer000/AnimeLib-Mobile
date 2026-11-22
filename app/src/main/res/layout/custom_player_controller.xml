@@ -586,7 +586,7 @@
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="Поиск серии"
                     android:clickable="true"
-                    android:focusable="true" />
+                    android:focusable="false" />
 
                 <!-- Числовой инпут прямо внутри фиксированной 38x38 кнопки -->
                 <EditText
@@ -603,6 +603,8 @@
                     android:inputType="number"
                     android:maxLength="4"
                     android:cursorVisible="false"
+                    android:focusable="false"
+                    android:focusableInTouchMode="false"
                     android:gravity="center"
                     android:imeOptions="actionSearch|actionDone|flagNoExtractUi"
                     android:singleLine="true"

@@ -46,16 +46,17 @@ import java.util.List;
  */
 public class PlayerBackdropBlurManager {
 
-    public static final int BLUR_WIDTH = 192;
-    public static final int BLUR_HEIGHT = 108;
+    public static final int BLUR_WIDTH = 128;
+    public static final int BLUR_HEIGHT = 72;
     public static final int COMPOSITE_WIDTH = 256;
     public static final int COMPOSITE_HEIGHT = 128;
 
-    private static final int BLUR_RADIUS = 2;
-    private static final int BLUR_DIV = BLUR_RADIUS * 2 + 1; // 5
-    private static final int BLUR_INV_DIV = 13108; // ceil(65536 / 5) -> exact [0..255]
+    private static final int BLUR_RADIUS = 1;
+    private static final int BLUR_DIV = BLUR_RADIUS * 2 + 1; // 3
+    private static final int BLUR_INV_DIV = 21846; // ceil(65536 / 3) -> exact [0..255]
     private static final int GRAIN_SIZE = 128;
-    private static final long MIN_CAPTURE_INTERVAL_MS = 32L; // ~30 FPS cap
+    private static final long MIN_CAPTURE_INTERVAL_MS = 40L; // ~25 FPS (matches 24 FPS anime)
+    private static final long SCROLL_CAPTURE_INTERVAL_MS = 100L; // Avoid GPU readback stalls during 120Hz scroll/drag
 
     private static volatile Bitmap sSharedGrainBitmap;
 
@@ -111,6 +112,10 @@ public class PlayerBackdropBlurManager {
     private boolean isPaused = false;
     private boolean isReleased = false;
     private boolean forceNextCapture = true;
+    private boolean isCarouselScrolling = false;
+    private boolean isVerticalDragging = false;
+    @Nullable
+    private WeakReference<RecyclerView> attachedScrollRvRef;
 
     private final Choreographer.FrameCallback frameCallback = new Choreographer.FrameCallback() {
         @Override
@@ -151,7 +156,7 @@ public class PlayerBackdropBlurManager {
                 FrostedGlassDrawable drawable = targets.get(i).get();
                 if (drawable == null) continue;
                 View host = drawable.getHostView();
-                if (host != null && isViewEffectivelyVisible(host)) {
+                if (host != null && host.getLayerType() != View.LAYER_TYPE_HARDWARE && isViewEffectivelyVisible(host)) {
                     if (compositeUpdated || drawable.hasGeometryChangedOnScreen(
                             backdropScreenX, backdropScreenY, backdropScreenW, backdropScreenH)) {
                         host.invalidate();
@@ -201,7 +206,19 @@ public class PlayerBackdropBlurManager {
 
     private void onAmbientContentUpdated() {
         if (isPaused || isReleased) return;
+        if (isCarouselScrolling || isVerticalDragging) {
+            return;
+        }
         if (hasAnyVisibleTarget()) {
+            invalidateVisibleTargets();
+            ensureLoopStarted();
+        }
+    }
+
+    public void setVerticalDragActive(boolean active) {
+        if (this.isVerticalDragging == active) return;
+        this.isVerticalDragging = active;
+        if (!active && !isPaused && !isReleased) {
             invalidateVisibleTargets();
             ensureLoopStarted();
         }
@@ -314,11 +331,26 @@ public class PlayerBackdropBlurManager {
      */
     public void attachScrollableGlassContainer(@Nullable RecyclerView recyclerView) {
         if (recyclerView == null) return;
+        if (attachedScrollRvRef != null && attachedScrollRvRef.get() == recyclerView) {
+            return;
+        }
+        attachedScrollRvRef = new WeakReference<>(recyclerView);
         recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrollStateChanged(@NonNull RecyclerView rv, int newState) {
+                boolean scrolling = (newState != RecyclerView.SCROLL_STATE_IDLE);
+                if (isCarouselScrolling != scrolling) {
+                    isCarouselScrolling = scrolling;
+                    if (!scrolling && !isPaused && !isReleased) {
+                        invalidateVisibleTargets();
+                        ensureLoopStarted();
+                    }
+                }
+            }
+
             @Override
             public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
                 if (dx == 0 && dy == 0) return;
-                updateVideoBounds();
                 int childCount = rv.getChildCount();
                 for (int i = 0; i < childCount; i++) {
                     View child = rv.getChildAt(i);
@@ -363,8 +395,11 @@ public class PlayerBackdropBlurManager {
             if (backdropScreenW <= 0f || backdropScreenH <= 0f || videoScreenW <= 0f || videoScreenH <= 0f) {
                 updateVideoBounds();
             }
-            // Синхронное дообновление композита (< 0.04 мс), если подсветка обновилась в этом же VSYNC
-            composeUnifiedBackdropIfNeeded(false);
+            // Быстрая O(1) проверка: перекомпозитим только если подсветка реально обновилась в этом же VSYNC
+            if (!hasCompositeFrame
+                    || (ambientLightView != null && ambientLightView.getContentGeneration() != lastComposedAmbientGen)) {
+                composeUnifiedBackdropIfNeeded(false);
+            }
         }
         ensureLoopStarted();
     }
@@ -487,7 +522,7 @@ public class PlayerBackdropBlurManager {
                 continue;
             }
             View host = drawable.getHostView();
-            if (host != null && isViewEffectivelyVisible(host)) {
+            if (host != null && host.getLayerType() != View.LAYER_TYPE_HARDWARE && isViewEffectivelyVisible(host)) {
                 host.invalidate();
             }
         }
@@ -631,7 +666,10 @@ public class PlayerBackdropBlurManager {
 
         long nowMs = SystemClock.uptimeMillis();
         boolean forced = force || forceNextCapture;
-        if (!forced && (nowMs - lastCaptureUptimeMs) < MIN_CAPTURE_INTERVAL_MS) {
+        long captureInterval = (isCarouselScrolling || isVerticalDragging)
+                ? SCROLL_CAPTURE_INTERVAL_MS
+                : MIN_CAPTURE_INTERVAL_MS;
+        if (!forced && (nowMs - lastCaptureUptimeMs) < captureInterval) {
             return false;
         }
 

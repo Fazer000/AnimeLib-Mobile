@@ -196,13 +196,6 @@ public class HorizontalEpisodesAdapter extends RecyclerView.Adapter<HorizontalEp
 
         // Check if this is the current episode
         boolean isCurrentEpisode = isMatchingEpisode(episode, currentEpisode);
-        
-        // Debug logging
-        android.util.Log.d("EpisodesAdapter", "Episode " + episode.getNumber() + 
-            " (ID: " + episode.getId() + ") at position " + position + 
-            ": isCurrentEpisode=" + isCurrentEpisode + 
-            ", currentEpisode=" + (currentEpisode != null ? 
-                currentEpisode.getNumber() + " (ID: " + currentEpisode.getId() + ")" : "null"));
 
         // Set selected state and colors
         holder.itemView.setSelected(isCurrentEpisode);
