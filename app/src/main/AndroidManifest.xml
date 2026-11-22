@@ -81,6 +81,7 @@
             android:name="com.example.animelib.UpdateActivity"
             android:exported="false"
             android:label="Обновление приложения"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.AnimeLIB.HeaderBar" />
 
         <provider
@@ -95,6 +96,11 @@
 
         <service
             android:name="com.example.animelib.services.DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
+            android:name="com.example.animelib.services.AppUpdateDownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 

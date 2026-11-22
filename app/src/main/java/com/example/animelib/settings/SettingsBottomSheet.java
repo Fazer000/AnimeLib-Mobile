@@ -462,11 +462,23 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
 
         if (checkForUpdatesOption != null) {
             checkForUpdatesOption.setOnClickListener(v -> {
+                Context ctx = getContext();
+                if (com.example.animelib.services.AppUpdateDownloadService.isDownloadActive()) {
+                    dismiss();
+                    UpdateActivity.start(ctx, com.example.animelib.services.AppUpdateDownloadService.getSnapshot().targetInfo);
+                    return;
+                }
+                if (com.example.animelib.services.AppUpdateDownloadService.getReadyDownloadedApk(ctx, null) != null) {
+                    dismiss();
+                    UpdateActivity.start(ctx, com.example.animelib.services.AppUpdateDownloadService.getSavedDownloadedUpdateInfo(ctx));
+                    return;
+                }
+
                 if (updateProgressBar != null) updateProgressBar.setVisibility(View.VISIBLE);
                 if (ivUpdateArrow != null) ivUpdateArrow.setVisibility(View.GONE);
                 checkForUpdatesOption.setEnabled(false);
 
-                UpdateManager.checkForUpdates(getContext(), null, new UpdateManager.CheckUpdateCallback() {
+                UpdateManager.checkForUpdates(ctx, null, new UpdateManager.CheckUpdateCallback() {
                     @Override
                     public void onUpdateCheckResult(boolean hasUpdate, UpdateInfo updateInfo, String currentVer) {
                         Activity activity = getActivity();
@@ -476,11 +488,12 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
                                 if (ivUpdateArrow != null) ivUpdateArrow.setVisibility(View.VISIBLE);
                                 checkForUpdatesOption.setEnabled(true);
 
-                                if (hasUpdate && updateInfo != null) {
+                                boolean isCurrentBeta = UpdateManager.isCurrentVersionBeta(ctx);
+                                if ((hasUpdate && updateInfo != null) || isCurrentBeta) {
                                     dismiss();
-                                    UpdateActivity.start(getContext(), updateInfo);
+                                    UpdateActivity.start(ctx, updateInfo);
                                 } else {
-                                    CustomToast.showInfo(getContext(), "У вас установлена последняя версия (v" + currentVer + ")");
+                                    CustomToast.showInfo(ctx, "У вас установлена последняя версия (v" + currentVer + ")");
                                 }
                             });
                         }
@@ -494,7 +507,7 @@ public class SettingsBottomSheet extends FlexibleBottomSheetDialog {
                                 if (updateProgressBar != null) updateProgressBar.setVisibility(View.GONE);
                                 if (ivUpdateArrow != null) ivUpdateArrow.setVisibility(View.VISIBLE);
                                 checkForUpdatesOption.setEnabled(true);
-                                CustomToast.showWarning(getContext(), errorMessage);
+                                CustomToast.showWarning(ctx, errorMessage);
                             });
                         }
                     }

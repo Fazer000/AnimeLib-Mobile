@@ -83,6 +83,9 @@
     <string name="btn_close">Закрыть</string>
     <string name="btn_download">Скачать</string>
     <string name="btn_download_apk">СКАЧАТЬ И УСТАНОВИТЬ APK</string>
+    <string name="btn_install_apk">УСТАНОВИТЬ APK</string>
+    <string name="btn_cancel_download">ОТМЕНИТЬ ЗАГРУЗКУ</string>
+    <string name="btn_reinstall_beta">ПЕРЕУСТАНОВИТЬ БЕТА-ВЕРСИЮ</string>
     <string name="btn_open_github">Открыть страницу на GitHub</string>
     <string name="btn_reset">Сбросить</string>
     <string name="player_skip_opening">Пропуск сегментов</string>

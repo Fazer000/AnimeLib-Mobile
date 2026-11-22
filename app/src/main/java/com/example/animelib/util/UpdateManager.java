@@ -33,6 +33,7 @@ public class UpdateManager {
 
     private static volatile UpdateInfo cachedLatestStable = null;
     private static volatile UpdateInfo cachedLatestBeta = null;
+    private static volatile UpdateInfo cachedCurrentBeta = null;
 
     public interface CheckUpdateCallback {
         void onUpdateCheckResult(boolean hasUpdate, UpdateInfo updateInfo, String currentVersion);
@@ -81,6 +82,10 @@ public class UpdateManager {
 
     public static UpdateInfo getCachedLatestBeta() {
         return cachedLatestBeta;
+    }
+
+    public static UpdateInfo getCachedCurrentBeta() {
+        return cachedCurrentBeta != null ? cachedCurrentBeta : cachedLatestBeta;
     }
 
     public static void checkForUpdates(Context context, OkHttpClient client, CheckUpdateCallback callback) {
@@ -153,11 +158,16 @@ public class UpdateManager {
                         UpdateInfo latestOverall = null;
                         UpdateInfo latestStable = null;
                         UpdateInfo latestBeta = null;
+                        UpdateInfo exactCurrentBeta = null;
 
                         for (UpdateInfo info : releases) {
                             if (info.isBeta()) {
                                 if (latestBeta == null || compareVersions(info.getTagName(), latestBeta.getTagName()) > 0) {
                                     latestBeta = info;
+                                }
+                                if (isVersionBeta(currentVersion)
+                                        && compareVersions(info.getTagName(), currentVersion) == 0) {
+                                    exactCurrentBeta = info;
                                 }
                             } else {
                                 if (latestStable == null || compareVersions(info.getTagName(), latestStable.getTagName()) > 0) {
@@ -172,6 +182,7 @@ public class UpdateManager {
 
                         cachedLatestStable = latestStable;
                         cachedLatestBeta = latestBeta;
+                        cachedCurrentBeta = exactCurrentBeta != null ? exactCurrentBeta : latestBeta;
 
                         UpdateInfo targetUpdate;
                         if (allowBeta) {

@@ -240,7 +240,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Откат до стабильной версии"
+                            android:text="Управление бета-версией"
                             android:textColor="@color/primary_text_color"
                             android:textSize="15sp"
                             android:fontFamily="@font/open_sans_bold" />
@@ -250,19 +250,33 @@
                         android:id="@+id/tvRollbackDescription"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="У вас установлена тестовая версия. Вы можете вернуться на стабильную сборку."
+                        android:text="У вас установлена тестовая версия. Вы можете переустановить её или вернуться на стабильную сборку."
                         android:textColor="@color/accent_text_color"
                         android:textSize="12.5sp"
                         android:layout_marginTop="6dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnReinstallBeta"
+                        style="@style/Widget.AnimeLIB.Button.Outlined"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/button_height_standard"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/btn_reinstall_beta"
+                        app:icon="@drawable/ic_refresh"
+                        app:iconGravity="textStart"
+                        app:iconTint="@color/purple_primary"
+                        android:textColor="@color/purple_primary"
+                        app:strokeColor="@color/purple_primary" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnRollbackToStable"
                         style="@style/Widget.AnimeLIB.Button.Outlined"
                         android:layout_width="match_parent"
                         android:layout_height="@dimen/button_height_standard"
-                        android:layout_marginTop="12dp"
+                        android:layout_marginTop="8dp"
                         android:text="ОТКАТИТЬСЯ ДО СТАБИЛЬНОЙ ВЕРСИИ"
                         app:icon="@drawable/ic_restore"
+                        app:iconGravity="textStart"
                         app:iconTint="@color/purple_primary"
                         android:textColor="@color/purple_primary"
                         app:strokeColor="@color/purple_primary" />
@@ -311,6 +325,23 @@
                 app:icon="@drawable/ic_download"
                 app:iconGravity="textStart"
                 app:iconTint="@color/white_color" />
+
+            <!-- Cancel Active Download Button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCancelDownload"
+                style="@style/Widget.AnimeLIB.Button.Outlined"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/button_height_standard"
+                android:layout_marginTop="8dp"
+                android:text="@string/btn_cancel_download"
+                android:textAllCaps="true"
+                android:textColor="@color/stop_btn_text"
+                app:backgroundTint="@color/stop_btn_bg"
+                app:strokeColor="@color/stop_btn_stroke"
+                app:icon="@drawable/ic_close"
+                app:iconGravity="textStart"
+                app:iconTint="@color/stop_btn_text"
+                android:visibility="gone" />
 
             <!-- GitHub Button -->
             <com.google.android.material.button.MaterialButton
