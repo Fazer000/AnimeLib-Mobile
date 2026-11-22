@@ -34,10 +34,10 @@ import java.lang.ref.WeakReference;
  */
 public class FrostedGlassDrawable extends Drawable {
 
-    private static final int FALLBACK_BG_NORMAL = 0xBD0A0C12;
+    private static final int FALLBACK_BG_NORMAL = 0xBD09090B;
     private static final int FALLBACK_BG_SELECTED = 0xC8160E28;
-    private static final int TINT_OVERLAY_NORMAL = 0x9E090B11;
-    private static final int TINT_OVERLAY_SELECTED = 0xA8160E28;
+    private static final int TINT_OVERLAY_NORMAL = 0x9409090B;
+    private static final int TINT_OVERLAY_SELECTED = 0xA4160E28;
     private static final int STROKE_SELECTED_COLOR = 0xFF8852DE; // @color/purple_primary
 
     // AGSL-шейдер оптического матового зернистого стекла (API 33+)
@@ -191,16 +191,16 @@ public class FrostedGlassDrawable extends Drawable {
         float radius = isPill ? (Math.min(width, height) * 0.5f) : cornerRadiusPx;
 
         View host = hostViewRef.get();
-        Bitmap blurred = manager.getBlurredBitmap();
-        float videoW = manager.getVideoScreenW();
-        float videoH = manager.getVideoScreenH();
+        Bitmap backdrop = manager.getCompositeBackdropBitmap();
+        float backdropW = manager.getBackdropScreenW();
+        float backdropH = manager.getBackdropScreenH();
 
         boolean drewLiveBackdrop = false;
 
-        if (host != null && blurred != null && videoW > 1f && videoH > 1f) {
+        if (host != null && backdrop != null && backdropW > 1f && backdropH > 1f) {
             long gen = manager.getFrameGeneration();
             if (localBackdropShader == null || cachedFrameGeneration != gen) {
-                localBackdropShader = new BitmapShader(blurred, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+                localBackdropShader = new BitmapShader(backdrop, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
                 cachedFrameGeneration = gen;
             }
 
@@ -209,25 +209,25 @@ public class FrostedGlassDrawable extends Drawable {
             float viewY = tmpViewLoc[1];
             float totalScaleX = computeTotalScaleX(host);
             float totalScaleY = computeTotalScaleY(host);
-            float videoX = manager.getVideoScreenX();
-            float videoY = manager.getVideoScreenY();
+            float backdropX = manager.getBackdropScreenX();
+            float backdropY = manager.getBackdropScreenY();
 
             lastDrawnViewX = tmpViewLoc[0];
             lastDrawnViewY = tmpViewLoc[1];
             lastDrawnScaleX = totalScaleX;
             lastDrawnScaleY = totalScaleY;
-            lastDrawnVideoX = videoX;
-            lastDrawnVideoY = videoY;
-            lastDrawnVideoW = videoW;
-            lastDrawnVideoH = videoH;
+            lastDrawnVideoX = backdropX;
+            lastDrawnVideoY = backdropY;
+            lastDrawnVideoW = backdropW;
+            lastDrawnVideoH = backdropH;
 
             float invScaleX = totalScaleX > 0.01f ? (1f / totalScaleX) : 1f;
             float invScaleY = totalScaleY > 0.01f ? (1f / totalScaleY) : 1f;
 
-            float sx = (videoW / (float) PlayerBackdropBlurManager.BLUR_WIDTH) * invScaleX;
-            float sy = (videoH / (float) PlayerBackdropBlurManager.BLUR_HEIGHT) * invScaleY;
-            float tx = (videoX - viewX) * invScaleX + bounds.left;
-            float ty = (videoY - viewY) * invScaleY + bounds.top;
+            float sx = (backdropW / (float) PlayerBackdropBlurManager.COMPOSITE_WIDTH) * invScaleX;
+            float sy = (backdropH / (float) PlayerBackdropBlurManager.COMPOSITE_HEIGHT) * invScaleY;
+            float tx = (backdropX - viewX) * invScaleX + bounds.left;
+            float ty = (backdropY - viewY) * invScaleY + bounds.top;
 
             backdropMatrix.reset();
             backdropMatrix.setScale(sx, sy);
@@ -296,12 +296,12 @@ public class FrostedGlassDrawable extends Drawable {
 
             if (isSelected) {
                 // Приглушённое тёмное матовое стекло с аккуратным фиолетовым акцентом
-                shader.setFloatUniform("uTintColor", 0.082f, 0.052f, 0.152f, 0.66f);
+                shader.setFloatUniform("uTintColor", 0.082f, 0.052f, 0.152f, 0.64f);
                 shader.setFloatUniform("uGrainStrength", 0.040f);
                 shader.setFloatUniform("uSheenStrength", 0.034f);
             } else {
-                // Тёмное дымчатое матовое стекло в тон интерфейса плеера
-                shader.setFloatUniform("uTintColor", 0.034f, 0.041f, 0.062f, 0.62f);
+                // Нейтральное тёмное дымчатое матовое стекло — точно передаёт оттенок видео и подсветки без паразитной синевы
+                shader.setFloatUniform("uTintColor", 0.035f, 0.035f, 0.042f, 0.58f);
                 shader.setFloatUniform("uGrainStrength", 0.042f);
                 shader.setFloatUniform("uSheenStrength", 0.026f);
             }

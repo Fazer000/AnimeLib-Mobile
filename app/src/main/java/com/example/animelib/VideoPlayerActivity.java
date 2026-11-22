@@ -1048,6 +1048,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
         if (playerUIBinder.playerView != null) {
             backdropBlurManager = new com.example.animelib.ui.PlayerBackdropBlurManager(this, playerUIBinder.playerView);
+            if (playerUIBinder.ambientContainer != null) {
+                backdropBlurManager.setAmbientLightView(playerUIBinder.ambientContainer.findViewById(R.id.ambientLightView));
+            }
             episodesManager.setBackdropBlurManager(backdropBlurManager);
             applyActiveFrostedGlassToPlayerHud(rootView);
         }
