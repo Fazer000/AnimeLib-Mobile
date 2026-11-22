@@ -104,6 +104,8 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
     private ImageButton btnBsClose;
     private TextView tvTitle;
     private TextView tvSubtitle;
+    private View stepIndicator1;
+    private View stepIndicator2;
 
     // Step 1 UI Elements
     private View layoutStep1;
@@ -192,6 +194,8 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         btnBsClose = view.findViewById(R.id.btnBsClose);
         tvTitle = view.findViewById(R.id.tvTitle);
         tvSubtitle = view.findViewById(R.id.tvSubtitle);
+        stepIndicator1 = view.findViewById(R.id.stepIndicator1);
+        stepIndicator2 = view.findViewById(R.id.stepIndicator2);
 
         // Step 1 Views init
         layoutStep1 = view.findViewById(R.id.layoutStep1);
@@ -320,7 +324,13 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             btnBsBack.setVisibility(getOnBackPressedAction() != null ? View.VISIBLE : View.GONE);
         }
         tvTitle.setText("Скачивание серий");
-        tvSubtitle.setText("Шаг 1 из 2: Озвучка и качество");
+        tvSubtitle.setText("Шаг 1 из 2 • Озвучка и качество");
+        if (stepIndicator1 != null) {
+            stepIndicator1.setBackgroundResource(R.drawable.bg_m3_step_indicator_active);
+        }
+        if (stepIndicator2 != null) {
+            stepIndicator2.setBackgroundResource(R.drawable.bg_m3_step_indicator_inactive);
+        }
 
         if (layoutStep2.getVisibility() == View.VISIBLE) {
             layoutStep2.animate()
@@ -348,6 +358,12 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
     private void showStep2() {
         btnBsBack.setVisibility(View.VISIBLE);
         tvTitle.setText("Выбор серий");
+        if (stepIndicator1 != null) {
+            stepIndicator1.setBackgroundResource(R.drawable.bg_m3_step_indicator_active);
+        }
+        if (stepIndicator2 != null) {
+            stepIndicator2.setBackgroundResource(R.drawable.bg_m3_step_indicator_active);
+        }
         updateDownloadButtonText();
 
         if (selectedVoiceover != null) {
@@ -427,6 +443,15 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
 
         if (chipPlayerAnimelib != null) {
             chipPlayerAnimelib.setVisibility(hasAnimelib ? View.VISIBLE : View.GONE);
+            ViewGroup.LayoutParams rawLp = chipPlayerAnimelib.getLayoutParams();
+            if (rawLp instanceof ViewGroup.MarginLayoutParams) {
+                ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) rawLp;
+                int gapPx = (hasAnimelib && hasKodik) ? (int) (6 * getResources().getDisplayMetrics().density) : 0;
+                if (mlp.getMarginEnd() != gapPx) {
+                    mlp.setMarginEnd(gapPx);
+                    chipPlayerAnimelib.setLayoutParams(mlp);
+                }
+            }
         }
         if (chipPlayerKodik != null) {
             chipPlayerKodik.setVisibility(hasKodik ? View.VISIBLE : View.GONE);
@@ -438,25 +463,25 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             selectedPlayerType = "animelib";
         }
 
-        int selectedTextColor = ContextCompat.getColor(requireContext(), R.color.purple_primary);
+        int selectedTextColor = ContextCompat.getColor(requireContext(), R.color.white_color);
         int unselectedTextColor = ContextCompat.getColor(requireContext(), R.color.primary_text_color);
 
         if ("animelib".equalsIgnoreCase(selectedPlayerType)) {
             if (chipPlayerAnimelib != null) {
-                chipPlayerAnimelib.setBackgroundResource(R.drawable.chip_selected);
+                chipPlayerAnimelib.setBackgroundResource(R.drawable.bg_m3_chip_selected);
                 chipPlayerAnimelib.setTextColor(selectedTextColor);
             }
             if (chipPlayerKodik != null) {
-                chipPlayerKodik.setBackgroundResource(R.drawable.chip_unselected);
+                chipPlayerKodik.setBackgroundResource(R.drawable.bg_m3_chip_unselected);
                 chipPlayerKodik.setTextColor(unselectedTextColor);
             }
         } else {
             if (chipPlayerKodik != null) {
-                chipPlayerKodik.setBackgroundResource(R.drawable.chip_selected);
+                chipPlayerKodik.setBackgroundResource(R.drawable.bg_m3_chip_selected);
                 chipPlayerKodik.setTextColor(selectedTextColor);
             }
             if (chipPlayerAnimelib != null) {
-                chipPlayerAnimelib.setBackgroundResource(R.drawable.chip_unselected);
+                chipPlayerAnimelib.setBackgroundResource(R.drawable.bg_m3_chip_unselected);
                 chipPlayerAnimelib.setTextColor(unselectedTextColor);
             }
         }
@@ -488,16 +513,16 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         allChips.addAll(dynamicQualityChips);
 
         if (!isAdded() || getContext() == null) return;
-        int selectedTextColor = ContextCompat.getColor(requireContext(), R.color.purple_primary);
+        int selectedTextColor = ContextCompat.getColor(requireContext(), R.color.white_color);
         int unselectedTextColor = ContextCompat.getColor(requireContext(), R.color.primary_text_color);
 
         for (TextView chip : allChips) {
             if (chip != null) {
                 if (chip.getText().toString().equalsIgnoreCase(selectedQuality)) {
-                    chip.setBackgroundResource(R.drawable.chip_selected);
+                    chip.setBackgroundResource(R.drawable.bg_m3_chip_selected);
                     chip.setTextColor(selectedTextColor);
                 } else {
-                    chip.setBackgroundResource(R.drawable.chip_unselected);
+                    chip.setBackgroundResource(R.drawable.bg_m3_chip_unselected);
                     chip.setTextColor(unselectedTextColor);
                 }
             }
@@ -647,21 +672,24 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
 
     private TextView createDynamicQualityChip(String qualityKey) {
         TextView chip = new TextView(requireContext());
+        float density = getResources().getDisplayMetrics().density;
         chip.setText(qualityKey + "p");
         chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        chip.setTypeface(androidx.core.content.res.ResourcesCompat.getFont(requireContext(), R.font.open_sans_bold));
+        chip.setGravity(android.view.Gravity.CENTER);
+        chip.setMinWidth((int) (62 * density));
         chip.setTextColor(ContextCompat.getColor(requireContext(), R.color.primary_text_color));
-        chip.setBackgroundResource(R.drawable.chip_unselected);
-        int pdH = (int) (16 * getResources().getDisplayMetrics().density);
-        int pdV = (int) (7 * getResources().getDisplayMetrics().density);
-        chip.setPadding(pdH, pdV, pdH, pdV);
+        chip.setBackgroundResource(R.drawable.bg_m3_chip_unselected);
+        int pdH = (int) (16 * density);
+        chip.setPadding(pdH, 0, pdH, 0);
         chip.setClickable(true);
         chip.setFocusable(true);
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
+                (int) (38 * density)
         );
-        lp.setMarginEnd((int) (8 * getResources().getDisplayMetrics().density));
+        lp.setMarginEnd((int) (8 * density));
         chip.setLayoutParams(lp);
 
         chip.setOnClickListener(v -> {
@@ -906,8 +934,9 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         }
 
         if (btnDownload != null) {
-            btnDownload.setText("Скачать");
+            btnDownload.setText(selectedCount > 0 ? ("Скачать (" + selectedCount + ")") : "Скачать");
             btnDownload.setEnabled(selectedCount > 0);
+            btnDownload.setAlpha(selectedCount > 0 ? 1.0f : 0.45f);
         }
     }
 
@@ -1084,34 +1113,66 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
                 }
             }
 
+            Context ctx = holder.itemView.getContext();
+            int purpleColor = ContextCompat.getColor(ctx, R.color.purple_primary);
+            int primaryTextColor = ContextCompat.getColor(ctx, R.color.primary_text_color);
+            int accentTextColor = ContextCompat.getColor(ctx, R.color.accent_text_color);
+            int downloadedFgColor = ContextCompat.getColor(ctx, R.color.downloaded_tag_fg);
+            int blueColor = ContextCompat.getColor(ctx, R.color.app_text_accent_blue);
+            int errorColor = ContextCompat.getColor(ctx, R.color.stop_btn_text);
+
             if (item.isAlreadyDownloaded) {
                 holder.tvStatus.setText("Скачано");
-                holder.tvStatus.setTextColor(0xFF4CAF50); // green
-                holder.itemView.setBackgroundResource(R.drawable.episode_item_normal);
-                holder.itemView.setAlpha(0.6f);
+                holder.tvStatus.setTextColor(downloadedFgColor);
+                holder.tvEpisodeName.setTextColor(downloadedFgColor);
+                holder.itemView.setBackgroundResource(R.drawable.bg_m3_episode_downloaded);
+                holder.itemView.setAlpha(0.92f);
+                if (holder.ivEpisodeStatus != null) {
+                    holder.ivEpisodeStatus.setVisibility(View.VISIBLE);
+                    holder.ivEpisodeStatus.setImageResource(R.drawable.ic_check);
+                    holder.ivEpisodeStatus.setImageTintList(android.content.res.ColorStateList.valueOf(downloadedFgColor));
+                }
             } else if (item.isDownloading) {
-                holder.tvStatus.setText("Загружается");
-                holder.tvStatus.setTextColor(0xFF2196F3); // blue
-                holder.itemView.setBackgroundResource(R.drawable.episode_item_normal);
-                holder.itemView.setAlpha(0.6f);
+                holder.tvStatus.setText("Загрузка");
+                holder.tvStatus.setTextColor(blueColor);
+                holder.tvEpisodeName.setTextColor(primaryTextColor);
+                holder.itemView.setBackgroundResource(R.drawable.bg_m3_episode_normal);
+                holder.itemView.setAlpha(0.82f);
+                if (holder.ivEpisodeStatus != null) {
+                    holder.ivEpisodeStatus.setVisibility(View.VISIBLE);
+                    holder.ivEpisodeStatus.setImageResource(R.drawable.ic_download);
+                    holder.ivEpisodeStatus.setImageTintList(android.content.res.ColorStateList.valueOf(blueColor));
+                }
             } else if (!item.isAvailable) {
                 holder.tvStatus.setText("Недоступно");
-                holder.tvStatus.setTextColor(0xFFF44336); // red
-                holder.itemView.setBackgroundResource(R.drawable.episode_item_normal);
-                holder.itemView.setAlpha(0.5f);
+                holder.tvStatus.setTextColor(errorColor);
+                holder.tvEpisodeName.setTextColor(primaryTextColor);
+                holder.itemView.setBackgroundResource(R.drawable.bg_m3_episode_error);
+                holder.itemView.setAlpha(0.55f);
+                if (holder.ivEpisodeStatus != null) {
+                    holder.ivEpisodeStatus.setVisibility(View.GONE);
+                }
             } else {
                 holder.itemView.setAlpha(1.0f);
 
                 if (item.isChecked) {
                     holder.tvStatus.setText("Выбрано");
-                    holder.tvStatus.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.purple_primary));
-                    holder.tvEpisodeName.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.purple_primary));
-                    holder.itemView.setBackgroundResource(R.drawable.episode_item_selected);
+                    holder.tvStatus.setTextColor(purpleColor);
+                    holder.tvEpisodeName.setTextColor(purpleColor);
+                    holder.itemView.setBackgroundResource(R.drawable.bg_m3_episode_selected);
+                    if (holder.ivEpisodeStatus != null) {
+                        holder.ivEpisodeStatus.setVisibility(View.VISIBLE);
+                        holder.ivEpisodeStatus.setImageResource(R.drawable.ic_check);
+                        holder.ivEpisodeStatus.setImageTintList(android.content.res.ColorStateList.valueOf(purpleColor));
+                    }
                 } else {
                     holder.tvStatus.setText("Доступно");
-                    holder.tvStatus.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.accent_text_color));
-                    holder.tvEpisodeName.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.primary_text_color));
-                    holder.itemView.setBackgroundResource(R.drawable.episode_item_normal);
+                    holder.tvStatus.setTextColor(accentTextColor);
+                    holder.tvEpisodeName.setTextColor(primaryTextColor);
+                    holder.itemView.setBackgroundResource(R.drawable.bg_m3_episode_normal);
+                    if (holder.ivEpisodeStatus != null) {
+                        holder.ivEpisodeStatus.setVisibility(View.GONE);
+                    }
                 }
             }
 
@@ -1141,6 +1202,7 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             View itemContainer;
             TextView tvEpisodeName;
             TextView statusTagText;
+            ImageView ivEpisodeStatus;
             TextView tvStatus;
 
             ViewHolder(@NonNull View itemView) {
@@ -1148,6 +1210,7 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
                 itemContainer = itemView.findViewById(R.id.itemContainer);
                 tvEpisodeName = itemView.findViewById(R.id.tvEpisodeName);
                 statusTagText = itemView.findViewById(R.id.statusTagText);
+                ivEpisodeStatus = itemView.findViewById(R.id.ivEpisodeStatus);
                 tvStatus = itemView.findViewById(R.id.tvStatus);
             }
         }

@@ -5,9 +5,9 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.content.res.ColorStateList;
 import android.widget.ImageButton;
 import android.widget.ImageView;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -36,8 +36,9 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
     private TextView tvProgressHeaderTitle;
     private TextView tvProgressHeaderSubtitle;
     private TextView tvOverallText;
+    private TextView tvOverallStatus;
     private TextView tvOverallPercent;
-    private ProgressBar pbOverall;
+    private M3LinearProgressIndicator pbOverall;
     private RecyclerView rvProgressTasks;
     private MaterialButton btnOpenDownloadSheet;
     private MaterialButton btnPauseResumeDownload;
@@ -117,6 +118,7 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
         tvProgressHeaderTitle = view.findViewById(R.id.tvProgressHeaderTitle);
         tvProgressHeaderSubtitle = view.findViewById(R.id.tvProgressHeaderSubtitle);
         tvOverallText = view.findViewById(R.id.tvOverallText);
+        tvOverallStatus = view.findViewById(R.id.tvOverallStatus);
         tvOverallPercent = view.findViewById(R.id.tvOverallPercent);
         pbOverall = view.findViewById(R.id.pbOverall);
         rvProgressTasks = view.findViewById(R.id.rvProgressTasks);
@@ -303,20 +305,33 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
                 : DownloadService.isRunning();
         boolean hasPending = pendingCount > 0;
 
+        if (!isAdded() || getContext() == null) return;
+        Context ctx = requireContext();
+        int purpleColor = ContextCompat.getColor(ctx, R.color.purple_primary);
+        int purpleTrackColor = ContextCompat.getColor(ctx, R.color.purple_alpha_25);
+        int successColor = ContextCompat.getColor(ctx, R.color.downloaded_tag_fg);
+        int accentTextColor = ContextCompat.getColor(ctx, R.color.accent_text_color);
+
         if (total == 0) {
             tvProgressHeaderSubtitle.setText("Нет активных скачиваний");
             tvOverallText.setText("Очередь пуста");
+            if (tvOverallStatus != null) {
+                tvOverallStatus.setText("Выберите серии для загрузки");
+                tvOverallStatus.setTextColor(accentTextColor);
+            }
             tvOverallPercent.setText("0%");
-            pbOverall.setProgress(0);
+            tvOverallPercent.setTextColor(purpleColor);
+            tvOverallPercent.setBackgroundResource(R.drawable.bg_m3_tonal_pill_purple);
+            if (pbOverall != null) {
+                pbOverall.setIndicatorColor(purpleColor);
+                pbOverall.setStopDotColor(purpleColor);
+                pbOverall.setTrackColor(purpleTrackColor);
+                pbOverall.setProgress(0, false);
+            }
             if (btnPauseResumeDownload != null) {
                 btnPauseResumeDownload.setVisibility(View.GONE);
             }
-            if (btnStopDownload != null) {
-                btnStopDownload.setText("Закрыть");
-                btnStopDownload.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
-                        ContextCompat.getColor(requireContext(), R.color.dialog_danger_bg)));
-                btnStopDownload.setTextColor(ContextCompat.getColor(requireContext(), R.color.dialog_danger_text));
-            }
+            styleStopButton(false);
             return;
         }
 
@@ -328,56 +343,93 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
 
         tvOverallText.setText("Обработано " + completed + " из " + total + " серий");
         tvOverallPercent.setText(overallProgress + "%");
-        pbOverall.setProgress(overallProgress);
+
+        boolean isAllCompleted = !hasPending && completed == total;
+        if (isAllCompleted) {
+            tvOverallPercent.setTextColor(successColor);
+            tvOverallPercent.setBackgroundResource(R.drawable.bg_m3_tonal_pill_success);
+            if (pbOverall != null) {
+                pbOverall.setIndicatorColor(successColor);
+                pbOverall.setStopDotColor(successColor);
+                pbOverall.setTrackColor(purpleTrackColor);
+                pbOverall.setProgress(overallProgress);
+            }
+        } else {
+            tvOverallPercent.setTextColor(purpleColor);
+            tvOverallPercent.setBackgroundResource(R.drawable.bg_m3_tonal_pill_purple);
+            if (pbOverall != null) {
+                pbOverall.setIndicatorColor(purpleColor);
+                pbOverall.setStopDotColor(purpleColor);
+                pbOverall.setTrackColor(purpleTrackColor);
+                pbOverall.setProgress(overallProgress);
+            }
+        }
 
         if (isThisTitleDownloading) {
             tvProgressHeaderSubtitle.setText(animeName.isEmpty() ? "Загрузка серий..." : animeName);
+            if (tvOverallStatus != null) {
+                tvOverallStatus.setText("Загрузка в фоне");
+                tvOverallStatus.setTextColor(purpleColor);
+            }
             if (btnPauseResumeDownload != null) {
                 btnPauseResumeDownload.setVisibility(View.VISIBLE);
                 btnPauseResumeDownload.setIconResource(R.drawable.ic_pause);
                 btnPauseResumeDownload.setContentDescription("Пауза");
             }
-            if (btnStopDownload != null) {
-                btnStopDownload.setText("Остановить");
-                btnStopDownload.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
-                        ContextCompat.getColor(requireContext(), R.color.dialog_danger_bg)));
-                btnStopDownload.setTextColor(ContextCompat.getColor(requireContext(), R.color.dialog_danger_text));
-            }
+            styleStopButton(true);
         } else if (hasPending && isThisTitleFirst) {
-            tvProgressHeaderSubtitle.setText(animeName.isEmpty() ? "На паузе" : (animeName + " • Пауза"));
+            tvProgressHeaderSubtitle.setText(animeName.isEmpty() ? "На паузе" : animeName);
+            if (tvOverallStatus != null) {
+                tvOverallStatus.setText("На паузе");
+                tvOverallStatus.setTextColor(accentTextColor);
+            }
             if (btnPauseResumeDownload != null) {
                 btnPauseResumeDownload.setVisibility(View.VISIBLE);
                 btnPauseResumeDownload.setIconResource(R.drawable.ic_play);
                 btnPauseResumeDownload.setContentDescription("Продолжить");
             }
-            if (btnStopDownload != null) {
-                btnStopDownload.setText("Остановить");
-                btnStopDownload.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
-                        ContextCompat.getColor(requireContext(), R.color.dialog_danger_bg)));
-                btnStopDownload.setTextColor(ContextCompat.getColor(requireContext(), R.color.dialog_danger_text));
-            }
+            styleStopButton(true);
         } else if (hasPending) {
-            tvProgressHeaderSubtitle.setText(animeName.isEmpty() ? "В ожидании" : (animeName + " • В ожидании"));
+            tvProgressHeaderSubtitle.setText(animeName.isEmpty() ? "В ожидании" : animeName);
+            if (tvOverallStatus != null) {
+                tvOverallStatus.setText("Ожидание очереди");
+                tvOverallStatus.setTextColor(accentTextColor);
+            }
             if (btnPauseResumeDownload != null) {
                 btnPauseResumeDownload.setVisibility(View.GONE);
             }
-            if (btnStopDownload != null) {
-                btnStopDownload.setText("Остановить");
-                btnStopDownload.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
-                        ContextCompat.getColor(requireContext(), R.color.dialog_danger_bg)));
-                btnStopDownload.setTextColor(ContextCompat.getColor(requireContext(), R.color.dialog_danger_text));
-            }
+            styleStopButton(true);
         } else {
-            tvProgressHeaderSubtitle.setText("Завершено");
+            tvProgressHeaderSubtitle.setText(animeName.isEmpty() ? "Завершено" : animeName);
+            if (tvOverallStatus != null) {
+                tvOverallStatus.setText(isAllCompleted ? "Загрузка завершена" : "Завершено с ошибками");
+                tvOverallStatus.setTextColor(isAllCompleted ? successColor : ContextCompat.getColor(ctx, R.color.stop_btn_text));
+            }
             if (btnPauseResumeDownload != null) {
                 btnPauseResumeDownload.setVisibility(View.GONE);
             }
-            if (btnStopDownload != null) {
-                btnStopDownload.setText("Закрыть");
-                btnStopDownload.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
-                        ContextCompat.getColor(requireContext(), R.color.dialog_danger_bg)));
-                btnStopDownload.setTextColor(ContextCompat.getColor(requireContext(), R.color.dialog_danger_text));
-            }
+            styleStopButton(false);
+        }
+    }
+
+    private void styleStopButton(boolean isActiveDanger) {
+        if (btnStopDownload == null || !isAdded() || getContext() == null) return;
+        Context ctx = requireContext();
+        if (isActiveDanger) {
+            int dangerText = ContextCompat.getColor(ctx, R.color.stop_btn_text);
+            btnStopDownload.setText("Остановить");
+            btnStopDownload.setBackgroundTintList(ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.stop_btn_bg)));
+            btnStopDownload.setRippleColor(ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.stop_btn_stroke)));
+            btnStopDownload.setTextColor(dangerText);
+            btnStopDownload.setIconResource(R.drawable.ic_close);
+            btnStopDownload.setIconTint(ColorStateList.valueOf(dangerText));
+        } else {
+            int neutralText = ContextCompat.getColor(ctx, R.color.dialog_btn_neutral_text);
+            btnStopDownload.setText("Закрыть");
+            btnStopDownload.setBackgroundTintList(ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.dialog_btn_neutral_bg)));
+            btnStopDownload.setRippleColor(ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.dialog_ripple_color)));
+            btnStopDownload.setTextColor(neutralText);
+            btnStopDownload.setIcon(null);
         }
     }
 
@@ -439,13 +491,17 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
                 }
 
                 Context context = taskHolder.itemView.getContext();
-                int secondaryColor = ContextCompat.getColor(context, R.color.secondary_text_color);
+                int primaryTextColor = ContextCompat.getColor(context, R.color.primary_text_color);
                 int accentColor = ContextCompat.getColor(context, R.color.accent_text_color);
+                int purpleColor = ContextCompat.getColor(context, R.color.purple_primary);
+                int purpleTrackColor = ContextCompat.getColor(context, R.color.purple_alpha_25);
 
-                int selectedBg = ContextCompat.getColor(context, R.color.chip_selected_bg);
-                int unselectedBg = ContextCompat.getColor(context, R.color.chip_unselected_bg);
-                int baseStroke = ContextCompat.getColor(context, R.color.chip_unselected_stroke);
-                int accentStroke = ContextCompat.getColor(context, R.color.chip_selected_stroke);
+                int activeBg = ContextCompat.getColor(context, R.color.popup_item_selected_bg);
+                int idleBg = ContextCompat.getColor(context, R.color.dialog_card_bg);
+                int successBg = ContextCompat.getColor(context, R.color.downloaded_tag_bg);
+                int successFg = ContextCompat.getColor(context, R.color.downloaded_tag_fg);
+                int errorBg = ContextCompat.getColor(context, R.color.stop_btn_bg);
+                int errorFg = ContextCompat.getColor(context, R.color.stop_btn_text);
 
                 if (taskHolder.itemContainer != null) {
                     taskHolder.itemContainer.setBackground(null);
@@ -454,38 +510,42 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
                 switch (item.status) {
                     case DownloadService.TaskProgressItem.STATUS_DOWNLOADING:
                         if (taskHolder.itemCard != null) {
-                            taskHolder.itemCard.setCardBackgroundColor(selectedBg);
-                            taskHolder.itemCard.setProgressValues(item.percent, baseStroke, accentStroke, 2.5f);
+                            taskHolder.itemCard.setCardBackgroundColor(activeBg);
+                            taskHolder.itemCard.setProgressValues(item.percent, purpleTrackColor, purpleColor, 2.2f);
                         }
+                        taskHolder.tvTaskTitle.setTextColor(purpleColor);
                         taskHolder.tvPercent.setText(item.percent + "%");
-                        taskHolder.tvPercent.setTextColor(secondaryColor);
+                        taskHolder.tvPercent.setTextColor(purpleColor);
                         break;
 
                     case DownloadService.TaskProgressItem.STATUS_COMPLETED:
                         if (taskHolder.itemCard != null) {
-                            taskHolder.itemCard.setCardBackgroundColor(unselectedBg);
-                            taskHolder.itemCard.setProgressValues(100, baseStroke, 0xFF10B981, 2.0f);
+                            taskHolder.itemCard.setCardBackgroundColor(successBg);
+                            taskHolder.itemCard.setProgressValues(100, 0, successFg, 1.5f);
                         }
-                        taskHolder.tvPercent.setText("100%");
-                        taskHolder.tvPercent.setTextColor(0xFF10B981);
+                        taskHolder.tvTaskTitle.setTextColor(successFg);
+                        taskHolder.tvPercent.setText("Готово");
+                        taskHolder.tvPercent.setTextColor(successFg);
                         break;
 
                     case DownloadService.TaskProgressItem.STATUS_ERROR:
                         if (taskHolder.itemCard != null) {
-                            taskHolder.itemCard.setCardBackgroundColor(unselectedBg);
-                            taskHolder.itemCard.setProgressValues(item.percent, baseStroke, 0xFFEF4444, 2.0f);
+                            taskHolder.itemCard.setCardBackgroundColor(errorBg);
+                            taskHolder.itemCard.setProgressValues(100, 0, errorFg, 1.5f);
                         }
+                        taskHolder.tvTaskTitle.setTextColor(errorFg);
                         taskHolder.tvPercent.setText("Ошибка");
-                        taskHolder.tvPercent.setTextColor(0xFFEF4444);
+                        taskHolder.tvPercent.setTextColor(errorFg);
                         break;
 
                     case DownloadService.TaskProgressItem.STATUS_WAITING:
                     default:
                         if (taskHolder.itemCard != null) {
-                            taskHolder.itemCard.setCardBackgroundColor(unselectedBg);
-                            taskHolder.itemCard.setProgressValues(0, baseStroke, accentStroke, 1.5f);
+                            taskHolder.itemCard.setCardBackgroundColor(idleBg);
+                            taskHolder.itemCard.setProgressValues(0, 0, 0, 0f);
                         }
-                        taskHolder.tvPercent.setText("0%");
+                        taskHolder.tvTaskTitle.setTextColor(primaryTextColor);
+                        taskHolder.tvPercent.setText("Ожидание");
                         taskHolder.tvPercent.setTextColor(accentColor);
                         break;
                 }
