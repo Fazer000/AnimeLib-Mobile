@@ -258,6 +258,8 @@ public class UpdateActivity extends AppCompatActivity implements AppUpdateDownlo
             switchBetaUpdates.setChecked(isBetaEnabled);
             switchBetaUpdates.setOnCheckedChangeListener((buttonView, isChecked) -> {
                 UpdateManager.setBetaUpdatesEnabled(this, isChecked);
+                updateBetaManagementVisibility();
+                syncWithDownloadService(false);
                 CustomToast.showInfo(this, isChecked ? "Включено получение бета-версий" : "Выключено получение бета-версий");
                 loadUpdatesFromNetwork();
             });
@@ -266,6 +268,8 @@ public class UpdateActivity extends AppCompatActivity implements AppUpdateDownlo
         if (betaUpdatesCard != null && switchBetaUpdates != null) {
             betaUpdatesCard.setOnClickListener(v -> switchBetaUpdates.toggle());
         }
+
+        updateBetaManagementVisibility();
 
         btnOpenGithub.setOnClickListener(v -> {
             try {
@@ -294,7 +298,7 @@ public class UpdateActivity extends AppCompatActivity implements AppUpdateDownlo
             boolean isNewerAvailable = updateInfo != null && UpdateManager.isUpdateAvailable(currentVer, updateInfo.getTagName());
             if (isNewerAvailable) {
                 checkInstallPermissionAndDownload(updateInfo, false);
-            } else if (UpdateManager.isCurrentVersionBeta(this)) {
+            } else if (UpdateManager.isCurrentVersionBeta(this) && UpdateManager.isBetaUpdatesEnabled(this)) {
                 startBetaReinstall();
             } else if (updateInfo != null) {
                 checkInstallPermissionAndDownload(updateInfo, false);
@@ -382,48 +386,59 @@ public class UpdateActivity extends AppCompatActivity implements AppUpdateDownlo
             }
         }
 
-        // Настройка секции управления бета-версией (переустановка + откат)
-        if (layoutRollbackSection != null) {
-            if (isCurrentBeta) {
-                layoutRollbackSection.setVisibility(View.VISIBLE);
-                if (betaUpdatesCard != null) {
-                    betaUpdatesCard.setBackgroundResource(R.drawable.bg_m3_item_top);
-                    if (betaUpdatesCard.getLayoutParams() instanceof android.view.ViewGroup.MarginLayoutParams) {
-                        android.view.ViewGroup.MarginLayoutParams lp = (android.view.ViewGroup.MarginLayoutParams) betaUpdatesCard.getLayoutParams();
-                        lp.bottomMargin = (int) (3 * getResources().getDisplayMetrics().density);
-                        betaUpdatesCard.setLayoutParams(lp);
-                    }
-                }
+        // Настройка секции управления бета-версией (только если установлена бета И включено получение бет)
+        updateBetaManagementVisibility();
 
-                String betaTag = (currentBetaInfo != null && currentBetaInfo.getTagName() != null && !currentBetaInfo.getTagName().isEmpty())
-                        ? currentBetaInfo.getTagName()
-                        : ("v" + currentVer);
-                if (btnReinstallBeta != null) {
-                    btnReinstallBeta.setText("ПЕРЕУСТАНОВИТЬ " + betaTag);
-                }
+        syncWithDownloadService(false);
+    }
 
-                String stableTag = stableInfo != null && stableInfo.getTagName() != null ? stableInfo.getTagName() : "";
-                if (!stableTag.isEmpty()) {
-                    btnRollbackToStable.setText("ОТКАТИТЬСЯ ДО " + stableTag);
-                    tvRollbackDescription.setText("У вас установлена бета-версия (" + currentVer + "). Вы можете переустановить её или вернуться к стабильной сборке " + stableTag + ".");
-                } else {
-                    btnRollbackToStable.setText("ОТКАТИТЬСЯ ДО СТАБИЛЬНОЙ ВЕРСИИ");
-                    tvRollbackDescription.setText("У вас установлена бета-версия (" + currentVer + "). Вы можете переустановить её или вернуться к последней стабильной сборке.");
+    @SuppressLint("SetTextI18n")
+    private void updateBetaManagementVisibility() {
+        if (layoutRollbackSection == null) return;
+        boolean isCurrentBeta = UpdateManager.isCurrentVersionBeta(this);
+        boolean isBetaUpdatesEnabled = UpdateManager.isBetaUpdatesEnabled(this);
+        boolean showBetaManagement = isCurrentBeta && isBetaUpdatesEnabled;
+
+        if (showBetaManagement) {
+            layoutRollbackSection.setVisibility(View.VISIBLE);
+            if (betaUpdatesCard != null) {
+                betaUpdatesCard.setBackgroundResource(R.drawable.bg_m3_item_top);
+                if (betaUpdatesCard.getLayoutParams() instanceof android.view.ViewGroup.MarginLayoutParams) {
+                    android.view.ViewGroup.MarginLayoutParams lp =
+                            (android.view.ViewGroup.MarginLayoutParams) betaUpdatesCard.getLayoutParams();
+                    lp.bottomMargin = (int) (3 * getResources().getDisplayMetrics().density);
+                    betaUpdatesCard.setLayoutParams(lp);
                 }
+            }
+
+            String currentVer = UpdateManager.getCurrentVersion(this);
+            String betaTag = (currentBetaInfo != null && currentBetaInfo.getTagName() != null && !currentBetaInfo.getTagName().isEmpty())
+                    ? currentBetaInfo.getTagName()
+                    : ("v" + currentVer);
+            if (btnReinstallBeta != null) {
+                btnReinstallBeta.setText("ПЕРЕУСТАНОВИТЬ " + betaTag);
+            }
+
+            String stableTag = stableInfo != null && stableInfo.getTagName() != null ? stableInfo.getTagName() : "";
+            if (!stableTag.isEmpty()) {
+                btnRollbackToStable.setText("ОТКАТИТЬСЯ ДО " + stableTag);
+                tvRollbackDescription.setText("У вас установлена бета-версия (" + currentVer + "). Вы можете переустановить её или вернуться к стабильной сборке " + stableTag + ".");
             } else {
-                layoutRollbackSection.setVisibility(View.GONE);
-                if (betaUpdatesCard != null) {
-                    betaUpdatesCard.setBackgroundResource(R.drawable.bg_m3_item_single);
-                    if (betaUpdatesCard.getLayoutParams() instanceof android.view.ViewGroup.MarginLayoutParams) {
-                        android.view.ViewGroup.MarginLayoutParams lp = (android.view.ViewGroup.MarginLayoutParams) betaUpdatesCard.getLayoutParams();
-                        lp.bottomMargin = 0;
-                        betaUpdatesCard.setLayoutParams(lp);
-                    }
+                btnRollbackToStable.setText("ОТКАТИТЬСЯ ДО СТАБИЛЬНОЙ ВЕРСИИ");
+                tvRollbackDescription.setText("У вас установлена бета-версия (" + currentVer + "). Вы можете переустановить её или вернуться к последней стабильной сборке.");
+            }
+        } else {
+            layoutRollbackSection.setVisibility(View.GONE);
+            if (betaUpdatesCard != null) {
+                betaUpdatesCard.setBackgroundResource(R.drawable.bg_m3_item_single);
+                if (betaUpdatesCard.getLayoutParams() instanceof android.view.ViewGroup.MarginLayoutParams) {
+                    android.view.ViewGroup.MarginLayoutParams lp =
+                            (android.view.ViewGroup.MarginLayoutParams) betaUpdatesCard.getLayoutParams();
+                    lp.bottomMargin = 0;
+                    betaUpdatesCard.setLayoutParams(lp);
                 }
             }
         }
-
-        syncWithDownloadService(false);
     }
 
     private void loadUpdatesFromNetwork() {
@@ -479,9 +494,8 @@ public class UpdateActivity extends AppCompatActivity implements AppUpdateDownlo
         boolean isDownloading = snapshot.isActive();
 
         if (isDownloading) {
+            btnDownload.setVisibility(View.GONE);
             btnDownload.setEnabled(false);
-            btnDownload.setText("ЗАГРУЗКА...");
-            btnDownload.setIconResource(R.drawable.ic_download);
             if (btnCancelDownload != null) {
                 btnCancelDownload.setVisibility(View.VISIBLE);
                 btnCancelDownload.setEnabled(true);
@@ -518,7 +532,8 @@ public class UpdateActivity extends AppCompatActivity implements AppUpdateDownlo
             return;
         }
 
-        // Не скачивается — скрываем кнопку отмены, включаем кнопки управления бетой
+        // Не скачивается — возвращаем основную кнопку, скрываем кнопку отмены, включаем кнопки управления бетой
+        btnDownload.setVisibility(View.VISIBLE);
         if (btnCancelDownload != null) {
             btnCancelDownload.setVisibility(View.GONE);
         }
@@ -571,13 +586,14 @@ public class UpdateActivity extends AppCompatActivity implements AppUpdateDownlo
 
         String currentVer = UpdateManager.getCurrentVersion(this);
         boolean isCurrentBeta = UpdateManager.isCurrentVersionBeta(this);
+        boolean isBetaUpdatesEnabled = UpdateManager.isBetaUpdatesEnabled(this);
         boolean isNewerAvailable = updateInfo != null && UpdateManager.isUpdateAvailable(currentVer, updateInfo.getTagName());
 
         if (isNewerAvailable) {
             btnDownload.setEnabled(true);
             btnDownload.setText(R.string.btn_download_apk);
             btnDownload.setIconResource(R.drawable.ic_download);
-        } else if (isCurrentBeta) {
+        } else if (isCurrentBeta && isBetaUpdatesEnabled) {
             btnDownload.setEnabled(true);
             btnDownload.setText(R.string.btn_reinstall_beta);
             btnDownload.setIconResource(R.drawable.ic_refresh);

@@ -257,29 +257,39 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnReinstallBeta"
-                        style="@style/Widget.AnimeLIB.Button.Outlined"
+                        style="@style/Widget.AnimeLIB.Button"
                         android:layout_width="match_parent"
                         android:layout_height="@dimen/button_height_standard"
                         android:layout_marginTop="12dp"
                         android:text="@string/btn_reinstall_beta"
+                        android:textAllCaps="true"
+                        android:textColor="@color/purple_primary"
+                        android:elevation="0dp"
+                        android:stateListAnimator="@null"
+                        app:backgroundTint="@color/popup_item_selected_bg"
+                        app:rippleColor="@color/purple_alpha_25"
+                        app:strokeWidth="0dp"
                         app:icon="@drawable/ic_refresh"
                         app:iconGravity="textStart"
-                        app:iconTint="@color/purple_primary"
-                        android:textColor="@color/purple_primary"
-                        app:strokeColor="@color/purple_primary" />
+                        app:iconTint="@color/purple_primary" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnRollbackToStable"
-                        style="@style/Widget.AnimeLIB.Button.Outlined"
+                        style="@style/Widget.AnimeLIB.Button"
                         android:layout_width="match_parent"
                         android:layout_height="@dimen/button_height_standard"
                         android:layout_marginTop="8dp"
                         android:text="ОТКАТИТЬСЯ ДО СТАБИЛЬНОЙ ВЕРСИИ"
+                        android:textAllCaps="true"
+                        android:textColor="@color/purple_primary"
+                        android:elevation="0dp"
+                        android:stateListAnimator="@null"
+                        app:backgroundTint="@color/popup_item_selected_bg"
+                        app:rippleColor="@color/purple_alpha_25"
+                        app:strokeWidth="0dp"
                         app:icon="@drawable/ic_restore"
                         app:iconGravity="textStart"
-                        app:iconTint="@color/purple_primary"
-                        android:textColor="@color/purple_primary"
-                        app:strokeColor="@color/purple_primary" />
+                        app:iconTint="@color/purple_primary" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -326,18 +336,21 @@
                 app:iconGravity="textStart"
                 app:iconTint="@color/white_color" />
 
-            <!-- Cancel Active Download Button -->
+            <!-- Cancel Active Download Button (replaces Download Button while downloading) -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnCancelDownload"
-                style="@style/Widget.AnimeLIB.Button.Outlined"
+                style="@style/Widget.AnimeLIB.Button"
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/button_height_standard"
-                android:layout_marginTop="8dp"
+                android:layout_height="@dimen/button_height_large"
+                android:layout_marginTop="16dp"
                 android:text="@string/btn_cancel_download"
                 android:textAllCaps="true"
                 android:textColor="@color/stop_btn_text"
+                android:elevation="0dp"
+                android:stateListAnimator="@null"
                 app:backgroundTint="@color/stop_btn_bg"
-                app:strokeColor="@color/stop_btn_stroke"
+                app:rippleColor="@color/stop_btn_stroke"
+                app:strokeWidth="0dp"
                 app:icon="@drawable/ic_close"
                 app:iconGravity="textStart"
                 app:iconTint="@color/stop_btn_text"
