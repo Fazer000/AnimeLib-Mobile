@@ -491,7 +491,7 @@ public class DownloadsActivity extends AppCompatActivity implements DownloadServ
 
     private void resetSortItemStyle(TextView tv) {
         if (tv != null) {
-            tv.setBackground(null);
+            tv.setBackgroundResource(R.drawable.bg_popup_item_ripple);
             tv.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.accent_text_color));
         }
     }

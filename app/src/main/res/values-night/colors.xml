@@ -41,6 +41,7 @@
     <color name="stop_btn_bg">#2A1B20</color>
     <color name="sort_popup_item_selected_bg">#2A2D37</color>
     <color name="sort_popup_item_selected_text">#FFFFFF</color>
+    <color name="popup_item_selected_bg">#388852DE</color>
     <color name="stop_btn_stroke">#4A2026</color>
     <color name="stop_btn_text">#FF5252</color>
 

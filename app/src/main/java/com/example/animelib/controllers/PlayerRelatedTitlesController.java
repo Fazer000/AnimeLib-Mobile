@@ -622,7 +622,7 @@ public class PlayerRelatedTitlesController {
 
     private void resetPopupItemStyle(Context context, TextView textView) {
         if (textView == null || context == null) return;
-        textView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        textView.setBackgroundResource(R.drawable.bg_popup_item_ripple);
         textView.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.accent_text_color));
     }
 

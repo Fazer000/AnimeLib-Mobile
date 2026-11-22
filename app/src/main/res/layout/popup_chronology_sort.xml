@@ -16,6 +16,7 @@
         android:textColor="@color/primary_text_color"
         android:textSize="13.5sp"
         android:fontFamily="@font/open_sans_semibold"
+        android:background="@drawable/bg_popup_item_ripple"
         android:clickable="true"
         android:focusable="true" />
 
@@ -29,6 +30,7 @@
         android:textColor="@color/primary_text_color"
         android:textSize="13.5sp"
         android:fontFamily="@font/open_sans_semibold"
+        android:background="@drawable/bg_popup_item_ripple"
         android:clickable="true"
         android:focusable="true" />
 
@@ -42,6 +44,7 @@
         android:textColor="@color/primary_text_color"
         android:textSize="13.5sp"
         android:fontFamily="@font/open_sans_semibold"
+        android:background="@drawable/bg_popup_item_ripple"
         android:clickable="true"
         android:focusable="true" />
 
@@ -55,6 +58,7 @@
         android:textColor="@color/primary_text_color"
         android:textSize="13.5sp"
         android:fontFamily="@font/open_sans_semibold"
+        android:background="@drawable/bg_popup_item_ripple"
         android:clickable="true"
         android:focusable="true" />
 

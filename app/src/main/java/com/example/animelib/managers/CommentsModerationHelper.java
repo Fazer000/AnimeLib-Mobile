@@ -472,7 +472,7 @@ public class CommentsModerationHelper {
 
     private void resetPopupItemStyle(TextView textView) {
         if (textView == null) return;
-        textView.setBackgroundColor(Color.TRANSPARENT);
+        textView.setBackgroundResource(R.drawable.bg_popup_item_ripple);
         textView.setTextColor(ContextCompat.getColor(context, R.color.accent_text_color));
     }
 
