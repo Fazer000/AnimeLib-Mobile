@@ -245,10 +245,10 @@ public class FastBlurUtils {
 
         extractPerimeterStrips(samplePixels);
 
-        int horizNearRadius = Math.max(1, Math.round(sampleWidth * 0.055f)); // ~2
-        int horizFarRadius = Math.max(2, Math.round(sampleWidth * 0.14f));   // ~5
-        int vertNearRadius = Math.max(1, Math.round(sampleHeight * 0.06f));  // ~1
-        int vertFarRadius = Math.max(2, Math.round(sampleHeight * 0.16f));   // ~3
+        int horizNearRadius = Math.max(1, Math.round(sampleWidth * 0.03f));  // ~3
+        int horizFarRadius = Math.max(2, Math.round(sampleWidth * 0.11f));   // ~11
+        int vertNearRadius = Math.max(1, Math.round(sampleHeight * 0.035f)); // ~2
+        int vertFarRadius = Math.max(2, Math.round(sampleHeight * 0.13f));   // ~7
 
         smoothStrip1D(topNearR, topNearG, topNearB, sampleWidth, horizNearRadius, 1);
         smoothStrip1D(topFarR, topFarG, topFarB, sampleWidth, horizFarRadius, 2);
@@ -315,11 +315,13 @@ public class FastBlurUtils {
         int w = sampleWidth;
         int h = sampleHeight;
 
-        float[] vWeights = {0.22f, 0.38f, 0.26f, 0.14f};
-        float[] hWeights = {0.22f, 0.38f, 0.26f, 0.14f};
+        // Берём цвет максимально близко к границе видео (~2% по горизонтали и ~3.7% по вертикали при 96x54),
+        // с основным весом на самый крайний ряд/столбец пикселей.
+        float[] vWeights = {0.74f, 0.26f};
+        float[] hWeights = {0.74f, 0.26f};
 
-        int maxRowDepth = Math.min(vWeights.length, h / 3);
-        int maxColDepth = Math.min(hWeights.length, w / 3);
+        int maxRowDepth = Math.min(vWeights.length, Math.max(1, h / 4));
+        int maxColDepth = Math.min(hWeights.length, Math.max(1, w / 4));
 
         for (int x = 0; x < w; x++) {
             float tr = 0f, tg = 0f, tb = 0f, tw = 0f;

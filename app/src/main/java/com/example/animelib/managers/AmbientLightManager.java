@@ -63,8 +63,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public class AmbientLightManager {
     private static final String TAG = "AmbientLightManager";
 
-    private static final int SAMPLE_WIDTH = 36;
-    private static final int SAMPLE_HEIGHT = 20;
+    private static final int SAMPLE_WIDTH = 96;
+    private static final int SAMPLE_HEIGHT = 54;
     private static final int TOTAL_PIXELS = SAMPLE_WIDTH * SAMPLE_HEIGHT;
     private static final int GLOW_TOTAL_PIXELS = FastBlurUtils.GLOW_WIDTH * FastBlurUtils.GLOW_HEIGHT;
     private static final long TRANSITION_SAFETY_TIMEOUT_MS = 450L;

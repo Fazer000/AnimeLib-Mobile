@@ -1,7 +1,6 @@
 package com.example.animelib.controllers;
 
 import android.view.View;
-import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -81,7 +80,7 @@ public class PlayerUIBinder {
     public ImageButton nextEpisodeButton;
     public View landscapeEpisodesContainer;
     public View btnLandscapeEpisodeSearch;
-    public EditText etLandscapeEpisodeNumber;
+    public TextView etLandscapeEpisodeNumber;
     public View landscapeEpisodeNumpadRoot;
 
     public ImageButton menuToggleButton;

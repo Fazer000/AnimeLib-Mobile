@@ -1,6 +1,7 @@
 package com.example.animelib.ui;
 
 import android.content.Context;
+import android.os.Build;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.view.animation.AccelerateInterpolator;
@@ -13,6 +14,9 @@ import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
 import com.example.animelib.R;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Компактная кастомная числовая клавиатура для поиска серий в ландшафтном режиме плеера.
@@ -33,6 +37,7 @@ public class LandscapeEpisodeNumpadView {
     private final View keyBackspace;
     private final View keyConfirm;
     private final ImageButton btnClose;
+    private final List<View> interactiveKeys = new ArrayList<>(13);
     @Nullable
     private Listener listener;
     private boolean isVisible = false;
@@ -45,6 +50,11 @@ public class LandscapeEpisodeNumpadView {
         this.keyBackspace = rootView.findViewById(R.id.numpadKeyBackspace);
         this.keyConfirm = rootView.findViewById(R.id.numpadKeyConfirm);
         this.btnClose = rootView.findViewById(R.id.btnNumpadClose);
+        // На Android 15+ (ARR) крупная (>7% экрана) панель матового стекла с обновлением ~25 FPS
+        // не должна голосовать за снижение герцовки всего окна до 24/30 Гц.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            rootView.setRequestedFrameRate(View.REQUESTED_FRAME_RATE_CATEGORY_NO_PREFERENCE);
+        }
         setupKeys();
     }
 
@@ -64,6 +74,7 @@ public class LandscapeEpisodeNumpadView {
             final char digit = (char) ('0' + i);
             View key = rootView.findViewById(digitIds[i]);
             if (key != null) {
+                interactiveKeys.add(key);
                 key.setOnClickListener(v -> {
                     v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
                     if (listener != null) {
@@ -74,6 +85,7 @@ public class LandscapeEpisodeNumpadView {
         }
 
         if (keyBackspace != null) {
+            interactiveKeys.add(keyBackspace);
             keyBackspace.setOnClickListener(v -> {
                 v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
                 if (listener != null) {
@@ -90,6 +102,7 @@ public class LandscapeEpisodeNumpadView {
         }
 
         if (keyConfirm != null) {
+            interactiveKeys.add(keyConfirm);
             keyConfirm.setOnClickListener(v -> {
                 v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
                 if (listener != null) {
@@ -99,12 +112,23 @@ public class LandscapeEpisodeNumpadView {
         }
 
         if (btnClose != null) {
+            interactiveKeys.add(btnClose);
             btnClose.setOnClickListener(v -> {
                 v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
                 if (listener != null) {
                     listener.onDismissRequested();
                 }
             });
+        }
+    }
+
+    private void cancelChildRipples() {
+        rootView.setPressed(false);
+        rootView.jumpDrawablesToCurrentState();
+        for (int i = 0, size = interactiveKeys.size(); i < size; i++) {
+            View key = interactiveKeys.get(i);
+            key.setPressed(false);
+            key.jumpDrawablesToCurrentState();
         }
     }
 
@@ -131,7 +155,11 @@ public class LandscapeEpisodeNumpadView {
         }
         isVisible = true;
         isHiding = false;
-        rootView.animate().setListener(null).cancel();
+        rootView.animate().setListener(null).withEndAction(null).cancel();
+        if (rootView.getLayerType() != View.LAYER_TYPE_NONE) {
+            rootView.setLayerType(View.LAYER_TYPE_NONE, null);
+        }
+        cancelChildRipples();
         rootView.setVisibility(View.VISIBLE);
         rootView.setAlpha(0f);
         rootView.setScaleX(0.94f);
@@ -144,7 +172,6 @@ public class LandscapeEpisodeNumpadView {
                 .translationY(0f)
                 .setDuration(160L)
                 .setInterpolator(new DecelerateInterpolator())
-                .withLayer()
                 .start();
     }
 
@@ -153,14 +180,18 @@ public class LandscapeEpisodeNumpadView {
             return;
         }
         isVisible = false;
-        rootView.animate().setListener(null).cancel();
+        rootView.animate().setListener(null).withEndAction(null).cancel();
+        if (rootView.getLayerType() != View.LAYER_TYPE_NONE) {
+            rootView.setLayerType(View.LAYER_TYPE_NONE, null);
+        }
+        cancelChildRipples();
         if (immediate) {
             isHiding = false;
-            rootView.setAlpha(0f);
+            rootView.setVisibility(View.GONE);
+            rootView.setAlpha(1f);
             rootView.setScaleX(1f);
             rootView.setScaleY(1f);
             rootView.setTranslationY(0f);
-            rootView.setVisibility(View.GONE);
             return;
         }
         isHiding = true;
@@ -171,11 +202,12 @@ public class LandscapeEpisodeNumpadView {
                 .translationY(dpToPx(rootView.getContext(), 12f))
                 .setDuration(110L)
                 .setInterpolator(new AccelerateInterpolator())
-                .withLayer()
                 .withEndAction(() -> {
                     isHiding = false;
                     if (!isVisible) {
+                        cancelChildRipples();
                         rootView.setVisibility(View.GONE);
+                        rootView.setAlpha(1f);
                         rootView.setScaleX(1f);
                         rootView.setScaleY(1f);
                         rootView.setTranslationY(0f);

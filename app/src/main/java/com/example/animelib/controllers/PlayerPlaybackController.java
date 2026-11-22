@@ -7,12 +7,14 @@ import android.util.Log;
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.OptIn;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.VideoSize;
+import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
@@ -56,6 +58,7 @@ import okhttp3.ConnectionPool;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 
+@OptIn(markerClass = UnstableApi.class)
 public class PlayerPlaybackController {
 
     private static final String TAG = "PlayerPlaybackController";
@@ -384,6 +387,7 @@ public class PlayerPlaybackController {
             ExoPlayer.Builder builder = new ExoPlayer.Builder(playerContext, rf)
                     .setLoadControl(loadControl)
                     .setBandwidthMeter(DefaultBandwidthMeter.getSingletonInstance(playerContext))
+                    .setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF)
                     .setSeekBackIncrementMs(10000)
                     .setSeekForwardIncrementMs(10000);
 
@@ -471,6 +475,7 @@ public class PlayerPlaybackController {
             player = new ExoPlayer.Builder(playerContext, rf)
                     .setMediaSourceFactory(new DefaultMediaSourceFactory(dsFactory))
                     .setLoadControl(loadControl)
+                    .setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF)
                     .setSeekBackIncrementMs(10000)
                     .setSeekForwardIncrementMs(10000)
                     .build();
@@ -619,6 +624,7 @@ public class PlayerPlaybackController {
         ExoPlayer.Builder builder = new ExoPlayer.Builder(playerContext, rf)
                 .setLoadControl(loadControl)
                 .setBandwidthMeter(DefaultBandwidthMeter.getSingletonInstance(playerContext))
+                .setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF)
                 .setSeekBackIncrementMs(10000)
                 .setSeekForwardIncrementMs(10000);
 
