@@ -67,7 +67,7 @@ public class EpisodesManager {
     private View portraitSearchContainer;
     private View landscapeSearchContainer;
     private View landscapeSearchButton;
-    private EditText landscapeSearchInput;
+    private TextView landscapeSearchInput;
     private com.example.animelib.ui.LandscapeEpisodeNumpadView landscapeEpisodeNumpad;
     private com.example.animelib.ui.PlayerBackdropBlurManager backdropBlurManager;
     private boolean hasInitialScrolledLandscape = false;
@@ -317,11 +317,11 @@ public class EpisodesManager {
     /**
      * Настройка поиска серии для альбомного режима (с кастомной числовой клавиатурой)
      */
-    public void setupLandscapeSearchViews(View searchBtn, EditText inputEt) {
+    public void setupLandscapeSearchViews(View searchBtn, TextView inputEt) {
         setupLandscapeSearchViews(searchBtn, inputEt, null);
     }
 
-    public void setupLandscapeSearchViews(View searchBtn, EditText inputEt, @androidx.annotation.Nullable View numpadRoot) {
+    public void setupLandscapeSearchViews(View searchBtn, TextView inputEt, @androidx.annotation.Nullable View numpadRoot) {
         this.landscapeSearchButton = searchBtn;
         this.landscapeSearchInput = inputEt;
         if (searchBtn != null) {
@@ -336,8 +336,8 @@ public class EpisodesManager {
             if (backdropBlurManager != null) {
                 backdropBlurManager.applyRoundedGlass(numpadRoot, 16f);
             }
-        } else {
-            setupSearchUI(searchBtn, inputEt);
+        } else if (inputEt instanceof EditText) {
+            setupSearchUI(searchBtn, (EditText) inputEt);
         }
         if (backdropBlurManager != null && landscapeSearchContainer != null) {
             backdropBlurManager.applyOrUpdateInteractiveGlass(landscapeSearchContainer, 12f, false);
@@ -345,18 +345,20 @@ public class EpisodesManager {
     }
 
     private void setupLandscapeCustomNumpadSearch(@NonNull View searchBtn,
-                                                  @NonNull EditText inputEt,
+                                                  @NonNull TextView inputEt,
                                                   @NonNull View numpadRoot) {
         // Кастомный нумпад не использует системную клавиатуру — полностью отключаем фокус/IME/Editor,
         // чтобы Android VRR / InputMethodManager не снижали герцовку экрана и не перехватывали фокус при закрытии.
         searchBtn.setFocusable(false);
         searchBtn.setFocusableInTouchMode(false);
-        inputEt.setShowSoftInputOnFocus(false);
-        inputEt.setCursorVisible(false);
         inputEt.setLongClickable(false);
         inputEt.setFocusable(false);
         inputEt.setFocusableInTouchMode(false);
-        inputEt.setKeyListener(null);
+        if (inputEt instanceof EditText) {
+            inputEt.setShowSoftInputOnFocus(false);
+            inputEt.setCursorVisible(false);
+            inputEt.setKeyListener(null);
+        }
 
         landscapeEpisodeNumpad = new com.example.animelib.ui.LandscapeEpisodeNumpadView(numpadRoot);
         landscapeEpisodeNumpad.setListener(new com.example.animelib.ui.LandscapeEpisodeNumpadView.Listener() {
