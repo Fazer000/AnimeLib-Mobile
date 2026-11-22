@@ -5,6 +5,7 @@ import android.media.MediaExtractor;
 import android.media.MediaFormat;
 import android.net.Uri;
 import android.os.Process;
+import android.os.SystemClock;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -13,10 +14,13 @@ import androidx.annotation.Nullable;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.util.HlsPlaylistParser;
 
+import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,7 +31,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import okhttp3.Call;
 import okhttp3.OkHttpClient;
@@ -39,18 +46,166 @@ import okhttp3.ResponseBody;
  * Извлекает компактный спектральный аудио-отпечаток из любого поддерживаемого источника:
  * - локальные скачанные файлы (.mp4 / .ts)
  * - удалённые MP4 потоки AnimeLib (через HttpRangeMediaDataSource с разовым парсингом moov + прямые seek-прыжки)
- * - удалённые HLS (.m3u8) потоки Kodik (выборочная параллельная загрузка нужных 360p сегментов + AES-128 + fMP4 init)
+ * - удалённые HLS (.m3u8) потоки Kodik (выборочная загрузка нужных 360p сегментов + AES-128 + fMP4 init)
  *
- * Критично: для MPEG-TS / fMP4 сегментов HLS корректно учитывает ненулевой базовый PTS первого сэмпла,
- * поэтому извлечение работает стабильно на любой минуте серии (0:00, 1:30, 3:00, 6:00+).
+ * Защита от плохого интернета:
+ * - Единый CancelSignal с жёстким дедлайном и мгновенной отменой всех активных OkHttp Call и DataSource.
+ * - Ограниченный параллелизм HLS (2 потока), чтобы не душить буферизацию основного видеоплеера.
+ * - Ограниченное ожидание сегментов и защита цикла MediaCodec от зависания на битых кадрах.
  */
 public final class AudioPcmExtractor {
 
     private static final String TAG = "AudioPcmExtractor";
-    private static final long CODEC_IDLE_WAIT_US = 1_500L;
-    private static final int HLS_PARALLEL_THREADS = 4;
+    private static final long CODEC_IDLE_WAIT_US = 2_000L;
+    private static final int MAX_CODEC_IDLE_LOOPS = 250;
+    private static final long MAX_WINDOW_DECODE_MS = 12_000L;
+    private static final long MAX_HLS_SEGMENT_WAIT_MS = 11_000L;
+    private static final int HLS_PARALLEL_THREADS = 2;
 
     private AudioPcmExtractor() {
+    }
+
+    public enum FailureReason {
+        NONE,
+        TIMEOUT,
+        NETWORK,
+        DECODE
+    }
+
+    /**
+     * Токен отмены и жёсткого таймаута операции:
+     * при отмене или истечении дедлайна немедленно обрывает все открытые сетевые запросы и ресурсы.
+     */
+    public static final class CancelSignal {
+        private final AtomicBoolean cancelled = new AtomicBoolean(false);
+        private final AtomicBoolean timedOut = new AtomicBoolean(false);
+        private final long deadlineElapsedMs;
+        private final Set<Call> activeCalls = ConcurrentHashMap.newKeySet();
+        private final Set<Closeable> activeResources = ConcurrentHashMap.newKeySet();
+        private final AtomicReference<FailureReason> lastFailure = new AtomicReference<>(FailureReason.NONE);
+
+        public CancelSignal(long timeoutMs) {
+            this.deadlineElapsedMs = timeoutMs > 0L
+                    ? (SystemClock.elapsedRealtime() + timeoutMs)
+                    : 0L;
+        }
+
+        public boolean isCancelled() {
+            if (cancelled.get()) {
+                return true;
+            }
+            if (deadlineElapsedMs > 0L && SystemClock.elapsedRealtime() >= deadlineElapsedMs) {
+                markTimedOut();
+                return true;
+            }
+            return false;
+        }
+
+        public boolean isUserOrSystemCancelled() {
+            return cancelled.get() && !timedOut.get();
+        }
+
+        public boolean isTimedOut() {
+            isCancelled();
+            return timedOut.get();
+        }
+
+        public long remainingMs() {
+            if (deadlineElapsedMs <= 0L) return Long.MAX_VALUE;
+            return Math.max(0L, deadlineElapsedMs - SystemClock.elapsedRealtime());
+        }
+
+        public void cancel() {
+            if (cancelled.compareAndSet(false, true)) {
+                abortAllActiveResources();
+            }
+        }
+
+        public void markTimedOut() {
+            timedOut.set(true);
+            recordFailure(FailureReason.TIMEOUT);
+            if (cancelled.compareAndSet(false, true)) {
+                abortAllActiveResources();
+            }
+        }
+
+        public void recordFailure(@NonNull FailureReason reason) {
+            if (reason == FailureReason.NONE) return;
+            lastFailure.updateAndGet(prev -> {
+                if (prev == FailureReason.TIMEOUT) return prev;
+                if (reason == FailureReason.TIMEOUT) return reason;
+                if (prev == FailureReason.NETWORK) return prev;
+                return reason;
+            });
+        }
+
+        @NonNull
+        public FailureReason getLastFailureReason() {
+            if (timedOut.get()) return FailureReason.TIMEOUT;
+            return lastFailure.get();
+        }
+
+        public void registerCall(@NonNull Call call) {
+            if (isCancelled()) {
+                try {
+                    call.cancel();
+                } catch (Exception ignored) {
+                }
+                return;
+            }
+            activeCalls.add(call);
+            if (isCancelled()) {
+                activeCalls.remove(call);
+                try {
+                    call.cancel();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        public void unregisterCall(@NonNull Call call) {
+            activeCalls.remove(call);
+        }
+
+        public void registerCloseable(@NonNull Closeable closeable) {
+            if (isCancelled()) {
+                try {
+                    closeable.close();
+                } catch (Exception ignored) {
+                }
+                return;
+            }
+            activeResources.add(closeable);
+            if (isCancelled()) {
+                activeResources.remove(closeable);
+                try {
+                    closeable.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        public void unregisterCloseable(@NonNull Closeable closeable) {
+            activeResources.remove(closeable);
+        }
+
+        private void abortAllActiveResources() {
+            for (Call call : activeCalls) {
+                try {
+                    call.cancel();
+                } catch (Exception ignored) {
+                }
+            }
+            activeCalls.clear();
+
+            for (Closeable res : activeResources) {
+                try {
+                    res.close();
+                } catch (Exception ignored) {
+                }
+            }
+            activeResources.clear();
+        }
     }
 
     public static final class ExtractedFingerprint {
@@ -79,7 +234,7 @@ public final class AudioPcmExtractor {
         private final boolean isHls;
         private final File cacheDir;
         private final OkHttpClient okHttpClient;
-        private final AtomicBoolean cancelled;
+        private final CancelSignal cancelSignal;
 
         // HLS state
         @Nullable private final HlsPlaylistParser.ParsedMediaPlaylist hlsPlaylist;
@@ -100,14 +255,14 @@ public final class AudioPcmExtractor {
                                   @Nullable byte[] initBytes,
                                   @NonNull OkHttpClient okHttpClient,
                                   @NonNull File cacheDir,
-                                  @NonNull AtomicBoolean cancelled) {
+                                  @NonNull CancelSignal cancelSignal) {
             this.isHls = true;
             this.hlsPlaylist = playlist;
             this.hlsInitBytes = initBytes;
             this.hlsKeyCache = new ConcurrentHashMap<>();
             this.okHttpClient = okHttpClient;
             this.cacheDir = cacheDir;
-            this.cancelled = cancelled;
+            this.cancelSignal = cancelSignal;
 
             double sum = 0.0;
             for (HlsPlaylistParser.HlsSegment seg : playlist.segments) {
@@ -133,7 +288,7 @@ public final class AudioPcmExtractor {
                                   double totalMediaDurationSec,
                                   @NonNull OkHttpClient okHttpClient,
                                   @NonNull File cacheDir,
-                                  @NonNull AtomicBoolean cancelled) {
+                                  @NonNull CancelSignal cancelSignal) {
             this.isHls = false;
             this.hlsPlaylist = null;
             this.hlsInitBytes = null;
@@ -149,7 +304,7 @@ public final class AudioPcmExtractor {
             this.totalMediaDurationSec = totalMediaDurationSec;
             this.okHttpClient = okHttpClient;
             this.cacheDir = cacheDir;
-            this.cancelled = cancelled;
+            this.cancelSignal = cancelSignal;
         }
 
         public double getKnownDurationSec() {
@@ -160,33 +315,40 @@ public final class AudioPcmExtractor {
         public static AudioProbeSession open(@NonNull String sourceUrl,
                                              @NonNull OkHttpClient okHttpClient,
                                              @NonNull File cacheDir,
-                                             @NonNull AtomicBoolean cancelled) {
-            if (cancelled.get()) return null;
+                                             @NonNull CancelSignal cancelSignal) {
+            if (cancelSignal.isCancelled()) return null;
             try {
                 if (isLocalSource(sourceUrl)) {
                     String path = resolveLocalPath(sourceUrl);
-                    if (path == null || !new File(path).exists()) return null;
-                    return openExtractorSession(path, null, okHttpClient, cacheDir, cancelled);
-                } else if (isHlsSource(sourceUrl)) {
-                    HlsPlaylistParser.ParsedMediaPlaylist playlist =
-                            resolveLowestQualityMediaPlaylist(sourceUrl, okHttpClient, cancelled);
-                    if (playlist == null || playlist.segments.isEmpty() || cancelled.get()) {
+                    if (path == null || !new File(path).exists()) {
+                        cancelSignal.recordFailure(FailureReason.DECODE);
                         return null;
                     }
-                    byte[] initBytes = fetchOptionalInitSegment(playlist.initSegmentUrl, okHttpClient, cancelled);
-                    if (cancelled.get()) return null;
-                    return new AudioProbeSession(playlist, initBytes, okHttpClient, cacheDir, cancelled);
+                    return openExtractorSession(path, null, okHttpClient, cacheDir, cancelSignal);
+                } else if (isHlsSource(sourceUrl)) {
+                    HlsPlaylistParser.ParsedMediaPlaylist playlist =
+                            resolveLowestQualityMediaPlaylist(sourceUrl, okHttpClient, cancelSignal);
+                    if (playlist == null || playlist.segments.isEmpty() || cancelSignal.isCancelled()) {
+                        if (!cancelSignal.isCancelled()) {
+                            cancelSignal.recordFailure(FailureReason.NETWORK);
+                        }
+                        return null;
+                    }
+                    byte[] initBytes = fetchOptionalInitSegment(playlist.initSegmentUrl, okHttpClient, cancelSignal);
+                    if (cancelSignal.isCancelled()) return null;
+                    return new AudioProbeSession(playlist, initBytes, okHttpClient, cacheDir, cancelSignal);
                 } else {
-                    HttpRangeMediaDataSource dataSource = new HttpRangeMediaDataSource(okHttpClient, sourceUrl, cancelled);
-                    AudioProbeSession session = openExtractorSession(null, dataSource, okHttpClient, cacheDir, cancelled);
+                    HttpRangeMediaDataSource dataSource = new HttpRangeMediaDataSource(okHttpClient, sourceUrl, cancelSignal);
+                    AudioProbeSession session = openExtractorSession(null, dataSource, okHttpClient, cacheDir, cancelSignal);
                     if (session == null) {
                         dataSource.close();
                     }
                     return session;
                 }
             } catch (Exception e) {
-                if (!cancelled.get()) {
+                if (!cancelSignal.isCancelled()) {
                     Log.w(TAG, "AudioProbeSession.open failed for " + sourceUrl + ": " + e.getMessage());
+                    cancelSignal.recordFailure(classifyException(e));
                 }
                 return null;
             }
@@ -197,7 +359,7 @@ public final class AudioPcmExtractor {
                                                               @Nullable HttpRangeMediaDataSource remoteSource,
                                                               @NonNull OkHttpClient okHttpClient,
                                                               @NonNull File cacheDir,
-                                                              @NonNull AtomicBoolean cancelled) throws IOException {
+                                                              @NonNull CancelSignal cancelSignal) throws IOException {
             MediaExtractor extractor = new MediaExtractor();
             boolean ok = false;
             try {
@@ -208,15 +370,21 @@ public final class AudioPcmExtractor {
                 } else {
                     return null;
                 }
+                if (cancelSignal.isCancelled()) return null;
+
                 int audioTrack = findAudioTrack(extractor);
                 if (audioTrack < 0) {
                     Log.w(TAG, "No audio track found in media source");
+                    cancelSignal.recordFailure(FailureReason.DECODE);
                     return null;
                 }
                 extractor.selectTrack(audioTrack);
                 MediaFormat format = extractor.getTrackFormat(audioTrack);
                 String mime = format.getString(MediaFormat.KEY_MIME);
-                if (mime == null) return null;
+                if (mime == null) {
+                    cancelSignal.recordFailure(FailureReason.DECODE);
+                    return null;
+                }
 
                 int rate = format.containsKey(MediaFormat.KEY_SAMPLE_RATE)
                         ? format.getInteger(MediaFormat.KEY_SAMPLE_RATE) : 48000;
@@ -227,7 +395,7 @@ public final class AudioPcmExtractor {
 
                 ok = true;
                 return new AudioProbeSession(remoteSource, extractor, format, mime, rate, channels,
-                        durSec, okHttpClient, cacheDir, cancelled);
+                        durSec, okHttpClient, cacheDir, cancelSignal);
             } finally {
                 if (!ok) {
                     try {
@@ -243,21 +411,22 @@ public final class AudioPcmExtractor {
          */
         @Nullable
         public ExtractedFingerprint extractWindow(double startSec, double endSec) {
-            if (cancelled.get() || endSec <= startSec) return null;
+            if (cancelSignal.isCancelled() || endSec <= startSec) return null;
             double safeStart = Math.max(0.0, startSec);
             try {
                 if (isHls) {
                     if (hlsPlaylist == null || hlsKeyCache == null) return null;
                     return extractHlsWindowFromPlaylist(hlsPlaylist, hlsInitBytes, hlsKeyCache,
-                            safeStart, endSec, okHttpClient, cacheDir, cancelled);
+                            safeStart, endSec, okHttpClient, cacheDir, cancelSignal);
                 } else {
                     if (sharedExtractor == null || audioFormat == null || audioMime == null) return null;
                     return decodeFromOpenExtractor(sharedExtractor, audioFormat, audioMime,
-                            sampleRate, channelCount, safeStart, endSec, false, cancelled);
+                            sampleRate, channelCount, safeStart, endSec, false, cancelSignal);
                 }
             } catch (Exception e) {
-                if (!cancelled.get()) {
+                if (!cancelSignal.isCancelled()) {
                     Log.w(TAG, "extractWindow [" + safeStart + ".." + endSec + "] failed: " + e.getMessage());
+                    cancelSignal.recordFailure(classifyException(e));
                 }
                 return null;
             }
@@ -311,15 +480,16 @@ public final class AudioPcmExtractor {
                                                                double endSec,
                                                                @NonNull OkHttpClient okHttpClient,
                                                                @NonNull File cacheDir,
-                                                               @NonNull AtomicBoolean cancelled) {
-        if (endSec <= startSec || cancelled.get()) return null;
+                                                               @NonNull CancelSignal cancelSignal) {
+        if (endSec <= startSec || cancelSignal.isCancelled()) return null;
 
-        try (AudioProbeSession session = AudioProbeSession.open(sourceUrl, okHttpClient, cacheDir, cancelled)) {
-            if (session == null) return null;
+        try (AudioProbeSession session = AudioProbeSession.open(sourceUrl, okHttpClient, cacheDir, cancelSignal)) {
+            if (session == null || cancelSignal.isCancelled()) return null;
             return session.extractWindow(startSec, endSec);
         } catch (Exception e) {
-            if (!cancelled.get()) {
+            if (!cancelSignal.isCancelled()) {
                 Log.w(TAG, "extractRangeFingerprint failed for " + sourceUrl + ": " + e.getMessage());
+                cancelSignal.recordFailure(classifyException(e));
             }
             return null;
         }
@@ -333,7 +503,7 @@ public final class AudioPcmExtractor {
                                                                      double endSec,
                                                                      @NonNull OkHttpClient okHttpClient,
                                                                      @NonNull File cacheDir,
-                                                                     @NonNull AtomicBoolean cancelled) throws Exception {
+                                                                     @NonNull CancelSignal cancelSignal) throws Exception {
         List<HlsPlaylistParser.HlsSegment> selected = new ArrayList<>();
         double cumulativeSec = 0.0;
         double firstSegStartSec = 0.0;
@@ -353,17 +523,17 @@ public final class AudioPcmExtractor {
             if (cumulativeSec >= endSec + 0.5) break;
         }
 
-        if (selected.isEmpty() || cancelled.get()) {
+        if (selected.isEmpty() || cancelSignal.isCancelled()) {
             return null;
         }
 
-        File tempFile = writeHlsBatchToTempFile(selected, initBytes, keyCache, okHttpClient, cacheDir, cancelled);
+        File tempFile = writeHlsBatchToTempFile(selected, initBytes, keyCache, okHttpClient, cacheDir, cancelSignal);
         if (tempFile == null) return null;
 
         try {
             double relStart = Math.max(0.0, startSec - firstSegStartSec);
             double relEnd = Math.max(relStart + 1.0, endSec - firstSegStartSec);
-            ExtractedFingerprint fp = decodeTempFileRelative(tempFile.getAbsolutePath(), relStart, relEnd, cancelled);
+            ExtractedFingerprint fp = decodeTempFileRelative(tempFile.getAbsolutePath(), relStart, relEnd, cancelSignal);
             if (fp == null) return null;
             double actualStart = firstSegStartSec + relStart;
             return new ExtractedFingerprint(fp.data, fp.frameCount, actualStart);
@@ -376,22 +546,28 @@ public final class AudioPcmExtractor {
     private static ExtractedFingerprint decodeTempFileRelative(@NonNull String localPath,
                                                                double relStartSec,
                                                                double relEndSec,
-                                                               @NonNull AtomicBoolean cancelled) throws IOException {
+                                                               @NonNull CancelSignal cancelSignal) throws IOException {
         MediaExtractor extractor = new MediaExtractor();
         try {
             extractor.setDataSource(localPath);
             int audioTrack = findAudioTrack(extractor);
-            if (audioTrack < 0) return null;
+            if (audioTrack < 0) {
+                cancelSignal.recordFailure(FailureReason.DECODE);
+                return null;
+            }
             extractor.selectTrack(audioTrack);
             MediaFormat format = extractor.getTrackFormat(audioTrack);
             String mime = format.getString(MediaFormat.KEY_MIME);
-            if (mime == null) return null;
+            if (mime == null) {
+                cancelSignal.recordFailure(FailureReason.DECODE);
+                return null;
+            }
             int sampleRate = format.containsKey(MediaFormat.KEY_SAMPLE_RATE)
                     ? format.getInteger(MediaFormat.KEY_SAMPLE_RATE) : 48000;
             int channelCount = format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)
                     ? format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) : 2;
             return decodeFromOpenExtractor(extractor, format, mime, sampleRate, channelCount,
-                    relStartSec, relEndSec, true, cancelled);
+                    relStartSec, relEndSec, true, cancelSignal);
         } finally {
             try {
                 extractor.release();
@@ -402,9 +578,7 @@ public final class AudioPcmExtractor {
 
     /**
      * Декодирует аудио-окно из открытого MediaExtractor через неблокирующую прокачку MediaCodec.
-     *
-     * @param relativeToFirstSample true для временных HLS (.ts / .mp4) файлов: отсчитывает startSec/endSec
-     *                              относительно фактического PTS первого сэмпла в файле (в MPEG-TS он часто равен 90с, 180с и т.д.!).
+     * Имеет жёсткую защиту от зависания декодера (totalIdleLoops + MAX_WINDOW_DECODE_MS + cancelSignal).
      */
     @Nullable
     private static ExtractedFingerprint decodeFromOpenExtractor(@NonNull MediaExtractor extractor,
@@ -415,14 +589,13 @@ public final class AudioPcmExtractor {
                                                                 double startSec,
                                                                 double endSec,
                                                                 boolean relativeToFirstSample,
-                                                                @NonNull AtomicBoolean cancelled) throws IOException {
-        if (cancelled.get() || endSec <= startSec) return null;
+                                                                @NonNull CancelSignal cancelSignal) throws IOException {
+        if (cancelSignal.isCancelled() || endSec <= startSec) return null;
 
         long startUs;
         long endUs;
 
         if (relativeToFirstSample) {
-            // КРИТИЧНО для MPEG-TS HLS: читаем реальный базовый PTS первого аудио-пакета!
             long firstPtsUs = extractor.getSampleTime();
             long basePtsUs = firstPtsUs > 0L ? firstPtsUs : 0L;
             startUs = basePtsUs + Math.max(0L, Math.round(startSec * 1_000_000.0));
@@ -438,6 +611,8 @@ public final class AudioPcmExtractor {
         int sampleRate = initialSampleRate;
         int channelCount = initialChannelCount;
         MediaCodec codec = null;
+        long decodeStartMs = SystemClock.elapsedRealtime();
+
         try {
             codec = MediaCodec.createDecoderByType(mime);
             codec.configure(format, null, null, 0);
@@ -451,14 +626,20 @@ public final class AudioPcmExtractor {
             byte[] transferBuf = new byte[16384];
             boolean inputDone = false;
             boolean outputDone = false;
-            int idleLoops = 0;
+            int totalIdleLoops = 0;
             long firstEmittedPtsUs = -1L;
 
-            while (!outputDone && !cancelled.get()) {
+            while (!outputDone && !cancelSignal.isCancelled()) {
+                if (SystemClock.elapsedRealtime() - decodeStartMs > MAX_WINDOW_DECODE_MS) {
+                    Log.w(TAG, "MediaCodec decode window timed out after " + MAX_WINDOW_DECODE_MS + "ms");
+                    cancelSignal.recordFailure(FailureReason.TIMEOUT);
+                    break;
+                }
+
                 boolean madeProgress = false;
 
                 // 1. Неблокирующая подача всех доступных входных пакетов
-                while (!inputDone && !cancelled.get()) {
+                while (!inputDone && !cancelSignal.isCancelled()) {
                     int inIndex = codec.dequeueInputBuffer(0L);
                     if (inIndex < 0) {
                         break;
@@ -479,7 +660,7 @@ public final class AudioPcmExtractor {
                 }
 
                 // 2. Неблокирующая выгрузка всех готовых PCM-буферов
-                while (!outputDone && !cancelled.get()) {
+                while (!outputDone && !cancelSignal.isCancelled()) {
                     int outIndex = codec.dequeueOutputBuffer(bufferInfo, 0L);
                     if (outIndex >= 0) {
                         madeProgress = true;
@@ -525,11 +706,11 @@ public final class AudioPcmExtractor {
                     }
                 }
 
-                // 3. Короткое ожидание только при реальном простое обоих буферов
-                if (!madeProgress && !outputDone && !cancelled.get()) {
+                // 3. Короткое ожидание при простое обоих буферов (с общим счётчиком для защиты от зависания)
+                if (!madeProgress && !outputDone && !cancelSignal.isCancelled()) {
                     int outIndex = codec.dequeueOutputBuffer(bufferInfo, CODEC_IDLE_WAIT_US);
                     if (outIndex >= 0) {
-                        idleLoops = 0;
+                        totalIdleLoops = 0;
                         if (bufferInfo.size > 0) {
                             ByteBuffer outBuf = codec.getOutputBuffer(outIndex);
                             if (outBuf != null) {
@@ -554,7 +735,7 @@ public final class AudioPcmExtractor {
                             outputDone = true;
                         }
                     } else if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                        idleLoops = 0;
+                        totalIdleLoops = 0;
                         MediaFormat outFormat = codec.getOutputFormat();
                         if (outFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
                             channelCount = outFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
@@ -566,25 +747,30 @@ public final class AudioPcmExtractor {
                                 builder = new AudioFingerprintEngine.StreamingFingerprintBuilder(sampleRate, Math.min(expectedFrames, 2048));
                             }
                         }
-                    } else if (inputDone) {
-                        idleLoops++;
-                        if (idleLoops > 250) {
+                    } else {
+                        totalIdleLoops++;
+                        if (totalIdleLoops > MAX_CODEC_IDLE_LOOPS) {
+                            Log.w(TAG, "MediaCodec stalled (idleLoops=" + totalIdleLoops + ", inputDone=" + inputDone + ")");
                             outputDone = true;
                         }
                     }
                 } else {
-                    idleLoops = 0;
+                    totalIdleLoops = 0;
                 }
             }
 
-            if (cancelled.get()) {
+            if (cancelSignal.isCancelled()) {
                 return null;
             }
             int frames = builder.getFrameCount();
             double actualStartSec = (!relativeToFirstSample && firstEmittedPtsUs >= 0L)
                     ? (firstEmittedPtsUs / 1_000_000.0)
                     : startSec;
-            return frames > 0 ? new ExtractedFingerprint(builder.copyFramesData(), frames, actualStartSec) : null;
+            if (frames <= 0) {
+                cancelSignal.recordFailure(FailureReason.DECODE);
+                return null;
+            }
+            return new ExtractedFingerprint(builder.copyFramesData(), frames, actualStartSec);
         } finally {
             if (codec != null) {
                 try {
@@ -603,10 +789,10 @@ public final class AudioPcmExtractor {
     private static HlsPlaylistParser.ParsedMediaPlaylist resolveLowestQualityMediaPlaylist(
             @NonNull String playlistUrl,
             @NonNull OkHttpClient client,
-            @NonNull AtomicBoolean cancelled) throws IOException {
-        if (cancelled.get()) return null;
-        String text = fetchText(client, playlistUrl, cancelled);
-        if (text == null || text.isEmpty() || cancelled.get()) return null;
+            @NonNull CancelSignal cancelSignal) throws IOException {
+        if (cancelSignal.isCancelled()) return null;
+        String text = fetchText(client, playlistUrl, cancelSignal);
+        if (text == null || text.isEmpty() || cancelSignal.isCancelled()) return null;
 
         String mediaUrl = playlistUrl;
         String mediaText = text;
@@ -614,23 +800,24 @@ public final class AudioPcmExtractor {
             String lowestVariant = HlsPlaylistParser.selectLowestBandwidthVariantUrl(text, playlistUrl);
             if (lowestVariant != null && !lowestVariant.isEmpty()) {
                 mediaUrl = lowestVariant;
-                mediaText = fetchText(client, mediaUrl, cancelled);
+                mediaText = fetchText(client, mediaUrl, cancelSignal);
             }
         }
-        if (mediaText == null || mediaText.isEmpty() || cancelled.get()) return null;
+        if (mediaText == null || mediaText.isEmpty() || cancelSignal.isCancelled()) return null;
         return HlsPlaylistParser.parseMediaPlaylist(mediaText, mediaUrl);
     }
 
     @Nullable
     private static byte[] fetchOptionalInitSegment(@Nullable String initUrl,
                                                    @NonNull OkHttpClient client,
-                                                   @NonNull AtomicBoolean cancelled) throws IOException {
-        if (initUrl == null || initUrl.isEmpty() || cancelled.get()) return null;
-        return fetchBytes(client, initUrl, null, cancelled);
+                                                   @NonNull CancelSignal cancelSignal) throws IOException {
+        if (initUrl == null || initUrl.isEmpty() || cancelSignal.isCancelled()) return null;
+        return fetchBytes(client, initUrl, null, cancelSignal);
     }
 
     /**
-     * Загружает пачку HLS-сегментов параллельно (до 4 потоков), сохраняя их строгий порядок при записи во временный файл.
+     * Загружает пачку HLS-сегментов (до 2 потоков, чтобы не мешать основному видеопотоку)
+     * с жёсткими таймаутами и проверкой полноты пачки.
      */
     @Nullable
     private static File writeHlsBatchToTempFile(@NonNull List<HlsPlaylistParser.HlsSegment> segments,
@@ -638,15 +825,18 @@ public final class AudioPcmExtractor {
                                                 @NonNull Map<String, byte[]> keyCache,
                                                 @NonNull OkHttpClient client,
                                                 @NonNull File cacheDir,
-                                                @NonNull AtomicBoolean cancelled) throws Exception {
-        if (segments.isEmpty() || cancelled.get()) return null;
+                                                @NonNull CancelSignal cancelSignal) throws Exception {
+        if (segments.isEmpty() || cancelSignal.isCancelled()) return null;
 
         for (HlsPlaylistParser.HlsSegment seg : segments) {
-            if (cancelled.get()) return null;
+            if (cancelSignal.isCancelled()) return null;
             if (seg.isAes128Encrypted() && seg.keyUrl != null && !keyCache.containsKey(seg.keyUrl)) {
-                byte[] keyBytes = fetchBytes(client, seg.keyUrl, null, cancelled);
+                byte[] keyBytes = fetchBytes(client, seg.keyUrl, null, cancelSignal);
                 if (keyBytes != null && keyBytes.length == 16) {
                     keyCache.put(seg.keyUrl, keyBytes);
+                } else if (!cancelSignal.isCancelled()) {
+                    cancelSignal.recordFailure(FailureReason.NETWORK);
+                    return null;
                 }
             }
         }
@@ -654,9 +844,13 @@ public final class AudioPcmExtractor {
         int count = segments.size();
         byte[][] downloaded = new byte[count][];
         Set<Call> activeCalls = ConcurrentHashMap.newKeySet();
+        int succeededCount = 0;
 
         if (count == 1) {
-            downloaded[0] = fetchAndDecryptSegment(segments.get(0), keyCache, client, activeCalls, cancelled);
+            downloaded[0] = fetchAndDecryptSegment(segments.get(0), keyCache, client, activeCalls, cancelSignal);
+            if (downloaded[0] != null && downloaded[0].length > 0) {
+                succeededCount = 1;
+            }
         } else {
             int threads = Math.min(HLS_PARALLEL_THREADS, count);
             ExecutorService pool = Executors.newFixedThreadPool(threads, r -> {
@@ -671,32 +865,67 @@ public final class AudioPcmExtractor {
             try {
                 for (int i = 0; i < count; i++) {
                     final HlsPlaylistParser.HlsSegment seg = segments.get(i);
-                    futures.add(pool.submit(() -> fetchAndDecryptSegment(seg, keyCache, client, activeCalls, cancelled)));
+                    futures.add(pool.submit(() -> fetchAndDecryptSegment(seg, keyCache, client, activeCalls, cancelSignal)));
                 }
+                int consecutiveFailures = 0;
                 for (int i = 0; i < count; i++) {
-                    if (cancelled.get()) {
+                    if (cancelSignal.isCancelled()) {
+                        cancelAllCalls(activeCalls);
+                        return null;
+                    }
+                    long waitMs = Math.min(MAX_HLS_SEGMENT_WAIT_MS, cancelSignal.remainingMs());
+                    if (waitMs <= 0L) {
+                        cancelSignal.markTimedOut();
                         cancelAllCalls(activeCalls);
                         return null;
                     }
                     try {
-                        downloaded[i] = futures.get(i).get();
+                        downloaded[i] = futures.get(i).get(waitMs, TimeUnit.MILLISECONDS);
+                        if (downloaded[i] != null && downloaded[i].length > 0) {
+                            succeededCount++;
+                            consecutiveFailures = 0;
+                        } else {
+                            consecutiveFailures++;
+                        }
+                    } catch (TimeoutException te) {
+                        futures.get(i).cancel(true);
+                        cancelSignal.recordFailure(FailureReason.TIMEOUT);
+                        consecutiveFailures++;
+                        downloaded[i] = null;
                     } catch (Exception e) {
-                        if (cancelled.get()) {
+                        if (cancelSignal.isCancelled()) {
                             cancelAllCalls(activeCalls);
                             return null;
                         }
+                        cancelSignal.recordFailure(classifyException(e));
+                        consecutiveFailures++;
                         downloaded[i] = null;
+                    }
+
+                    // Если 2 сегмента подряд не загрузились — рвём пачку сразу, не ждём остальные на мёртвом инете
+                    if (consecutiveFailures >= 2 && succeededCount == 0) {
+                        cancelAllCalls(activeCalls);
+                        for (int j = i + 1; j < count; j++) {
+                            futures.get(j).cancel(true);
+                        }
+                        cancelSignal.recordFailure(FailureReason.NETWORK);
+                        return null;
                     }
                 }
             } finally {
-                if (cancelled.get()) {
-                    cancelAllCalls(activeCalls);
-                }
+                cancelAllCalls(activeCalls);
                 pool.shutdownNow();
             }
         }
 
-        if (cancelled.get()) return null;
+        if (cancelSignal.isCancelled()) return null;
+
+        // Если загружено меньше половины сегментов (или 0) — не кормим битый обрывок декодеру
+        int minRequired = count <= 2 ? count : Math.max(2, (int) Math.ceil(count * 0.6));
+        if (succeededCount < minRequired) {
+            cancelSignal.recordFailure(FailureReason.NETWORK);
+            return null;
+        }
 
         String suffix = (initBytes != null && initBytes.length > 0) ? ".mp4" : ".ts";
         File tempFile = File.createTempFile("op_audio_", suffix, cacheDir);
@@ -706,7 +935,7 @@ public final class AudioPcmExtractor {
                 fos.write(initBytes);
             }
             for (int i = 0; i < count; i++) {
-                if (cancelled.get()) return null;
+                if (cancelSignal.isCancelled()) return null;
                 byte[] segBytes = downloaded[i];
                 if (segBytes != null && segBytes.length > 0) {
                     fos.write(segBytes);
@@ -727,16 +956,16 @@ public final class AudioPcmExtractor {
                                                  @NonNull Map<String, byte[]> keyCache,
                                                  @NonNull OkHttpClient client,
                                                  @NonNull Set<Call> activeCalls,
-                                                 @NonNull AtomicBoolean cancelled) throws Exception {
-        if (cancelled.get()) return null;
-        byte[] segBytes = fetchBytes(client, seg.url, activeCalls, cancelled);
-        if (segBytes == null || segBytes.length == 0 || cancelled.get()) {
+                                                 @NonNull CancelSignal cancelSignal) throws Exception {
+        if (cancelSignal.isCancelled()) return null;
+        byte[] segBytes = fetchBytes(client, seg.url, activeCalls, cancelSignal);
+        if (segBytes == null || segBytes.length == 0 || cancelSignal.isCancelled()) {
             return null;
         }
         if (seg.isAes128Encrypted() && seg.keyUrl != null && seg.iv != null) {
             byte[] keyBytes = keyCache.get(seg.keyUrl);
             if (keyBytes == null) {
-                keyBytes = fetchBytes(client, seg.keyUrl, activeCalls, cancelled);
+                keyBytes = fetchBytes(client, seg.keyUrl, activeCalls, cancelSignal);
                 if (keyBytes != null && keyBytes.length == 16) {
                     keyCache.put(seg.keyUrl, keyBytes);
                 }
@@ -761,13 +990,26 @@ public final class AudioPcmExtractor {
     @Nullable
     private static String fetchText(@NonNull OkHttpClient client,
                                     @NonNull String url,
-                                    @NonNull AtomicBoolean cancelled) throws IOException {
-        if (cancelled.get()) return null;
+                                    @NonNull CancelSignal cancelSignal) throws IOException {
+        if (cancelSignal.isCancelled()) return null;
         Request req = new Request.Builder().url(url).build();
-        try (Response resp = client.newCall(req).execute()) {
-            if (!resp.isSuccessful()) return null;
+        Call call = client.newCall(req);
+        cancelSignal.registerCall(call);
+        try (Response resp = call.execute()) {
+            if (cancelSignal.isCancelled()) return null;
+            if (!resp.isSuccessful()) {
+                cancelSignal.recordFailure(FailureReason.NETWORK);
+                return null;
+            }
             ResponseBody body = resp.body();
             return body != null ? body.string() : null;
+        } catch (IOException e) {
+            if (!cancelSignal.isCancelled()) {
+                cancelSignal.recordFailure(classifyException(e));
+            }
+            throw e;
+        } finally {
+            cancelSignal.unregisterCall(call);
         }
     }
 
@@ -775,22 +1017,61 @@ public final class AudioPcmExtractor {
     private static byte[] fetchBytes(@NonNull OkHttpClient client,
                                      @NonNull String url,
                                      @Nullable Set<Call> activeCalls,
-                                     @NonNull AtomicBoolean cancelled) throws IOException {
-        if (cancelled.get()) return null;
+                                     @NonNull CancelSignal cancelSignal) throws IOException {
+        if (cancelSignal.isCancelled()) return null;
         Request req = new Request.Builder().url(url).build();
         Call call = client.newCall(req);
         if (activeCalls != null) {
             activeCalls.add(call);
         }
+        cancelSignal.registerCall(call);
         try (Response resp = call.execute()) {
-            if (!resp.isSuccessful()) return null;
+            if (cancelSignal.isCancelled()) return null;
+            if (!resp.isSuccessful()) {
+                cancelSignal.recordFailure(FailureReason.NETWORK);
+                return null;
+            }
             ResponseBody body = resp.body();
-            return body != null ? body.bytes() : null;
+            if (body == null) return null;
+            // Читаем потоково с проверкой отмены на каждом чанке
+            try (InputStream is = body.byteStream()) {
+                ByteArrayOutputStream baos = new ByteArrayOutputStream(32768);
+                byte[] buf = new byte[16384];
+                int read;
+                while ((read = is.read(buf)) != -1) {
+                    if (cancelSignal.isCancelled()) {
+                        return null;
+                    }
+                    baos.write(buf, 0, read);
+                }
+                return baos.toByteArray();
+            }
+        } catch (IOException e) {
+            if (!cancelSignal.isCancelled()) {
+                cancelSignal.recordFailure(classifyException(e));
+            }
+            throw e;
         } finally {
             if (activeCalls != null) {
                 activeCalls.remove(call);
             }
+            cancelSignal.unregisterCall(call);
         }
+    }
+
+    @NonNull
+    private static FailureReason classifyException(@Nullable Throwable e) {
+        Throwable cur = e;
+        while (cur != null) {
+            if (cur instanceof SocketTimeoutException || cur instanceof TimeoutException) {
+                return FailureReason.TIMEOUT;
+            }
+            if (cur instanceof IOException) {
+                return FailureReason.NETWORK;
+            }
+            cur = cur.getCause();
+        }
+        return FailureReason.DECODE;
     }
 
     private static int findAudioTrack(@NonNull MediaExtractor extractor) {

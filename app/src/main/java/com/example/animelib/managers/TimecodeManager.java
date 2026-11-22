@@ -288,6 +288,13 @@ public class TimecodeManager {
     }
 
     /**
+     * Проверяет, добавлен ли уже локально найденный аудио-опенинг для текущей серии.
+     */
+    public boolean hasDetectedOpeningTimecode() {
+        return injectedDetectedOpening != null && timecodes.contains(injectedDetectedOpening);
+    }
+
+    /**
      * Добавляет или уточняет автоматически найденный аудио-опенинг на таймбаре,
      * не перезаписывая официальный таймкод из API.
      */
