@@ -122,13 +122,14 @@ app/src/main/
 
 ---
 
-## 📥 Скачать
+## 📥 Скачать и установить
 
-| Платформа | Последний релиз | Ссылка |
-|-----------|-----------------|--------|
-| 🖥️ **Desktop (ПК)** | [![Desktop Release](https://img.shields.io/github/v/release/Fazer000/AnimeLib-Desktop?label=desktop&style=flat-square)](https://github.com/Fazer000/AnimeLib-Desktop/releases) | [Скачать последнюю версию](https://github.com/Fazer000/AnimeLib-Desktop/releases) |
-| 📱 **Mobile (Android)** | [![Mobile Release](https://img.shields.io/github/v/release/Fazer000/AnimeLib-Mobile?label=mobile&style=flat-square)](https://github.com/Fazer000/AnimeLib-Mobile/releases) | [Скачать последнюю версию](https://github.com/Fazer000/AnimeLib-Mobile/releases) |
-| 🎬 **PlayerLib (Android)** | [![Player Release](https://img.shields.io/badge/release-v1.0.0-FF7A00?style=flat-square)](#) | [Скачать последнюю версию](https://github.com/Fazer000/PlayerLib-Mobile/releases) |
+| Приложение | Последний релиз | Ссылка |
+| --- | --- | --- |
+| 🖥️ **AnimeLib Desktop (Windows, Linux)** | [![Desktop Release](https://img.shields.io/github/v/release/Fazer000/AnimeLib-Desktop?label=desktop&style=flat-square)](https://github.com/Fazer000/AnimeLib-Desktop/releases) | [Скачать AnimeLib Desktop](https://github.com/Fazer000/AnimeLib-Desktop/releases) |
+| 🖥️ **Frame Forge (Windows)** | [![Frame Forge Release](https://img.shields.io/github/v/release/Fazer000/FrameForge?label=frame-forge&style=flat-square)](https://github.com/Fazer000/FrameForge/releases) | [Скачать Frame Forge](https://github.com/Fazer000/FrameForge/releases) |
+| 📱 **AnimeLib Mobile (Android)** | [![Mobile Release](https://img.shields.io/github/v/release/Fazer000/AnimeLib-Mobile?label=mobile&style=flat-square&color=ff8000)](https://github.com/Fazer000/AnimeLib-Mobile/releases) | [Скачать AnimeLib Mobile](https://github.com/Fazer000/AnimeLib-Mobile/releases) |
+| 🎬 **PlayerLib (Android)** | [![Player Release](https://img.shields.io/badge/release-v1.0.0-FF7A00?style=flat-square)](#) | [Скачать PlayerLib](https://github.com/Fazer000/PlayerLib-Mobile/releases) | 
 
 ---
 
