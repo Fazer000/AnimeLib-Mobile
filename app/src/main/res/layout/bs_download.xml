@@ -29,7 +29,8 @@
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:paddingHorizontal="16dp"
-            android:paddingVertical="4dp">
+            android:paddingVertical="4dp"
+            android:layout_marginBottom="12dp">
 
             <ImageButton
                 android:id="@+id/btnBsBack"
@@ -64,7 +65,7 @@
                     android:id="@+id/tvSubtitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Шаг 1 из 2 • Озвучка и качество"
+                    android:text="Озвучка и качество"
                     android:textSize="12.5sp"
                     android:fontFamily="@font/open_sans"
                     android:textColor="@color/accent_text_color"
@@ -99,32 +100,6 @@
 
         </LinearLayout>
 
-        <!-- M3 2-Step Indicator -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="14dp">
-
-            <View
-                android:id="@+id/stepIndicator1"
-                android:layout_width="0dp"
-                android:layout_height="4dp"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/bg_m3_step_indicator_active" />
-
-            <View
-                android:id="@+id/stepIndicator2"
-                android:layout_width="0dp"
-                android:layout_height="4dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_m3_step_indicator_inactive" />
-
-        </LinearLayout>
-
         <!-- ================= STEP 1: PLAYER, QUALITY & VOICEOVERS ================= -->
         <LinearLayout
             android:id="@+id/layoutStep1"
@@ -135,7 +110,7 @@
             android:clipChildren="false"
             android:visibility="visible">
 
-            <!-- 1. Player Section (no outer background, M3 Expressive connected tiles) -->
+            <!-- 1. Player Section (compact connected chips) -->
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -164,20 +139,20 @@
 
             <LinearLayout
                 android:id="@+id/cgPlayers"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:layout_marginHorizontal="16dp"
-                android:layout_marginBottom="16dp">
+                android:layout_marginBottom="14dp">
 
                 <TextView
                     android:id="@+id/chipPlayerAnimelib"
-                    android:layout_width="0dp"
-                    android:layout_height="46dp"
-                    android:layout_weight="1"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:minWidth="72dp"
                     android:gravity="center"
                     android:text="AnimeLib"
-                    android:textSize="14sp"
+                    android:textSize="12.5sp"
                     android:fontFamily="@font/open_sans_bold"
                     android:textColor="@color/white_color"
                     android:maxLines="1"
@@ -189,12 +164,12 @@
 
                 <TextView
                     android:id="@+id/chipPlayerKodik"
-                    android:layout_width="0dp"
-                    android:layout_height="46dp"
-                    android:layout_weight="1"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:minWidth="72dp"
                     android:gravity="center"
                     android:text="Kodik"
-                    android:textSize="14sp"
+                    android:textSize="12.5sp"
                     android:fontFamily="@font/open_sans_bold"
                     android:textColor="@color/primary_text_color"
                     android:maxLines="1"
@@ -205,7 +180,7 @@
 
             </LinearLayout>
 
-            <!-- 2. Quality Section (no outer background, M3 Expressive connected tiles) -->
+            <!-- 2. Quality Section (compact connected chips matching player chips) -->
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -239,7 +214,7 @@
                 android:clipToPadding="false"
                 android:scrollbars="none"
                 android:overScrollMode="never"
-                android:layout_marginBottom="16dp">
+                android:layout_marginBottom="14dp">
 
                 <LinearLayout
                     android:id="@+id/cgQualities"
@@ -250,14 +225,14 @@
                     <TextView
                         android:id="@+id/chipQ2160"
                         android:layout_width="wrap_content"
-                        android:layout_height="44dp"
-                        android:minWidth="68dp"
+                        android:layout_height="36dp"
+                        android:minWidth="64dp"
                         android:gravity="center"
                         android:text="2160p"
-                        android:textSize="13.5sp"
+                        android:textSize="12.5sp"
                         android:fontFamily="@font/open_sans_bold"
                         android:textColor="@color/primary_text_color"
-                        android:paddingHorizontal="16dp"
+                        android:paddingHorizontal="12dp"
                         android:clickable="true"
                         android:focusable="true"
                         android:visibility="gone"
@@ -266,14 +241,14 @@
                     <TextView
                         android:id="@+id/chipQ1080"
                         android:layout_width="wrap_content"
-                        android:layout_height="44dp"
-                        android:minWidth="68dp"
+                        android:layout_height="36dp"
+                        android:minWidth="64dp"
                         android:gravity="center"
                         android:text="1080p"
-                        android:textSize="13.5sp"
+                        android:textSize="12.5sp"
                         android:fontFamily="@font/open_sans_bold"
                         android:textColor="@color/white_color"
-                        android:paddingHorizontal="16dp"
+                        android:paddingHorizontal="12dp"
                         android:clickable="true"
                         android:focusable="true"
                         android:layout_marginEnd="4dp" />
@@ -281,14 +256,14 @@
                     <TextView
                         android:id="@+id/chipQ720"
                         android:layout_width="wrap_content"
-                        android:layout_height="44dp"
-                        android:minWidth="68dp"
+                        android:layout_height="36dp"
+                        android:minWidth="64dp"
                         android:gravity="center"
                         android:text="720p"
-                        android:textSize="13.5sp"
+                        android:textSize="12.5sp"
                         android:fontFamily="@font/open_sans_bold"
                         android:textColor="@color/primary_text_color"
-                        android:paddingHorizontal="16dp"
+                        android:paddingHorizontal="12dp"
                         android:clickable="true"
                         android:focusable="true"
                         android:layout_marginEnd="4dp" />
@@ -296,14 +271,14 @@
                     <TextView
                         android:id="@+id/chipQ480"
                         android:layout_width="wrap_content"
-                        android:layout_height="44dp"
-                        android:minWidth="68dp"
+                        android:layout_height="36dp"
+                        android:minWidth="64dp"
                         android:gravity="center"
                         android:text="480p"
-                        android:textSize="13.5sp"
+                        android:textSize="12.5sp"
                         android:fontFamily="@font/open_sans_bold"
                         android:textColor="@color/primary_text_color"
-                        android:paddingHorizontal="16dp"
+                        android:paddingHorizontal="12dp"
                         android:clickable="true"
                         android:focusable="true"
                         android:layout_marginEnd="4dp" />
@@ -311,14 +286,14 @@
                     <TextView
                         android:id="@+id/chipQ360"
                         android:layout_width="wrap_content"
-                        android:layout_height="44dp"
-                        android:minWidth="68dp"
+                        android:layout_height="36dp"
+                        android:minWidth="64dp"
                         android:gravity="center"
                         android:text="360p"
-                        android:textSize="13.5sp"
+                        android:textSize="12.5sp"
                         android:fontFamily="@font/open_sans_bold"
                         android:textColor="@color/primary_text_color"
-                        android:paddingHorizontal="16dp"
+                        android:paddingHorizontal="12dp"
                         android:clickable="true"
                         android:focusable="true" />
 
@@ -367,14 +342,23 @@
                 android:id="@+id/btnNextStep"
                 style="@style/Widget.AnimeLIB.Button"
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/button_height_large"
+                android:layout_height="@dimen/button_height_standard"
                 android:layout_marginHorizontal="16dp"
                 android:layout_marginTop="14dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
                 android:elevation="0dp"
                 android:stateListAnimator="@null"
                 android:text="Далее"
-                app:cornerRadius="@dimen/button_corner_radius"
+                android:textSize="14.5sp"
+                android:fontFamily="@font/open_sans_bold"
+                android:textColor="@color/white_color"
+                app:backgroundTint="@color/purple_primary"
+                app:rippleColor="#38FFFFFF"
+                app:cornerRadius="24dp"
                 app:icon="@drawable/ic_arrow_forward"
+                app:iconSize="18dp"
+                app:iconPadding="8dp"
                 app:iconGravity="textEnd"
                 app:iconTint="@color/white_color" />
 
@@ -388,15 +372,12 @@
             android:orientation="vertical"
             android:visibility="gone">
 
-            <!-- Selection Controls Block (12dp radius + 0.5dp stroke matching player blocks) -->
+            <!-- Selection Controls Block (frameless, player-styled action buttons) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:background="@drawable/bg_m3_block_card"
-                android:layout_marginHorizontal="16dp"
-                android:layout_marginBottom="12dp"
-                android:paddingVertical="12dp">
+                android:layout_marginBottom="12dp">
 
                 <!-- Counter Row -->
                 <LinearLayout
@@ -404,14 +385,14 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:paddingHorizontal="14dp">
+                    android:paddingHorizontal="16dp">
 
                     <TextView
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="Выбрано серий"
-                        android:textSize="13.5sp"
+                        android:textSize="14sp"
                         android:fontFamily="@font/open_sans_bold"
                         android:textColor="@color/primary_text_color" />
 
@@ -442,7 +423,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:paddingHorizontal="14dp"
+                    android:paddingHorizontal="16dp"
                     android:clipToPadding="false"
                     android:scrollbars="none"
                     android:overScrollMode="never">
@@ -455,44 +436,44 @@
                         <TextView
                             android:id="@+id/btnSelectAll"
                             android:layout_width="wrap_content"
-                            android:layout_height="34dp"
+                            android:layout_height="36dp"
                             android:gravity="center"
                             android:text="Выбрать все"
                             android:textSize="12.5sp"
                             android:fontFamily="@font/open_sans_semibold"
                             android:textColor="@color/primary_text_color"
-                            android:background="@drawable/bg_m3_action_chip"
-                            android:paddingHorizontal="12dp"
+                            android:background="@drawable/bg_portrait_block_button"
+                            android:paddingHorizontal="14dp"
                             android:clickable="true"
                             android:focusable="true"
-                            android:layout_marginEnd="6dp" />
+                            android:layout_marginEnd="8dp" />
 
                         <TextView
                             android:id="@+id/btnDeselectAll"
                             android:layout_width="wrap_content"
-                            android:layout_height="34dp"
+                            android:layout_height="36dp"
                             android:gravity="center"
                             android:text="Снять все"
                             android:textSize="12.5sp"
                             android:fontFamily="@font/open_sans_semibold"
                             android:textColor="@color/primary_text_color"
-                            android:background="@drawable/bg_m3_action_chip"
-                            android:paddingHorizontal="12dp"
+                            android:background="@drawable/bg_portrait_block_button"
+                            android:paddingHorizontal="14dp"
                             android:clickable="true"
                             android:focusable="true"
-                            android:layout_marginEnd="6dp" />
+                            android:layout_marginEnd="8dp" />
 
                         <TextView
                             android:id="@+id/btnInvertSelection"
                             android:layout_width="wrap_content"
-                            android:layout_height="34dp"
+                            android:layout_height="36dp"
                             android:gravity="center"
                             android:text="Инвертировать"
                             android:textSize="12.5sp"
                             android:fontFamily="@font/open_sans_semibold"
                             android:textColor="@color/primary_text_color"
-                            android:background="@drawable/bg_m3_action_chip"
-                            android:paddingHorizontal="12dp"
+                            android:background="@drawable/bg_portrait_block_button"
+                            android:paddingHorizontal="14dp"
                             android:clickable="true"
                             android:focusable="true" />
 
@@ -517,14 +498,23 @@
                 android:id="@+id/btnDownload"
                 style="@style/Widget.AnimeLIB.Button"
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/button_height_large"
+                android:layout_height="@dimen/button_height_standard"
                 android:layout_marginHorizontal="16dp"
                 android:layout_marginTop="14dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
                 android:elevation="0dp"
                 android:stateListAnimator="@null"
                 android:text="@string/btn_download"
-                app:cornerRadius="@dimen/button_corner_radius"
+                android:textSize="14.5sp"
+                android:fontFamily="@font/open_sans_bold"
+                android:textColor="@color/white_color"
+                app:backgroundTint="@color/purple_primary"
+                app:rippleColor="#38FFFFFF"
+                app:cornerRadius="24dp"
                 app:icon="@drawable/ic_download"
+                app:iconSize="18dp"
+                app:iconPadding="8dp"
                 app:iconGravity="textStart"
                 app:iconTint="@color/white_color" />
 

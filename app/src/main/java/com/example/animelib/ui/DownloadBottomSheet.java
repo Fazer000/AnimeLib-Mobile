@@ -55,9 +55,12 @@ import java.util.concurrent.Executors;
 
 public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
 
-    private static final int EXPRESSIVE_CORNER_OUTER_DP = 20;
-    private static final int EXPRESSIVE_CORNER_INNER_DP = 8;
-    private static final int EXPRESSIVE_CORNER_ACTIVE_PILL_DP = 26;
+    private static final int CHIP_CORNER_OUTER_DP = 14;
+    private static final int CHIP_CORNER_INNER_DP = 6;
+    private static final int CHIP_CORNER_ACTIVE_PILL_DP = 18;
+    private static final int EPISODE_CORNER_OUTER_DP = 16;
+    private static final int EPISODE_CORNER_INNER_DP = 6;
+    private static final int EPISODE_CORNER_ACTIVE_PILL_DP = 20;
     private static final long EXPRESSIVE_MORPH_DURATION_MS = 220L;
 
     private static final class ExpressivePillState {
@@ -143,8 +146,6 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
     private ImageButton btnBsClose;
     private TextView tvTitle;
     private TextView tvSubtitle;
-    private View stepIndicator1;
-    private View stepIndicator2;
 
     // Step 1 UI Elements
     private View layoutStep1;
@@ -233,8 +234,6 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         btnBsClose = view.findViewById(R.id.btnBsClose);
         tvTitle = view.findViewById(R.id.tvTitle);
         tvSubtitle = view.findViewById(R.id.tvSubtitle);
-        stepIndicator1 = view.findViewById(R.id.stepIndicator1);
-        stepIndicator2 = view.findViewById(R.id.stepIndicator2);
 
         // Step 1 Views init
         layoutStep1 = view.findViewById(R.id.layoutStep1);
@@ -363,13 +362,7 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             btnBsBack.setVisibility(getOnBackPressedAction() != null ? View.VISIBLE : View.GONE);
         }
         tvTitle.setText("Скачивание серий");
-        tvSubtitle.setText("Шаг 1 из 2 • Озвучка и качество");
-        if (stepIndicator1 != null) {
-            stepIndicator1.setBackgroundResource(R.drawable.bg_m3_step_indicator_active);
-        }
-        if (stepIndicator2 != null) {
-            stepIndicator2.setBackgroundResource(R.drawable.bg_m3_step_indicator_inactive);
-        }
+        tvSubtitle.setText("Озвучка и качество");
 
         if (layoutStep2.getVisibility() == View.VISIBLE) {
             layoutStep2.animate()
@@ -397,12 +390,6 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
     private void showStep2() {
         btnBsBack.setVisibility(View.VISIBLE);
         tvTitle.setText("Выбор серий");
-        if (stepIndicator1 != null) {
-            stepIndicator1.setBackgroundResource(R.drawable.bg_m3_step_indicator_active);
-        }
-        if (stepIndicator2 != null) {
-            stepIndicator2.setBackgroundResource(R.drawable.bg_m3_step_indicator_active);
-        }
         updateDownloadButtonText();
 
         if (selectedVoiceover != null) {
@@ -564,9 +551,9 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
                                               boolean animate) {
         if (!isAdded() || getContext() == null || visibleChips.isEmpty()) return;
         float density = getResources().getDisplayMetrics().density;
-        float outerPx = EXPRESSIVE_CORNER_OUTER_DP * density;
-        float innerPx = EXPRESSIVE_CORNER_INNER_DP * density;
-        float pillPx = EXPRESSIVE_CORNER_ACTIVE_PILL_DP * density;
+        float outerPx = CHIP_CORNER_OUTER_DP * density;
+        float innerPx = CHIP_CORNER_INNER_DP * density;
+        float pillPx = CHIP_CORNER_ACTIVE_PILL_DP * density;
         int gapPx = (int) (4 * density);
 
         int count = visibleChips.size();
@@ -650,16 +637,21 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         }
         state.shape.setCornerRadii(radii);
 
-        int inactiveBg = ContextCompat.getColor(requireContext(), R.color.card_bg_color);
+        int inactiveBg = ContextCompat.getColor(requireContext(), R.color.chip_unselected_bg);
         int activeBg = ContextCompat.getColor(requireContext(), R.color.purple_primary);
+        int inactiveStroke = ContextCompat.getColor(requireContext(), R.color.chip_unselected_stroke);
+        int activeStroke = ContextCompat.getColor(requireContext(), R.color.purple_primary);
         int inactiveText = ContextCompat.getColor(requireContext(), R.color.primary_text_color);
         int activeText = ContextCompat.getColor(requireContext(), R.color.white_color);
 
         ArgbEvaluator evaluator = new ArgbEvaluator();
         int currentBg = (int) evaluator.evaluate(progress, inactiveBg, activeBg);
+        int currentStroke = (int) evaluator.evaluate(progress, inactiveStroke, activeStroke);
         int currentText = (int) evaluator.evaluate(progress, inactiveText, activeText);
 
+        float density = getResources().getDisplayMetrics().density;
         state.shape.setColor(currentBg);
+        state.shape.setStroke(Math.max(1, Math.round(0.5f * density)), currentStroke);
         state.view.setTextColor(currentText);
 
         int rippleColor = progress >= 0.5f
@@ -817,19 +809,19 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         TextView chip = new TextView(requireContext());
         float density = getResources().getDisplayMetrics().density;
         chip.setText(qualityKey + "p");
-        chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
+        chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
         chip.setTypeface(androidx.core.content.res.ResourcesCompat.getFont(requireContext(), R.font.open_sans_bold));
         chip.setGravity(android.view.Gravity.CENTER);
-        chip.setMinWidth((int) (68 * density));
+        chip.setMinWidth((int) (64 * density));
         chip.setTextColor(ContextCompat.getColor(requireContext(), R.color.primary_text_color));
-        int pdH = (int) (16 * density);
+        int pdH = (int) (12 * density);
         chip.setPadding(pdH, 0, pdH, 0);
         chip.setClickable(true);
         chip.setFocusable(true);
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                (int) (44 * density)
+                (int) (36 * density)
         );
         lp.setMarginEnd((int) (4 * density));
         chip.setLayoutParams(lp);
@@ -1246,8 +1238,8 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
 
         private float[] computeGridInactiveRadii(Context ctx, int position, int totalCount) {
             float density = ctx.getResources().getDisplayMetrics().density;
-            float outerPx = EXPRESSIVE_CORNER_OUTER_DP * density;
-            float innerPx = EXPRESSIVE_CORNER_INNER_DP * density;
+            float outerPx = EPISODE_CORNER_OUTER_DP * density;
+            float innerPx = EPISODE_CORNER_INNER_DP * density;
 
             int row = position / GRID_SPAN;
             int col = position % GRID_SPAN;
@@ -1277,20 +1269,25 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             }
             holder.tileShape.setCornerRadii(radii);
 
-            int inactiveBg = ContextCompat.getColor(ctx, R.color.card_bg_color);
-            int activeBg = ContextCompat.getColor(ctx, R.color.purple_primary);
-            int inactiveTitle = ContextCompat.getColor(ctx, R.color.primary_text_color);
-            int activeTitle = ContextCompat.getColor(ctx, R.color.white_color);
+            int inactiveBg = ContextCompat.getColor(ctx, R.color.chip_unselected_bg);
+            int activeBg = ContextCompat.getColor(ctx, R.color.chip_selected_bg);
+            int inactiveStroke = ContextCompat.getColor(ctx, R.color.chip_unselected_stroke);
+            int activeStroke = ContextCompat.getColor(ctx, R.color.purple_primary);
+            int titleColor = ContextCompat.getColor(ctx, R.color.primary_text_color);
             int inactiveStatus = ContextCompat.getColor(ctx, R.color.accent_text_color);
-            int activeStatus = ContextCompat.getColor(ctx, R.color.white_color);
+            int activeStatus = ContextCompat.getColor(ctx, R.color.purple_primary);
 
             ArgbEvaluator evaluator = new ArgbEvaluator();
+            float density = ctx.getResources().getDisplayMetrics().density;
+            int strokeWidthPx = Math.max(1, Math.round((0.5f + 0.7f * progress) * density));
+
             holder.tileShape.setColor((int) evaluator.evaluate(progress, inactiveBg, activeBg));
-            holder.tvEpisodeName.setTextColor((int) evaluator.evaluate(progress, inactiveTitle, activeTitle));
+            holder.tileShape.setStroke(strokeWidthPx, (int) evaluator.evaluate(progress, inactiveStroke, activeStroke));
+            holder.tvEpisodeName.setTextColor(titleColor);
             holder.tvStatus.setTextColor((int) evaluator.evaluate(progress, inactiveStatus, activeStatus));
 
             int rippleColor = progress >= 0.5f
-                    ? 0x38FFFFFF
+                    ? ContextCompat.getColor(ctx, R.color.purple_alpha_25)
                     : ContextCompat.getColor(ctx, R.color.dialog_ripple_color);
             holder.tileRipple.setColor(ColorStateList.valueOf(rippleColor));
 
@@ -1352,12 +1349,18 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             int errorColor = ContextCompat.getColor(ctx, R.color.stop_btn_text);
             int neutralRipple = ContextCompat.getColor(ctx, R.color.dialog_ripple_color);
 
+            int thinStrokePx = Math.max(1, Math.round(0.5f * ctx.getResources().getDisplayMetrics().density));
+            int downloadedStrokeColor = ContextCompat.getColor(ctx, R.color.downloaded_tag_stroke);
+            int unavailableStrokeColor = ContextCompat.getColor(ctx, R.color.stop_btn_stroke);
+            int neutralStrokeColor = ContextCompat.getColor(ctx, R.color.chip_unselected_stroke);
+
             holder.itemView.setScaleX(1.0f);
             holder.itemView.setScaleY(1.0f);
 
             if (item.isAlreadyDownloaded) {
                 holder.tileShape.setCornerRadii(holder.inactiveRadii);
                 holder.tileShape.setColor(downloadedBgColor);
+                holder.tileShape.setStroke(thinStrokePx, downloadedStrokeColor);
                 holder.tileRipple.setColor(ColorStateList.valueOf(0x00000000));
                 holder.tvStatus.setText("Скачано");
                 holder.tvStatus.setTextColor(downloadedFgColor);
@@ -1371,6 +1374,7 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             } else if (item.isDownloading) {
                 holder.tileShape.setCornerRadii(holder.inactiveRadii);
                 holder.tileShape.setColor(cardBgColor);
+                holder.tileShape.setStroke(thinStrokePx, neutralStrokeColor);
                 holder.tileRipple.setColor(ColorStateList.valueOf(neutralRipple));
                 holder.tvStatus.setText("Загрузка");
                 holder.tvStatus.setTextColor(blueColor);
@@ -1384,6 +1388,7 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             } else if (!item.isAvailable) {
                 holder.tileShape.setCornerRadii(holder.inactiveRadii);
                 holder.tileShape.setColor(errorBgColor);
+                holder.tileShape.setStroke(thinStrokePx, unavailableStrokeColor);
                 holder.tileRipple.setColor(ColorStateList.valueOf(0x00000000));
                 holder.tvStatus.setText("Недоступно");
                 holder.tvStatus.setTextColor(errorColor);
@@ -1433,7 +1438,7 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
                 tvStatus = itemView.findViewById(R.id.tvStatus);
 
                 Context ctx = itemView.getContext();
-                activePillRadius = EXPRESSIVE_CORNER_ACTIVE_PILL_DP * ctx.getResources().getDisplayMetrics().density;
+                activePillRadius = EPISODE_CORNER_ACTIVE_PILL_DP * ctx.getResources().getDisplayMetrics().density;
                 tileShape = new GradientDrawable();
                 tileShape.setShape(GradientDrawable.RECTANGLE);
                 tileRipple = new RippleDrawable(
