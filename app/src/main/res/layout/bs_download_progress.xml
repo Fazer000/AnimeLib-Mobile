@@ -99,16 +99,16 @@
 
         </LinearLayout>
 
-        <!-- Overall Progress M3 Hero Card -->
+        <!-- Overall Progress Banner (12dp radius + 0.5dp stroke matching player blocks) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:background="@drawable/bg_m3_card_surface"
+            android:background="@drawable/bg_m3_block_card"
             android:layout_marginHorizontal="16dp"
             android:layout_marginTop="10dp"
             android:layout_marginBottom="8dp"
-            android:padding="16dp">
+            android:padding="14dp">
 
             <LinearLayout
                 android:layout_width="match_parent"

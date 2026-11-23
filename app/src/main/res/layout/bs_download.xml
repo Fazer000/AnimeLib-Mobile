@@ -106,7 +106,7 @@
             android:orientation="horizontal"
             android:layout_marginHorizontal="16dp"
             android:layout_marginTop="8dp"
-            android:layout_marginBottom="12dp">
+            android:layout_marginBottom="14dp">
 
             <View
                 android:id="@+id/stepIndicator1"
@@ -135,225 +135,196 @@
             android:clipChildren="false"
             android:visibility="visible">
 
-            <!-- M3 Grouped Surface: Player + Quality -->
+            <!-- 1. Player Section (no outer background, M3 Expressive connected tiles) -->
             <LinearLayout
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginHorizontal="16dp">
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:layout_marginBottom="8dp">
 
-                <!-- 1. Player Card (Top of M3 group) -->
-                <LinearLayout
-                    android:layout_width="match_parent"
+                <ImageView
+                    android:layout_width="17dp"
+                    android:layout_height="17dp"
+                    android:src="@drawable/ic_tv"
+                    app:tint="@color/purple_primary"
+                    android:contentDescription="@null"
+                    android:layout_marginEnd="8dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="@drawable/bg_m3_card_top"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:layout_marginBottom="3dp">
-
-                    <LinearLayout
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:layout_marginBottom="10dp">
-
-                        <ImageView
-                            android:layout_width="17dp"
-                            android:layout_height="17dp"
-                            android:src="@drawable/ic_tv"
-                            app:tint="@color/purple_primary"
-                            android:contentDescription="@null"
-                            android:layout_marginEnd="8dp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/bs_subtitle_download_player"
-                            android:textSize="14sp"
-                            android:fontFamily="@font/open_sans_bold"
-                            android:textColor="@color/primary_text_color" />
-
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:id="@+id/cgPlayers"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal">
-
-                        <TextView
-                            android:id="@+id/chipPlayerAnimelib"
-                            android:layout_width="0dp"
-                            android:layout_height="40dp"
-                            android:layout_weight="1"
-                            android:gravity="center"
-                            android:text="AnimeLib"
-                            android:textSize="13.5sp"
-                            android:fontFamily="@font/open_sans_bold"
-                            android:textColor="@color/white_color"
-                            android:background="@drawable/bg_m3_chip_selected"
-                            android:paddingHorizontal="16dp"
-                            android:clickable="true"
-                            android:focusable="true"
-                            android:layout_marginEnd="6dp" />
-
-                        <TextView
-                            android:id="@+id/chipPlayerKodik"
-                            android:layout_width="0dp"
-                            android:layout_height="40dp"
-                            android:layout_weight="1"
-                            android:gravity="center"
-                            android:text="Kodik"
-                            android:textSize="13.5sp"
-                            android:fontFamily="@font/open_sans_bold"
-                            android:textColor="@color/primary_text_color"
-                            android:background="@drawable/bg_m3_chip_unselected"
-                            android:paddingHorizontal="16dp"
-                            android:clickable="true"
-                            android:focusable="true" />
-
-                    </LinearLayout>
-
-                </LinearLayout>
-
-                <!-- 2. Quality Card (Bottom of M3 group) -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="@drawable/bg_m3_card_bottom"
-                    android:paddingTop="14dp"
-                    android:paddingBottom="14dp">
-
-                    <LinearLayout
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingHorizontal="16dp"
-                        android:layout_marginBottom="10dp">
-
-                        <ImageView
-                            android:layout_width="17dp"
-                            android:layout_height="17dp"
-                            android:src="@drawable/ic_quality"
-                            app:tint="@color/purple_primary"
-                            android:contentDescription="@null"
-                            android:layout_marginEnd="8dp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/bs_subtitle_download_quality"
-                            android:textSize="14sp"
-                            android:fontFamily="@font/open_sans_bold"
-                            android:textColor="@color/primary_text_color" />
-
-                    </LinearLayout>
-
-                    <HorizontalScrollView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:paddingHorizontal="16dp"
-                        android:clipToPadding="false"
-                        android:scrollbars="none"
-                        android:overScrollMode="never">
-
-                        <LinearLayout
-                            android:id="@+id/cgQualities"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal">
-
-                            <TextView
-                                android:id="@+id/chipQ2160"
-                                android:layout_width="wrap_content"
-                                android:layout_height="38dp"
-                                android:minWidth="62dp"
-                                android:gravity="center"
-                                android:text="2160p"
-                                android:textSize="13sp"
-                                android:fontFamily="@font/open_sans_bold"
-                                android:textColor="@color/primary_text_color"
-                                android:background="@drawable/bg_m3_chip_unselected"
-                                android:paddingHorizontal="16dp"
-                                android:clickable="true"
-                                android:focusable="true"
-                                android:visibility="gone"
-                                android:layout_marginEnd="8dp" />
-
-                            <TextView
-                                android:id="@+id/chipQ1080"
-                                android:layout_width="wrap_content"
-                                android:layout_height="38dp"
-                                android:minWidth="62dp"
-                                android:gravity="center"
-                                android:text="1080p"
-                                android:textSize="13sp"
-                                android:fontFamily="@font/open_sans_bold"
-                                android:textColor="@color/white_color"
-                                android:background="@drawable/bg_m3_chip_selected"
-                                android:paddingHorizontal="16dp"
-                                android:clickable="true"
-                                android:focusable="true"
-                                android:layout_marginEnd="8dp" />
-
-                            <TextView
-                                android:id="@+id/chipQ720"
-                                android:layout_width="wrap_content"
-                                android:layout_height="38dp"
-                                android:minWidth="62dp"
-                                android:gravity="center"
-                                android:text="720p"
-                                android:textSize="13sp"
-                                android:fontFamily="@font/open_sans_bold"
-                                android:textColor="@color/primary_text_color"
-                                android:background="@drawable/bg_m3_chip_unselected"
-                                android:paddingHorizontal="16dp"
-                                android:clickable="true"
-                                android:focusable="true"
-                                android:layout_marginEnd="8dp" />
-
-                            <TextView
-                                android:id="@+id/chipQ480"
-                                android:layout_width="wrap_content"
-                                android:layout_height="38dp"
-                                android:minWidth="62dp"
-                                android:gravity="center"
-                                android:text="480p"
-                                android:textSize="13sp"
-                                android:fontFamily="@font/open_sans_bold"
-                                android:textColor="@color/primary_text_color"
-                                android:background="@drawable/bg_m3_chip_unselected"
-                                android:paddingHorizontal="16dp"
-                                android:clickable="true"
-                                android:focusable="true"
-                                android:layout_marginEnd="8dp" />
-
-                            <TextView
-                                android:id="@+id/chipQ360"
-                                android:layout_width="wrap_content"
-                                android:layout_height="38dp"
-                                android:minWidth="62dp"
-                                android:gravity="center"
-                                android:text="360p"
-                                android:textSize="13sp"
-                                android:fontFamily="@font/open_sans_bold"
-                                android:textColor="@color/primary_text_color"
-                                android:background="@drawable/bg_m3_chip_unselected"
-                                android:paddingHorizontal="16dp"
-                                android:clickable="true"
-                                android:focusable="true" />
-
-                        </LinearLayout>
-
-                    </HorizontalScrollView>
-
-                </LinearLayout>
+                    android:text="@string/bs_subtitle_download_player"
+                    android:textSize="14.5sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:textColor="@color/primary_text_color" />
 
             </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cgPlayers"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginHorizontal="16dp"
+                android:layout_marginBottom="16dp">
+
+                <TextView
+                    android:id="@+id/chipPlayerAnimelib"
+                    android:layout_width="0dp"
+                    android:layout_height="46dp"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="AnimeLib"
+                    android:textSize="14sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:textColor="@color/white_color"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:paddingHorizontal="14dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:layout_marginEnd="4dp" />
+
+                <TextView
+                    android:id="@+id/chipPlayerKodik"
+                    android:layout_width="0dp"
+                    android:layout_height="46dp"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="Kodik"
+                    android:textSize="14sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:textColor="@color/primary_text_color"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:paddingHorizontal="14dp"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+            </LinearLayout>
+
+            <!-- 2. Quality Section (no outer background, M3 Expressive connected tiles) -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:layout_marginBottom="8dp">
+
+                <ImageView
+                    android:layout_width="17dp"
+                    android:layout_height="17dp"
+                    android:src="@drawable/ic_quality"
+                    app:tint="@color/purple_primary"
+                    android:contentDescription="@null"
+                    android:layout_marginEnd="8dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/bs_subtitle_download_quality"
+                    android:textSize="14.5sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:textColor="@color/primary_text_color" />
+
+            </LinearLayout>
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="16dp"
+                android:clipToPadding="false"
+                android:scrollbars="none"
+                android:overScrollMode="never"
+                android:layout_marginBottom="16dp">
+
+                <LinearLayout
+                    android:id="@+id/cgQualities"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/chipQ2160"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:minWidth="68dp"
+                        android:gravity="center"
+                        android:text="2160p"
+                        android:textSize="13.5sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:textColor="@color/primary_text_color"
+                        android:paddingHorizontal="16dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:visibility="gone"
+                        android:layout_marginEnd="4dp" />
+
+                    <TextView
+                        android:id="@+id/chipQ1080"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:minWidth="68dp"
+                        android:gravity="center"
+                        android:text="1080p"
+                        android:textSize="13.5sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:textColor="@color/white_color"
+                        android:paddingHorizontal="16dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:layout_marginEnd="4dp" />
+
+                    <TextView
+                        android:id="@+id/chipQ720"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:minWidth="68dp"
+                        android:gravity="center"
+                        android:text="720p"
+                        android:textSize="13.5sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:textColor="@color/primary_text_color"
+                        android:paddingHorizontal="16dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:layout_marginEnd="4dp" />
+
+                    <TextView
+                        android:id="@+id/chipQ480"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:minWidth="68dp"
+                        android:gravity="center"
+                        android:text="480p"
+                        android:textSize="13.5sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:textColor="@color/primary_text_color"
+                        android:paddingHorizontal="16dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:layout_marginEnd="4dp" />
+
+                    <TextView
+                        android:id="@+id/chipQ360"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:minWidth="68dp"
+                        android:gravity="center"
+                        android:text="360p"
+                        android:textSize="13.5sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:textColor="@color/primary_text_color"
+                        android:paddingHorizontal="16dp"
+                        android:clickable="true"
+                        android:focusable="true" />
+
+                </LinearLayout>
+
+            </HorizontalScrollView>
 
             <!-- 3. Voiceover Section Header -->
             <LinearLayout
@@ -361,8 +332,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:paddingHorizontal="20dp"
-                android:layout_marginTop="16dp"
+                android:paddingHorizontal="16dp"
                 android:layout_marginBottom="8dp">
 
                 <ImageView
@@ -418,14 +388,14 @@
             android:orientation="vertical"
             android:visibility="gone">
 
-            <!-- M3 Selection Controls Card -->
+            <!-- Selection Controls Block (12dp radius + 0.5dp stroke matching player blocks) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:background="@drawable/bg_m3_card_surface"
+                android:background="@drawable/bg_m3_block_card"
                 android:layout_marginHorizontal="16dp"
-                android:layout_marginBottom="10dp"
+                android:layout_marginBottom="12dp"
                 android:paddingVertical="12dp">
 
                 <!-- Counter Row -->
@@ -485,14 +455,14 @@
                         <TextView
                             android:id="@+id/btnSelectAll"
                             android:layout_width="wrap_content"
-                            android:layout_height="36dp"
+                            android:layout_height="34dp"
                             android:gravity="center"
                             android:text="Выбрать все"
                             android:textSize="12.5sp"
                             android:fontFamily="@font/open_sans_semibold"
                             android:textColor="@color/primary_text_color"
-                            android:background="@drawable/bg_m3_chip_unselected"
-                            android:paddingHorizontal="14dp"
+                            android:background="@drawable/bg_m3_action_chip"
+                            android:paddingHorizontal="12dp"
                             android:clickable="true"
                             android:focusable="true"
                             android:layout_marginEnd="6dp" />
@@ -500,14 +470,14 @@
                         <TextView
                             android:id="@+id/btnDeselectAll"
                             android:layout_width="wrap_content"
-                            android:layout_height="36dp"
+                            android:layout_height="34dp"
                             android:gravity="center"
                             android:text="Снять все"
                             android:textSize="12.5sp"
                             android:fontFamily="@font/open_sans_semibold"
                             android:textColor="@color/primary_text_color"
-                            android:background="@drawable/bg_m3_chip_unselected"
-                            android:paddingHorizontal="14dp"
+                            android:background="@drawable/bg_m3_action_chip"
+                            android:paddingHorizontal="12dp"
                             android:clickable="true"
                             android:focusable="true"
                             android:layout_marginEnd="6dp" />
@@ -515,14 +485,14 @@
                         <TextView
                             android:id="@+id/btnInvertSelection"
                             android:layout_width="wrap_content"
-                            android:layout_height="36dp"
+                            android:layout_height="34dp"
                             android:gravity="center"
                             android:text="Инвертировать"
                             android:textSize="12.5sp"
                             android:fontFamily="@font/open_sans_semibold"
                             android:textColor="@color/primary_text_color"
-                            android:background="@drawable/bg_m3_chip_unselected"
-                            android:paddingHorizontal="14dp"
+                            android:background="@drawable/bg_m3_action_chip"
+                            android:paddingHorizontal="12dp"
                             android:clickable="true"
                             android:focusable="true" />
 
@@ -532,12 +502,12 @@
 
             </LinearLayout>
 
-            <!-- Episodes Grid -->
+            <!-- Episodes Grid (M3 Expressive morphing tiles) -->
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rvEpisodes"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:paddingHorizontal="12dp"
+                android:paddingHorizontal="14dp"
                 android:clipToPadding="false"
                 android:nestedScrollingEnabled="false"
                 android:overScrollMode="never" />
