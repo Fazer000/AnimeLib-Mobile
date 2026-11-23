@@ -37,8 +37,7 @@
                 android:layout_height="22dp"
                 android:layout_gravity="center_vertical"
                 android:src="@drawable/ic_download"
-                app:tint="@color/purple_primary"
-                android:contentDescription="@null"
+                app:tint="@color/secondary_text_color"
                 android:layout_marginEnd="10dp"
                 android:visibility="gone" />
 
@@ -63,11 +62,8 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Загрузка серий..."
-                    android:textSize="12.5sp"
-                    android:fontFamily="@font/open_sans"
+                    android:textSize="12sp"
                     android:textColor="@color/accent_text_color"
-                    android:maxLines="1"
-                    android:ellipsize="end"
                     android:layout_marginTop="1dp" />
 
             </LinearLayout>
@@ -78,12 +74,12 @@
                 android:layout_height="34dp"
                 android:layout_gravity="center_vertical"
                 android:background="@drawable/button_close_background"
-                android:padding="7dp"
+                android:padding="6dp"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_download"
-                app:tint="@color/purple_primary"
-                android:contentDescription="Перейти к загрузкам"
-                android:layout_marginEnd="8dp" />
+                app:tint="@color/secondary_text_color"
+                android:contentDescription="Выбор серий"
+                android:layout_marginEnd="6dp" />
 
             <ImageButton
                 android:id="@+id/btnProgressClose"
@@ -95,20 +91,26 @@
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_close"
                 app:tint="@color/accent_text_color"
-                android:contentDescription="Закрыть" />
+                android:contentDescription="Close" />
 
         </LinearLayout>
 
-        <!-- Overall Progress Banner (12dp radius + 0.5dp stroke matching player blocks) -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0.5dp"
+            android:background="@color/bs_divider_color"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="10dp" />
+
+        <!-- Overall Progress Banner -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:background="@drawable/bg_m3_block_card"
+            android:background="@drawable/chip_unselected"
             android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="10dp"
-            android:layout_marginBottom="8dp"
-            android:padding="14dp">
+            android:padding="14dp"
+            android:layout_marginBottom="12dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -116,159 +118,126 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical">
 
-                <LinearLayout
+                <TextView
+                    android:id="@+id/tvOverallText"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:id="@+id/tvOverallText"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Обработано 0 из 0 серий"
-                        android:textSize="14.5sp"
-                        android:fontFamily="@font/open_sans_bold"
-                        android:textColor="@color/primary_text_color" />
-
-                    <TextView
-                        android:id="@+id/tvOverallStatus"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Загрузка в фоне"
-                        android:textSize="12sp"
-                        android:fontFamily="@font/open_sans_semibold"
-                        android:textColor="@color/purple_primary" />
-
-                </LinearLayout>
+                    android:text="Обработано 0 из 0 серий"
+                    android:textSize="13sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:textColor="@color/primary_text_color" />
 
                 <TextView
                     android:id="@+id/tvOverallPercent"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:minWidth="52dp"
-                    android:gravity="center"
                     android:text="0%"
-                    android:textSize="13.5sp"
+                    android:textSize="13sp"
                     android:fontFamily="@font/open_sans_bold"
-                    android:textColor="@color/purple_primary"
-                    android:background="@drawable/bg_m3_tonal_pill_purple"
-                    android:paddingHorizontal="11dp"
-                    android:paddingVertical="5dp"
-                    android:layout_marginStart="12dp" />
+                    android:textColor="@color/secondary_text_color" />
 
             </LinearLayout>
 
-            <com.example.animelib.ui.M3LinearProgressIndicator
+            <ProgressBar
                 android:id="@+id/pbOverall"
+                style="?android:attr/progressBarStyleHorizontal"
                 android:layout_width="match_parent"
-                android:layout_height="14dp"
-                android:layout_marginTop="12dp"
+                android:layout_height="6dp"
+                android:layout_marginTop="8dp"
                 android:max="100"
                 android:progress="0"
-                app:m3TrackHeight="8dp"
-                app:m3GapSize="4dp"
-                app:m3StopDotSize="4dp"
-                app:m3ShowStopDot="true" />
+                android:progressDrawable="@drawable/progress_bar_background" />
 
         </LinearLayout>
 
-        <!-- Queue Tasks Grid -->
+        <!-- Queue Tasks Recycler -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/rvProgressTasks"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="2dp"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="4dp"
             android:clipToPadding="false"
             android:nestedScrollingEnabled="false"
             android:overScrollMode="never" />
 
-        <!-- Bottom Action Buttons (M3 Flat Tonal) -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0.5dp"
+            android:background="@color/bs_divider_color"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="10dp" />
+
+        <!-- Bottom Action Buttons in One Line -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="14dp">
+            android:layout_marginTop="6dp">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnOpenDownloadSheet"
-                style="@style/Widget.AnimeLIB.Button"
                 android:layout_width="0dp"
                 android:layout_weight="1"
-                android:layout_height="@dimen/button_height_standard"
+                android:layout_height="48dp"
                 android:layout_marginEnd="8dp"
-                android:paddingHorizontal="10dp"
+                android:padding="0dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                android:elevation="0dp"
-                android:stateListAnimator="@null"
                 android:text="Выбрать серии"
-                android:textColor="@color/purple_primary"
+                android:textColor="@color/dialog_btn_neutral_text"
                 android:textSize="13sp"
                 android:fontFamily="@font/open_sans_bold"
-                android:maxLines="1"
-                app:backgroundTint="@color/popup_item_selected_bg"
-                app:rippleColor="@color/purple_alpha_25"
+                android:textStyle="bold"
+                android:backgroundTint="@color/dialog_btn_neutral_bg"
                 app:icon="@drawable/ic_download"
-                app:iconTint="@color/purple_primary"
+                app:iconTint="@color/dialog_btn_neutral_text"
                 app:iconGravity="textStart"
                 app:iconPadding="6dp"
                 app:iconSize="18dp"
                 app:strokeWidth="0dp"
-                app:cornerRadius="@dimen/button_corner_radius" />
+                app:cornerRadius="10dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnPauseResumeDownload"
-                style="@style/Widget.AnimeLIB.Button"
                 android:layout_width="48dp"
-                android:layout_height="@dimen/button_height_standard"
+                android:layout_height="48dp"
                 android:minWidth="48dp"
                 android:minHeight="48dp"
                 android:layout_marginEnd="8dp"
                 android:padding="0dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                android:elevation="0dp"
-                android:stateListAnimator="@null"
+                android:backgroundTint="@color/dialog_btn_neutral_bg"
                 android:contentDescription="Пауза"
                 android:visibility="gone"
-                app:backgroundTint="@color/dialog_btn_neutral_bg"
-                app:rippleColor="@color/dialog_ripple_color"
                 app:icon="@drawable/ic_pause"
                 app:iconTint="@color/dialog_btn_neutral_text"
                 app:iconGravity="textStart"
                 app:iconPadding="0dp"
                 app:iconSize="20dp"
                 app:strokeWidth="0dp"
-                app:cornerRadius="@dimen/button_corner_radius" />
+                app:cornerRadius="10dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnStopDownload"
-                style="@style/Widget.AnimeLIB.Button"
                 android:layout_width="0dp"
                 android:layout_weight="1"
-                android:layout_height="@dimen/button_height_standard"
-                android:paddingHorizontal="10dp"
+                android:layout_height="48dp"
+                android:padding="0dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                android:elevation="0dp"
-                android:stateListAnimator="@null"
                 android:text="Закрыть"
-                android:textColor="@color/dialog_btn_neutral_text"
+                android:textColor="@color/dialog_danger_text"
                 android:textSize="13sp"
                 android:fontFamily="@font/open_sans_bold"
-                android:maxLines="1"
-                app:backgroundTint="@color/dialog_btn_neutral_bg"
-                app:rippleColor="@color/dialog_ripple_color"
-                app:iconGravity="textStart"
-                app:iconPadding="6dp"
-                app:iconSize="18dp"
+                android:textStyle="bold"
+                android:backgroundTint="@color/dialog_danger_bg"
                 app:strokeWidth="0dp"
-                app:cornerRadius="@dimen/button_corner_radius" />
+                app:cornerRadius="10dp" />
 
         </LinearLayout>
 
