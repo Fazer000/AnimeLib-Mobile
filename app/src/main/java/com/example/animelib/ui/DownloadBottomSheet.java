@@ -1,6 +1,11 @@
 package com.example.animelib.ui;
 
+import android.animation.ArgbEvaluator;
+import android.animation.ValueAnimator;
 import android.content.Context;
+import android.content.res.ColorStateList;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.os.Bundle;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
@@ -18,6 +23,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
+import androidx.interpolator.view.animation.FastOutSlowInInterpolator;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -48,6 +54,39 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
+
+    private static final int EXPRESSIVE_CORNER_OUTER_DP = 20;
+    private static final int EXPRESSIVE_CORNER_INNER_DP = 8;
+    private static final int EXPRESSIVE_CORNER_ACTIVE_PILL_DP = 26;
+    private static final long EXPRESSIVE_MORPH_DURATION_MS = 220L;
+
+    private static final class ExpressivePillState {
+        final TextView view;
+        final GradientDrawable shape;
+        final RippleDrawable ripple;
+        float[] inactiveRadii;
+        final float activeRadius;
+        float progress;
+        boolean targetActive;
+        ValueAnimator animator;
+
+        ExpressivePillState(TextView view,
+                            GradientDrawable shape,
+                            RippleDrawable ripple,
+                            float[] inactiveRadii,
+                            float activeRadius,
+                            boolean initialActive) {
+            this.view = view;
+            this.shape = shape;
+            this.ripple = ripple;
+            this.inactiveRadii = inactiveRadii;
+            this.activeRadius = activeRadius;
+            this.progress = initialActive ? 1f : 0f;
+            this.targetActive = initialActive;
+        }
+    }
+
+    private final Map<TextView, ExpressivePillState> expressiveChipStates = new HashMap<>();
 
     public static class VoiceoverOption {
         public String title;
@@ -104,6 +143,8 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
     private ImageButton btnBsClose;
     private TextView tvTitle;
     private TextView tvSubtitle;
+    private View stepIndicator1;
+    private View stepIndicator2;
 
     // Step 1 UI Elements
     private View layoutStep1;
@@ -192,6 +233,8 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         btnBsClose = view.findViewById(R.id.btnBsClose);
         tvTitle = view.findViewById(R.id.tvTitle);
         tvSubtitle = view.findViewById(R.id.tvSubtitle);
+        stepIndicator1 = view.findViewById(R.id.stepIndicator1);
+        stepIndicator2 = view.findViewById(R.id.stepIndicator2);
 
         // Step 1 Views init
         layoutStep1 = view.findViewById(R.id.layoutStep1);
@@ -320,7 +363,13 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             btnBsBack.setVisibility(getOnBackPressedAction() != null ? View.VISIBLE : View.GONE);
         }
         tvTitle.setText("Скачивание серий");
-        tvSubtitle.setText("Шаг 1 из 2: Озвучка и качество");
+        tvSubtitle.setText("Шаг 1 из 2 • Озвучка и качество");
+        if (stepIndicator1 != null) {
+            stepIndicator1.setBackgroundResource(R.drawable.bg_m3_step_indicator_active);
+        }
+        if (stepIndicator2 != null) {
+            stepIndicator2.setBackgroundResource(R.drawable.bg_m3_step_indicator_inactive);
+        }
 
         if (layoutStep2.getVisibility() == View.VISIBLE) {
             layoutStep2.animate()
@@ -348,6 +397,12 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
     private void showStep2() {
         btnBsBack.setVisibility(View.VISIBLE);
         tvTitle.setText("Выбор серий");
+        if (stepIndicator1 != null) {
+            stepIndicator1.setBackgroundResource(R.drawable.bg_m3_step_indicator_active);
+        }
+        if (stepIndicator2 != null) {
+            stepIndicator2.setBackgroundResource(R.drawable.bg_m3_step_indicator_active);
+        }
         updateDownloadButtonText();
 
         if (selectedVoiceover != null) {
@@ -379,21 +434,29 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
 
     private void setupPlayerChips() {
         chipPlayerAnimelib.setOnClickListener(v -> {
-            selectedPlayerType = "animelib";
-            updatePlayerChipsUI();
-            updateVoiceoversForSelectedPlayer();
+            if (!"animelib".equalsIgnoreCase(selectedPlayerType)) {
+                selectedPlayerType = "animelib";
+                updatePlayerChipsUI(true);
+                updateVoiceoversForSelectedPlayer();
+            }
         });
 
         chipPlayerKodik.setOnClickListener(v -> {
-            selectedPlayerType = "kodik";
-            updatePlayerChipsUI();
-            updateVoiceoversForSelectedPlayer();
+            if (!"kodik".equalsIgnoreCase(selectedPlayerType)) {
+                selectedPlayerType = "kodik";
+                updatePlayerChipsUI(true);
+                updateVoiceoversForSelectedPlayer();
+            }
         });
 
-        updatePlayerChipsUI();
+        updatePlayerChipsUI(false);
     }
 
     private void updatePlayerChipsUI() {
+        updatePlayerChipsUI(false);
+    }
+
+    private void updatePlayerChipsUI(boolean animate) {
         if (!isAdded() || getContext() == null) return;
 
         boolean hasAnimelib = false;
@@ -438,35 +501,23 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             selectedPlayerType = "animelib";
         }
 
-        int selectedTextColor = ContextCompat.getColor(requireContext(), R.color.purple_primary);
-        int unselectedTextColor = ContextCompat.getColor(requireContext(), R.color.primary_text_color);
+        List<TextView> visiblePlayers = new ArrayList<>();
+        if (chipPlayerAnimelib != null && hasAnimelib) visiblePlayers.add(chipPlayerAnimelib);
+        if (chipPlayerKodik != null && hasKodik) visiblePlayers.add(chipPlayerKodik);
 
-        if ("animelib".equalsIgnoreCase(selectedPlayerType)) {
-            if (chipPlayerAnimelib != null) {
-                chipPlayerAnimelib.setBackgroundResource(R.drawable.chip_selected);
-                chipPlayerAnimelib.setTextColor(selectedTextColor);
-            }
-            if (chipPlayerKodik != null) {
-                chipPlayerKodik.setBackgroundResource(R.drawable.chip_unselected);
-                chipPlayerKodik.setTextColor(unselectedTextColor);
-            }
-        } else {
-            if (chipPlayerKodik != null) {
-                chipPlayerKodik.setBackgroundResource(R.drawable.chip_selected);
-                chipPlayerKodik.setTextColor(selectedTextColor);
-            }
-            if (chipPlayerAnimelib != null) {
-                chipPlayerAnimelib.setBackgroundResource(R.drawable.chip_unselected);
-                chipPlayerAnimelib.setTextColor(unselectedTextColor);
-            }
-        }
+        boolean animelibSelected = "animelib".equalsIgnoreCase(selectedPlayerType);
+        updateConnectedExpressiveRow(visiblePlayers, chip ->
+                (chip == chipPlayerAnimelib) ? animelibSelected : !animelibSelected, animate);
     }
 
     private void setupQualityChips() {
         View.OnClickListener listener = v -> {
             TextView tv = (TextView) v;
-            selectedQuality = tv.getText().toString();
-            updateQualityChipsUI();
+            String clickedQuality = tv.getText().toString();
+            if (!clickedQuality.equalsIgnoreCase(selectedQuality)) {
+                selectedQuality = clickedQuality;
+                updateQualityChipsUI(true);
+            }
         };
 
         if (chipQ2160 != null) chipQ2160.setOnClickListener(listener);
@@ -475,10 +526,14 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         if (chipQ480 != null) chipQ480.setOnClickListener(listener);
         if (chipQ360 != null) chipQ360.setOnClickListener(listener);
 
-        updateQualityChipsUI();
+        updateQualityChipsUI(false);
     }
 
     private void updateQualityChipsUI() {
+        updateQualityChipsUI(false);
+    }
+
+    private void updateQualityChipsUI(boolean animate) {
         List<TextView> allChips = new ArrayList<>();
         if (chipQ2160 != null) allChips.add(chipQ2160);
         if (chipQ1080 != null) allChips.add(chipQ1080);
@@ -488,20 +543,129 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         allChips.addAll(dynamicQualityChips);
 
         if (!isAdded() || getContext() == null) return;
-        int selectedTextColor = ContextCompat.getColor(requireContext(), R.color.purple_primary);
-        int unselectedTextColor = ContextCompat.getColor(requireContext(), R.color.primary_text_color);
 
+        List<TextView> visibleChips = new ArrayList<>();
         for (TextView chip : allChips) {
-            if (chip != null) {
-                if (chip.getText().toString().equalsIgnoreCase(selectedQuality)) {
-                    chip.setBackgroundResource(R.drawable.chip_selected);
-                    chip.setTextColor(selectedTextColor);
-                } else {
-                    chip.setBackgroundResource(R.drawable.chip_unselected);
-                    chip.setTextColor(unselectedTextColor);
-                }
+            if (chip != null && chip.getVisibility() == View.VISIBLE) {
+                visibleChips.add(chip);
             }
         }
+
+        updateConnectedExpressiveRow(visibleChips,
+                chip -> chip.getText().toString().equalsIgnoreCase(selectedQuality), animate);
+    }
+
+    private interface ChipActivePredicate {
+        boolean isActive(TextView chip);
+    }
+
+    private void updateConnectedExpressiveRow(List<TextView> visibleChips,
+                                              ChipActivePredicate predicate,
+                                              boolean animate) {
+        if (!isAdded() || getContext() == null || visibleChips.isEmpty()) return;
+        float density = getResources().getDisplayMetrics().density;
+        float outerPx = EXPRESSIVE_CORNER_OUTER_DP * density;
+        float innerPx = EXPRESSIVE_CORNER_INNER_DP * density;
+        float pillPx = EXPRESSIVE_CORNER_ACTIVE_PILL_DP * density;
+        int gapPx = (int) (4 * density);
+
+        int count = visibleChips.size();
+        for (int i = 0; i < count; i++) {
+            TextView chip = visibleChips.get(i);
+            boolean isFirst = (i == 0);
+            boolean isLast = (i == count - 1);
+
+            ViewGroup.LayoutParams rawLp = chip.getLayoutParams();
+            if (rawLp instanceof ViewGroup.MarginLayoutParams) {
+                ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) rawLp;
+                int desiredMarginEnd = isLast ? 0 : gapPx;
+                if (mlp.getMarginEnd() != desiredMarginEnd) {
+                    mlp.setMarginEnd(desiredMarginEnd);
+                    chip.setLayoutParams(mlp);
+                }
+            }
+
+            float leftRadius = isFirst ? outerPx : innerPx;
+            float rightRadius = isLast ? outerPx : innerPx;
+            float[] inactiveRadii = new float[]{
+                    leftRadius, leftRadius,
+                    rightRadius, rightRadius,
+                    rightRadius, rightRadius,
+                    leftRadius, leftRadius
+            };
+
+            boolean active = predicate.isActive(chip);
+            ExpressivePillState state = expressiveChipStates.get(chip);
+            if (state == null) {
+                GradientDrawable shape = new GradientDrawable();
+                shape.setShape(GradientDrawable.RECTANGLE);
+                RippleDrawable ripple = new RippleDrawable(
+                        ColorStateList.valueOf(ContextCompat.getColor(requireContext(), R.color.dialog_ripple_color)),
+                        shape,
+                        null
+                );
+                chip.setBackground(ripple);
+                state = new ExpressivePillState(chip, shape, ripple, inactiveRadii, pillPx, active);
+                expressiveChipStates.put(chip, state);
+                applyExpressiveChipVisual(state, active ? 1f : 0f);
+            } else {
+                state.inactiveRadii = inactiveRadii;
+                if (animate && state.targetActive != active) {
+                    state.targetActive = active;
+                    animateExpressiveChipState(state, active);
+                } else {
+                    if (state.animator != null) {
+                        state.animator.cancel();
+                        state.animator = null;
+                    }
+                    state.targetActive = active;
+                    applyExpressiveChipVisual(state, active ? 1f : 0f);
+                }
+            }
+            chip.setSelected(active);
+        }
+    }
+
+    private void animateExpressiveChipState(ExpressivePillState state, boolean active) {
+        if (state.animator != null) {
+            state.animator.cancel();
+        }
+        float start = state.progress;
+        float end = active ? 1f : 0f;
+        ValueAnimator animator = ValueAnimator.ofFloat(start, end);
+        animator.setDuration(EXPRESSIVE_MORPH_DURATION_MS);
+        animator.setInterpolator(new FastOutSlowInInterpolator());
+        animator.addUpdateListener(anim -> applyExpressiveChipVisual(state, (float) anim.getAnimatedValue()));
+        state.animator = animator;
+        animator.start();
+    }
+
+    private void applyExpressiveChipVisual(ExpressivePillState state, float progress) {
+        if (!isAdded() || getContext() == null) return;
+        state.progress = progress;
+
+        float[] radii = new float[8];
+        for (int i = 0; i < 8; i++) {
+            radii[i] = state.inactiveRadii[i] + (state.activeRadius - state.inactiveRadii[i]) * progress;
+        }
+        state.shape.setCornerRadii(radii);
+
+        int inactiveBg = ContextCompat.getColor(requireContext(), R.color.card_bg_color);
+        int activeBg = ContextCompat.getColor(requireContext(), R.color.purple_primary);
+        int inactiveText = ContextCompat.getColor(requireContext(), R.color.primary_text_color);
+        int activeText = ContextCompat.getColor(requireContext(), R.color.white_color);
+
+        ArgbEvaluator evaluator = new ArgbEvaluator();
+        int currentBg = (int) evaluator.evaluate(progress, inactiveBg, activeBg);
+        int currentText = (int) evaluator.evaluate(progress, inactiveText, activeText);
+
+        state.shape.setColor(currentBg);
+        state.view.setTextColor(currentText);
+
+        int rippleColor = progress >= 0.5f
+                ? 0x38FFFFFF
+                : ContextCompat.getColor(requireContext(), R.color.dialog_ripple_color);
+        state.ripple.setColor(ColorStateList.valueOf(rippleColor));
     }
 
     private EpisodeResponse.PlayerData getSelectedPlayerData() {
@@ -582,6 +746,10 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
 
         if (cgQualities != null && !dynamicQualityChips.isEmpty()) {
             for (TextView dynamicChip : dynamicQualityChips) {
+                ExpressivePillState stale = expressiveChipStates.remove(dynamicChip);
+                if (stale != null && stale.animator != null) {
+                    stale.animator.cancel();
+                }
                 cgQualities.removeView(dynamicChip);
             }
             dynamicQualityChips.clear();
@@ -647,26 +815,31 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
 
     private TextView createDynamicQualityChip(String qualityKey) {
         TextView chip = new TextView(requireContext());
+        float density = getResources().getDisplayMetrics().density;
         chip.setText(qualityKey + "p");
-        chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
+        chip.setTypeface(androidx.core.content.res.ResourcesCompat.getFont(requireContext(), R.font.open_sans_bold));
+        chip.setGravity(android.view.Gravity.CENTER);
+        chip.setMinWidth((int) (68 * density));
         chip.setTextColor(ContextCompat.getColor(requireContext(), R.color.primary_text_color));
-        chip.setBackgroundResource(R.drawable.chip_unselected);
-        int pdH = (int) (16 * getResources().getDisplayMetrics().density);
-        int pdV = (int) (7 * getResources().getDisplayMetrics().density);
-        chip.setPadding(pdH, pdV, pdH, pdV);
+        int pdH = (int) (16 * density);
+        chip.setPadding(pdH, 0, pdH, 0);
         chip.setClickable(true);
         chip.setFocusable(true);
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
+                (int) (44 * density)
         );
-        lp.setMarginEnd((int) (8 * getResources().getDisplayMetrics().density));
+        lp.setMarginEnd((int) (4 * density));
         chip.setLayoutParams(lp);
 
         chip.setOnClickListener(v -> {
-            selectedQuality = qualityKey + "p";
-            updateQualityChipsUI();
+            String clickedQuality = qualityKey + "p";
+            if (!clickedQuality.equalsIgnoreCase(selectedQuality)) {
+                selectedQuality = clickedQuality;
+                updateQualityChipsUI(true);
+            }
         });
         return chip;
     }
@@ -906,8 +1079,9 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         }
 
         if (btnDownload != null) {
-            btnDownload.setText("Скачать");
+            btnDownload.setText(selectedCount > 0 ? ("Скачать (" + selectedCount + ")") : "Скачать");
             btnDownload.setEnabled(selectedCount > 0);
+            btnDownload.setAlpha(selectedCount > 0 ? 1.0f : 0.45f);
         }
     }
 
@@ -1061,6 +1235,8 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
 
     private class EpisodeAdapter extends RecyclerView.Adapter<EpisodeAdapter.ViewHolder> {
 
+        private static final int GRID_SPAN = 3;
+
         @NonNull
         @Override
         public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
@@ -1068,8 +1244,88 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             return new ViewHolder(view);
         }
 
+        private float[] computeGridInactiveRadii(Context ctx, int position, int totalCount) {
+            float density = ctx.getResources().getDisplayMetrics().density;
+            float outerPx = EXPRESSIVE_CORNER_OUTER_DP * density;
+            float innerPx = EXPRESSIVE_CORNER_INNER_DP * density;
+
+            int row = position / GRID_SPAN;
+            int col = position % GRID_SPAN;
+            int lastRow = Math.max(0, (totalCount - 1) / GRID_SPAN);
+
+            boolean isTopRow = (row == 0);
+            boolean isBottomRow = (row == lastRow);
+            boolean isBottomEdge = (position + GRID_SPAN >= totalCount);
+            boolean isLeftCol = (col == 0);
+            boolean isRightEdge = (col == GRID_SPAN - 1) || (position == totalCount - 1);
+
+            float tl = (isTopRow && isLeftCol) ? outerPx : innerPx;
+            float tr = (isTopRow && isRightEdge) ? outerPx : innerPx;
+            float bl = (isBottomRow && isLeftCol) ? outerPx : innerPx;
+            float br = (isBottomEdge && isRightEdge) ? outerPx : innerPx;
+
+            return new float[]{tl, tl, tr, tr, br, br, bl, bl};
+        }
+
+        private void applyEpisodeExpressiveState(ViewHolder holder, float progress) {
+            Context ctx = holder.itemView.getContext();
+            holder.progress = progress;
+
+            float[] radii = new float[8];
+            for (int i = 0; i < 8; i++) {
+                radii[i] = holder.inactiveRadii[i] + (holder.activePillRadius - holder.inactiveRadii[i]) * progress;
+            }
+            holder.tileShape.setCornerRadii(radii);
+
+            int inactiveBg = ContextCompat.getColor(ctx, R.color.card_bg_color);
+            int activeBg = ContextCompat.getColor(ctx, R.color.purple_primary);
+            int inactiveTitle = ContextCompat.getColor(ctx, R.color.primary_text_color);
+            int activeTitle = ContextCompat.getColor(ctx, R.color.white_color);
+            int inactiveStatus = ContextCompat.getColor(ctx, R.color.accent_text_color);
+            int activeStatus = ContextCompat.getColor(ctx, R.color.white_color);
+
+            ArgbEvaluator evaluator = new ArgbEvaluator();
+            holder.tileShape.setColor((int) evaluator.evaluate(progress, inactiveBg, activeBg));
+            holder.tvEpisodeName.setTextColor((int) evaluator.evaluate(progress, inactiveTitle, activeTitle));
+            holder.tvStatus.setTextColor((int) evaluator.evaluate(progress, inactiveStatus, activeStatus));
+
+            int rippleColor = progress >= 0.5f
+                    ? 0x38FFFFFF
+                    : ContextCompat.getColor(ctx, R.color.dialog_ripple_color);
+            holder.tileRipple.setColor(ColorStateList.valueOf(rippleColor));
+
+            boolean showCheck = progress >= 0.5f;
+            holder.tvStatus.setText(showCheck ? "Выбрано" : "Доступно");
+            if (holder.ivEpisodeStatus != null) {
+                holder.ivEpisodeStatus.setVisibility(showCheck ? View.VISIBLE : View.GONE);
+                if (showCheck) {
+                    holder.ivEpisodeStatus.setImageResource(R.drawable.ic_check);
+                    holder.ivEpisodeStatus.setImageTintList(ColorStateList.valueOf(activeStatus));
+                }
+            }
+        }
+
+        private void animateEpisodeState(ViewHolder holder, boolean active) {
+            if (holder.morphAnimator != null) {
+                holder.morphAnimator.cancel();
+            }
+            float start = holder.progress;
+            float end = active ? 1f : 0f;
+            ValueAnimator animator = ValueAnimator.ofFloat(start, end);
+            animator.setDuration(EXPRESSIVE_MORPH_DURATION_MS);
+            animator.setInterpolator(new FastOutSlowInInterpolator());
+            animator.addUpdateListener(anim -> applyEpisodeExpressiveState(holder, (float) anim.getAnimatedValue()));
+            holder.morphAnimator = animator;
+            animator.start();
+        }
+
         @Override
         public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+            if (holder.morphAnimator != null) {
+                holder.morphAnimator.cancel();
+                holder.morphAnimator = null;
+            }
+
             EpisodeCheckItem item = checkItems.get(position);
             String title = item.episode.getNumber() + " Серия";
             holder.tvEpisodeName.setText(title);
@@ -1084,50 +1340,68 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
                 }
             }
 
-            if (item.isAlreadyDownloaded) {
-                holder.tvStatus.setText("Скачано");
-                holder.tvStatus.setTextColor(0xFF4CAF50); // green
-                holder.itemView.setBackgroundResource(R.drawable.episode_item_normal);
-                holder.itemView.setAlpha(0.6f);
-            } else if (item.isDownloading) {
-                holder.tvStatus.setText("Загружается");
-                holder.tvStatus.setTextColor(0xFF2196F3); // blue
-                holder.itemView.setBackgroundResource(R.drawable.episode_item_normal);
-                holder.itemView.setAlpha(0.6f);
-            } else if (!item.isAvailable) {
-                holder.tvStatus.setText("Недоступно");
-                holder.tvStatus.setTextColor(0xFFF44336); // red
-                holder.itemView.setBackgroundResource(R.drawable.episode_item_normal);
-                holder.itemView.setAlpha(0.5f);
-            } else {
-                holder.itemView.setAlpha(1.0f);
+            Context ctx = holder.itemView.getContext();
+            holder.inactiveRadii = computeGridInactiveRadii(ctx, position, checkItems.size());
 
-                if (item.isChecked) {
-                    holder.tvStatus.setText("Выбрано");
-                    holder.tvStatus.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.purple_primary));
-                    holder.tvEpisodeName.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.purple_primary));
-                    holder.itemView.setBackgroundResource(R.drawable.episode_item_selected);
-                } else {
-                    holder.tvStatus.setText("Доступно");
-                    holder.tvStatus.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.accent_text_color));
-                    holder.tvEpisodeName.setTextColor(ContextCompat.getColor(holder.itemView.getContext(), R.color.primary_text_color));
-                    holder.itemView.setBackgroundResource(R.drawable.episode_item_normal);
-                }
-            }
+            int cardBgColor = ContextCompat.getColor(ctx, R.color.card_bg_color);
+            int primaryTextColor = ContextCompat.getColor(ctx, R.color.primary_text_color);
+            int downloadedBgColor = ContextCompat.getColor(ctx, R.color.downloaded_tag_bg);
+            int downloadedFgColor = ContextCompat.getColor(ctx, R.color.downloaded_tag_fg);
+            int blueColor = ContextCompat.getColor(ctx, R.color.app_text_accent_blue);
+            int errorBgColor = ContextCompat.getColor(ctx, R.color.stop_btn_bg);
+            int errorColor = ContextCompat.getColor(ctx, R.color.stop_btn_text);
+            int neutralRipple = ContextCompat.getColor(ctx, R.color.dialog_ripple_color);
 
             holder.itemView.setScaleX(1.0f);
             holder.itemView.setScaleY(1.0f);
-            if (item.isAvailable && !item.isAlreadyDownloaded && !item.isDownloading) {
-                com.example.animelib.util.ItemAnimationUtils.animateItemStateTransition(holder.itemView, item.isChecked);
+
+            if (item.isAlreadyDownloaded) {
+                holder.tileShape.setCornerRadii(holder.inactiveRadii);
+                holder.tileShape.setColor(downloadedBgColor);
+                holder.tileRipple.setColor(ColorStateList.valueOf(0x00000000));
+                holder.tvStatus.setText("Скачано");
+                holder.tvStatus.setTextColor(downloadedFgColor);
+                holder.tvEpisodeName.setTextColor(downloadedFgColor);
+                holder.itemView.setAlpha(0.95f);
+                if (holder.ivEpisodeStatus != null) {
+                    holder.ivEpisodeStatus.setVisibility(View.VISIBLE);
+                    holder.ivEpisodeStatus.setImageResource(R.drawable.ic_check);
+                    holder.ivEpisodeStatus.setImageTintList(ColorStateList.valueOf(downloadedFgColor));
+                }
+            } else if (item.isDownloading) {
+                holder.tileShape.setCornerRadii(holder.inactiveRadii);
+                holder.tileShape.setColor(cardBgColor);
+                holder.tileRipple.setColor(ColorStateList.valueOf(neutralRipple));
+                holder.tvStatus.setText("Загрузка");
+                holder.tvStatus.setTextColor(blueColor);
+                holder.tvEpisodeName.setTextColor(primaryTextColor);
+                holder.itemView.setAlpha(0.82f);
+                if (holder.ivEpisodeStatus != null) {
+                    holder.ivEpisodeStatus.setVisibility(View.VISIBLE);
+                    holder.ivEpisodeStatus.setImageResource(R.drawable.ic_download);
+                    holder.ivEpisodeStatus.setImageTintList(ColorStateList.valueOf(blueColor));
+                }
+            } else if (!item.isAvailable) {
+                holder.tileShape.setCornerRadii(holder.inactiveRadii);
+                holder.tileShape.setColor(errorBgColor);
+                holder.tileRipple.setColor(ColorStateList.valueOf(0x00000000));
+                holder.tvStatus.setText("Недоступно");
+                holder.tvStatus.setTextColor(errorColor);
+                holder.tvEpisodeName.setTextColor(primaryTextColor);
+                holder.itemView.setAlpha(0.55f);
+                if (holder.ivEpisodeStatus != null) {
+                    holder.ivEpisodeStatus.setVisibility(View.GONE);
+                }
+            } else {
+                holder.itemView.setAlpha(1.0f);
+                applyEpisodeExpressiveState(holder, item.isChecked ? 1f : 0f);
             }
 
             holder.itemView.setOnClickListener(v -> {
                 if (item.isAvailable && !item.isAlreadyDownloaded && !item.isDownloading) {
-                    com.example.animelib.util.ItemAnimationUtils.animateItemClick(v, () -> {
-                        item.isChecked = !item.isChecked;
-                        notifyItemChanged(holder.getBindingAdapterPosition());
-                        updateDownloadButtonText();
-                    });
+                    item.isChecked = !item.isChecked;
+                    animateEpisodeState(holder, item.isChecked);
+                    updateDownloadButtonText();
                 }
             });
         }
@@ -1141,14 +1415,33 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             View itemContainer;
             TextView tvEpisodeName;
             TextView statusTagText;
+            ImageView ivEpisodeStatus;
             TextView tvStatus;
+            final GradientDrawable tileShape;
+            final RippleDrawable tileRipple;
+            final float activePillRadius;
+            float[] inactiveRadii = new float[8];
+            float progress = 0f;
+            ValueAnimator morphAnimator;
 
             ViewHolder(@NonNull View itemView) {
                 super(itemView);
                 itemContainer = itemView.findViewById(R.id.itemContainer);
                 tvEpisodeName = itemView.findViewById(R.id.tvEpisodeName);
                 statusTagText = itemView.findViewById(R.id.statusTagText);
+                ivEpisodeStatus = itemView.findViewById(R.id.ivEpisodeStatus);
                 tvStatus = itemView.findViewById(R.id.tvStatus);
+
+                Context ctx = itemView.getContext();
+                activePillRadius = EXPRESSIVE_CORNER_ACTIVE_PILL_DP * ctx.getResources().getDisplayMetrics().density;
+                tileShape = new GradientDrawable();
+                tileShape.setShape(GradientDrawable.RECTANGLE);
+                tileRipple = new RippleDrawable(
+                        ColorStateList.valueOf(ContextCompat.getColor(ctx, R.color.dialog_ripple_color)),
+                        tileShape,
+                        null
+                );
+                itemView.setBackground(tileRipple);
             }
         }
     }

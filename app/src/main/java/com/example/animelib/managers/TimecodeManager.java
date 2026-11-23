@@ -43,7 +43,11 @@ public class TimecodeManager {
     private TimebarSegmentsView timebarSegmentsView;
     private DefaultTimeBar timeBar;
     private TextView currentSegmentBadge;
-    private List<EpisodeResponse.TimecodeData> timecodes = new ArrayList<>();
+    public interface OnTimecodesChangedListener {
+        void onTimecodesChanged(boolean hasOfficialTimecodes, boolean hasOfficialOpening);
+    }
+
+    private volatile List<EpisodeResponse.TimecodeData> timecodes = new ArrayList<>();
     private Player.Listener playerListener;
     private TimeBar.OnScrubListener scrubListener;
     private Handler updateHandler;
@@ -58,11 +62,16 @@ public class TimecodeManager {
     private final Set<String> autoSkippedSegmentKeys = new HashSet<>();
     private long lastAutoSkipTimestampMs = 0L;
     private static final long AUTO_SKIP_COOLDOWN_MS = 500L;
-    private EpisodeResponse.TimecodeData injectedDetectedOpening = null;
+    private volatile EpisodeResponse.TimecodeData injectedDetectedOpening = null;
+    private OnTimecodesChangedListener onTimecodesChangedListener;
 
     public TimecodeManager(Context context) {
         this.context = context;
         this.updateHandler = new Handler(Looper.getMainLooper());
+    }
+
+    public void setOnTimecodesChangedListener(OnTimecodesChangedListener listener) {
+        this.onTimecodesChangedListener = listener;
     }
 
     public void setAutoSkipSettings(boolean opening, boolean ending, boolean splashscreen, boolean compilation) {
@@ -260,14 +269,34 @@ public class TimecodeManager {
         }
         updateTimecodeSegmentsOnBar();
         updateTimecodeButtonsVisibility();
+        if (onTimecodesChangedListener != null) {
+            onTimecodesChangedListener.onTimecodesChanged(hasOfficialTimecodes(), hasOfficialOpeningTimecode());
+        }
     }
 
     /**
      * Проверяет, есть ли уже любой сегмент опенинга среди текущих таймкодов (из API или найденный).
      */
     public boolean hasOpeningTimecode() {
-        for (EpisodeResponse.TimecodeData tc : timecodes) {
+        List<EpisodeResponse.TimecodeData> snapshot = this.timecodes;
+        if (snapshot == null || snapshot.isEmpty()) return false;
+        for (EpisodeResponse.TimecodeData tc : snapshot) {
             if (tc != null && "opening".equalsIgnoreCase(tc.getType()) && tc.getToMs() > tc.getFromMs()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Проверяет, заданы ли официальные сегменты из API (не вставленные локальным аудиодетектором).
+     */
+    public boolean hasOfficialTimecodes() {
+        List<EpisodeResponse.TimecodeData> snapshot = this.timecodes;
+        EpisodeResponse.TimecodeData detected = this.injectedDetectedOpening;
+        if (snapshot == null || snapshot.isEmpty()) return false;
+        for (EpisodeResponse.TimecodeData tc : snapshot) {
+            if (tc != null && tc != detected && tc.getToMs() > tc.getFromMs()) {
                 return true;
             }
         }
@@ -278,8 +307,11 @@ public class TimecodeManager {
      * Проверяет, задан ли официальный опенинг из API (не вставленный локальным аудиодетектором).
      */
     public boolean hasOfficialOpeningTimecode() {
-        for (EpisodeResponse.TimecodeData tc : timecodes) {
-            if (tc != null && tc != injectedDetectedOpening
+        List<EpisodeResponse.TimecodeData> snapshot = this.timecodes;
+        EpisodeResponse.TimecodeData detected = this.injectedDetectedOpening;
+        if (snapshot == null || snapshot.isEmpty()) return false;
+        for (EpisodeResponse.TimecodeData tc : snapshot) {
+            if (tc != null && tc != detected
                     && "opening".equalsIgnoreCase(tc.getType()) && tc.getToMs() > tc.getFromMs()) {
                 return true;
             }
@@ -291,7 +323,9 @@ public class TimecodeManager {
      * Проверяет, добавлен ли уже локально найденный аудио-опенинг для текущей серии.
      */
     public boolean hasDetectedOpeningTimecode() {
-        return injectedDetectedOpening != null && timecodes.contains(injectedDetectedOpening);
+        EpisodeResponse.TimecodeData detected = this.injectedDetectedOpening;
+        List<EpisodeResponse.TimecodeData> snapshot = this.timecodes;
+        return detected != null && snapshot != null && snapshot.contains(detected);
     }
 
     /**
@@ -727,9 +761,10 @@ public class TimecodeManager {
             skipSegmentButton.setVisibility(View.GONE);
         }
         
-        timecodes.clear();
+        this.timecodes = new ArrayList<>();
         autoSkippedSegmentKeys.clear();
         injectedDetectedOpening = null;
+        onTimecodesChangedListener = null;
         player = null;
         playerListener = null;
         updateHandler = null;

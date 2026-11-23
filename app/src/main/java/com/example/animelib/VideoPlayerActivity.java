@@ -424,6 +424,11 @@ public class VideoPlayerActivity extends AppCompatActivity {
         verticalGesturesManager.setGesturesManager(gesturesManager);
         timecodeManager = new TimecodeManager(this);
         openingAudioDetectorController = new OpeningAudioDetectorController(this, createOpeningDetectorHost());
+        timecodeManager.setOnTimecodesChangedListener((hasOfficialTimecodes, hasOfficialOpening) -> {
+            if (openingAudioDetectorController != null) {
+                openingAudioDetectorController.onOfficialTimecodesUpdated(hasOfficialTimecodes, hasOfficialOpening);
+            }
+        });
 
         playerAudioController = new PlayerAudioController();
         playerAudioController.init(this, apiService);
@@ -3717,6 +3722,13 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 }
                 if (openingAudioDetectorController != null) {
                     openingAudioDetectorController.onEpisodeAttached();
+                }
+            }
+
+            @Override
+            public void onVoiceoverSelected(EpisodeResponse.PlayerData playerData, boolean isNewEpisode) {
+                if (openingAudioDetectorController != null) {
+                    openingAudioDetectorController.onVoiceoverSelected(playerData, isNewEpisode);
                 }
             }
         };

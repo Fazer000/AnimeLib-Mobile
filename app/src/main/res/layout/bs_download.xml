@@ -40,9 +40,9 @@
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_arrow_back"
                 app:tint="@color/accent_text_color"
-                android:contentDescription="Back"
+                android:contentDescription="Назад"
                 android:visibility="gone"
-                android:layout_marginEnd="8dp" />
+                android:layout_marginEnd="10dp" />
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -64,9 +64,12 @@
                     android:id="@+id/tvSubtitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Шаг 1 из 2: Озвучка и качество"
-                    android:textSize="12sp"
+                    android:text="Шаг 1 из 2 • Озвучка и качество"
+                    android:textSize="12.5sp"
+                    android:fontFamily="@font/open_sans"
                     android:textColor="@color/accent_text_color"
+                    android:maxLines="1"
+                    android:ellipsize="end"
                     android:layout_marginTop="1dp" />
 
             </LinearLayout>
@@ -76,12 +79,12 @@
                 android:layout_width="34dp"
                 android:layout_height="34dp"
                 android:background="@drawable/button_close_background"
-                android:padding="6dp"
+                android:padding="7dp"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_download"
-                app:tint="@color/secondary_text_color"
-                android:contentDescription="Go to Downloads"
-                android:layout_marginEnd="6dp" />
+                app:tint="@color/purple_primary"
+                android:contentDescription="Перейти к загрузкам"
+                android:layout_marginEnd="8dp" />
 
             <ImageButton
                 android:id="@+id/btnBsClose"
@@ -92,16 +95,35 @@
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_close"
                 app:tint="@color/accent_text_color"
-                android:contentDescription="Close" />
+                android:contentDescription="Закрыть" />
 
         </LinearLayout>
 
-        <View
+        <!-- M3 2-Step Indicator -->
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="0.5dp"
-            android:background="@color/bs_divider_color"
-            android:layout_marginTop="6dp"
-            android:layout_marginBottom="10dp" />
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="14dp">
+
+            <View
+                android:id="@+id/stepIndicator1"
+                android:layout_width="0dp"
+                android:layout_height="4dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:background="@drawable/bg_m3_step_indicator_active" />
+
+            <View
+                android:id="@+id/stepIndicator2"
+                android:layout_width="0dp"
+                android:layout_height="4dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_m3_step_indicator_inactive" />
+
+        </LinearLayout>
 
         <!-- ================= STEP 1: PLAYER, QUALITY & VOICEOVERS ================= -->
         <LinearLayout
@@ -113,110 +135,103 @@
             android:clipChildren="false"
             android:visibility="visible">
 
-            <!-- 1. Player Section -->
+            <!-- 1. Player Section (no outer background, M3 Expressive connected tiles) -->
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:layout_marginBottom="6dp">
+                android:layout_marginBottom="8dp">
 
                 <ImageView
-                    android:layout_width="15dp"
-                    android:layout_height="15dp"
+                    android:layout_width="17dp"
+                    android:layout_height="17dp"
                     android:src="@drawable/ic_tv"
-                    app:tint="@color/accent_text_color"
-                    android:layout_marginEnd="6dp" />
+                    app:tint="@color/purple_primary"
+                    android:contentDescription="@null"
+                    android:layout_marginEnd="8dp" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/bs_subtitle_download_player"
-                    android:textSize="@dimen/bs_subtitle_text_size"
-                    android:textStyle="bold"
+                    android:textSize="14.5sp"
                     android:fontFamily="@font/open_sans_bold"
                     android:textColor="@color/primary_text_color" />
 
             </LinearLayout>
 
-            <!-- Player Chips Container -->
-            <HorizontalScrollView
+            <LinearLayout
+                android:id="@+id/cgPlayers"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:paddingHorizontal="16dp"
-                android:clipToPadding="false"
-                android:scrollbars="none"
-                android:overScrollMode="never"
-                android:layout_marginBottom="12dp">
+                android:orientation="horizontal"
+                android:layout_marginHorizontal="16dp"
+                android:layout_marginBottom="16dp">
 
-                <LinearLayout
-                    android:id="@+id/cgPlayers"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
+                <TextView
+                    android:id="@+id/chipPlayerAnimelib"
+                    android:layout_width="0dp"
+                    android:layout_height="46dp"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="AnimeLib"
+                    android:textSize="14sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:textColor="@color/white_color"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:paddingHorizontal="14dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:layout_marginEnd="4dp" />
 
-                    <TextView
-                        android:id="@+id/chipPlayerAnimelib"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="AnimeLib"
-                        android:textSize="13sp"
-                        android:textStyle="bold"
-                        android:textColor="@color/purple_primary"
-                        android:background="@drawable/chip_selected"
-                        android:paddingHorizontal="18dp"
-                        android:paddingVertical="8dp"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:layout_marginEnd="8dp" />
+                <TextView
+                    android:id="@+id/chipPlayerKodik"
+                    android:layout_width="0dp"
+                    android:layout_height="46dp"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="Kodik"
+                    android:textSize="14sp"
+                    android:fontFamily="@font/open_sans_bold"
+                    android:textColor="@color/primary_text_color"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:paddingHorizontal="14dp"
+                    android:clickable="true"
+                    android:focusable="true" />
 
-                    <TextView
-                        android:id="@+id/chipPlayerKodik"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Kodik"
-                        android:textSize="13sp"
-                        android:textStyle="bold"
-                        android:textColor="@color/primary_text_color"
-                        android:background="@drawable/chip_unselected"
-                        android:paddingHorizontal="18dp"
-                        android:paddingVertical="8dp"
-                        android:clickable="true"
-                        android:focusable="true" />
+            </LinearLayout>
 
-                </LinearLayout>
-
-            </HorizontalScrollView>
-
-            <!-- 2. Quality Section -->
+            <!-- 2. Quality Section (no outer background, M3 Expressive connected tiles) -->
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:layout_marginBottom="6dp">
+                android:layout_marginBottom="8dp">
 
                 <ImageView
-                    android:layout_width="15dp"
-                    android:layout_height="15dp"
+                    android:layout_width="17dp"
+                    android:layout_height="17dp"
                     android:src="@drawable/ic_quality"
-                    app:tint="@color/accent_text_color"
-                    android:layout_marginEnd="6dp" />
+                    app:tint="@color/purple_primary"
+                    android:contentDescription="@null"
+                    android:layout_marginEnd="8dp" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/bs_subtitle_download_quality"
-                    android:textSize="@dimen/bs_subtitle_text_size"
-                    android:textStyle="bold"
+                    android:textSize="14.5sp"
                     android:fontFamily="@font/open_sans_bold"
                     android:textColor="@color/primary_text_color" />
 
             </LinearLayout>
 
-            <!-- Quality Chips Container -->
             <HorizontalScrollView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -224,7 +239,7 @@
                 android:clipToPadding="false"
                 android:scrollbars="none"
                 android:overScrollMode="never"
-                android:layout_marginBottom="14dp">
+                android:layout_marginBottom="16dp">
 
                 <LinearLayout
                     android:id="@+id/cgQualities"
@@ -235,84 +250,83 @@
                     <TextView
                         android:id="@+id/chipQ2160"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
+                        android:layout_height="44dp"
+                        android:minWidth="68dp"
+                        android:gravity="center"
                         android:text="2160p"
-                        android:textSize="13sp"
-                        android:textStyle="bold"
+                        android:textSize="13.5sp"
+                        android:fontFamily="@font/open_sans_bold"
                         android:textColor="@color/primary_text_color"
-                        android:background="@drawable/chip_unselected"
                         android:paddingHorizontal="16dp"
-                        android:paddingVertical="7dp"
                         android:clickable="true"
                         android:focusable="true"
                         android:visibility="gone"
-                        android:layout_marginEnd="8dp" />
+                        android:layout_marginEnd="4dp" />
 
                     <TextView
                         android:id="@+id/chipQ1080"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
+                        android:layout_height="44dp"
+                        android:minWidth="68dp"
+                        android:gravity="center"
                         android:text="1080p"
-                        android:textSize="13sp"
-                        android:textStyle="bold"
-                        android:textColor="@color/purple_primary"
-                        android:background="@drawable/chip_selected"
+                        android:textSize="13.5sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:textColor="@color/white_color"
                         android:paddingHorizontal="16dp"
-                        android:paddingVertical="7dp"
                         android:clickable="true"
                         android:focusable="true"
-                        android:layout_marginEnd="8dp" />
+                        android:layout_marginEnd="4dp" />
 
                     <TextView
                         android:id="@+id/chipQ720"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
+                        android:layout_height="44dp"
+                        android:minWidth="68dp"
+                        android:gravity="center"
                         android:text="720p"
-                        android:textSize="13sp"
-                        android:textStyle="bold"
+                        android:textSize="13.5sp"
+                        android:fontFamily="@font/open_sans_bold"
                         android:textColor="@color/primary_text_color"
-                        android:background="@drawable/chip_unselected"
                         android:paddingHorizontal="16dp"
-                        android:paddingVertical="7dp"
                         android:clickable="true"
                         android:focusable="true"
-                        android:layout_marginEnd="8dp" />
+                        android:layout_marginEnd="4dp" />
 
                     <TextView
                         android:id="@+id/chipQ480"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
+                        android:layout_height="44dp"
+                        android:minWidth="68dp"
+                        android:gravity="center"
                         android:text="480p"
-                        android:textSize="13sp"
-                        android:textStyle="bold"
+                        android:textSize="13.5sp"
+                        android:fontFamily="@font/open_sans_bold"
                         android:textColor="@color/primary_text_color"
-                        android:background="@drawable/chip_unselected"
                         android:paddingHorizontal="16dp"
-                        android:paddingVertical="7dp"
                         android:clickable="true"
                         android:focusable="true"
-                        android:layout_marginEnd="8dp" />
+                        android:layout_marginEnd="4dp" />
 
                     <TextView
                         android:id="@+id/chipQ360"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
+                        android:layout_height="44dp"
+                        android:minWidth="68dp"
+                        android:gravity="center"
                         android:text="360p"
-                        android:textSize="13sp"
-                        android:textStyle="bold"
+                        android:textSize="13.5sp"
+                        android:fontFamily="@font/open_sans_bold"
                         android:textColor="@color/primary_text_color"
-                        android:background="@drawable/chip_unselected"
                         android:paddingHorizontal="16dp"
-                        android:paddingVertical="7dp"
                         android:clickable="true"
-                        android:focusable="true"
-                        android:layout_marginEnd="8dp" />
+                        android:focusable="true" />
 
                 </LinearLayout>
 
             </HorizontalScrollView>
 
-            <!-- 3. Voiceover Section -->
+            <!-- 3. Voiceover Section Header -->
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -322,18 +336,18 @@
                 android:layout_marginBottom="8dp">
 
                 <ImageView
-                    android:layout_width="15dp"
-                    android:layout_height="15dp"
+                    android:layout_width="17dp"
+                    android:layout_height="17dp"
                     android:src="@drawable/ic_voice"
-                    app:tint="@color/accent_text_color"
-                    android:layout_marginEnd="6dp" />
+                    app:tint="@color/purple_primary"
+                    android:contentDescription="@null"
+                    android:layout_marginEnd="8dp" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/bs_subtitle_download_voiceovers"
-                    android:textSize="@dimen/bs_subtitle_text_size"
-                    android:textStyle="bold"
+                    android:textSize="14.5sp"
                     android:fontFamily="@font/open_sans_bold"
                     android:textColor="@color/primary_text_color" />
 
@@ -353,10 +367,13 @@
                 android:id="@+id/btnNextStep"
                 style="@style/Widget.AnimeLIB.Button"
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/button_height_standard"
+                android:layout_height="@dimen/button_height_large"
                 android:layout_marginHorizontal="16dp"
-                android:layout_marginTop="16dp"
+                android:layout_marginTop="14dp"
+                android:elevation="0dp"
+                android:stateListAnimator="@null"
                 android:text="Далее"
+                app:cornerRadius="@dimen/button_corner_radius"
                 app:icon="@drawable/ic_arrow_forward"
                 app:iconGravity="textEnd"
                 app:iconTint="@color/white_color" />
@@ -371,98 +388,142 @@
             android:orientation="vertical"
             android:visibility="gone">
 
-            <!-- Control Buttons & Counter Row -->
+            <!-- Selection Controls Block (12dp radius + 0.5dp stroke matching player blocks) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:layout_marginBottom="10dp">
+                android:orientation="vertical"
+                android:background="@drawable/bg_m3_block_card"
+                android:layout_marginHorizontal="16dp"
+                android:layout_marginBottom="12dp"
+                android:paddingVertical="12dp">
 
-                <TextView
-                    android:id="@+id/btnSelectAll"
-                    android:layout_width="wrap_content"
+                <!-- Counter Row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Все"
-                    android:textSize="12sp"
-                    android:textColor="@color/primary_text_color"
-                    android:background="@drawable/chip_unselected"
-                    android:paddingHorizontal="12dp"
-                    android:paddingVertical="6dp"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:layout_marginEnd="6dp" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="14dp">
 
-                <TextView
-                    android:id="@+id/btnDeselectAll"
-                    android:layout_width="wrap_content"
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Выбрано серий"
+                        android:textSize="13.5sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:textColor="@color/primary_text_color" />
+
+                    <ProgressBar
+                        android:id="@+id/pbLoading"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_marginEnd="8dp"
+                        android:indeterminateTint="@color/purple_primary"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/tvSelectedCounter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0 из 0"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:textColor="@color/purple_primary"
+                        android:background="@drawable/bg_m3_tonal_pill_purple"
+                        android:paddingHorizontal="10dp"
+                        android:paddingVertical="4dp" />
+
+                </LinearLayout>
+
+                <!-- Quick Selection Actions -->
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Снять все"
-                    android:textSize="12sp"
-                    android:textColor="@color/primary_text_color"
-                    android:background="@drawable/chip_unselected"
-                    android:paddingHorizontal="12dp"
-                    android:paddingVertical="6dp"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:layout_marginEnd="6dp" />
+                    android:layout_marginTop="10dp"
+                    android:paddingHorizontal="14dp"
+                    android:clipToPadding="false"
+                    android:scrollbars="none"
+                    android:overScrollMode="never">
 
-                <TextView
-                    android:id="@+id/btnInvertSelection"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Инвертировать"
-                    android:textSize="12sp"
-                    android:textColor="@color/primary_text_color"
-                    android:background="@drawable/chip_unselected"
-                    android:paddingHorizontal="12dp"
-                    android:paddingVertical="6dp"
-                    android:clickable="true"
-                    android:focusable="true" />
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
 
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:layout_weight="1" />
+                        <TextView
+                            android:id="@+id/btnSelectAll"
+                            android:layout_width="wrap_content"
+                            android:layout_height="34dp"
+                            android:gravity="center"
+                            android:text="Выбрать все"
+                            android:textSize="12.5sp"
+                            android:fontFamily="@font/open_sans_semibold"
+                            android:textColor="@color/primary_text_color"
+                            android:background="@drawable/bg_m3_action_chip"
+                            android:paddingHorizontal="12dp"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:layout_marginEnd="6dp" />
 
-                <ProgressBar
-                    android:id="@+id/pbLoading"
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:layout_marginEnd="8dp"
-                    android:visibility="gone" />
+                        <TextView
+                            android:id="@+id/btnDeselectAll"
+                            android:layout_width="wrap_content"
+                            android:layout_height="34dp"
+                            android:gravity="center"
+                            android:text="Снять все"
+                            android:textSize="12.5sp"
+                            android:fontFamily="@font/open_sans_semibold"
+                            android:textColor="@color/primary_text_color"
+                            android:background="@drawable/bg_m3_action_chip"
+                            android:paddingHorizontal="12dp"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:layout_marginEnd="6dp" />
 
-                <TextView
-                    android:id="@+id/tvSelectedCounter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0 из 0"
-                    android:textSize="13sp"
-                    android:fontFamily="@font/open_sans_bold"
-                    android:textColor="@color/secondary_text_color" />
+                        <TextView
+                            android:id="@+id/btnInvertSelection"
+                            android:layout_width="wrap_content"
+                            android:layout_height="34dp"
+                            android:gravity="center"
+                            android:text="Инвертировать"
+                            android:textSize="12.5sp"
+                            android:fontFamily="@font/open_sans_semibold"
+                            android:textColor="@color/primary_text_color"
+                            android:background="@drawable/bg_m3_action_chip"
+                            android:paddingHorizontal="12dp"
+                            android:clickable="true"
+                            android:focusable="true" />
+
+                    </LinearLayout>
+
+                </HorizontalScrollView>
 
             </LinearLayout>
 
-            <!-- Episodes list -->
+            <!-- Episodes Grid (M3 Expressive morphing tiles) -->
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rvEpisodes"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:paddingHorizontal="16dp"
+                android:paddingHorizontal="14dp"
                 android:clipToPadding="false"
                 android:nestedScrollingEnabled="false"
                 android:overScrollMode="never" />
 
-            <!-- Download action button -->
+            <!-- Download CTA Button -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDownload"
                 style="@style/Widget.AnimeLIB.Button"
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/button_height_standard"
+                android:layout_height="@dimen/button_height_large"
                 android:layout_marginHorizontal="16dp"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="14dp"
+                android:elevation="0dp"
+                android:stateListAnimator="@null"
                 android:text="@string/btn_download"
+                app:cornerRadius="@dimen/button_corner_radius"
                 app:icon="@drawable/ic_download"
                 app:iconGravity="textStart"
                 app:iconTint="@color/white_color" />

@@ -199,9 +199,83 @@ public class OpeningAudioDetectorController {
         if (lastReportedRunning.getAndSet(running) != running) {
             host.safeRunOnUiThread(() -> {
                 if (!host.isActivityFinishingOrDestroyed()) {
-                    host.onAnalysisRunningChanged(running);
+                    boolean latestRunning = isAnalysisRunning();
+                    lastReportedRunning.set(latestRunning);
+                    host.onAnalysisRunningChanged(latestRunning);
                 }
             });
+        }
+    }
+
+    private boolean hasOfficialApiSegments() {
+        TimecodeManager tm = host.getTimecodeManager();
+        return tm != null && (tm.hasOfficialTimecodes() || tm.hasOfficialOpeningTimecode());
+    }
+
+    private static boolean hasOfficialTimecodes(@Nullable EpisodeResponse.PlayerData playerData) {
+        if (playerData == null || playerData.getTimecode() == null || playerData.getTimecode().isEmpty()) {
+            return false;
+        }
+        for (EpisodeResponse.TimecodeData tc : playerData.getTimecode()) {
+            if (tc != null && tc.getToMs() > tc.getFromMs()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Nullable
+    private String buildEpisodeVoiceoverKey(@Nullable String animeId, int episodeId) {
+        if (animeId == null || episodeId <= 0) return null;
+        EpisodeResponse.PlayerData pd = host.getCurrentPlayerData();
+        if (pd == null) {
+            return animeId + ":" + episodeId;
+        }
+        String player = pd.getPlayer() != null ? pd.getPlayer().trim().toLowerCase(Locale.US) : "";
+        int playerId = pd.getId();
+        int teamId = pd.getTeam() != null ? pd.getTeam().getId() : 0;
+        return animeId + ":" + episodeId + ":" + player + ":" + playerId + ":" + teamId;
+    }
+
+    /**
+     * Вызывается сразу при выборе озвучки (до завершения бесшовного переключения или загрузки ссылок Kodik).
+     * Если у новой озвучки есть готовые сегменты в API — немедленно останавливает активный поиск и анализ.
+     */
+    public void onVoiceoverSelected(@Nullable EpisodeResponse.PlayerData newPlayerData, boolean isNewEpisode) {
+        if (isCleanedUp || host.isActivityFinishingOrDestroyed()) return;
+
+        if (hasOfficialTimecodes(newPlayerData)) {
+            Log.d(TAG, "Selected voiceover has official API segments — cancelling active scan & learn");
+            cancelActiveScan();
+            cancelActiveLearn();
+            lastScheduledScanKey = null;
+            lastFailedScanKey = null;
+            return;
+        }
+
+        final String animeId = normalizeAnimeId(host.getCurrentAnimeId());
+        final int episodeId = host.getCurrentEpisodeId();
+        final String newKey = buildEpisodeVoiceoverKey(animeId, episodeId);
+        if (isNewEpisode || newKey == null || !newKey.equals(activeScanEpisodeKey)) {
+            cancelActiveScan();
+            lastScheduledScanKey = null;
+            lastFailedScanKey = null;
+        }
+    }
+
+    /**
+     * Вызывается из TimecodeManager при обновлении официальных таймкодов (из API или офлайн-метаданных).
+     * Если появились официальные сегменты из API — немедленно прерывает активный поиск и анализ опенинга.
+     */
+    public void onOfficialTimecodesUpdated(boolean hasOfficialTimecodes, boolean hasOfficialOpening) {
+        if (isCleanedUp || host.isActivityFinishingOrDestroyed()) return;
+        if (hasOfficialTimecodes || hasOfficialOpening) {
+            Log.d(TAG, "Official API segments applied (official=" + hasOfficialTimecodes
+                    + ", opening=" + hasOfficialOpening + ") — stopping active opening scan & learn");
+            cancelActiveScan();
+            cancelActiveLearn();
+            lastScheduledScanKey = null;
+            lastFailedScanKey = null;
         }
     }
 
@@ -287,9 +361,13 @@ public class OpeningAudioDetectorController {
             return;
         }
 
-        // Если в текущей серии нет официального опенинга из API, сразу подсветим пропущенный участок на таймбаре
+        // Если в текущей серии уже есть официальный опенинг из API, анализ не требуется
         TimecodeManager tm = host.getTimecodeManager();
-        if (tm != null && !tm.hasOfficialOpeningTimecode()) {
+        if (tm != null && tm.hasOfficialOpeningTimecode()) {
+            Log.d(TAG, "Episode already has official API opening, skipping manual skip learn");
+            return;
+        }
+        if (tm != null) {
             tm.addDetectedOpeningTimecode(fromSec, toSec);
         }
 
@@ -410,6 +488,10 @@ public class OpeningAudioDetectorController {
                 entity.setSkipDurationSec(actualSpanSec);
                 entity.setCreatedAt(System.currentTimeMillis());
 
+                if (isCleanedUp || myLearnGen != learnGeneration.get() || cancelSignal.isCancelled()) {
+                    return;
+                }
+
                 long savedId = dao.insertFingerprint(entity);
                 dao.pruneOldFingerprintsForAnime(animeId, MAX_TEMPLATES_PER_ANIME);
 
@@ -425,8 +507,15 @@ public class OpeningAudioDetectorController {
                 Log.d(TAG, "Saved opening fingerprint id=" + savedId + " frames=" + extracted.frameCount
                         + " for anime=" + animeId);
 
+                if (isCleanedUp || myLearnGen != learnGeneration.get() || cancelSignal.isCancelled()) {
+                    return;
+                }
+
                 host.safeRunOnUiThread(() -> {
-                    if (isCleanedUp || host.isActivityFinishingOrDestroyed()) return;
+                    if (isCleanedUp || myLearnGen != learnGeneration.get() || cancelSignal.isCancelled()
+                            || host.isActivityFinishingOrDestroyed() || hasOfficialApiSegments()) {
+                        return;
+                    }
                     if (host.getCurrentEpisodeId() != sourceEpisodeId) {
                         lastScheduledScanKey = null;
                         scheduleScanForActiveEpisode(0L);
@@ -461,23 +550,31 @@ public class OpeningAudioDetectorController {
             return;
         }
 
+        TimecodeManager tm = host.getTimecodeManager();
+        if (tm != null && (tm.hasOfficialTimecodes() || tm.hasOfficialOpeningTimecode())) {
+            cancelActiveScan();
+            cancelActiveLearn();
+            lastScheduledScanKey = null;
+            return;
+        }
+
         final String animeId = normalizeAnimeId(host.getCurrentAnimeId());
         final int episodeId = host.getCurrentEpisodeId();
-        final String newKey = (animeId != null && episodeId > 0) ? (animeId + ":" + episodeId) : null;
+        final String newKey = buildEpisodeVoiceoverKey(animeId, episodeId);
 
-        // Если это та же самая серия (например, реконнект или автопонижение качества при плохом инете):
+        // Если это та же самая серия и та же озвучка (например, реконнект или автопонижение качества при плохом инете):
         if (newKey != null && newKey.equals(activeScanEpisodeKey)) {
-            TimecodeManager tm = host.getTimecodeManager();
-            if (tm != null && (tm.hasOfficialOpeningTimecode() || tm.hasDetectedOpeningTimecode())) {
-                return; // Опенинг уже есть на таймбаре
+            if (tm != null && tm.hasDetectedOpeningTimecode()) {
+                cancelActiveScan();
+                return; // Опенинг уже найден на таймбаре
             }
             AudioPcmExtractor.CancelSignal currentSignal = activeScanSignal;
             if (currentSignal != null && !currentSignal.isCancelled() && isScanIndicatorActive) {
-                return; // Живой скан для этой же серии уже идёт — не обрываем его по кругу!
+                return; // Живой скан для этой же серии и озвучки уже идёт — не обрываем его по кругу!
             }
         }
 
-        // После сетевой ошибки на этой же серии выдерживаем паузу, чтобы частые подгрузки не крутили скан бесконечно
+        // После сетевой ошибки на этой же серии и озвучке выдерживаем паузу, чтобы частые подгрузки не крутили скан бесконечно
         if (newKey != null && newKey.equals(lastFailedScanKey)
                 && (SystemClock.elapsedRealtime() - lastFailedScanElapsedMs) < FAILED_SCAN_COOLDOWN_MS) {
             return;
@@ -497,11 +594,18 @@ public class OpeningAudioDetectorController {
     public void onEpisodeFirstFrameRendered() {
         if (isCleanedUp || !isDetectionEnabled() || host.isActivityFinishingOrDestroyed()) return;
 
+        if (hasOfficialApiSegments()) {
+            cancelActiveScan();
+            cancelActiveLearn();
+            lastScheduledScanKey = null;
+            return;
+        }
+
         final String animeId = normalizeAnimeId(host.getCurrentAnimeId());
         final int episodeId = host.getCurrentEpisodeId();
-        if (animeId == null || episodeId <= 0) return;
+        final String key = buildEpisodeVoiceoverKey(animeId, episodeId);
+        if (key == null) return;
 
-        final String key = animeId + ":" + episodeId;
         if (pendingScanRunnable != null && key.equals(lastScheduledScanKey)) {
             // Первый кадр уже отрисован — можно не ждать остаток debounce, запускаем сразу!
             Runnable r = pendingScanRunnable;
@@ -519,11 +623,18 @@ public class OpeningAudioDetectorController {
 
         final String animeId = normalizeAnimeId(host.getCurrentAnimeId());
         final int episodeId = host.getCurrentEpisodeId();
-        if (animeId == null || episodeId <= 0) return;
+        final String scanKey = buildEpisodeVoiceoverKey(animeId, episodeId);
+        if (animeId == null || episodeId <= 0 || scanKey == null) return;
 
         TimecodeManager tm = host.getTimecodeManager();
-        if (tm != null && (tm.hasOfficialOpeningTimecode() || tm.hasDetectedOpeningTimecode())) {
-            return; // Опенинг уже известен для этой серии
+        if (tm != null && (tm.hasOfficialTimecodes() || tm.hasOfficialOpeningTimecode())) {
+            cancelActiveScan();
+            cancelActiveLearn();
+            lastScheduledScanKey = null;
+            return; // Сегменты уже заданы в API
+        }
+        if (tm != null && tm.hasDetectedOpeningTimecode()) {
+            return; // Опенинг уже найден для этой серии
         }
 
         final List<String> candidates = resolveAudioSourceCandidates();
@@ -531,9 +642,8 @@ public class OpeningAudioDetectorController {
             return; // URL ещё не разрешён — дождёмся onEpisodeFirstFrameRendered
         }
 
-        final String scanKey = animeId + ":" + episodeId;
         if (scanKey.equals(lastScheduledScanKey)) {
-            return; // Для этого эпизода скан уже запланирован, идёт или завершён
+            return; // Для этого эпизода и озвучки скан уже запланирован, идёт или завершён
         }
         lastScheduledScanKey = scanKey;
         activeScanEpisodeKey = scanKey;
@@ -573,7 +683,8 @@ public class OpeningAudioDetectorController {
         }
 
         TimecodeManager tm = host.getTimecodeManager();
-        if (tm != null && (tm.hasOfficialOpeningTimecode() || tm.hasDetectedOpeningTimecode())) {
+        if (tm != null && (tm.hasOfficialTimecodes() || tm.hasOfficialOpeningTimecode() || tm.hasDetectedOpeningTimecode())) {
+            cancelActiveScan();
             return;
         }
 
@@ -636,11 +747,11 @@ public class OpeningAudioDetectorController {
             // Создаём свежий CancelSignal прямо в момент старта сетевого сканирования,
             // чтобы отсчёт 25с не тратился на очередь executor или чтение БД
             final AudioPcmExtractor.CancelSignal netSignal = new AudioPcmExtractor.CancelSignal(SCAN_HARD_TIMEOUT_MS);
-            if (cancelSignal.isCancelled() || gen != scanGeneration.get()) {
+            if (cancelSignal.isCancelled() || gen != scanGeneration.get() || hasOfficialApiSegments()) {
                 return;
             }
             activeScanSignal = netSignal;
-            if (gen != scanGeneration.get() || isCleanedUp || !isDetectionEnabled()) {
+            if (gen != scanGeneration.get() || isCleanedUp || !isDetectionEnabled() || hasOfficialApiSegments()) {
                 netSignal.cancel();
                 return;
             }
@@ -648,6 +759,12 @@ public class OpeningAudioDetectorController {
             // Включаем индикатор поиска рядом с таймкодом + ставим жёсткий watchdog
             final AtomicBoolean indicatorReleased = new AtomicBoolean(false);
             isScanIndicatorActive = true;
+            if (gen != scanGeneration.get() || netSignal.isCancelled() || hasOfficialApiSegments()) {
+                isScanIndicatorActive = false;
+                netSignal.cancel();
+                notifyAnalysisStateChanged();
+                return;
+            }
             notifyAnalysisStateChanged();
 
             Runnable watchdog = () -> {
@@ -975,7 +1092,7 @@ public class OpeningAudioDetectorController {
                 return;
             }
             TimecodeManager tm = host.getTimecodeManager();
-            if (tm != null) {
+            if (tm != null && !tm.hasOfficialTimecodes() && !tm.hasOfficialOpeningTimecode()) {
                 tm.addDetectedOpeningTimecode(fromSec, toSec);
             }
         });

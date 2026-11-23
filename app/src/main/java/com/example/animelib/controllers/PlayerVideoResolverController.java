@@ -94,6 +94,7 @@ public class PlayerVideoResolverController {
         void onEpisodeHeaderUpdateQuick();
         void onAnimeInfoHeaderFull();
         void switchMediaSource(String newVideoUrl, long startPosition, boolean playWhenReady);
+        default void onVoiceoverSelected(@Nullable EpisodeResponse.PlayerData playerData, boolean isNewEpisode) {}
     }
 
     private final ApiService apiService;
@@ -217,6 +218,7 @@ public class PlayerVideoResolverController {
 
         if (playerData != null) {
             playersManager.setCurrentPlayerData(playerData);
+            host.onVoiceoverSelected(playerData, isNew);
             if (progressCtrl != null) progressCtrl.enableBookmarkButton();
             host.onEpisodeHeaderUpdateQuick();
             if (portraitCtrl != null) portraitCtrl.updatePortraitVoiceoverPlayerUI();
