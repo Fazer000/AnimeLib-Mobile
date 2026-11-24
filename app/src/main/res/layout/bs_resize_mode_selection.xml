@@ -27,6 +27,7 @@
             android:layout_height="wrap_content"
             android:paddingHorizontal="16dp"
             android:paddingVertical="4dp"
+            android:layout_marginBottom="12dp"
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
@@ -54,12 +55,6 @@
                 android:layout_marginStart="8dp"
                 android:textSize="@dimen/bs_title_text_size"/>
         </LinearLayout>
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="0.5dp"
-            android:background="@color/bs_divider_color"
-            android:layout_marginBottom="16dp" />
 
         <LinearLayout
             android:layout_width="match_parent"

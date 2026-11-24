@@ -29,7 +29,8 @@
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:paddingHorizontal="16dp"
-            android:paddingVertical="4dp">
+            android:paddingVertical="4dp"
+            android:layout_marginBottom="10dp">
 
             <ImageButton
                 android:id="@+id/backButton"
@@ -65,13 +66,6 @@
                 android:scaleType="fitCenter"
                 android:contentDescription="Применить"/>
         </LinearLayout>
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="0.5dp"
-            android:background="@color/bs_divider_color"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="10dp"/>
 
         <!-- Auto-skip Segments Section (M3 Expressive 2x2 Grid) -->
         <TextView

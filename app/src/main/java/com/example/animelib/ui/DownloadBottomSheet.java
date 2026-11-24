@@ -809,8 +809,8 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
         TextView chip = new TextView(requireContext());
         float density = getResources().getDisplayMetrics().density;
         chip.setText(qualityKey + "p");
-        chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
-        chip.setTypeface(androidx.core.content.res.ResourcesCompat.getFont(requireContext(), R.font.open_sans_bold));
+        chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        chip.setTypeface(androidx.core.content.res.ResourcesCompat.getFont(requireContext(), R.font.open_sans_bold), android.graphics.Typeface.BOLD);
         chip.setGravity(android.view.Gravity.CENTER);
         chip.setMinWidth((int) (64 * density));
         chip.setTextColor(ContextCompat.getColor(requireContext(), R.color.primary_text_color));
