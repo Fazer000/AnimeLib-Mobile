@@ -498,10 +498,13 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
 
                 int activeBg = ContextCompat.getColor(context, R.color.popup_item_selected_bg);
                 int idleBg = ContextCompat.getColor(context, R.color.dialog_card_bg);
+                int neutralStroke = ContextCompat.getColor(context, R.color.chip_unselected_stroke);
                 int successBg = ContextCompat.getColor(context, R.color.downloaded_tag_bg);
                 int successFg = ContextCompat.getColor(context, R.color.downloaded_tag_fg);
+                int successStroke = ContextCompat.getColor(context, R.color.downloaded_tag_stroke);
                 int errorBg = ContextCompat.getColor(context, R.color.stop_btn_bg);
                 int errorFg = ContextCompat.getColor(context, R.color.stop_btn_text);
+                int errorStroke = ContextCompat.getColor(context, R.color.stop_btn_stroke);
 
                 if (taskHolder.itemContainer != null) {
                     taskHolder.itemContainer.setBackground(null);
@@ -521,7 +524,7 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
                     case DownloadService.TaskProgressItem.STATUS_COMPLETED:
                         if (taskHolder.itemCard != null) {
                             taskHolder.itemCard.setCardBackgroundColor(successBg);
-                            taskHolder.itemCard.setProgressValues(100, 0, successFg, 1.5f);
+                            taskHolder.itemCard.setProgressValues(100, 0, successStroke, 0.5f);
                         }
                         taskHolder.tvTaskTitle.setTextColor(successFg);
                         taskHolder.tvPercent.setText("Готово");
@@ -531,7 +534,7 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
                     case DownloadService.TaskProgressItem.STATUS_ERROR:
                         if (taskHolder.itemCard != null) {
                             taskHolder.itemCard.setCardBackgroundColor(errorBg);
-                            taskHolder.itemCard.setProgressValues(100, 0, errorFg, 1.5f);
+                            taskHolder.itemCard.setProgressValues(100, 0, errorStroke, 0.5f);
                         }
                         taskHolder.tvTaskTitle.setTextColor(errorFg);
                         taskHolder.tvPercent.setText("Ошибка");
@@ -542,7 +545,7 @@ public class DownloadProgressBottomSheet extends FlexibleBottomSheetDialogFragme
                     default:
                         if (taskHolder.itemCard != null) {
                             taskHolder.itemCard.setCardBackgroundColor(idleBg);
-                            taskHolder.itemCard.setProgressValues(0, 0, 0, 0f);
+                            taskHolder.itemCard.setProgressValues(0, neutralStroke, 0, 0.5f);
                         }
                         taskHolder.tvTaskTitle.setTextColor(primaryTextColor);
                         taskHolder.tvPercent.setText("Ожидание");

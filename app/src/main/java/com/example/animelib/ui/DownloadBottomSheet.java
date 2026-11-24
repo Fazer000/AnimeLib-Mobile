@@ -1269,8 +1269,7 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
             }
             holder.tileShape.setCornerRadii(radii);
 
-            int inactiveBg = ContextCompat.getColor(ctx, R.color.chip_unselected_bg);
-            int activeBg = ContextCompat.getColor(ctx, R.color.chip_selected_bg);
+            int cardBg = ContextCompat.getColor(ctx, R.color.chip_unselected_bg);
             int inactiveStroke = ContextCompat.getColor(ctx, R.color.chip_unselected_stroke);
             int activeStroke = ContextCompat.getColor(ctx, R.color.purple_primary);
             int titleColor = ContextCompat.getColor(ctx, R.color.primary_text_color);
@@ -1279,9 +1278,9 @@ public class DownloadBottomSheet extends FlexibleBottomSheetDialogFragment {
 
             ArgbEvaluator evaluator = new ArgbEvaluator();
             float density = ctx.getResources().getDisplayMetrics().density;
-            int strokeWidthPx = Math.max(1, Math.round((0.5f + 0.7f * progress) * density));
+            int strokeWidthPx = Math.max(1, Math.round(0.5f * density));
 
-            holder.tileShape.setColor((int) evaluator.evaluate(progress, inactiveBg, activeBg));
+            holder.tileShape.setColor(cardBg);
             holder.tileShape.setStroke(strokeWidthPx, (int) evaluator.evaluate(progress, inactiveStroke, activeStroke));
             holder.tvEpisodeName.setTextColor(titleColor);
             holder.tvStatus.setTextColor((int) evaluator.evaluate(progress, inactiveStatus, activeStatus));
