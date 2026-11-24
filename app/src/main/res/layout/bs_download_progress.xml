@@ -99,16 +99,15 @@
 
         </LinearLayout>
 
-        <!-- Overall Progress Banner (12dp radius + 0.5dp stroke matching player blocks) -->
+        <!-- Overall Progress Banner (frameless) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:background="@drawable/bg_m3_block_card"
             android:layout_marginHorizontal="16dp"
             android:layout_marginTop="10dp"
-            android:layout_marginBottom="8dp"
-            android:padding="14dp">
+            android:layout_marginBottom="10dp"
+            android:paddingVertical="4dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
