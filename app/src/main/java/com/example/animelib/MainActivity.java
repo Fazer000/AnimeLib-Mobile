@@ -873,6 +873,7 @@ public class MainActivity extends AppCompatActivity {
                 new com.example.animelib.ui.SiteSelectionBottomSheet(
                     this,
                     filteredSites,
+                    isOtherRegion,
                     site -> {
                         hasInitialUrlLoaded = true;
                         boolean isSelectedOther = com.example.animelib.util.SiteUtils.isOtherRegion(site.getUrl(), this);
@@ -881,6 +882,18 @@ public class MainActivity extends AppCompatActivity {
                         databaseManager.saveSiteUrl(site.getUrl());
                         showSiteSplashOverlay(site.getUrl());
                         loadUrl(site.getUrl(), true);
+                    },
+                    (selectedIsOther, targetUrl) -> {
+                        hasInitialUrlLoaded = true;
+                        com.example.animelib.util.SiteUtils.setSavedRegionOther(this, selectedIsOther);
+                        viewModel.saveSettings(targetUrl);
+                        databaseManager.saveSiteUrl(targetUrl);
+                        String currentHost = com.example.animelib.util.SiteUtils.getDomainHost(getFastKnownSiteUrl());
+                        String targetHost = com.example.animelib.util.SiteUtils.getDomainHost(targetUrl);
+                        if (!"animelib".equalsIgnoreCase(currentKey) || !targetHost.equalsIgnoreCase(currentHost)) {
+                            showSiteSplashOverlay(targetUrl);
+                            loadUrl(targetUrl, false);
+                        }
                     }
                 );
             bottomSheet.setOnDismissListener(dialog -> {

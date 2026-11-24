@@ -31,7 +31,7 @@
             android:textSize="18sp"
             android:fontFamily="@font/open_sans_bold"
             android:paddingHorizontal="20dp"
-            android:layout_marginBottom="14dp"/>
+            android:layout_marginBottom="12dp"/>
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/siteRecyclerView"
@@ -41,6 +41,173 @@
             android:clipToPadding="false"
             android:overScrollMode="never"
             android:nestedScrollingEnabled="false"/>
+
+        <TextView
+            android:id="@+id/tvAnimeLibLinkHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ссылка на AnimeLib"
+            android:textColor="?attr/primaryTextColor"
+            android:textSize="14.5sp"
+            android:fontFamily="@font/open_sans_bold"
+            android:paddingHorizontal="20dp"
+            android:layout_marginTop="14dp"
+            android:layout_marginBottom="10dp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp">
+
+            <!-- Link Option 1: CIS -->
+            <LinearLayout
+                android:id="@+id/linkCisOption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="52dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="18dp"
+                android:paddingVertical="12dp"
+                android:layout_marginBottom="3dp"
+                android:background="@drawable/bg_m3_item_top"
+                android:clickable="true"
+                android:focusable="true">
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:layout_marginEnd="14dp"
+                    android:src="@drawable/ic_link"
+                    app:tint="?attr/primaryTextColor"
+                    android:contentDescription="Ссылка СНГ" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/url_input_cis_title"
+                        android:textColor="?attr/primaryTextColor"
+                        android:textSize="15.5sp"
+                        android:fontFamily="@font/open_sans_bold" />
+
+                    <TextView
+                        android:id="@+id/tvLinkCisUrl"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="1dp"
+                        android:text="@string/url_input_cis_url"
+                        android:textColor="?attr/accentTextColor"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans" />
+                </LinearLayout>
+
+                <FrameLayout
+                    android:id="@+id/linkCisSelectedPill"
+                    android:layout_width="38dp"
+                    android:layout_height="26dp"
+                    android:layout_marginStart="12dp"
+                    android:background="@drawable/bg_m3_selected_pill"
+                    android:visibility="visible">
+
+                    <ImageView
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_check"
+                        app:tint="#FFFFFF"
+                        android:contentDescription="Выбрано" />
+                </FrameLayout>
+
+                <View
+                    android:id="@+id/linkCisUnselected"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginStart="12dp"
+                    android:background="@drawable/bg_m3_unselected_circle"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <!-- Link Option 2: Other Countries -->
+            <LinearLayout
+                android:id="@+id/linkOtherOption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="52dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="18dp"
+                android:paddingVertical="12dp"
+                android:background="@drawable/bg_m3_item_bottom"
+                android:clickable="true"
+                android:focusable="true">
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:layout_marginEnd="14dp"
+                    android:src="@drawable/ic_link"
+                    app:tint="?attr/primaryTextColor"
+                    android:contentDescription="Ссылка остальные страны" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/url_input_other_title"
+                        android:textColor="?attr/primaryTextColor"
+                        android:textSize="15.5sp"
+                        android:fontFamily="@font/open_sans_bold" />
+
+                    <TextView
+                        android:id="@+id/tvLinkOtherUrl"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="1dp"
+                        android:text="@string/url_input_other_url"
+                        android:textColor="?attr/accentTextColor"
+                        android:textSize="12.5sp"
+                        android:fontFamily="@font/open_sans" />
+                </LinearLayout>
+
+                <FrameLayout
+                    android:id="@+id/linkOtherSelectedPill"
+                    android:layout_width="38dp"
+                    android:layout_height="26dp"
+                    android:layout_marginStart="12dp"
+                    android:background="@drawable/bg_m3_selected_pill"
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_check"
+                        app:tint="#FFFFFF"
+                        android:contentDescription="Выбрано" />
+                </FrameLayout>
+
+                <View
+                    android:id="@+id/linkOtherUnselected"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginStart="12dp"
+                    android:background="@drawable/bg_m3_unselected_circle"
+                    android:visibility="visible" />
+            </LinearLayout>
+
+        </LinearLayout>
 
     </LinearLayout>
 

@@ -3,12 +3,19 @@ package com.example.animelib.controllers;
 import android.app.Activity;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.TypedValue;
 import android.view.View;
 import android.view.animation.AccelerateInterpolator;
 import android.view.animation.DecelerateInterpolator;
+import android.widget.ImageView;
 import android.widget.TextView;
 
+import androidx.core.content.ContextCompat;
+
 import com.example.animelib.R;
+import com.example.animelib.util.ItemAnimationUtils;
+import com.example.animelib.util.SiteUtils;
+import com.google.android.material.card.MaterialCardView;
 
 public class MainBannerController {
 
@@ -18,15 +25,21 @@ public class MainBannerController {
     }
 
     private View urlTopBanner;
-    private TextView tvCurrentUrlBanner;
-    private View btnCloseUrlBanner;
-    private View btnBannerSelectCis;
-    private View btnBannerSelectOther;
+    private MaterialCardView btnBannerSelectCis;
+    private MaterialCardView btnBannerSelectOther;
+    private ImageView bannerIconCis;
+    private ImageView bannerIconOther;
+    private TextView tvBannerCisTitle;
+    private TextView tvBannerCisHost;
+    private TextView tvBannerOtherTitle;
+    private TextView tvBannerOtherHost;
 
     private final Handler urlBannerHandler = new Handler(Looper.getMainLooper());
     private final Activity activity;
     private Runnable urlBannerRunnable;
-    private BannerCallback callback;
+    private final BannerCallback callback;
+
+    private String lastUrl = null;
 
     public MainBannerController(Activity activity, BannerCallback callback) {
         this.activity = activity;
@@ -34,66 +47,118 @@ public class MainBannerController {
         initViews(activity);
     }
 
-    private String lastUrl = null;
-
     private void initViews(Activity activity) {
         urlTopBanner = activity.findViewById(R.id.urlTopBanner);
-        tvCurrentUrlBanner = activity.findViewById(R.id.tvCurrentUrlBanner);
-        btnCloseUrlBanner = activity.findViewById(R.id.btnCloseUrlBanner);
         btnBannerSelectCis = activity.findViewById(R.id.btnBannerSelectCis);
         btnBannerSelectOther = activity.findViewById(R.id.btnBannerSelectOther);
-
-        if (btnCloseUrlBanner != null) {
-            btnCloseUrlBanner.setOnClickListener(v -> hideUrlTopBannerAnimated());
-        }
+        bannerIconCis = activity.findViewById(R.id.bannerIconCis);
+        bannerIconOther = activity.findViewById(R.id.bannerIconOther);
+        tvBannerCisTitle = activity.findViewById(R.id.tvBannerCisTitle);
+        tvBannerCisHost = activity.findViewById(R.id.tvBannerCisHost);
+        tvBannerOtherTitle = activity.findViewById(R.id.tvBannerOtherTitle);
+        tvBannerOtherHost = activity.findViewById(R.id.tvBannerOtherHost);
 
         if (btnBannerSelectCis != null) {
             btnBannerSelectCis.setOnClickListener(v -> {
-                com.example.animelib.util.SiteUtils.setSavedRegionOther(activity, false);
-                String siteKey = com.example.animelib.util.SiteUtils.getSiteKey(lastUrl);
-                String targetUrl = com.example.animelib.util.SiteUtils.getUrlForSiteAndRegion(siteKey, false);
+                SiteUtils.setSavedRegionOther(activity, false);
+                String siteKey = SiteUtils.getSiteKey(lastUrl);
+                String targetUrl = SiteUtils.getUrlForSiteAndRegion(siteKey, false);
+                ItemAnimationUtils.animateItemStateTransition(v, true);
                 selectDomainFromBanner(targetUrl);
             });
         }
 
         if (btnBannerSelectOther != null) {
             btnBannerSelectOther.setOnClickListener(v -> {
-                com.example.animelib.util.SiteUtils.setSavedRegionOther(activity, true);
-                String siteKey = com.example.animelib.util.SiteUtils.getSiteKey(lastUrl);
-                String targetUrl = com.example.animelib.util.SiteUtils.getUrlForSiteAndRegion(siteKey, true);
+                SiteUtils.setSavedRegionOther(activity, true);
+                String siteKey = SiteUtils.getSiteKey(lastUrl);
+                String targetUrl = SiteUtils.getUrlForSiteAndRegion(siteKey, true);
+                ItemAnimationUtils.animateItemStateTransition(v, true);
                 selectDomainFromBanner(targetUrl);
             });
         }
     }
 
     private void selectDomainFromBanner(String targetUrl) {
+        this.lastUrl = targetUrl;
         if (callback != null) {
             callback.onDomainSelected(targetUrl);
         }
 
         updateBannerSelectionUI(targetUrl);
-        if (tvCurrentUrlBanner != null) {
-            tvCurrentUrlBanner.setText("Текущий адрес: " + targetUrl);
-        }
 
-        urlBannerHandler.postDelayed(this::hideUrlTopBannerAnimated, 1200);
+        if (urlBannerRunnable != null) {
+            urlBannerHandler.removeCallbacks(urlBannerRunnable);
+        }
+        urlBannerRunnable = this::hideUrlTopBannerAnimated;
+        urlBannerHandler.postDelayed(urlBannerRunnable, 1200);
     }
 
     public void updateBannerSelectionUI(String currentUrl) {
         if (urlTopBanner == null) return;
-        boolean isCis = !com.example.animelib.util.SiteUtils.isOtherRegion(currentUrl, activity);
+        boolean isCis = !SiteUtils.isOtherRegion(currentUrl, activity);
+        String siteKey = SiteUtils.getSiteKey(currentUrl);
 
-        View bannerPillCis = urlTopBanner.findViewById(R.id.bannerPillCis);
-        View bannerIndicatorOther = urlTopBanner.findViewById(R.id.bannerIndicatorOther);
-
-        if (btnBannerSelectCis != null) {
-            btnBannerSelectCis.setBackgroundResource(isCis ? R.drawable.card_resize_selected : R.drawable.card_resize_unselected);
-            if (bannerPillCis != null) bannerPillCis.setVisibility(isCis ? View.VISIBLE : View.GONE);
+        if (tvBannerCisHost != null) {
+            tvBannerCisHost.setText(SiteUtils.getDomainHost(SiteUtils.getUrlForSiteAndRegion(siteKey, false)));
+        }
+        if (tvBannerOtherHost != null) {
+            tvBannerOtherHost.setText(SiteUtils.getDomainHost(SiteUtils.getUrlForSiteAndRegion(siteKey, true)));
         }
 
-        if (btnBannerSelectOther != null) {
-            btnBannerSelectOther.setBackgroundResource(!isCis ? R.drawable.card_resize_selected : R.drawable.card_resize_unselected);
-            if (bannerIndicatorOther != null) bannerIndicatorOther.setVisibility(!isCis ? View.VISIBLE : View.GONE);
+        int selectedBg = ContextCompat.getColor(activity, R.color.chip_selected_bg);
+        int selectedStroke = ContextCompat.getColor(activity, R.color.purple_primary);
+        int unselectedBg = ContextCompat.getColor(activity, R.color.chip_unselected_bg);
+        int unselectedStroke = ContextCompat.getColor(activity, R.color.chip_unselected_stroke);
+        int primaryText = ContextCompat.getColor(activity, R.color.primary_text_color);
+        int secondaryText = ContextCompat.getColor(activity, R.color.secondary_text_color);
+
+        int selectedStrokePx = Math.max(1, Math.round(TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, 0.5f, activity.getResources().getDisplayMetrics())));
+        int unselectedStrokePx = selectedStrokePx;
+
+        applySegmentStyle(
+                btnBannerSelectCis, bannerIconCis, tvBannerCisTitle, tvBannerCisHost,
+                isCis, selectedBg, selectedStroke, selectedStrokePx,
+                unselectedBg, unselectedStroke, unselectedStrokePx, primaryText, secondaryText
+        );
+        applySegmentStyle(
+                btnBannerSelectOther, bannerIconOther, tvBannerOtherTitle, tvBannerOtherHost,
+                !isCis, selectedBg, selectedStroke, selectedStrokePx,
+                unselectedBg, unselectedStroke, unselectedStrokePx, primaryText, secondaryText
+        );
+    }
+
+    private void applySegmentStyle(
+            MaterialCardView card,
+            ImageView checkIcon,
+            TextView titleView,
+            TextView hostView,
+            boolean isSelected,
+            int selectedBg,
+            int selectedStroke,
+            int selectedStrokePx,
+            int unselectedBg,
+            int unselectedStroke,
+            int unselectedStrokePx,
+            int primaryText,
+            int secondaryText
+    ) {
+        if (card == null) return;
+        if (isSelected) {
+            card.setCardBackgroundColor(selectedBg);
+            card.setStrokeColor(selectedStroke);
+            card.setStrokeWidth(selectedStrokePx);
+            if (checkIcon != null) checkIcon.setVisibility(View.VISIBLE);
+            if (titleView != null) titleView.setTextColor(selectedStroke);
+            if (hostView != null) hostView.setTextColor(selectedStroke);
+        } else {
+            card.setCardBackgroundColor(unselectedBg);
+            card.setStrokeColor(unselectedStroke);
+            card.setStrokeWidth(unselectedStrokePx);
+            if (checkIcon != null) checkIcon.setVisibility(View.GONE);
+            if (titleView != null) titleView.setTextColor(primaryText);
+            if (hostView != null) hostView.setTextColor(secondaryText);
         }
     }
 
@@ -101,9 +166,6 @@ public class MainBannerController {
         if (urlTopBanner == null) return;
         this.lastUrl = url;
 
-        if (tvCurrentUrlBanner != null && url != null && !url.trim().isEmpty()) {
-            tvCurrentUrlBanner.setText("Текущий адрес: " + url);
-        }
         updateBannerSelectionUI(url);
 
         if (urlBannerRunnable != null) {
@@ -116,7 +178,7 @@ public class MainBannerController {
         urlTopBanner.post(() -> {
             int height = urlTopBanner.getHeight();
             if (height <= 0) {
-                height = (int) (50 * urlTopBanner.getResources().getDisplayMetrics().density);
+                height = (int) (64 * urlTopBanner.getResources().getDisplayMetrics().density);
             }
             urlTopBanner.setTranslationY(-height - 50f);
             urlTopBanner.animate()
@@ -139,7 +201,7 @@ public class MainBannerController {
         if (urlTopBanner != null && urlTopBanner.getVisibility() == View.VISIBLE) {
             int height = urlTopBanner.getHeight();
             if (height <= 0) {
-                height = (int) (70 * urlTopBanner.getResources().getDisplayMetrics().density);
+                height = (int) (72 * urlTopBanner.getResources().getDisplayMetrics().density);
             }
             urlTopBanner.animate()
                     .translationY(-height - 100f)

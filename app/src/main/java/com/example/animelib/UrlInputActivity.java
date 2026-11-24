@@ -1,17 +1,26 @@
 package com.example.animelib;
 
 import android.content.Intent;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.lifecycle.ViewModelProvider;
 
 import com.example.animelib.data.DatabaseManager;
 import com.example.animelib.util.CustomToast;
+import com.example.animelib.util.ItemAnimationUtils;
 import com.example.animelib.util.SiteUtils;
 import com.example.animelib.util.ThemeUtils;
 import com.example.animelib.viewmodel.AppSettingsViewModel;
@@ -23,8 +32,13 @@ public class UrlInputActivity extends AppCompatActivity {
     public static final String URL_CIS = "https://v5.animelib.org";
     public static final String URL_OTHER = "https://animelib.org";
 
+    private View urlInputRoot;
     private MaterialCardView cardCis;
     private MaterialCardView cardOther;
+    private View iconContainerCis;
+    private View iconContainerOther;
+    private ImageView ivIconCis;
+    private ImageView ivIconOther;
     private View selectedPillCis;
     private View unselectedIndicatorCis;
     private View selectedPillOther;
@@ -54,14 +68,40 @@ public class UrlInputActivity extends AppCompatActivity {
         ThemeUtils.applyThemeToActivity(this, initialTheme);
 
         super.onCreate(savedInstanceState);
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         setContentView(R.layout.activity_url_input);
 
         databaseManager = DatabaseManager.getInstance(this);
         viewModel = new ViewModelProvider(this).get(AppSettingsViewModel.class);
 
         loadAndApplyTheme();
+        applyEdgeToEdgeInsets();
+        updateSystemBarsAppearance();
         initializeViews();
         setupListeners();
+    }
+
+    private void applyEdgeToEdgeInsets() {
+        urlInputRoot = findViewById(R.id.urlInputRoot);
+        if (urlInputRoot == null) return;
+        ViewCompat.setOnApplyWindowInsetsListener(urlInputRoot, (v, windowInsets) -> {
+            Insets bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            return WindowInsetsCompat.CONSUMED;
+        });
+    }
+
+    private void updateSystemBarsAppearance() {
+        try {
+            getWindow().setStatusBarColor(Color.TRANSPARENT);
+            getWindow().setNavigationBarColor(Color.TRANSPARENT);
+            boolean isDark = ThemeUtils.isDarkTheme(this);
+            WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+            if (controller != null) {
+                controller.setAppearanceLightStatusBars(!isDark);
+                controller.setAppearanceLightNavigationBars(!isDark);
+            }
+        } catch (Exception ignored) {}
     }
 
     private void loadAndApplyTheme() {
@@ -81,11 +121,16 @@ public class UrlInputActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         loadAndApplyTheme();
+        updateSystemBarsAppearance();
     }
 
     private void initializeViews() {
         cardCis = findViewById(R.id.cardCis);
         cardOther = findViewById(R.id.cardOther);
+        iconContainerCis = findViewById(R.id.iconContainerCis);
+        iconContainerOther = findViewById(R.id.iconContainerOther);
+        ivIconCis = findViewById(R.id.ivIconCis);
+        ivIconOther = findViewById(R.id.ivIconOther);
         selectedPillCis = findViewById(R.id.selectedPillCis);
         unselectedIndicatorCis = findViewById(R.id.unselectedIndicatorCis);
         selectedPillOther = findViewById(R.id.selectedPillOther);
@@ -115,27 +160,33 @@ public class UrlInputActivity extends AppCompatActivity {
                 if (tvOtherBadge != null) {
                     tvOtherBadge.setText(SiteUtils.getDomainHost(urlOther));
                 }
-                updateSelectionUi();
+                updateSelectionUi(false);
             });
         }).start();
 
-        saveButton.setEnabled(true);
+        if (saveButton != null) {
+            saveButton.setEnabled(true);
+        }
     }
 
     private void setupListeners() {
         if (cardCis != null) {
             cardCis.setOnClickListener(v -> {
-                selectedIsOther = false;
-                selectedUrl = urlCis;
-                updateSelectionUi();
+                if (selectedIsOther) {
+                    selectedIsOther = false;
+                    selectedUrl = urlCis;
+                    updateSelectionUi(true);
+                }
             });
         }
 
         if (cardOther != null) {
             cardOther.setOnClickListener(v -> {
-                selectedIsOther = true;
-                selectedUrl = urlOther;
-                updateSelectionUi();
+                if (!selectedIsOther) {
+                    selectedIsOther = true;
+                    selectedUrl = urlOther;
+                    updateSelectionUi(true);
+                }
             });
         }
 
@@ -144,42 +195,72 @@ public class UrlInputActivity extends AppCompatActivity {
         }
     }
 
-    private void updateSelectionUi() {
-        int secondaryColor = getThemeColor(R.attr.secondaryColor);
-        int borderColor = getThemeColor(R.attr.borderColor);
+    private void updateSelectionUi(boolean animate) {
+        int selectedBg = ContextCompat.getColor(this, R.color.chip_selected_bg);
+        int selectedStroke = ContextCompat.getColor(this, R.color.purple_primary);
+        int unselectedBg = ContextCompat.getColor(this, R.color.card_bg_color);
+        int unselectedStroke = ContextCompat.getColor(this, R.color.chip_unselected_stroke);
+        int secondaryText = ContextCompat.getColor(this, R.color.secondary_text_color);
+
+        int selectedStrokePx = Math.max(1, Math.round(TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, 0.5f, getResources().getDisplayMetrics())));
+        int unselectedStrokePx = selectedStrokePx;
 
         boolean isCis = !selectedIsOther;
-        int strokeWidthPx = Math.max(1, Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 0.5f, getResources().getDisplayMetrics())));
 
-        if (cardCis != null && cardOther != null) {
-            if (isCis) {
-                cardCis.setStrokeColor(secondaryColor);
-                cardCis.setStrokeWidth(strokeWidthPx);
-                if (selectedPillCis != null) selectedPillCis.setVisibility(View.VISIBLE);
-                if (unselectedIndicatorCis != null) unselectedIndicatorCis.setVisibility(View.GONE);
+        applyCardState(
+                cardCis, iconContainerCis, ivIconCis, tvCisBadge, selectedPillCis, unselectedIndicatorCis,
+                isCis, selectedBg, selectedStroke, selectedStrokePx,
+                unselectedBg, unselectedStroke, unselectedStrokePx, secondaryText
+        );
+        applyCardState(
+                cardOther, iconContainerOther, ivIconOther, tvOtherBadge, selectedPillOther, unselectedIndicatorOther,
+                !isCis, selectedBg, selectedStroke, selectedStrokePx,
+                unselectedBg, unselectedStroke, unselectedStrokePx, secondaryText
+        );
 
-                cardOther.setStrokeColor(borderColor);
-                cardOther.setStrokeWidth(strokeWidthPx);
-                if (selectedPillOther != null) selectedPillOther.setVisibility(View.GONE);
-                if (unselectedIndicatorOther != null) unselectedIndicatorOther.setVisibility(View.VISIBLE);
-            } else {
-                cardOther.setStrokeColor(secondaryColor);
-                cardOther.setStrokeWidth(strokeWidthPx);
-                if (selectedPillOther != null) selectedPillOther.setVisibility(View.VISIBLE);
-                if (unselectedIndicatorOther != null) unselectedIndicatorOther.setVisibility(View.GONE);
-
-                cardCis.setStrokeColor(borderColor);
-                cardCis.setStrokeWidth(strokeWidthPx);
-                if (selectedPillCis != null) selectedPillCis.setVisibility(View.GONE);
-                if (unselectedIndicatorCis != null) unselectedIndicatorCis.setVisibility(View.VISIBLE);
-            }
+        if (animate) {
+            ItemAnimationUtils.animateItemStateTransition(cardCis, isCis);
+            ItemAnimationUtils.animateItemStateTransition(cardOther, !isCis);
         }
     }
 
-    private int getThemeColor(int attrResId) {
-        TypedValue typedValue = new TypedValue();
-        getTheme().resolveAttribute(attrResId, typedValue, true);
-        return typedValue.data;
+    private void applyCardState(
+            MaterialCardView card,
+            View iconContainer,
+            ImageView icon,
+            TextView badge,
+            View selectedPill,
+            View unselectedIndicator,
+            boolean isSelected,
+            int selectedBg,
+            int selectedStroke,
+            int selectedStrokePx,
+            int unselectedBg,
+            int unselectedStroke,
+            int unselectedStrokePx,
+            int secondaryText
+    ) {
+        if (card == null) return;
+        if (isSelected) {
+            card.setCardBackgroundColor(selectedBg);
+            card.setStrokeColor(selectedStroke);
+            card.setStrokeWidth(selectedStrokePx);
+            if (iconContainer != null) iconContainer.setBackgroundResource(R.drawable.bg_m3_tonal_pill_purple);
+            if (icon != null) icon.setColorFilter(selectedStroke);
+            if (badge != null) badge.setTextColor(selectedStroke);
+            if (selectedPill != null) selectedPill.setVisibility(View.VISIBLE);
+            if (unselectedIndicator != null) unselectedIndicator.setVisibility(View.GONE);
+        } else {
+            card.setCardBackgroundColor(unselectedBg);
+            card.setStrokeColor(unselectedStroke);
+            card.setStrokeWidth(unselectedStrokePx);
+            if (iconContainer != null) iconContainer.setBackgroundResource(R.drawable.bg_m3_url_inner_box);
+            if (icon != null) icon.setColorFilter(secondaryText);
+            if (badge != null) badge.setTextColor(secondaryText);
+            if (selectedPill != null) selectedPill.setVisibility(View.GONE);
+            if (unselectedIndicator != null) unselectedIndicator.setVisibility(View.VISIBLE);
+        }
     }
 
     private void saveUrl() {
@@ -208,4 +289,3 @@ public class UrlInputActivity extends AppCompatActivity {
         super.onBackPressed();
     }
 }
-

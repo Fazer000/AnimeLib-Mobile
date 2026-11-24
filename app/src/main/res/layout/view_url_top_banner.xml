@@ -1,153 +1,155 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/urlTopBanner"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_gravity="top"
-    android:layout_marginHorizontal="12dp"
-    android:layout_marginTop="8dp"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
-    android:paddingHorizontal="10dp"
-    android:paddingVertical="6dp"
-    android:background="@drawable/bg_url_top_banner"
-    android:elevation="8dp"
-    android:visibility="gone">
+    android:layout_gravity="top|center_horizontal"
+    android:layout_marginHorizontal="14dp"
+    android:layout_marginTop="10dp"
+    android:visibility="gone"
+    app:cardBackgroundColor="@color/bs_bg_color"
+    app:cardCornerRadius="22dp"
+    app:cardElevation="8dp"
+    app:strokeColor="@color/bs_divider_color"
+    app:strokeWidth="0.5dp">
 
-    <!-- Region Icon -->
-    <FrameLayout
-        android:layout_width="24dp"
-        android:layout_height="24dp"
-        android:background="@drawable/bg_rules_icon_circle"
-        android:layout_marginEnd="6dp">
-
-        <ImageView
-            android:id="@+id/ivUrlIcon"
-            android:layout_width="12dp"
-            android:layout_height="12dp"
-            android:layout_gravity="center"
-            android:src="@drawable/ic_link"
-            app:tint="?attr/secondaryColor"
-            android:contentDescription="Регион" />
-    </FrameLayout>
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Регион:"
-        android:textColor="?attr/primaryTextColor"
-        android:textSize="12sp"
-        android:fontFamily="@font/open_sans_semibold"
-        android:layout_marginEnd="8dp" />
-
-    <!-- Compact Region Buttons -->
+    <!-- M3 Expressive Segmented Selector -->
     <LinearLayout
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="horizontal">
+        android:baselineAligned="false"
+        android:orientation="horizontal"
+        android:padding="8dp">
 
-        <!-- CIS Option -->
-        <LinearLayout
+        <!-- Segment 1: CIS -->
+        <com.google.android.material.card.MaterialCardView
             android:id="@+id/btnBannerSelectCis"
             android:layout_width="0dp"
-            android:layout_height="30dp"
-            android:layout_weight="1"
+            android:layout_height="46dp"
             android:layout_marginEnd="3dp"
-            android:background="@drawable/card_resize_selected"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:paddingHorizontal="6dp"
+            android:layout_weight="1"
             android:clickable="true"
             android:focusable="true"
-            android:foreground="?attr/selectableItemBackground">
+            app:cardBackgroundColor="@color/chip_selected_bg"
+            app:cardElevation="0dp"
+            app:shapeAppearanceOverlay="@style/ShapeAppearance.AnimeLIB.SegmentLeft"
+            app:strokeColor="@color/purple_primary"
+            app:strokeWidth="0.5dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="СНГ"
-                android:textSize="11.5sp"
-                android:fontFamily="@font/open_sans_semibold"
-                android:textColor="?attr/primaryTextColor" />
-
-            <FrameLayout
-                android:id="@+id/bannerPillCis"
-                android:layout_width="14dp"
-                android:layout_height="14dp"
-                android:layout_marginStart="4dp"
-                android:background="@drawable/bg_m3_selected_pill"
-                android:visibility="visible">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:paddingHorizontal="10dp">
 
                 <ImageView
-                    android:layout_width="8dp"
-                    android:layout_height="8dp"
-                    android:layout_gravity="center"
+                    android:id="@+id/bannerIconCis"
+                    android:layout_width="15dp"
+                    android:layout_height="15dp"
+                    android:layout_marginEnd="6dp"
+                    android:contentDescription="Выбрано"
                     android:src="@drawable/ic_check"
-                    app:tint="#FFFFFF"
-                    android:contentDescription="Выбрано"/>
-            </FrameLayout>
-        </LinearLayout>
+                    android:visibility="visible"
+                    app:tint="@color/purple_primary" />
 
-        <!-- Other Region Option -->
-        <LinearLayout
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvBannerCisTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:includeFontPadding="false"
+                        android:text="СНГ"
+                        android:textColor="@color/purple_primary"
+                        android:textSize="12.5sp" />
+
+                    <TextView
+                        android:id="@+id/tvBannerCisHost"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="1dp"
+                        android:ellipsize="end"
+                        android:fontFamily="@font/open_sans"
+                        android:includeFontPadding="false"
+                        android:singleLine="true"
+                        android:text="v5.animelib.org"
+                        android:textColor="@color/purple_primary"
+                        android:textSize="10.5sp" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Segment 2: Other Countries -->
+        <com.google.android.material.card.MaterialCardView
             android:id="@+id/btnBannerSelectOther"
             android:layout_width="0dp"
-            android:layout_height="30dp"
-            android:layout_weight="1"
+            android:layout_height="46dp"
             android:layout_marginStart="3dp"
-            android:background="@drawable/card_resize_unselected"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:paddingHorizontal="6dp"
+            android:layout_weight="1"
             android:clickable="true"
             android:focusable="true"
-            android:foreground="?attr/selectableItemBackground">
+            app:cardBackgroundColor="@color/chip_unselected_bg"
+            app:cardElevation="0dp"
+            app:shapeAppearanceOverlay="@style/ShapeAppearance.AnimeLIB.SegmentRight"
+            app:strokeColor="@color/chip_unselected_stroke"
+            app:strokeWidth="0.5dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Другие"
-                android:textSize="11.5sp"
-                android:fontFamily="@font/open_sans_semibold"
-                android:textColor="?attr/primaryTextColor" />
-
-            <FrameLayout
-                android:id="@+id/bannerIndicatorOther"
-                android:layout_width="14dp"
-                android:layout_height="14dp"
-                android:layout_marginStart="4dp"
-                android:background="@drawable/bg_m3_selected_pill"
-                android:visibility="gone">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:paddingHorizontal="10dp">
 
                 <ImageView
-                    android:layout_width="8dp"
-                    android:layout_height="8dp"
-                    android:layout_gravity="center"
+                    android:id="@+id/bannerIconOther"
+                    android:layout_width="15dp"
+                    android:layout_height="15dp"
+                    android:layout_marginEnd="6dp"
+                    android:contentDescription="Выбрано"
                     android:src="@drawable/ic_check"
-                    app:tint="#FFFFFF"
-                    android:contentDescription="Выбрано"/>
-            </FrameLayout>
-        </LinearLayout>
+                    android:visibility="gone"
+                    app:tint="@color/purple_primary" />
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvBannerOtherTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:includeFontPadding="false"
+                        android:text="Остальные"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="12.5sp" />
+
+                    <TextView
+                        android:id="@+id/tvBannerOtherHost"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="1dp"
+                        android:ellipsize="end"
+                        android:fontFamily="@font/open_sans"
+                        android:includeFontPadding="false"
+                        android:singleLine="true"
+                        android:text="animelib.org"
+                        android:textColor="@color/secondary_text_color"
+                        android:textSize="10.5sp" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
     </LinearLayout>
 
-
-
-    <ImageButton
-        android:id="@+id/btnCloseUrlBanner"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
-        android:layout_marginStart="2dp"
-        android:background="?attr/selectableItemBackgroundBorderless"
-        android:src="@drawable/ic_close"
-        app:tint="?attr/secondaryTextColor"
-        android:padding="4dp"
-        android:contentDescription="Закрыть" />
-
-    <TextView
-        android:id="@+id/tvCurrentUrlBanner"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:visibility="gone" />
-
-</LinearLayout>
+</com.google.android.material.card.MaterialCardView>
