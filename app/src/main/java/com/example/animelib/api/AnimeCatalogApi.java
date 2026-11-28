@@ -245,7 +245,7 @@ public class AnimeCatalogApi {
 
         final String encodedUrl;
         try {
-            encodedUrl = ApiClientCore.API_BASE_HAPI + "/manga?fields[]=rate_avg&fields[]=rate&fields[]=releaseDate&q="
+            encodedUrl = ApiClientCore.API_BASE_HAPI + "/manga?fields[]=rate_avg&fields[]=rate&fields[]=releaseDate&site_id[0]=1&site_id[1]=3&q="
                     + URLEncoder.encode(trimmedQuery, "UTF-8");
         } catch (Exception e) {
             if (callback != null) callback.onError("Ошибка кодирования запроса: " + e.getMessage());
