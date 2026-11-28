@@ -694,7 +694,8 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        SearchFragment searchFragment = new SearchFragment();
+        String currentSiteKey = com.example.animelib.util.SiteUtils.getSiteKey(getFastKnownSiteUrl());
+        SearchFragment searchFragment = SearchFragment.newInstance(currentSiteKey);
 
         getSupportFragmentManager().beginTransaction()
                 .setCustomAnimations(
@@ -707,7 +708,7 @@ public class MainActivity extends AppCompatActivity {
                 .addToBackStack(SEARCH_FRAGMENT_TAG)
                 .commit();
 
-        Log.d("MainActivity", "Search fragment shown with scale-fade animation");
+        Log.d("MainActivity", "Search fragment shown with scale-fade animation, site=" + currentSiteKey);
     }
 
     public void loadUrlInWebView(String url) {

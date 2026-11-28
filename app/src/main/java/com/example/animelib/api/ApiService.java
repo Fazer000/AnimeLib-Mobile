@@ -305,6 +305,10 @@ public class ApiService {
         catalogApi.searchAnime(query, callback);
     }
 
+    public void searchMangaAndRanobe(String query, SearchCallback callback) {
+        catalogApi.searchMangaAndRanobe(query, callback);
+    }
+
     public SearchSyncResult searchAnimeSync(String query) {
         return catalogApi.searchAnimeSync(query);
     }

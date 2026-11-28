@@ -228,6 +228,61 @@ public class AnimeCatalogApi {
         );
     }
 
+    public void searchMangaAndRanobe(String query, ApiService.SearchCallback callback) {
+        if (query == null || query.trim().isEmpty()) {
+            if (callback != null) callback.onError("Пустой поисковый запрос");
+            return;
+        }
+
+        final String trimmedQuery = query.trim();
+        final String cacheKey = "manga:" + trimmedQuery.toLowerCase(Locale.ROOT);
+
+        SearchResponse cached = ApiCacheManager.SEARCH.getValid(cacheKey, SEARCH_CACHE_TTL_MS);
+        if (cached != null) {
+            if (callback != null) callback.onSearchResults(cached);
+            return;
+        }
+
+        final String encodedUrl;
+        try {
+            encodedUrl = ApiClientCore.API_BASE_HAPI + "/manga?fields[]=rate_avg&fields[]=rate&fields[]=releaseDate&q="
+                    + URLEncoder.encode(trimmedQuery, "UTF-8");
+        } catch (Exception e) {
+            if (callback != null) callback.onError("Ошибка кодирования запроса: " + e.getMessage());
+            return;
+        }
+
+        core.executeCachedGet(
+                ApiCacheManager.SEARCH,
+                cacheKey,
+                cacheKey,
+                encodedUrl,
+                false,
+                false,
+                new ApiCacheManager.CallbackNotifier<SearchResponse>() {
+                    @Override
+                    public void onSuccess(SearchResponse data) {
+                        if (callback != null) callback.onSearchResults(data);
+                    }
+
+                    @Override
+                    public void onError(String error) {
+                        if (callback != null) callback.onError(error);
+                    }
+                },
+                "Ошибка сети: ",
+                "HTTP ",
+                "Неверный формат поискового ответа",
+                body -> {
+                    SearchResponse searchResponse = core.getGson().fromJson(body, SearchResponse.class);
+                    if (searchResponse != null) {
+                        ApiCacheManager.SEARCH.put(cacheKey, searchResponse);
+                    }
+                    return searchResponse;
+                }
+        );
+    }
+
     public ApiService.SearchSyncResult searchAnimeSync(String query) {
         if (query == null || query.trim().isEmpty()) {
             return new ApiService.SearchSyncResult(false, false, 0, null, "Пустой поисковый запрос");

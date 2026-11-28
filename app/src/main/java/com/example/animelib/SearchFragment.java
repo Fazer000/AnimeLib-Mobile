@@ -1,7 +1,6 @@
 package com.example.animelib;
 
 import android.content.Context;
-import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -15,6 +14,7 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -22,23 +22,36 @@ import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.cardview.widget.CardView;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.example.animelib.adapters.HorizontalRelatedTitlesAdapter;
 import com.example.animelib.adapters.SearchResultsAdapter;
 import com.example.animelib.api.ApiClientCore;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.models.SearchResponse;
 import com.google.android.material.tabs.TabLayout;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * Фрагмент быстрого поиска аниме в виде всплывающего алерт-окна
+ * Фрагмент быстрого поиска по сайтам (AnimeLib, MangaLib, RanobeLib) в виде всплывающего алерт-окна
  */
 public class SearchFragment extends Fragment {
     private static final String TAG = "SearchFragment";
+    private static final String ARG_INITIAL_SITE = "arg_initial_site";
     private static final long SEARCH_DELAY_MS = 350; // Быстрый и отзывчивый debounce
-    
+
+    public static final int TAB_ANIME = 0;
+    public static final int TAB_MANGA = 1;
+    public static final int TAB_RANOBE = 2;
+
+    public static final int SITE_ID_MANGA = 1;
+    public static final int SITE_ID_RANOBE = 3;
+
     private View searchRootLayout;
     private CardView searchCardContainer;
     private EditText searchInput;
@@ -47,39 +60,61 @@ public class SearchFragment extends Fragment {
     private TabLayout searchTabLayout;
     private RecyclerView searchResults;
     private LinearLayout emptyState;
+    private TextView emptyStateSubtitle;
+    private View tipPlayerRow;
     private LinearLayout noResultsState;
     private TextView noResultsTitle;
     private TextView noResultsSubtitle;
     private View loadingIndicator;
-    
+
     private SearchResultsAdapter adapter;
     private ApiService apiService;
     private Handler searchHandler;
     private Runnable searchRunnable;
     private String currentQuery = "";
-    
+    private int currentTabPosition = TAB_ANIME;
+
+    public static SearchFragment newInstance(String initialSiteKey) {
+        SearchFragment fragment = new SearchFragment();
+        Bundle args = new Bundle();
+        args.putString(ARG_INITIAL_SITE, initialSiteKey);
+        fragment.setArguments(args);
+        return fragment;
+    }
+
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_search, container, false);
-        
+
         apiService = new ApiService(requireContext());
         searchHandler = new Handler(Looper.getMainLooper());
-        
+
+        if (getArguments() != null) {
+            String siteKey = getArguments().getString(ARG_INITIAL_SITE, "animelib");
+            if ("mangalib".equalsIgnoreCase(siteKey)) {
+                currentTabPosition = TAB_MANGA;
+            } else if ("ranobelib".equalsIgnoreCase(siteKey)) {
+                currentTabPosition = TAB_RANOBE;
+            } else {
+                currentTabPosition = TAB_ANIME;
+            }
+        }
+
         initializeViews(view);
         setupListeners();
-        
-        Log.d(TAG, "SearchFragment created");
+
+        Log.d(TAG, "SearchFragment created, initialTab=" + currentTabPosition);
         return view;
     }
-    
+
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
         setupBackPressHandler();
         openKeyboard();
     }
-    
+
     @Override
     public void onDestroyView() {
         super.onDestroyView();
@@ -97,7 +132,7 @@ public class SearchFragment extends Fragment {
         }
         super.onDestroy();
     }
-    
+
     /**
      * Закрывает поиск и убирает клавиатуру
      */
@@ -108,7 +143,7 @@ public class SearchFragment extends Fragment {
             getActivity().getSupportFragmentManager().popBackStack();
         }
     }
-    
+
     /**
      * Настраивает обработку системной кнопки назад
      */
@@ -123,7 +158,7 @@ public class SearchFragment extends Fragment {
             }
         );
     }
-    
+
     /**
      * Открывает клавиатуру и устанавливает фокус на поле поиска
      */
@@ -141,7 +176,7 @@ public class SearchFragment extends Fragment {
             }, 100);
         }
     }
-    
+
     /**
      * Закрывает клавиатуру
      */
@@ -155,7 +190,7 @@ public class SearchFragment extends Fragment {
             }
         }
     }
-    
+
     private void initializeViews(View view) {
         searchRootLayout = view.findViewById(R.id.searchRootLayout);
         searchCardContainer = view.findViewById(R.id.searchCardContainer);
@@ -165,72 +200,157 @@ public class SearchFragment extends Fragment {
         searchTabLayout = view.findViewById(R.id.searchTabLayout);
         searchResults = view.findViewById(R.id.searchResults);
         emptyState = view.findViewById(R.id.emptyState);
+        emptyStateSubtitle = view.findViewById(R.id.emptyStateSubtitle);
+        tipPlayerRow = view.findViewById(R.id.tipPlayerRow);
         noResultsState = view.findViewById(R.id.noResultsState);
         noResultsTitle = view.findViewById(R.id.noResultsTitle);
         noResultsSubtitle = view.findViewById(R.id.noResultsSubtitle);
         loadingIndicator = view.findViewById(R.id.loadingIndicator);
-        
+
         // Setup RecyclerView
         adapter = new SearchResultsAdapter();
         adapter.setOnItemClickListener(new SearchResultsAdapter.OnItemClickListener() {
             @Override
             public void onItemClick(SearchResponse.AnimeSearchItem item) {
-                onAnimeItemClick(item);
+                onSearchItemClick(item);
             }
-            
+
             @Override
             public void onItemLongClick(SearchResponse.AnimeSearchItem item) {
-                onAnimeItemLongClick(item);
+                onSearchItemLongClick(item);
             }
         });
         searchResults.setAdapter(adapter);
         searchResults.setLayoutManager(new LinearLayoutManager(getContext()));
         searchResults.setVisibility(View.GONE);
-        
+
         setupTabLayout();
+        updateHintAndEmptyStateForTab(currentTabPosition);
     }
-    
+
     private void setupTabLayout() {
-        for (int i = 0; i < searchTabLayout.getTabCount(); i++) {
-            TabLayout.Tab tab = searchTabLayout.getTabAt(i);
-            if (tab != null && tab.view != null) {
-                View tabTextView = tab.view.getChildAt(1);
-                if (tabTextView instanceof TextView) {
-                    ((TextView) tabTextView).setAllCaps(false);
-                }
+        if (searchTabLayout == null) return;
+        searchTabLayout.removeAllTabs();
+
+        String[] titles = new String[]{"AnimeLib", "MangaLib", "RanobeLib"};
+        int[] logos = new int[]{
+                R.drawable.ic_site_animelib,
+                R.drawable.ic_site_mangalib,
+                R.drawable.ic_site_ranobelib
+        };
+
+        LayoutInflater inflater = LayoutInflater.from(requireContext());
+        for (int i = 0; i < titles.length; i++) {
+            TabLayout.Tab tab = searchTabLayout.newTab();
+            View customTabView = inflater.inflate(R.layout.item_search_site_tab, searchTabLayout, false);
+            ImageView logoView = customTabView.findViewById(R.id.tabSiteLogo);
+            TextView titleView = customTabView.findViewById(R.id.tabSiteTitle);
+
+            if (logoView != null) {
+                logoView.setImageResource(logos[i]);
+            }
+            if (titleView != null) {
+                titleView.setText(titles[i]);
+            }
+            tab.setCustomView(customTabView);
+            searchTabLayout.addTab(tab, i == currentTabPosition);
+
+            if (tab.view != null) {
+                tab.view.setClipToOutline(true);
             }
         }
-        
+
+        updateTabTextColors(currentTabPosition);
+
         searchTabLayout.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
             @Override
             public void onTabSelected(TabLayout.Tab tab) {
-                Log.d(TAG, "Tab selected: " + tab.getPosition());
+                int pos = tab.getPosition();
+                Log.d(TAG, "Tab selected: " + pos);
+                currentTabPosition = pos;
+                updateTabTextColors(pos);
+                updateHintAndEmptyStateForTab(pos);
+
+                if (searchRunnable != null) {
+                    searchHandler.removeCallbacks(searchRunnable);
+                }
+
+                String query = searchInput != null ? searchInput.getText().toString().trim() : "";
+                currentQuery = query;
+                if (!query.isEmpty()) {
+                    performSearch(query);
+                } else {
+                    adapter.clearItems();
+                    showEmptyState();
+                }
             }
-            
+
             @Override
             public void onTabUnselected(TabLayout.Tab tab) {
             }
-            
+
             @Override
             public void onTabReselected(TabLayout.Tab tab) {
             }
         });
     }
-    
+
+    private void updateTabTextColors(int selectedPos) {
+        if (searchTabLayout == null || getContext() == null) return;
+        int selectedColor = ContextCompat.getColor(getContext(), R.color.white_color);
+        int unselectedColor = ContextCompat.getColor(getContext(), R.color.primary_text_color);
+
+        for (int i = 0; i < searchTabLayout.getTabCount(); i++) {
+            TabLayout.Tab tab = searchTabLayout.getTabAt(i);
+            if (tab != null && tab.getCustomView() != null) {
+                TextView titleView = tab.getCustomView().findViewById(R.id.tabSiteTitle);
+                if (titleView != null) {
+                    titleView.setTextColor(i == selectedPos ? selectedColor : unselectedColor);
+                }
+            }
+        }
+    }
+
+    private void updateHintAndEmptyStateForTab(int tabPosition) {
+        if (searchInput != null) {
+            if (tabPosition == TAB_MANGA) {
+                searchInput.setHint("Поиск манги...");
+            } else if (tabPosition == TAB_RANOBE) {
+                searchInput.setHint("Поиск ранобэ...");
+            } else {
+                searchInput.setHint("Поиск аниме...");
+            }
+        }
+
+        if (emptyStateSubtitle != null) {
+            if (tabPosition == TAB_MANGA) {
+                emptyStateSubtitle.setText("Введите название манги на русском или английском языке");
+            } else if (tabPosition == TAB_RANOBE) {
+                emptyStateSubtitle.setText("Введите название ранобэ на русском или английском языке");
+            } else {
+                emptyStateSubtitle.setText("Введите название аниме на русском или английском языке");
+            }
+        }
+
+        if (tipPlayerRow != null) {
+            tipPlayerRow.setVisibility(tabPosition == TAB_ANIME ? View.VISIBLE : View.GONE);
+        }
+    }
+
     private void setupListeners() {
         // Клик по затемненному фону вокруг алерта — закрывает окно
         if (searchRootLayout != null) {
             searchRootLayout.setOnClickListener(v -> dismissSearch());
         }
-        
+
         // Клик внутри самой карточки алерта не закрывает его
         if (searchCardContainer != null) {
             searchCardContainer.setOnClickListener(v -> {});
         }
-        
+
         // Close button inside alert
         closeButton.setOnClickListener(v -> dismissSearch());
-        
+
         // Clear button
         clearButton.setOnClickListener(v -> {
             searchInput.setText("");
@@ -239,24 +359,24 @@ public class SearchFragment extends Fragment {
             currentQuery = "";
             showEmptyState();
         });
-        
+
         // Search input text watcher with debounce
         searchInput.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
             }
-            
+
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 clearButton.setVisibility(s.length() > 0 ? View.VISIBLE : View.GONE);
-                
+
                 if (searchRunnable != null) {
                     searchHandler.removeCallbacks(searchRunnable);
                 }
-                
+
                 String query = s.toString().trim();
                 currentQuery = query;
-                
+
                 if (!query.isEmpty()) {
                     searchRunnable = () -> performSearch(query);
                     searchHandler.postDelayed(searchRunnable, SEARCH_DELAY_MS);
@@ -265,12 +385,12 @@ public class SearchFragment extends Fragment {
                     showEmptyState();
                 }
             }
-            
+
             @Override
             public void afterTextChanged(Editable s) {
             }
         });
-        
+
         // Search action on keyboard (IME search)
         searchInput.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
@@ -286,97 +406,152 @@ public class SearchFragment extends Fragment {
             return false;
         });
     }
-    
+
+    public static List<SearchResponse.AnimeSearchItem> filterItemsForTab(
+            List<SearchResponse.AnimeSearchItem> rawItems, int tabPosition) {
+        List<SearchResponse.AnimeSearchItem> filtered = new ArrayList<>();
+        if (rawItems == null || rawItems.isEmpty()) {
+            return filtered;
+        }
+        if (tabPosition == TAB_ANIME) {
+            filtered.addAll(rawItems);
+            return filtered;
+        }
+        int expectedSiteId = (tabPosition == TAB_RANOBE) ? SITE_ID_RANOBE : SITE_ID_MANGA;
+        for (SearchResponse.AnimeSearchItem item : rawItems) {
+            if (item != null && item.getSite() == expectedSiteId) {
+                filtered.add(item);
+            }
+        }
+        return filtered;
+    }
+
     private void performSearch(String query) {
         if (query.trim().isEmpty()) {
             showEmptyState();
             return;
         }
-        
-        Log.d(TAG, "Performing search for: " + query);
+
+        final int requestedTab = currentTabPosition;
+        Log.d(TAG, "Performing search for: " + query + " (tab=" + requestedTab + ")");
         showLoading();
-        
-        apiService.searchAnime(query, new ApiService.SearchCallback() {
+
+        ApiService.SearchCallback callback = new ApiService.SearchCallback() {
             @Override
             public void onSearchResults(SearchResponse response) {
                 if (getActivity() == null || !isAdded()) return;
-                
+
                 getActivity().runOnUiThread(() -> {
-                    // Check if current search input still corresponds to this query
-                    String activeInput = searchInput.getText().toString().trim();
-                    if (!activeInput.isEmpty() && !activeInput.equalsIgnoreCase(query)) {
-                        // Ignore outdated search response
+                    if (requestedTab != currentTabPosition) {
                         return;
                     }
-                    
-                    if (response != null && response.getData() != null && !response.getData().isEmpty()) {
-                        adapter.setItems(response.getData());
+                    String activeInput = searchInput.getText().toString().trim();
+                    if (!activeInput.isEmpty() && !activeInput.equalsIgnoreCase(query)) {
+                        return;
+                    }
+
+                    List<SearchResponse.AnimeSearchItem> rawList = response != null ? response.getData() : null;
+                    List<SearchResponse.AnimeSearchItem> filtered = filterItemsForTab(rawList, requestedTab);
+
+                    if (!filtered.isEmpty()) {
+                        adapter.setItems(filtered);
+                        if (searchResults != null) {
+                            searchResults.scrollToPosition(0);
+                        }
                         showResults();
-                        Log.d(TAG, "Search completed: " + response.getData().size() + " results");
+                        Log.d(TAG, "Search completed: " + filtered.size() + " results for tab " + requestedTab);
                     } else {
                         adapter.clearItems();
                         showNoResults(query);
-                        Log.d(TAG, "Search completed: no results for " + query);
+                        Log.d(TAG, "Search completed: no results for " + query + " on tab " + requestedTab);
                     }
                 });
             }
-            
+
             @Override
             public void onError(String error) {
                 if (getActivity() == null || !isAdded()) return;
-                
+
                 getActivity().runOnUiThread(() -> {
+                    if (requestedTab != currentTabPosition) {
+                        return;
+                    }
                     Log.e(TAG, "Search error: " + error);
                     com.example.animelib.util.CustomToast.showWarning(getContext(), "Ошибка поиска: " + error);
                     showNoResults(query);
                 });
             }
-        });
+        };
+
+        if (requestedTab == TAB_ANIME) {
+            apiService.searchAnime(query, callback);
+        } else {
+            apiService.searchMangaAndRanobe(query, callback);
+        }
     }
-    
+
     /**
-     * Обычный клик - открывает страницу аниме в WebView
+     * Обычный клик - открывает страницу тайтла (аниме / манги / ранобэ) в WebView
      */
-    private void onAnimeItemClick(SearchResponse.AnimeSearchItem item) {
-        Log.d(TAG, "Anime clicked: " + item.getRusName() + " (slug_url: " + item.getSlugUrl() + ")");
-        
+    private void onSearchItemClick(SearchResponse.AnimeSearchItem item) {
+        if (item == null) return;
+        String slugUrl = item.getSlugUrl();
+        if (slugUrl == null || slugUrl.trim().isEmpty()) {
+            slugUrl = item.getSlug();
+        }
+        Log.d(TAG, "Item clicked: " + item.getRusName() + " (slug_url: " + slugUrl + ", site: " + item.getSite() + ", tab: " + currentTabPosition + ")");
+
         closeKeyboard();
-        String webViewUrl = "/ru/anime/" + item.getSlugUrl();
-        
-        if (getActivity() != null) {
+
+        String webViewUrl;
+        if (currentTabPosition == TAB_MANGA || item.getSite() == SITE_ID_MANGA) {
+            webViewUrl = HorizontalRelatedTitlesAdapter.buildWebUrl(slugUrl, "manga", SITE_ID_MANGA, getContext());
+        } else if (currentTabPosition == TAB_RANOBE || item.getSite() == SITE_ID_RANOBE) {
+            webViewUrl = HorizontalRelatedTitlesAdapter.buildWebUrl(slugUrl, "ranobe", SITE_ID_RANOBE, getContext());
+        } else {
+            webViewUrl = "/ru/anime/" + slugUrl;
+        }
+
+        if (getActivity() != null && webViewUrl != null) {
             getActivity().getSupportFragmentManager().popBackStack();
-            
+
             if (getActivity() instanceof MainActivity) {
                 ((MainActivity) getActivity()).loadUrlInWebView(webViewUrl);
             }
         }
     }
-    
+
     /**
-     * Долгий клик - открывает VideoPlayerActivity
+     * Долгий клик - открывает VideoPlayerActivity для аниме, либо страницу тайтла для манги/ранобэ
      */
-    private void onAnimeItemLongClick(SearchResponse.AnimeSearchItem item) {
+    private void onSearchItemLongClick(SearchResponse.AnimeSearchItem item) {
+        if (item == null) return;
+        if (currentTabPosition != TAB_ANIME || item.getSite() == SITE_ID_MANGA || item.getSite() == SITE_ID_RANOBE) {
+            onSearchItemClick(item);
+            return;
+        }
+
         Log.d(TAG, "Anime long clicked: " + item.getRusName() + " (slug_url: " + item.getSlugUrl() + ")");
-        
+
         closeKeyboard();
         String animeUrl = ApiClientCore.API_BASE_HAPI + "/anime/" + item.getSlugUrl();
-        
+
         if (getContext() != null) {
             VideoPlayerActivity.startFromAnimePage(getContext(), animeUrl);
         }
-        
+
         if (getActivity() != null) {
             getActivity().getSupportFragmentManager().popBackStack();
         }
     }
-    
+
     private void showEmptyState() {
         if (emptyState != null) emptyState.setVisibility(View.VISIBLE);
         if (noResultsState != null) noResultsState.setVisibility(View.GONE);
         if (searchResults != null) searchResults.setVisibility(View.GONE);
         if (loadingIndicator != null) loadingIndicator.setVisibility(View.GONE);
     }
-    
+
     private void showNoResults(String query) {
         if (emptyState != null) emptyState.setVisibility(View.GONE);
         if (noResultsState != null) {
@@ -388,14 +563,14 @@ public class SearchFragment extends Fragment {
         if (searchResults != null) searchResults.setVisibility(View.GONE);
         if (loadingIndicator != null) loadingIndicator.setVisibility(View.GONE);
     }
-    
+
     private void showLoading() {
         if (emptyState != null) emptyState.setVisibility(View.GONE);
         if (noResultsState != null) noResultsState.setVisibility(View.GONE);
         if (searchResults != null) searchResults.setVisibility(View.GONE);
         if (loadingIndicator != null) loadingIndicator.setVisibility(View.VISIBLE);
     }
-    
+
     private void showResults() {
         if (emptyState != null) emptyState.setVisibility(View.GONE);
         if (noResultsState != null) noResultsState.setVisibility(View.GONE);

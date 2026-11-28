@@ -131,7 +131,14 @@ public class SearchResultsAdapter extends RecyclerView.Adapter<SearchResultsAdap
             
             // Type badge
             if (item.getType() != null && item.getType().getLabel() != null && !item.getType().getLabel().isEmpty()) {
-                typeBadge.setText(item.getType().getLabel());
+                String typeLabel = item.getType().getLabel();
+                if (item.getEdition() != null && item.getEdition().getShortName() != null && !item.getEdition().getShortName().isEmpty()) {
+                    typeLabel = typeLabel + " • " + item.getEdition().getShortName();
+                }
+                typeBadge.setText(typeLabel);
+                typeBadge.setVisibility(View.VISIBLE);
+            } else if (item.getEdition() != null && item.getEdition().getName() != null && !item.getEdition().getName().isEmpty()) {
+                typeBadge.setText(item.getEdition().getName());
                 typeBadge.setVisibility(View.VISIBLE);
             } else {
                 typeBadge.setVisibility(View.GONE);

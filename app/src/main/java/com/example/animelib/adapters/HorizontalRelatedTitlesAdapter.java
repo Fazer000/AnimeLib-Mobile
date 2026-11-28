@@ -148,8 +148,8 @@ public class HorizontalRelatedTitlesAdapter extends RecyclerView.Adapter<Horizon
             path = "/" + path;
         }
 
-        boolean isManga = "manga".equals(modelStr) || modelStr.contains("manga") || site == 1 || path.contains("/manga/");
-        boolean isRanobe = "ranobe".equals(modelStr) || "novel".equals(modelStr) || modelStr.contains("ranobe") || site == 2 || path.contains("/ranobe/");
+        boolean isRanobe = "ranobe".equals(modelStr) || "novel".equals(modelStr) || modelStr.contains("ranobe") || site == 2 || site == 3 || path.contains("/ranobe/");
+        boolean isManga = !isRanobe && ("manga".equals(modelStr) || modelStr.contains("manga") || site == 1 || path.contains("/manga/"));
 
         if (!path.startsWith("/ru/")) {
             if (path.startsWith("/manga/") || path.startsWith("/ranobe/") || path.startsWith("/anime/")) {

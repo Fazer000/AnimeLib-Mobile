@@ -104,32 +104,37 @@
 
             </LinearLayout>
 
-            <!-- Search Tabs Header -->
-            <com.google.android.material.tabs.TabLayout
-                android:id="@+id/searchTabLayout"
+            <!-- Segmented Control Container for Search Site Tabs (same design as VoiceoverBottomSheet) -->
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="38dp"
-                android:background="@android:color/transparent"
-                app:tabMode="scrollable"
-                app:tabGravity="start"
-                app:tabIndicator="@drawable/tab_indicator_rounded"
-                app:tabIndicatorColor="@color/purple_primary"
-                app:tabIndicatorGravity="bottom"
-                app:tabIndicatorHeight="3dp"
-                app:tabIndicatorFullWidth="false"
-                app:tabSelectedTextColor="@color/purple_primary"
-                app:tabTextColor="@color/dialog_text_muted"
-                app:tabTextAppearance="@style/SearchTabTextAppearance"
-                app:tabPaddingStart="16dp"
-                app:tabPaddingEnd="16dp">
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="14dp"
+                android:layout_marginTop="2dp"
+                android:layout_marginBottom="10dp"
+                android:background="@drawable/bg_segmented_control"
+                android:padding="3dp">
 
-                <com.google.android.material.tabs.TabItem
-                    android:id="@+id/tabTitles"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Тайтлы" />
-
-            </com.google.android.material.tabs.TabLayout>
+                <com.google.android.material.tabs.TabLayout
+                    android:id="@+id/searchTabLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="38dp"
+                    android:background="@android:color/transparent"
+                    app:tabGravity="fill"
+                    app:tabIndicator="@drawable/bg_segmented_tab_indicator"
+                    app:tabIndicatorAnimationMode="elastic"
+                    app:tabIndicatorColor="@color/purple_primary"
+                    app:tabIndicatorFullWidth="true"
+                    app:tabIndicatorGravity="stretch"
+                    app:tabIndicatorHeight="38dp"
+                    app:tabMode="fixed"
+                    app:tabPaddingStart="4dp"
+                    app:tabPaddingEnd="4dp"
+                    app:tabRippleColor="@null"
+                    app:tabBackground="@drawable/bg_segmented_tab_ripple"
+                    app:tabUnboundedRipple="false"
+                    app:tabSelectedTextColor="@color/white_color"
+                    app:tabTextColor="@color/primary_text_color" />
+            </FrameLayout>
 
             <View
                 android:layout_width="match_parent"
@@ -189,9 +194,10 @@
                         android:layout_marginTop="14dp" />
 
                     <TextView
+                        android:id="@+id/emptyStateSubtitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Введите название аниме на русском или английском языке"
+                        android:text="Введите название тайтла на русском или английском языке"
                         android:textSize="13sp"
                         android:fontFamily="@font/open_sans"
                         android:textColor="@color/dialog_text_muted"
@@ -232,6 +238,7 @@
                         </LinearLayout>
 
                         <LinearLayout
+                            android:id="@+id/tipPlayerRow"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="horizontal"

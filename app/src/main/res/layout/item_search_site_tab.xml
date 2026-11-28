@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="match_parent"
+    android:gravity="center"
+    android:orientation="horizontal"
+    android:paddingHorizontal="6dp">
+
+    <ImageView
+        android:id="@+id/tabSiteLogo"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:layout_marginEnd="5dp"
+        android:scaleType="fitCenter"
+        android:contentDescription="@null" />
+
+    <TextView
+        android:id="@+id/tabSiteTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/open_sans_bold"
+        android:singleLine="true"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textColor="@color/primary_text_color"
+        android:textSize="12.5sp"
+        android:textStyle="bold" />
+
+</LinearLayout>

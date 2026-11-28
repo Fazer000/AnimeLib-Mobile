@@ -56,6 +56,9 @@ public class SearchResponse {
         @SerializedName("ageRestriction")
         private AgeRestriction ageRestriction;
         
+        @SerializedName("site")
+        private int site;
+        
         @SerializedName("type")
         private Type type;
         
@@ -68,8 +71,15 @@ public class SearchResponse {
         @SerializedName("status")
         private Status status;
         
+        @SerializedName("edition")
+        private Edition edition;
+        
         @SerializedName("releaseDateString")
         private String releaseDateString;
+        
+        public AnimeSearchItem() {}
+        
+        public void setData(List<AnimeSearchItem> items) {}
         
         // Getters
         public int getId() { return id; }
@@ -81,11 +91,33 @@ public class SearchResponse {
         public String getSlugUrl() { return slugUrl; }
         public Cover getCover() { return cover; }
         public AgeRestriction getAgeRestriction() { return ageRestriction; }
+        public int getSite() { return site; }
+        public void setSite(int site) { this.site = site; }
         public Type getType() { return type; }
         public String getReleaseDate() { return releaseDate; }
         public Rating getRating() { return rating; }
         public Status getStatus() { return status; }
+        public Edition getEdition() { return edition; }
         public String getReleaseDateString() { return releaseDateString; }
+    }
+    
+    public static class Edition {
+        @SerializedName("id")
+        private int id;
+        
+        @SerializedName("slug")
+        private String slug;
+        
+        @SerializedName("name")
+        private String name;
+        
+        @SerializedName("short_name")
+        private String shortName;
+        
+        public int getId() { return id; }
+        public String getSlug() { return slug; }
+        public String getName() { return name; }
+        public String getShortName() { return shortName; }
     }
     
     public static class Cover {
