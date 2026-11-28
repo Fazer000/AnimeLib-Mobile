@@ -5,23 +5,23 @@
     android:id="@+id/searchRootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#99000000"
+    android:background="#8C000000"
     android:clickable="true"
     android:focusable="true">
 
-    <!-- Search Alert Dialog Card -->
+    <!-- Floating Player-Style Search Sheet Card -->
     <androidx.cardview.widget.CardView
         android:id="@+id/searchCardContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_gravity="center"
-        android:layout_marginHorizontal="16dp"
-        android:layout_marginTop="24dp"
-        android:layout_marginBottom="24dp"
-        app:cardCornerRadius="22dp"
-        app:cardElevation="16dp"
-        app:cardMaxElevation="16dp"
-        app:cardBackgroundColor="@color/dialog_bg"
+        android:layout_marginHorizontal="14dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp"
+        app:cardCornerRadius="20dp"
+        app:cardElevation="12dp"
+        app:cardMaxElevation="12dp"
+        app:cardBackgroundColor="@color/bs_bg_color"
         android:clickable="true"
         android:focusable="true">
 
@@ -30,87 +30,72 @@
             android:layout_height="match_parent"
             android:orientation="vertical">
 
-            <!-- Top Header & Search Bar -->
+            <!-- Handle Bar (Player BottomSheet signature) -->
+            <View
+                android:layout_width="36dp"
+                android:layout_height="4dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:background="@drawable/bottom_sheet_handle" />
+
+            <!-- Header (Title + Dynamic Subtitle + Close Button, matching bs_voiceovers.xml) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:paddingStart="14dp"
-                android:paddingEnd="12dp"
-                android:paddingTop="14dp"
-                android:paddingBottom="10dp">
+                android:orientation="horizontal"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="6dp"
+                android:clipChildren="false"
+                android:clipToPadding="false">
 
-                <!-- Search Input Box -->
                 <LinearLayout
                     android:layout_width="0dp"
-                    android:layout_height="46dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:background="@drawable/bg_search_input_box"
-                    android:paddingStart="12dp"
-                    android:paddingEnd="6dp">
+                    android:orientation="vertical">
 
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@drawable/ic_search"
-                        app:tint="@color/purple_primary"
-                        android:contentDescription="Поиск" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/open_sans_bold"
+                        android:letterSpacing="0.01"
+                        android:text="Быстрый поиск"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="@dimen/bs_title_text_size"
+                        android:textStyle="bold" />
 
-                    <EditText
-                        android:id="@+id/searchInput"
-                        android:layout_width="0dp"
-                        android:layout_height="match_parent"
-                        android:layout_weight="1"
-                        android:layout_marginStart="8dp"
-                        android:layout_marginEnd="4dp"
-                        android:background="@android:color/transparent"
-                        android:hint="Поиск тайтлов..."
-                        android:textSize="15sp"
-                        android:fontFamily="@font/open_sans_semibold"
-                        android:textColor="@color/dialog_text_title"
-                        android:textColorHint="@color/dialog_text_hint"
-                        android:inputType="text"
-                        android:imeOptions="actionSearch|flagNoExtractUi|flagNoFullscreen"
-                        android:maxLines="1" />
-
-                    <ImageButton
-                        android:id="@+id/clearButton"
-                        android:layout_width="28dp"
-                        android:layout_height="28dp"
-                        android:background="?attr/selectableItemBackgroundBorderless"
-                        android:src="@drawable/ic_eraser"
-                        app:tint="@color/dialog_icon_close"
-                        android:scaleType="fitCenter"
-                        android:padding="5dp"
-                        android:contentDescription="Очистить"
-                        android:visibility="gone" />
-
+                    <TextView
+                        android:id="@+id/searchHeaderSubtitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="1dp"
+                        android:text="Каталог аниме • AnimeLib"
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="11.5sp" />
                 </LinearLayout>
 
-                <!-- Close Alert Button -->
                 <ImageButton
                     android:id="@+id/closeButton"
-                    android:layout_width="38dp"
-                    android:layout_height="38dp"
-                    android:layout_marginStart="8dp"
-                    android:background="@drawable/bg_search_circle_button"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:background="@drawable/button_close_background"
+                    android:contentDescription="Закрыть"
+                    android:padding="7dp"
+                    android:scaleType="fitCenter"
                     android:src="@drawable/ic_close"
-                    app:tint="@color/dialog_icon_close"
-                    android:padding="8dp"
-                    android:contentDescription="Закрыть" />
+                    app:tint="@color/accent_text_color" />
 
             </LinearLayout>
 
-            <!-- Segmented Control Container for Search Site Tabs (same design as VoiceoverBottomSheet) -->
+            <!-- Segmented Control Container for Search Site Tabs (exact match with bs_voiceovers.xml) -->
             <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginHorizontal="14dp"
-                android:layout_marginTop="2dp"
-                android:layout_marginBottom="10dp"
+                android:layout_marginHorizontal="16dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="8dp"
                 android:background="@drawable/bg_segmented_control"
                 android:padding="3dp">
 
@@ -136,10 +121,67 @@
                     app:tabTextColor="@color/primary_text_color" />
             </FrameLayout>
 
+            <!-- Search Input Bar (matching bs_voiceovers.xml filter bar) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="16dp"
+                android:paddingBottom="10dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:background="@drawable/bg_comment_input"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="12dp">
+
+                    <ImageView
+                        android:layout_width="17dp"
+                        android:layout_height="17dp"
+                        android:contentDescription="Поиск"
+                        android:src="@drawable/ic_search"
+                        app:tint="@color/accent_text_color" />
+
+                    <EditText
+                        android:id="@+id/searchInput"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:background="@null"
+                        android:fontFamily="@font/open_sans_semibold"
+                        android:hint="Поиск аниме..."
+                        android:imeOptions="actionSearch|flagNoExtractUi|flagNoFullscreen"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="6dp"
+                        android:textColor="@color/primary_text_color"
+                        android:textColorHint="@color/accent_text_color"
+                        android:textSize="13.5sp" />
+
+                    <ImageButton
+                        android:id="@+id/clearButton"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="Очистить"
+                        android:padding="4dp"
+                        android:scaleType="fitCenter"
+                        android:src="@drawable/ic_close"
+                        android:visibility="gone"
+                        app:tint="@color/accent_text_color" />
+
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Thin divider under search bar -->
             <View
                 android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:background="@color/dialog_input_stroke" />
+                android:layout_height="0.5dp"
+                android:background="@color/bs_divider_color" />
 
             <!-- Content Area: Results / Empty / No Results / Loading -->
             <FrameLayout
@@ -147,7 +189,7 @@
                 android:layout_height="0dp"
                 android:layout_weight="1">
 
-                <!-- Search results list -->
+                <!-- Search results list (items unchanged) -->
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/searchResults"
                     android:layout_width="match_parent"
@@ -158,25 +200,26 @@
                     android:scrollbars="vertical"
                     android:visibility="gone" />
 
-                <!-- Initial Empty State -->
+                <!-- Initial Empty State (Player M3 grouped cards style) -->
                 <LinearLayout
                     android:id="@+id/emptyState"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:orientation="vertical"
                     android:gravity="center"
-                    android:paddingHorizontal="24dp"
+                    android:paddingHorizontal="16dp"
                     android:paddingVertical="16dp"
                     android:visibility="visible">
 
+                    <!-- Center Tonal Pill Icon -->
                     <FrameLayout
-                        android:layout_width="64dp"
-                        android:layout_height="64dp"
-                        android:background="@drawable/bg_search_empty_icon_bg">
+                        android:layout_width="56dp"
+                        android:layout_height="56dp"
+                        android:background="@drawable/bg_m3_tonal_pill_purple">
 
                         <ImageView
-                            android:layout_width="32dp"
-                            android:layout_height="32dp"
+                            android:layout_width="26dp"
+                            android:layout_height="26dp"
                             android:layout_gravity="center"
                             android:src="@drawable/ic_search"
                             app:tint="@color/purple_primary"
@@ -184,84 +227,138 @@
                     </FrameLayout>
 
                     <TextView
+                        android:id="@+id/emptyStateTitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Быстрый поиск"
-                        android:textSize="17sp"
+                        android:layout_marginTop="12dp"
                         android:fontFamily="@font/open_sans_bold"
-                        android:textStyle="bold"
-                        android:textColor="@color/dialog_text_title"
-                        android:layout_marginTop="14dp" />
+                        android:text="Поиск по каталогу"
+                        android:textColor="@color/primary_text_color"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
 
                     <TextView
                         android:id="@+id/emptyStateSubtitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Введите название тайтла на русском или английском языке"
-                        android:textSize="13sp"
+                        android:layout_marginTop="4dp"
+                        android:layout_marginHorizontal="12dp"
                         android:fontFamily="@font/open_sans"
-                        android:textColor="@color/dialog_text_muted"
                         android:gravity="center"
-                        android:layout_marginTop="4dp" />
+                        android:text="Введите название аниме на русском или английском языке"
+                        android:textColor="@color/accent_text_color"
+                        android:textSize="12.5sp" />
 
-                    <!-- Helpful tip card -->
+                    <!-- M3 Expressive Grouped Tips (same style as bs_settings / bs_anixart_import) -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:background="@drawable/bg_search_tip_card"
                         android:layout_marginTop="20dp"
-                        android:padding="12dp">
+                        android:orientation="vertical">
 
+                        <!-- Tip 1: Click to open page -->
                         <LinearLayout
+                            android:id="@+id/tipClickRow"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:background="@drawable/bg_m3_item_top"
+                            android:gravity="center_vertical"
                             android:orientation="horizontal"
-                            android:gravity="center_vertical">
+                            android:paddingHorizontal="14dp"
+                            android:paddingVertical="12dp">
 
-                            <ImageView
-                                android:layout_width="16dp"
-                                android:layout_height="16dp"
-                                android:src="@drawable/ic_link"
-                                app:tint="@color/purple_primary"
-                                android:contentDescription="Клик" />
+                            <FrameLayout
+                                android:layout_width="34dp"
+                                android:layout_height="34dp"
+                                android:background="@drawable/bg_m3_tonal_pill_purple">
 
-                            <TextView
+                                <ImageView
+                                    android:layout_width="17dp"
+                                    android:layout_height="17dp"
+                                    android:layout_gravity="center"
+                                    android:contentDescription="Клик"
+                                    android:src="@drawable/ic_link"
+                                    app:tint="@color/purple_primary" />
+                            </FrameLayout>
+
+                            <LinearLayout
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
+                                android:layout_marginStart="12dp"
                                 android:layout_weight="1"
-                                android:layout_marginStart="8dp"
-                                android:text="Клик — открыть страницу тайтла"
-                                android:textColor="@color/dialog_text_body"
-                                android:textSize="12sp"
-                                android:fontFamily="@font/open_sans" />
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="@font/open_sans_bold"
+                                    android:text="Открыть страницу тайтла"
+                                    android:textColor="@color/primary_text_color"
+                                    android:textSize="13sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="1dp"
+                                    android:fontFamily="@font/open_sans"
+                                    android:text="Обычное нажатие по карточке в списке"
+                                    android:textColor="@color/accent_text_color"
+                                    android:textSize="11.5sp" />
+                            </LinearLayout>
                         </LinearLayout>
 
+                        <!-- Tip 2: Long press to open player (AnimeLib only) -->
                         <LinearLayout
                             android:id="@+id/tipPlayerRow"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:orientation="horizontal"
+                            android:layout_marginTop="2dp"
+                            android:background="@drawable/bg_m3_item_bottom"
                             android:gravity="center_vertical"
-                            android:layout_marginTop="8dp">
+                            android:orientation="horizontal"
+                            android:paddingHorizontal="14dp"
+                            android:paddingVertical="12dp">
 
-                            <ImageView
-                                android:layout_width="16dp"
-                                android:layout_height="16dp"
-                                android:src="@drawable/ic_play"
-                                app:tint="@color/purple_primary"
-                                android:contentDescription="Плеер" />
+                            <FrameLayout
+                                android:layout_width="34dp"
+                                android:layout_height="34dp"
+                                android:background="@drawable/bg_m3_tonal_pill_purple">
 
-                            <TextView
+                                <ImageView
+                                    android:layout_width="17dp"
+                                    android:layout_height="17dp"
+                                    android:layout_gravity="center"
+                                    android:contentDescription="Плеер"
+                                    android:src="@drawable/ic_play"
+                                    app:tint="@color/purple_primary" />
+                            </FrameLayout>
+
+                            <LinearLayout
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
+                                android:layout_marginStart="12dp"
                                 android:layout_weight="1"
-                                android:layout_marginStart="8dp"
-                                android:text="Удержание — мгновенно открыть плеер"
-                                android:textColor="@color/purple_primary"
-                                android:textSize="12sp"
-                                android:fontFamily="@font/open_sans_semibold"
-                                android:textStyle="bold" />
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="@font/open_sans_bold"
+                                    android:text="Мгновенный запуск плеера"
+                                    android:textColor="@color/primary_text_color"
+                                    android:textSize="13sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="1dp"
+                                    android:fontFamily="@font/open_sans"
+                                    android:text="Удерживайте карточку аниме для просмотра"
+                                    android:textColor="@color/accent_text_color"
+                                    android:textSize="11.5sp" />
+                            </LinearLayout>
                         </LinearLayout>
 
                     </LinearLayout>
@@ -281,15 +378,14 @@
                     <FrameLayout
                         android:layout_width="56dp"
                         android:layout_height="56dp"
-                        android:background="@drawable/bg_search_empty_icon_bg">
+                        android:background="@drawable/bg_m3_item_single">
 
                         <ImageView
-                            android:layout_width="28dp"
-                            android:layout_height="28dp"
+                            android:layout_width="26dp"
+                            android:layout_height="26dp"
                             android:layout_gravity="center"
                             android:src="@drawable/ic_search"
-                            app:tint="@color/dialog_icon_close"
-                            android:alpha="0.6"
+                            app:tint="@color/accent_text_color"
                             android:contentDescription="Ничего не найдено" />
                     </FrameLayout>
 
@@ -301,7 +397,7 @@
                         android:textSize="16sp"
                         android:fontFamily="@font/open_sans_bold"
                         android:textStyle="bold"
-                        android:textColor="@color/dialog_text_title"
+                        android:textColor="@color/primary_text_color"
                         android:layout_marginTop="12dp" />
 
                     <TextView
@@ -309,40 +405,50 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Попробуйте изменить запрос или проверить написание"
-                        android:textSize="13sp"
+                        android:textSize="12.5sp"
                         android:fontFamily="@font/open_sans"
-                        android:textColor="@color/dialog_text_muted"
+                        android:textColor="@color/accent_text_color"
                         android:gravity="center"
                         android:layout_marginTop="4dp" />
 
                 </LinearLayout>
 
-                <!-- Loading indicator -->
+                <!-- Loading indicator (matching bs_voiceovers.xml menuLoadingOverlay) -->
                 <LinearLayout
                     android:id="@+id/loadingIndicator"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:orientation="vertical"
                     android:gravity="center"
+                    android:background="@color/bs_bg_color"
                     android:visibility="gone">
 
                     <com.google.android.material.progressindicator.CircularProgressIndicator
-                        style="@style/CustomProgressIndicator"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:indeterminate="true"
                         app:indicatorColor="@color/purple_primary"
-                        app:trackCornerRadius="20dp"
-                        android:indeterminate="true" />
+                        app:trackCornerRadius="8dp"
+                        app:trackThickness="4dp" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Идёт поиск..."
-                        android:textSize="13sp"
+                        android:textSize="12.5sp"
                         android:fontFamily="@font/open_sans_semibold"
-                        android:textColor="@color/dialog_text_muted"
+                        android:textColor="@color/accent_text_color"
                         android:layout_marginTop="12dp" />
                 </LinearLayout>
+
+                <!-- Top shadow overlay under divider (matching bs_voiceovers.xml) -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="4dp"
+                    android:layout_gravity="top"
+                    android:background="@drawable/bg_tab_shadow"
+                    android:clickable="false"
+                    android:focusable="false" />
 
             </FrameLayout>
 
