@@ -151,6 +151,7 @@ public class CommentsManager {
     private boolean landscapeAdapterNeedsSync = false;
     private boolean portraitAdapterNeedsSync = false;
     private boolean isPanelAnimatingOpen = false;
+    private volatile boolean isCleanedUp = false;
 
     private final CommentsDataCoordinator dataCoordinator = new CommentsDataCoordinator();
     private final CommentsModerationHelper moderationHelper;
@@ -2499,24 +2500,31 @@ public class CommentsManager {
     }
 
     private void safeRunOnUiThread(Runnable runnable) {
-        if (runnable == null) return;
+        if (runnable == null || isCleanedUp) return;
         try {
             if (context instanceof Activity) {
                 Activity activity = (Activity) context;
-                if (!activity.isFinishing() && !activity.isDestroyed()) {
-                    activity.runOnUiThread(runnable);
-                } else {
-                    mainHandler.post(runnable);
+                if (activity.isFinishing() || activity.isDestroyed()) {
+                    return;
                 }
+                activity.runOnUiThread(() -> {
+                    if (!isCleanedUp && !activity.isFinishing() && !activity.isDestroyed()) {
+                        runnable.run();
+                    }
+                });
             } else {
-                mainHandler.post(runnable);
+                mainHandler.post(() -> {
+                    if (!isCleanedUp) {
+                        runnable.run();
+                    }
+                });
             }
-        } catch (Exception e) {
-            mainHandler.post(runnable);
+        } catch (Exception ignored) {
         }
     }
 
     public void cleanup() {
+        isCleanedUp = true;
         requestGeneration++;
         cancelActiveNetworkRequests();
         mainHandler.removeCallbacksAndMessages(null);

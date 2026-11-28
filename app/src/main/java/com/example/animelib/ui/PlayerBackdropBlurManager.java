@@ -120,6 +120,8 @@ public class PlayerBackdropBlurManager {
     private boolean isVerticalDragging = false;
     @Nullable
     private WeakReference<RecyclerView> attachedScrollRvRef;
+    @Nullable
+    private RecyclerView.OnScrollListener scrollListener;
 
     private final Choreographer.FrameCallback frameCallback = new Choreographer.FrameCallback() {
         @Override
@@ -337,36 +339,45 @@ public class PlayerBackdropBlurManager {
      * фон стекла каждого чипа плавно скользил по размытому видеокадру.
      */
     public void attachScrollableGlassContainer(@Nullable RecyclerView recyclerView) {
-        if (recyclerView == null) return;
-        if (attachedScrollRvRef != null && attachedScrollRvRef.get() == recyclerView) {
-            return;
+        if (recyclerView == null || isReleased) return;
+        if (attachedScrollRvRef != null) {
+            RecyclerView prevRv = attachedScrollRvRef.get();
+            if (prevRv == recyclerView) {
+                return;
+            }
+            if (prevRv != null && scrollListener != null) {
+                prevRv.removeOnScrollListener(scrollListener);
+            }
         }
         attachedScrollRvRef = new WeakReference<>(recyclerView);
-        recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override
-            public void onScrollStateChanged(@NonNull RecyclerView rv, int newState) {
-                boolean scrolling = (newState != RecyclerView.SCROLL_STATE_IDLE);
-                if (isCarouselScrolling != scrolling) {
-                    isCarouselScrolling = scrolling;
-                    if (!scrolling && !isPaused && !isReleased) {
-                        invalidateVisibleTargets();
-                        ensureLoopStarted();
+        if (scrollListener == null) {
+            scrollListener = new RecyclerView.OnScrollListener() {
+                @Override
+                public void onScrollStateChanged(@NonNull RecyclerView rv, int newState) {
+                    boolean scrolling = (newState != RecyclerView.SCROLL_STATE_IDLE);
+                    if (isCarouselScrolling != scrolling) {
+                        isCarouselScrolling = scrolling;
+                        if (!scrolling && !isPaused && !isReleased) {
+                            invalidateVisibleTargets();
+                            ensureLoopStarted();
+                        }
                     }
                 }
-            }
 
-            @Override
-            public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
-                if (dx == 0 && dy == 0) return;
-                int childCount = rv.getChildCount();
-                for (int i = 0; i < childCount; i++) {
-                    View child = rv.getChildAt(i);
-                    if (child != null && child.getVisibility() == View.VISIBLE) {
-                        child.invalidate();
+                @Override
+                public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
+                    if (dx == 0 && dy == 0) return;
+                    int childCount = rv.getChildCount();
+                    for (int i = 0; i < childCount; i++) {
+                        View child = rv.getChildAt(i);
+                        if (child != null && child.getVisibility() == View.VISIBLE) {
+                            child.invalidate();
+                        }
                     }
                 }
-            }
-        });
+            };
+        }
+        recyclerView.addOnScrollListener(scrollListener);
     }
 
     private int getRippleColor(boolean selected) {
@@ -470,6 +481,26 @@ public class PlayerBackdropBlurManager {
         if (ambientLightView != null) {
             ambientLightView.setOnContentUpdatedListener(null);
             ambientLightView = null;
+        }
+        if (attachedScrollRvRef != null) {
+            RecyclerView rv = attachedScrollRvRef.get();
+            if (rv != null && scrollListener != null) {
+                rv.removeOnScrollListener(scrollListener);
+            }
+            attachedScrollRvRef.clear();
+            attachedScrollRvRef = null;
+        }
+        scrollListener = null;
+        for (int i = 0, size = targets.size(); i < size; i++) {
+            FrostedGlassDrawable drawable = targets.get(i).get();
+            if (drawable != null) {
+                View host = drawable.getHostView();
+                if (host != null) {
+                    host.setTag(R.id.tag_frosted_glass_drawable, null);
+                    host.setTag(R.id.tag_frosted_glass_ripple, null);
+                }
+                drawable.cleanup();
+            }
         }
         targets.clear();
         cachedTextureView = null;

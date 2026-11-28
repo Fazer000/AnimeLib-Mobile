@@ -36,6 +36,7 @@ public class ImageLoader {
     private final LruCache<String, Bitmap> memoryCache;
     private final ExecutorService executor;
     private final ExecutorService avatarExecutor;
+    private final Map<String, List<AvatarCallback>> inFlightImages = new HashMap<>();
     private final Map<String, List<AvatarCallback>> inFlightAvatars = new HashMap<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private Context appContext;
@@ -122,22 +123,47 @@ public class ImageLoader {
 
         imageView.setTag(url);
 
+        AvatarCallback uiCallback = bitmap -> {
+            Object tag = imageView.getTag();
+            if (url.equals(tag)) {
+                stopShimmerIfPresent(imageView);
+                if (bitmap != null) {
+                    imageView.setAlpha(0f);
+                    imageView.setImageBitmap(bitmap);
+                    imageView.animate().alpha(1f).setDuration(200).start();
+                } else {
+                    imageView.setImageResource(placeholder);
+                }
+            }
+        };
+
+        synchronized (inFlightImages) {
+            List<AvatarCallback> listeners = inFlightImages.get(url);
+            if (listeners != null) {
+                listeners.add(uiCallback);
+                return;
+            }
+            listeners = new ArrayList<>(2);
+            listeners.add(uiCallback);
+            inFlightImages.put(url, listeners);
+        }
+
         executor.submit(() -> {
             Bitmap bitmap = downloadBitmap(url, 0, false);
-            if (bitmap != null) memoryCache.put(url, bitmap);
-            mainHandler.post(() -> {
-                Object tag = imageView.getTag();
-                if (tag != null && tag.equals(url)) {
-                    stopShimmerIfPresent(imageView);
-                    if (bitmap != null) {
-                        imageView.setAlpha(0f);
-                        imageView.setImageBitmap(bitmap);
-                        imageView.animate().alpha(1f).setDuration(200).start();
-                    } else {
-                        imageView.setImageResource(placeholder);
+            if (bitmap != null) {
+                memoryCache.put(url, bitmap);
+            }
+            final List<AvatarCallback> callbacks;
+            synchronized (inFlightImages) {
+                callbacks = inFlightImages.remove(url);
+            }
+            if (callbacks != null && !callbacks.isEmpty()) {
+                mainHandler.post(() -> {
+                    for (int i = 0, size = callbacks.size(); i < size; i++) {
+                        callbacks.get(i).onComplete(bitmap);
                     }
-                }
-            });
+                });
+            }
         });
     }
 
@@ -388,14 +414,37 @@ public class ImageLoader {
             input = connection.getInputStream();
 
             if (diskCacheFile != null) {
-                fos = new FileOutputStream(diskCacheFile);
+                File tempFile = new File(
+                        diskCacheFile.getParentFile(),
+                        diskCacheFile.getName() + "." + Thread.currentThread().getId() + ".tmp"
+                );
+                fos = new FileOutputStream(tempFile);
                 byte[] buffer = new byte[8192];
                 int read;
                 while ((read = input.read(buffer)) != -1) {
                     fos.write(buffer, 0, read);
                 }
                 fos.flush();
-                return decodeSampledFile(diskCacheFile.getAbsolutePath(), reqSizePx);
+                fos.close();
+                fos = null;
+
+                File decodeTarget = diskCacheFile;
+                if (!tempFile.renameTo(diskCacheFile)) {
+                    if (diskCacheFile.exists() && diskCacheFile.length() > 0) {
+                        // Another thread already wrote the cache file; remove our temp file
+                        //noinspection ResultOfMethodCallIgnored
+                        tempFile.delete();
+                        decodeTarget = diskCacheFile;
+                    } else {
+                        decodeTarget = tempFile;
+                    }
+                }
+                Bitmap decoded = decodeSampledFile(decodeTarget.getAbsolutePath(), reqSizePx);
+                if (decodeTarget == tempFile) {
+                    //noinspection ResultOfMethodCallIgnored
+                    tempFile.delete();
+                }
+                return decoded;
             } else {
                 return BitmapFactory.decodeStream(input);
             }

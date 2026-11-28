@@ -106,13 +106,9 @@ public class DownloadService extends Service {
     }
 
     private static final Object queueLock = new Object();
-    private static final ExecutorService cleanupExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "download-cleanup-worker");
-        t.setDaemon(true);
-        return t;
-    });
+    private static final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
 
-    private static volatile ProgressListener listener;
+    private static final List<ProgressListener> progressListeners = new CopyOnWriteArrayList<>();
     private static final List<QueueProgressListener> queueProgressListeners = new CopyOnWriteArrayList<>();
 
     private static final List<String> titleOrder = new ArrayList<>();
@@ -131,6 +127,18 @@ public class DownloadService extends Service {
     private DownloadsManager downloadsManager;
     private NotificationManager notificationManager;
     private android.os.PowerManager.WakeLock wakeLock;
+
+    public static void addProgressListener(ProgressListener l) {
+        if (l != null && !progressListeners.contains(l)) {
+            progressListeners.add(l);
+        }
+    }
+
+    public static void removeProgressListener(ProgressListener l) {
+        if (l != null) {
+            progressListeners.remove(l);
+        }
+    }
 
     public static void addQueueProgressListener(QueueProgressListener l) {
         if (l != null && !queueProgressListeners.contains(l)) {
@@ -422,7 +430,7 @@ public class DownloadService extends Service {
 
         final Context appCtx = context.getApplicationContext();
         if (!tasksToClean.isEmpty()) {
-            cleanupExecutor.execute(() -> deleteTempFilesForTasks(appCtx, tasksToClean));
+            DownloadsManager.scheduleTempFilesCleanup(appCtx, tasksToClean);
         }
         try {
             NotificationManager nm = (NotificationManager) appCtx.getSystemService(NOTIFICATION_SERVICE);
@@ -433,10 +441,7 @@ public class DownloadService extends Service {
         } catch (Exception ignored) {}
 
         notifyQueueUpdatedStatic();
-        ProgressListener l = listener;
-        if (l != null) {
-            l.onFinished(completedCount, errorCount, true);
-        }
+        notifyFinishedStatic(completedCount, errorCount, true);
     }
 
     /**
@@ -483,7 +488,7 @@ public class DownloadService extends Service {
 
         final Context appCtx = context.getApplicationContext();
         if (!tasksToClean.isEmpty()) {
-            cleanupExecutor.execute(() -> deleteTempFilesForTasks(appCtx, tasksToClean));
+            DownloadsManager.scheduleTempFilesCleanup(appCtx, tasksToClean);
         }
         if (queueEmptyAfter) {
             try {
@@ -571,26 +576,58 @@ public class DownloadService extends Service {
     public static int getCurrentTaskPercent() { return currentTaskPercent; }
 
     public static void setListener(ProgressListener value) {
-        listener = value;
+        if (value != null) {
+            addProgressListener(value);
+        }
+    }
+
+    private static void runOnMainThread(Runnable action) {
+        if (action == null) return;
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            action.run();
+        } else {
+            mainHandler.post(action);
+        }
     }
 
     private static void notifyQueueUpdatedStatic() {
-        for (QueueProgressListener ql : queueProgressListeners) {
-            try {
-                ql.onQueueUpdated();
-            } catch (Exception ignored) {}
-        }
+        runOnMainThread(() -> {
+            for (QueueProgressListener ql : queueProgressListeners) {
+                try {
+                    ql.onQueueUpdated();
+                } catch (Exception ignored) {}
+            }
+        });
     }
 
-    private static void deleteTempFilesForTasks(Context context, List<DownloadTask> tasks) {
-        if (context == null || tasks == null) return;
-        for (DownloadTask t : tasks) {
-            if (t == null) continue;
-            try {
-                File outFile = DownloadsManager.resolveOutputFileForTask(context, t);
-                FileUtils.deleteDownloadTempFiles(outFile.getAbsolutePath());
-            } catch (Exception ignored) {}
-        }
+    private static void notifyProgressStatic(int taskIdx, int total, int percent, String title) {
+        runOnMainThread(() -> {
+            for (ProgressListener pl : progressListeners) {
+                try {
+                    pl.onProgress(taskIdx, total, percent, title);
+                } catch (Exception ignored) {}
+            }
+        });
+    }
+
+    private static void notifyFinishedStatic(int completedCount, int errorCount, boolean wasCancelled) {
+        runOnMainThread(() -> {
+            for (ProgressListener pl : progressListeners) {
+                try {
+                    pl.onFinished(completedCount, errorCount, wasCancelled);
+                } catch (Exception ignored) {}
+            }
+        });
+    }
+
+    private static void notifyErrorStatic(String message) {
+        runOnMainThread(() -> {
+            for (ProgressListener pl : progressListeners) {
+                try {
+                    pl.onError(message);
+                } catch (Exception ignored) {}
+            }
+        });
     }
 
     private static boolean hasPendingQueueLocked() {
@@ -714,10 +751,7 @@ public class DownloadService extends Service {
                     : "Нажмите «Продолжить» в разделе загрузок");
             notifyQueueUpdated();
             stopAfterResult();
-            ProgressListener l = listener;
-            if (l != null) {
-                l.onFinished(completedCount, errorCount, true);
-            }
+            notifyFinishedStatic(completedCount, errorCount, true);
             return START_NOT_STICKY;
         }
 
@@ -759,8 +793,7 @@ public class DownloadService extends Service {
                 downloadsManager.cancel();
             }
             if (!tasksToCleanTemp.isEmpty()) {
-                final Context appCtx = getApplicationContext();
-                cleanupExecutor.execute(() -> deleteTempFilesForTasks(appCtx, tasksToCleanTemp));
+                DownloadsManager.scheduleTempFilesCleanup(getApplicationContext(), tasksToCleanTemp);
             }
             releaseWakeLock();
 
@@ -768,10 +801,7 @@ public class DownloadService extends Service {
                     ("Скачано серий: " + completedCount) : "Загрузка отменена");
             notifyQueueUpdated();
             stopAfterResult();
-            ProgressListener l = listener;
-            if (l != null) {
-                l.onFinished(completedCount, errorCount, true);
-            }
+            notifyFinishedStatic(completedCount, errorCount, true);
             return START_NOT_STICKY;
         }
 
@@ -833,32 +863,26 @@ public class DownloadService extends Service {
                     downloadsManager.cancel();
                 }
                 if (!tasksToCleanTemp.isEmpty()) {
-                    final Context appCtx = getApplicationContext();
-                    cleanupExecutor.execute(() -> deleteTempFilesForTasks(appCtx, tasksToCleanTemp));
+                    DownloadsManager.scheduleTempFilesCleanup(getApplicationContext(), tasksToCleanTemp);
                 }
                 releaseWakeLock();
                 showResultNotification("Скачивание остановлено", finalCompleted > 0 ?
                         ("Скачано серий: " + finalCompleted) : "Загрузка отменена");
                 notifyQueueUpdated();
                 stopAfterResult();
-                ProgressListener l = listener;
-                if (l != null) {
-                    l.onFinished(finalCompleted, finalErrors, true);
-                }
+                notifyFinishedStatic(finalCompleted, finalErrors, true);
             } else {
                 if (wasActiveTitle) {
                     if (downloadsManager != null) {
                         downloadsManager.cancel();
                     }
                     if (!tasksToCleanTemp.isEmpty()) {
-                        final Context appCtx = getApplicationContext();
-                        cleanupExecutor.execute(() -> deleteTempFilesForTasks(appCtx, tasksToCleanTemp));
+                        DownloadsManager.scheduleTempFilesCleanup(getApplicationContext(), tasksToCleanTemp);
                     }
                     startNextTask();
                 } else {
                     if (!tasksToCleanTemp.isEmpty()) {
-                        final Context appCtx = getApplicationContext();
-                        cleanupExecutor.execute(() -> deleteTempFilesForTasks(appCtx, tasksToCleanTemp));
+                        DownloadsManager.scheduleTempFilesCleanup(getApplicationContext(), tasksToCleanTemp);
                     }
                     notifyQueueUpdated();
                 }
@@ -1127,10 +1151,7 @@ public class DownloadService extends Service {
 
             notifyQueueUpdated();
             stopAfterResult();
-            ProgressListener l = listener;
-            if (l != null) {
-                l.onFinished(completedCount, errorCount, wasCancelledFinish);
-            }
+            notifyFinishedStatic(completedCount, errorCount, wasCancelledFinish);
             return;
         }
 
@@ -1158,10 +1179,7 @@ public class DownloadService extends Service {
                     lastNotifTime[0] = now;
                     notificationManager.notify(PROGRESS_NOTIFICATION_ID, buildProgressNotification(taskTitle, percent));
                 }
-                ProgressListener l = listener;
-                if (l != null) {
-                    l.onProgress(currentTaskIndex, totalTasks, percent, taskTitle);
-                }
+                notifyProgressStatic(currentTaskIndex, totalTasks, percent, taskTitle);
             }
 
             @Override
@@ -1189,10 +1207,7 @@ public class DownloadService extends Service {
                 }
                 Log.e(TAG, "Task error: " + message);
                 notifyQueueUpdated();
-                ProgressListener l = listener;
-                if (l != null) {
-                    l.onError(message);
-                }
+                notifyErrorStatic(message);
                 startNextTask();
             }
         });

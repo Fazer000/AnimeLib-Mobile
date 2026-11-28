@@ -16,6 +16,7 @@ public class ThemeSelectionDialog {
     
     private final Context context;
     private final ApiService apiService;
+    private ThemeSelectionBottomSheet bottomSheet;
     
     /**
      * Конструктор ThemeSelectionDialog
@@ -32,9 +33,10 @@ public class ThemeSelectionDialog {
      */
     public void show() {
         Log.d(TAG, "Showing theme bottom sheet dialog");
+        dismiss();
         int currentTheme = ThemeUtils.getSavedThemePreference(context);
         
-        ThemeSelectionBottomSheet bottomSheet = new ThemeSelectionBottomSheet(context, currentTheme, themeMode -> {
+        bottomSheet = new ThemeSelectionBottomSheet(context, currentTheme, themeMode -> {
             Log.d(TAG, "Theme selected: " + themeMode);
             
             if (apiService != null) {
@@ -53,6 +55,21 @@ public class ThemeSelectionDialog {
         });
         
         bottomSheet.show();
+    }
+
+    /**
+     * Безопасно закрывает диалог выбора темы при уничтожении Activity
+     */
+    public void dismiss() {
+        if (bottomSheet != null) {
+            try {
+                if (bottomSheet.isShowing()) {
+                    bottomSheet.dismiss();
+                }
+            } catch (Exception ignored) {
+            }
+            bottomSheet = null;
+        }
     }
 }
 

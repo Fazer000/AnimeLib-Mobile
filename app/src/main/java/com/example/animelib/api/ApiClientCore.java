@@ -88,6 +88,8 @@ public class ApiClientCore {
     private static volatile ExecutorService sharedApiExecutor;
 
     private final Context context;
+    private final java.lang.ref.WeakReference<Activity> hostActivityRef;
+    private final AtomicBoolean isShutdown = new AtomicBoolean(false);
     private final OkHttpClient httpClient;
     private final OkHttpClient shikimoriHttpClient;
     private final Gson gson;
@@ -108,14 +110,20 @@ public class ApiClientCore {
     private volatile long cachedTokenAtMs = 0L;
 
     public ApiClientCore(Context context) {
-        this.context = context;
+        Context appCtx = (context != null && context.getApplicationContext() != null)
+                ? context.getApplicationContext()
+                : context;
+        this.context = appCtx;
+        this.hostActivityRef = (context instanceof Activity)
+                ? new java.lang.ref.WeakReference<>((Activity) context)
+                : null;
         this.httpClient = getOrCreateHttpClient();
         this.shikimoriHttpClient = getOrCreateShikimoriClient();
         this.gson = getOrCreateGson();
         this.kodikExecutor = getOrCreateKodikExecutor();
         this.kodikLinksExtractor = new KodikLinksExtractor(this.httpClient, this.gson);
         this.executor = getOrCreateApiExecutor();
-        this.databaseManager = DatabaseManager.getInstance(context.getApplicationContext());
+        this.databaseManager = appCtx != null ? DatabaseManager.getInstance(appCtx) : null;
     }
 
     public static OkHttpClient getSharedHttpClient() {
@@ -669,27 +677,35 @@ public class ApiClientCore {
     }
 
     public void safeRunOnUiThread(Runnable runnable) {
-        if (runnable == null) return;
+        if (runnable == null || isShutdown.get()) return;
         try {
+            if (hostActivityRef != null) {
+                Activity activity = hostActivityRef.get();
+                if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+                    return;
+                }
+                if (Looper.myLooper() == Looper.getMainLooper()) {
+                    runnable.run();
+                } else {
+                    activity.runOnUiThread(() -> {
+                        if (!isShutdown.get() && !activity.isFinishing() && !activity.isDestroyed()) {
+                            runnable.run();
+                        }
+                    });
+                }
+                return;
+            }
             if (Looper.myLooper() == Looper.getMainLooper()) {
                 runnable.run();
                 return;
             }
-            if (context instanceof Activity) {
-                Activity activity = (Activity) context;
-                if (!activity.isFinishing() && !activity.isDestroyed()) {
-                    activity.runOnUiThread(runnable);
-                    return;
+            mainHandler.post(() -> {
+                if (!isShutdown.get()) {
+                    runnable.run();
                 }
-            }
-            mainHandler.post(runnable);
+            });
         } catch (Exception e) {
             Log.e(TAG, "Error calling UI thread callback", e);
-            try {
-                mainHandler.post(runnable);
-            } catch (Exception ex) {
-                Log.e(TAG, "Error in fallback callback", ex);
-            }
         }
     }
 
@@ -807,7 +823,18 @@ public class ApiClientCore {
             }
         };
 
-        boolean shouldStartCall = cache.registerOrAttach(requestKey, guardedNotifier);
+        ApiCacheManager.RequestCache.GetOrRegisterResult<T> regResult = cache.getOrRegister(
+                requestKey,
+                staleFallbackKey,
+                1500L,
+                forceRefresh,
+                guardedNotifier
+        );
+        if (regResult.hasCachedValue) {
+            guardedNotifier.onSuccess(regResult.cachedValue);
+            return handle;
+        }
+        boolean shouldStartCall = regResult.shouldStartCall;
         final Call[] callHolder = new Call[1];
         handle.setDetachAction(() -> {
             boolean noMoreListeners = cache.detachPendingNotifier(requestKey, guardedNotifier);
@@ -902,6 +929,10 @@ public class ApiClientCore {
 
     public void shutdown() {
         // Shared daemon executors and DatabaseManager singleton stay alive across callers.
+        isShutdown.set(true);
+        if (hostActivityRef != null) {
+            hostActivityRef.clear();
+        }
         mainHandler.removeCallbacksAndMessages(null);
     }
 }

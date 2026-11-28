@@ -80,6 +80,8 @@ public class MainActivity extends AppCompatActivity {
     private MainWebViewController webViewController;
     private PlayerSplashScreenController webSplashController;
     private com.example.animelib.ui.AnixartImportBottomSheet anixartImportBottomSheet;
+    private com.example.animelib.ui.CustomSelectBottomSheet customSelectBottomSheet;
+    private com.example.animelib.ui.SiteSelectionBottomSheet siteSelectionBottomSheet;
 
     private final androidx.activity.result.ActivityResultLauncher<String> filePickerLauncher =
             registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.GetContent(), uri -> {
@@ -783,7 +785,16 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            com.example.animelib.ui.CustomSelectBottomSheet bottomSheet =
+            if (customSelectBottomSheet != null) {
+                try {
+                    if (customSelectBottomSheet.isShowing()) {
+                        customSelectBottomSheet.dismiss();
+                    }
+                } catch (Exception ignored) {}
+                customSelectBottomSheet = null;
+            }
+
+            customSelectBottomSheet =
                 new com.example.animelib.ui.CustomSelectBottomSheet(
                     this,
                     dialogData.options,
@@ -791,7 +802,7 @@ public class MainActivity extends AppCompatActivity {
                     dialogData.currentValue,
                     (value, text) -> updateSelectButton(dialogData.selectId, value, text)
                 );
-            bottomSheet.show();
+            customSelectBottomSheet.show();
 
             Log.d("MainActivity", "Custom select bottom sheet shown for: " + dialogData.selectId);
 
@@ -870,7 +881,16 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
 
-            com.example.animelib.ui.SiteSelectionBottomSheet bottomSheet =
+            if (siteSelectionBottomSheet != null) {
+                try {
+                    if (siteSelectionBottomSheet.isShowing()) {
+                        siteSelectionBottomSheet.dismiss();
+                    }
+                } catch (Exception ignored) {}
+                siteSelectionBottomSheet = null;
+            }
+
+            siteSelectionBottomSheet =
                 new com.example.animelib.ui.SiteSelectionBottomSheet(
                     this,
                     filteredSites,
@@ -897,12 +917,12 @@ public class MainActivity extends AppCompatActivity {
                         }
                     }
                 );
-            bottomSheet.setOnDismissListener(dialog -> {
+            siteSelectionBottomSheet.setOnDismissListener(dialog -> {
                 if (webView != null) {
                     webView.post(() -> webView.evaluateJavascript("if (window.animelibKillSitesPopup) window.animelibKillSitesPopup();", null));
                 }
             });
-            bottomSheet.show();
+            siteSelectionBottomSheet.show();
             if (webView != null) {
                 webView.post(() -> webView.evaluateJavascript("if (window.animelibKillSitesPopup) window.animelibKillSitesPopup();", null));
             }
@@ -954,10 +974,32 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        if (themeDialog != null) {
+            themeDialog.dismiss();
+            themeDialog = null;
+        }
+        if (customSelectBottomSheet != null) {
+            try {
+                if (customSelectBottomSheet.isShowing()) {
+                    customSelectBottomSheet.dismiss();
+                }
+            } catch (Exception ignored) {}
+            customSelectBottomSheet = null;
+        }
+        if (siteSelectionBottomSheet != null) {
+            try {
+                if (siteSelectionBottomSheet.isShowing()) {
+                    siteSelectionBottomSheet.dismiss();
+                }
+            } catch (Exception ignored) {}
+            siteSelectionBottomSheet = null;
+        }
         if (anixartImportBottomSheet != null) {
-            if (anixartImportBottomSheet.isShowing()) {
-                anixartImportBottomSheet.dismiss();
-            }
+            try {
+                if (anixartImportBottomSheet.isShowing()) {
+                    anixartImportBottomSheet.dismiss();
+                }
+            } catch (Exception ignored) {}
             anixartImportBottomSheet = null;
         }
         if (webSplashController != null) {

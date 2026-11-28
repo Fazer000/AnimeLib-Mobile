@@ -370,10 +370,10 @@ public class TitleWebViewBottomSheet extends FlexibleBottomSheetDialog {
                 @Override
                 public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) {
                     if (error != null) {
-                        Log.w(TAG, "WebView SSL error: primary=" + error.getPrimaryError() + ", url=" + error.getUrl());
+                        Log.w(TAG, "WebView SSL error blocked: primary=" + error.getPrimaryError() + ", url=" + error.getUrl());
                     }
                     if (handler != null) {
-                        handler.proceed();
+                        handler.cancel();
                     }
                 }
             });

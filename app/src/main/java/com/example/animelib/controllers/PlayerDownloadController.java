@@ -43,6 +43,7 @@ public class PlayerDownloadController {
 
     private boolean isDownloading = false;
     private int currentDownloadPercent = 0;
+    private DownloadService.ProgressListener progressListener;
     private DownloadService.QueueProgressListener queueProgressListener;
 
     public interface DownloadCallback {
@@ -89,7 +90,10 @@ public class PlayerDownloadController {
     }
 
     public void setupDownloadListener(PlayersManager playersManager) {
-        DownloadService.setListener(new DownloadService.ProgressListener() {
+        if (progressListener != null) {
+            DownloadService.removeProgressListener(progressListener);
+        }
+        progressListener = new DownloadService.ProgressListener() {
             @Override
             public void onProgress(int currentTaskIndex, int totalTasks, int taskPercent, String currentTaskTitle) {
                 if (callback != null) {
@@ -116,7 +120,8 @@ public class PlayerDownloadController {
                     callback.safeRunOnUiThread(() -> syncDownloadUiState(playersManager));
                 }
             }
-        });
+        };
+        DownloadService.addProgressListener(progressListener);
 
         if (queueProgressListener != null) {
             DownloadService.removeQueueProgressListener(queueProgressListener);
@@ -360,7 +365,10 @@ public class PlayerDownloadController {
     }
 
     public void cleanup() {
-        DownloadService.setListener(null);
+        if (progressListener != null) {
+            DownloadService.removeProgressListener(progressListener);
+            progressListener = null;
+        }
         if (queueProgressListener != null) {
             DownloadService.removeQueueProgressListener(queueProgressListener);
             queueProgressListener = null;

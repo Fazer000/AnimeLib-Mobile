@@ -2,6 +2,7 @@ package com.example.animelib.controllers;
 
 import android.content.Context;
 
+import com.example.animelib.api.ApiClientCore;
 import com.example.animelib.api.ApiService;
 import com.example.animelib.data.DatabaseManager;
 import com.example.animelib.data.entity.PlayerPreferences;
@@ -9,6 +10,9 @@ import com.example.animelib.data.entity.PlayerPreferences;
 public class PlayerApiController {
 
     private final ApiService apiService;
+    private ApiClientCore.RequestHandle activeAnimeInfoHandle;
+    private ApiClientCore.RequestHandle activeRelatedTitlesHandle;
+    private ApiClientCore.RequestHandle activeKodikHandle;
 
     public PlayerApiController(Context context) {
         this.apiService = new ApiService(context);
@@ -35,20 +39,47 @@ public class PlayerApiController {
     }
 
     public void fetchAnimeInfo(String slugOrId, ApiService.AnimeInfoCallback callback) {
+        if (activeAnimeInfoHandle != null) {
+            activeAnimeInfoHandle.cancel();
+            activeAnimeInfoHandle = null;
+        }
         if (apiService != null) {
-            apiService.fetchAnimeInfo(slugOrId, callback);
+            activeAnimeInfoHandle = apiService.fetchAnimeInfo(slugOrId, callback);
         }
     }
 
     public void getRelatedTitles(String animeSlug, ApiService.RelatedTitlesCallback callback) {
+        if (activeRelatedTitlesHandle != null) {
+            activeRelatedTitlesHandle.cancel();
+            activeRelatedTitlesHandle = null;
+        }
         if (apiService != null) {
-            apiService.getRelatedTitles(animeSlug, callback);
+            activeRelatedTitlesHandle = apiService.getRelatedTitles(animeSlug, callback);
         }
     }
 
     public void fetchKodikVideoLinks(String kodikSrc, ApiService.KodikVideoCallback callback) {
+        if (activeKodikHandle != null) {
+            activeKodikHandle.cancel();
+            activeKodikHandle = null;
+        }
         if (apiService != null) {
-            apiService.fetchKodikVideoLinks(kodikSrc, callback);
+            activeKodikHandle = apiService.fetchKodikVideoLinks(kodikSrc, callback);
+        }
+    }
+
+    public void cancelActiveRequests() {
+        if (activeAnimeInfoHandle != null) {
+            activeAnimeInfoHandle.cancel();
+            activeAnimeInfoHandle = null;
+        }
+        if (activeRelatedTitlesHandle != null) {
+            activeRelatedTitlesHandle.cancel();
+            activeRelatedTitlesHandle = null;
+        }
+        if (activeKodikHandle != null) {
+            activeKodikHandle.cancel();
+            activeKodikHandle = null;
         }
     }
 
@@ -81,6 +112,7 @@ public class PlayerApiController {
     }
 
     public void shutdown() {
+        cancelActiveRequests();
         if (apiService != null) {
             apiService.shutdown();
         }

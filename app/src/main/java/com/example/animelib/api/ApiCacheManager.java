@@ -37,9 +37,22 @@ public class ApiCacheManager {
      * Типизированное хранилище кэша + очередь ожидающих колбэков для одного типа запросов.
      */
     public static class RequestCache<K, V> {
+        private final Object lock = new Object();
         private final Map<K, CachedEntry<V>> cache = new ConcurrentHashMap<>();
         private final Map<K, List<CallbackNotifier<V>>> pending = new ConcurrentHashMap<>();
         private final int maxEntries;
+
+        public static final class GetOrRegisterResult<V> {
+            public final V cachedValue;
+            public final boolean hasCachedValue;
+            public final boolean shouldStartCall;
+
+            public GetOrRegisterResult(V cachedValue, boolean hasCachedValue, boolean shouldStartCall) {
+                this.cachedValue = cachedValue;
+                this.hasCachedValue = hasCachedValue;
+                this.shouldStartCall = shouldStartCall;
+            }
+        }
 
         public RequestCache() {
             this(128);
@@ -55,28 +68,34 @@ public class ApiCacheManager {
 
         public V getValid(K key, long ttlMs) {
             if (key == null) return null;
-            CachedEntry<V> entry = cache.get(key);
-            if (entry != null && entry.isValid(ttlMs)) {
-                return entry.data;
+            synchronized (lock) {
+                CachedEntry<V> entry = cache.get(key);
+                if (entry != null && entry.isValid(ttlMs)) {
+                    return entry.data;
+                }
+                return null;
             }
-            return null;
         }
 
         public V getStale(K key) {
             if (key == null) return null;
-            CachedEntry<V> entry = cache.get(key);
-            return entry != null ? entry.data : null;
+            synchronized (lock) {
+                CachedEntry<V> entry = cache.get(key);
+                return entry != null ? entry.data : null;
+            }
         }
 
         public void put(K key, V value) {
             if (key == null || value == null) return;
-            if (cache.size() >= maxEntries) {
-                evictOldest();
+            synchronized (lock) {
+                if (!cache.containsKey(key) && cache.size() >= maxEntries) {
+                    evictOldestLocked();
+                }
+                cache.put(key, new CachedEntry<>(value));
             }
-            cache.put(key, new CachedEntry<>(value));
         }
 
-        private void evictOldest() {
+        private void evictOldestLocked() {
             K oldestKey = null;
             long oldestTs = Long.MAX_VALUE;
             for (Map.Entry<K, CachedEntry<V>> e : cache.entrySet()) {
@@ -92,12 +111,42 @@ public class ApiCacheManager {
 
         public void remove(K key) {
             if (key != null) {
-                cache.remove(key);
+                synchronized (lock) {
+                    cache.remove(key);
+                }
             }
         }
 
         public void clear() {
-            cache.clear();
+            synchronized (lock) {
+                cache.clear();
+            }
+        }
+
+        /**
+         * Атомарно проверяет актуальный кэш и, если записи нет (или запрошен forceRefresh),
+         * регистрирует слушатель в очереди in-flight запросов без окна гонки (check-then-act).
+         */
+        public GetOrRegisterResult<V> getOrRegister(K requestKey, K cacheKey, long ttlMs,
+                                                    boolean forceRefresh, CallbackNotifier<V> notifier) {
+            synchronized (lock) {
+                if (!forceRefresh && ttlMs > 0) {
+                    K lookupKey = cacheKey != null ? cacheKey : requestKey;
+                    if (lookupKey != null) {
+                        CachedEntry<V> entry = cache.get(lookupKey);
+                        if (entry != null && entry.isValid(ttlMs)) {
+                            return new GetOrRegisterResult<>(entry.data, true, false);
+                        }
+                    }
+                }
+                boolean shouldStart = registerOrAttachLocked(requestKey, notifier);
+                return new GetOrRegisterResult<>(null, false, shouldStart);
+            }
+        }
+
+        public GetOrRegisterResult<V> getOrRegister(K requestKey, long ttlMs,
+                                                    boolean forceRefresh, CallbackNotifier<V> notifier) {
+            return getOrRegister(requestKey, requestKey, ttlMs, forceRefresh, notifier);
         }
 
         /**
@@ -106,21 +155,25 @@ public class ApiCacheManager {
          *         false, если запрос уже выполняется и слушатель прикреплён к очереди ожидания.
          */
         public boolean registerOrAttach(K requestKey, CallbackNotifier<V> notifier) {
-            synchronized (pending) {
-                List<CallbackNotifier<V>> list = pending.get(requestKey);
-                if (list != null) {
-                    if (notifier != null) {
-                        list.add(notifier);
-                    }
-                    return false;
-                }
-                list = new ArrayList<>(2);
+            synchronized (lock) {
+                return registerOrAttachLocked(requestKey, notifier);
+            }
+        }
+
+        private boolean registerOrAttachLocked(K requestKey, CallbackNotifier<V> notifier) {
+            List<CallbackNotifier<V>> list = pending.get(requestKey);
+            if (list != null) {
                 if (notifier != null) {
                     list.add(notifier);
                 }
-                pending.put(requestKey, list);
-                return true;
+                return false;
             }
+            list = new ArrayList<>(2);
+            if (notifier != null) {
+                list.add(notifier);
+            }
+            pending.put(requestKey, list);
+            return true;
         }
 
         /**
@@ -129,7 +182,7 @@ public class ApiCacheManager {
          */
         public boolean detachPendingNotifier(K requestKey, CallbackNotifier<V> notifier) {
             if (requestKey == null || notifier == null) return false;
-            synchronized (pending) {
+            synchronized (lock) {
                 List<CallbackNotifier<V>> list = pending.get(requestKey);
                 if (list == null) {
                     return true;
@@ -145,7 +198,7 @@ public class ApiCacheManager {
 
         public void dispatchSuccess(K requestKey, V result) {
             List<CallbackNotifier<V>> callbacks;
-            synchronized (pending) {
+            synchronized (lock) {
                 callbacks = pending.remove(requestKey);
             }
             if (callbacks != null) {
@@ -161,7 +214,7 @@ public class ApiCacheManager {
 
         public void dispatchError(K requestKey, String error) {
             List<CallbackNotifier<V>> callbacks;
-            synchronized (pending) {
+            synchronized (lock) {
                 callbacks = pending.remove(requestKey);
             }
             if (callbacks != null) {

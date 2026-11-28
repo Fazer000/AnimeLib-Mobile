@@ -185,22 +185,25 @@ public class DatabaseManager {
     }
 
     private void updateAppSettings(AppSettingsMutator mutator, String logDesc) {
-        final AppSettings snapshot;
         synchronized (appSettingsLock) {
             AppSettings next = copyAppSettings(getOrLoadAppSettings());
             mutator.mutate(next);
             cachedAppSettings = next;
             appSettingsLoaded = true;
-            snapshot = next;
-        }
-        executor.execute(() -> {
-            try {
-                db.appSettingsDao().upsert(snapshot);
-                Log.d(TAG, "Saved " + logDesc);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save " + logDesc, e);
+            String normalizedUrl = normalizeSiteUrlValue(next.getSiteUrl());
+            if (normalizedUrl != null) {
+                cachedSiteUrl = normalizedUrl;
             }
-        });
+            final AppSettings snapshot = copyAppSettings(next);
+            executor.execute(() -> {
+                try {
+                    db.appSettingsDao().upsert(snapshot);
+                    Log.d(TAG, "Saved " + logDesc);
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to save " + logDesc, e);
+                }
+            });
+        }
     }
 
     // ========== AppSettings операции ==========
@@ -544,23 +547,23 @@ public class DatabaseManager {
      * Сохраняет токен в кэш и базу данных
      */
     public void saveToken(TokenEntity token) {
-        final TokenEntity snapshot = copyToken(token);
         synchronized (tokenLock) {
+            final TokenEntity snapshot = copyToken(token);
             cachedToken = copyToken(snapshot);
             tokenLoaded = true;
-        }
-        executor.execute(() -> {
-            try {
-                if (snapshot != null) {
-                    db.tokenDao().insertOrUpdateToken(snapshot);
-                    Log.d(TAG, "Saved token to database successfully");
-                } else {
-                    db.tokenDao().deleteToken();
+            executor.execute(() -> {
+                try {
+                    if (snapshot != null) {
+                        db.tokenDao().insertOrUpdateToken(snapshot);
+                        Log.d(TAG, "Saved token to database successfully");
+                    } else {
+                        db.tokenDao().deleteToken();
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to save token", e);
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save token", e);
-            }
-        });
+            });
+        }
     }
 
     /**
@@ -568,8 +571,8 @@ public class DatabaseManager {
      */
     public void updateAuthJson(String authJson) {
         if (authJson == null || authJson.trim().isEmpty() || "null".equals(authJson)) return;
-        final TokenEntity snapshot;
         synchronized (tokenLock) {
+            final TokenEntity snapshot;
             TokenEntity existing = copyToken(getOrLoadTokenLocked());
             if (existing != null) {
                 existing.setAuthJson(authJson);
@@ -584,15 +587,16 @@ public class DatabaseManager {
             }
             cachedToken = copyToken(snapshot);
             tokenLoaded = true;
+            final TokenEntity dbSnapshot = copyToken(snapshot);
+            executor.execute(() -> {
+                try {
+                    db.tokenDao().insertOrUpdateToken(dbSnapshot);
+                    Log.d(TAG, "Updated token entity with authJson in database");
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to update authJson in database", e);
+                }
+            });
         }
-        executor.execute(() -> {
-            try {
-                db.tokenDao().insertOrUpdateToken(snapshot);
-                Log.d(TAG, "Updated token entity with authJson in database");
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to update authJson in database", e);
-            }
-        });
     }
 
     /**
@@ -626,15 +630,15 @@ public class DatabaseManager {
         synchronized (tokenLock) {
             cachedToken = null;
             tokenLoaded = true;
+            executor.execute(() -> {
+                try {
+                    db.tokenDao().deleteToken();
+                    Log.d(TAG, "Deleted token from database");
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to delete token", e);
+                }
+            });
         }
-        executor.execute(() -> {
-            try {
-                db.tokenDao().deleteToken();
-                Log.d(TAG, "Deleted token from database");
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to delete token", e);
-            }
-        });
     }
 
     // ========== PlayerPreferences операции ==========
@@ -671,7 +675,6 @@ public class DatabaseManager {
     }
 
     private void updatePlayerPreferences(PlayerPrefsMutator mutator, String logDesc) {
-        final PlayerPreferences snapshot;
         synchronized (playerPrefsLock) {
             PlayerPreferences existing = getOrLoadPlayerPreferencesLocked();
             PlayerPreferences next = existing != null ? copyPlayerPreferences(existing) : new PlayerPreferences();
@@ -683,19 +686,19 @@ public class DatabaseManager {
             mutator.mutate(next);
             cachedPlayerPreferences = next;
             playerPreferencesLoaded = true;
-            snapshot = next;
-        }
-        executor.execute(() -> {
-            try {
-                db.playerPreferencesDao().upsert(snapshot);
-                if (snapshot.getId() > 0) {
-                    db.playerPreferencesDao().deleteDuplicatesExcept(snapshot.getId());
+            final PlayerPreferences snapshot = copyPlayerPreferences(next);
+            executor.execute(() -> {
+                try {
+                    db.playerPreferencesDao().upsert(snapshot);
+                    if (snapshot.getId() > 0) {
+                        db.playerPreferencesDao().deleteDuplicatesExcept(snapshot.getId());
+                    }
+                    Log.d(TAG, "Saved " + logDesc + ", quality=" + snapshot.getPreferredQuality());
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to save " + logDesc, e);
                 }
-                Log.d(TAG, "Saved " + logDesc + ", quality=" + snapshot.getPreferredQuality());
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save " + logDesc, e);
-            }
-        });
+            });
+        }
     }
 
     /**
@@ -830,6 +833,8 @@ public class DatabaseManager {
         if (downloadsCacheLoaded) {
             return;
         }
+        Map<String, DownloadedAnimeEntity> pendingAnime = new LinkedHashMap<>(cachedDownloadedAnimeById);
+        Map<String, DownloadedEpisodeEntity> pendingEpisodes = new LinkedHashMap<>(cachedEpisodesById);
         cachedDownloadedAnimeById.clear();
         cachedEpisodesById.clear();
         cachedEpisodesByPath.clear();
@@ -842,6 +847,15 @@ public class DatabaseManager {
                     }
                 }
             }
+            for (Map.Entry<String, DownloadedAnimeEntity> entry : pendingAnime.entrySet()) {
+                DownloadedAnimeEntity merged = mergeDownloadedAnime(
+                        cachedDownloadedAnimeById.get(entry.getKey()),
+                        entry.getValue()
+                );
+                if (merged != null) {
+                    cachedDownloadedAnimeById.put(entry.getKey(), copyDownloadedAnime(merged));
+                }
+            }
             List<DownloadedEpisodeEntity> episodes = db.downloadedAnimeDao().getAllEpisodesSync();
             if (episodes != null) {
                 for (DownloadedEpisodeEntity ep : episodes) {
@@ -850,52 +864,68 @@ public class DatabaseManager {
                     }
                 }
             }
+            for (Map.Entry<String, DownloadedEpisodeEntity> entry : pendingEpisodes.entrySet()) {
+                if (entry.getValue() != null) {
+                    cachedEpisodesById.put(entry.getKey(), copyDownloadedEpisode(entry.getValue()));
+                }
+            }
             rebuildEpisodesByPathLocked();
             downloadsCacheLoaded = true;
         } catch (Exception e) {
             Log.e(TAG, "Failed to warm downloads metadata cache", e);
+            cachedDownloadedAnimeById.putAll(pendingAnime);
+            cachedEpisodesById.putAll(pendingEpisodes);
+            rebuildEpisodesByPathLocked();
         }
     }
 
     public void saveDownloadedAnime(DownloadedAnimeEntity anime) {
         if (anime == null) return;
-        final DownloadedAnimeEntity snapshot;
         synchronized (downloadsCacheLock) {
-            DownloadedAnimeEntity existing = downloadsCacheLoaded
-                    ? cachedDownloadedAnimeById.get(anime.getAnimeId())
-                    : db.downloadedAnimeDao().getAnimeByIdSync(anime.getAnimeId());
-            snapshot = mergeDownloadedAnime(existing, anime);
-            if (downloadsCacheLoaded) {
-                cachedDownloadedAnimeById.put(snapshot.getAnimeId(), copyDownloadedAnime(snapshot));
-            }
+            DownloadedAnimeEntity inMemoryExisting = cachedDownloadedAnimeById.get(anime.getAnimeId());
+            final DownloadedAnimeEntity optimisticSnapshot = mergeDownloadedAnime(inMemoryExisting, anime);
+            cachedDownloadedAnimeById.put(optimisticSnapshot.getAnimeId(), copyDownloadedAnime(optimisticSnapshot));
+            final boolean wasCacheLoaded = downloadsCacheLoaded;
+
+            executor.execute(() -> {
+                try {
+                    DownloadedAnimeEntity toPersist = optimisticSnapshot;
+                    if (!wasCacheLoaded) {
+                        DownloadedAnimeEntity dbExisting = db.downloadedAnimeDao().getAnimeByIdSync(optimisticSnapshot.getAnimeId());
+                        if (dbExisting != null) {
+                            toPersist = mergeDownloadedAnime(dbExisting, optimisticSnapshot);
+                            synchronized (downloadsCacheLock) {
+                                DownloadedAnimeEntity latestInMem = cachedDownloadedAnimeById.get(toPersist.getAnimeId());
+                                DownloadedAnimeEntity mergedInMem = mergeDownloadedAnime(toPersist, latestInMem);
+                                cachedDownloadedAnimeById.put(toPersist.getAnimeId(), copyDownloadedAnime(mergedInMem));
+                                toPersist = mergedInMem;
+                            }
+                        }
+                    }
+                    db.downloadedAnimeDao().insertAnime(toPersist);
+                    Log.d(TAG, "Saved downloaded anime: " + toPersist.getTitle());
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to save downloaded anime", e);
+                }
+            });
         }
-        executor.execute(() -> {
-            try {
-                db.downloadedAnimeDao().insertAnime(snapshot);
-                Log.d(TAG, "Saved downloaded anime: " + snapshot.getTitle());
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save downloaded anime", e);
-            }
-        });
     }
 
     public void saveDownloadedEpisode(DownloadedEpisodeEntity episode) {
         if (episode == null) return;
-        final DownloadedEpisodeEntity snapshot = copyDownloadedEpisode(episode);
         synchronized (downloadsCacheLock) {
-            if (downloadsCacheLoaded) {
-                cachedEpisodesById.put(snapshot.getId(), copyDownloadedEpisode(snapshot));
-                rebuildEpisodesByPathLocked();
-            }
+            final DownloadedEpisodeEntity snapshot = copyDownloadedEpisode(episode);
+            cachedEpisodesById.put(snapshot.getId(), copyDownloadedEpisode(snapshot));
+            rebuildEpisodesByPathLocked();
+            executor.execute(() -> {
+                try {
+                    db.downloadedAnimeDao().insertEpisode(snapshot);
+                    Log.d(TAG, "Saved downloaded episode: " + snapshot.getEpisodeNumber() + " for anime " + snapshot.getAnimeTitle());
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to save downloaded episode", e);
+                }
+            });
         }
-        executor.execute(() -> {
-            try {
-                db.downloadedAnimeDao().insertEpisode(snapshot);
-                Log.d(TAG, "Saved downloaded episode: " + snapshot.getEpisodeNumber() + " for anime " + snapshot.getAnimeTitle());
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save downloaded episode", e);
-            }
-        });
     }
 
     public androidx.lifecycle.LiveData<List<DownloadedAnimeEntity>> getAllDownloadedAnimeLiveData() {
@@ -1019,74 +1049,70 @@ public class DatabaseManager {
     public void deleteDownloadedEpisode(String episodeId, String animeId) {
         if (episodeId == null) return;
         synchronized (downloadsCacheLock) {
-            if (downloadsCacheLoaded) {
-                cachedEpisodesById.remove(episodeId);
-                rebuildEpisodesByPathLocked();
-                if (animeId != null) {
-                    boolean hasRemaining = false;
-                    for (DownloadedEpisodeEntity ep : cachedEpisodesById.values()) {
-                        if (ep != null && Objects.equals(animeId, ep.getAnimeId())) {
-                            hasRemaining = true;
-                            break;
-                        }
-                    }
-                    if (!hasRemaining) {
-                        cachedDownloadedAnimeById.remove(animeId);
+            cachedEpisodesById.remove(episodeId);
+            rebuildEpisodesByPathLocked();
+            if (downloadsCacheLoaded && animeId != null) {
+                boolean hasRemaining = false;
+                for (DownloadedEpisodeEntity ep : cachedEpisodesById.values()) {
+                    if (ep != null && Objects.equals(animeId, ep.getAnimeId())) {
+                        hasRemaining = true;
+                        break;
                     }
                 }
+                if (!hasRemaining) {
+                    cachedDownloadedAnimeById.remove(animeId);
+                }
             }
+            executor.execute(() -> {
+                try {
+                    DownloadedEpisodeEntity ep = db.downloadedAnimeDao().getEpisodeById(episodeId);
+                    if (ep != null) {
+                        com.example.animelib.util.FileUtils.deleteDownloadedEpisodeFiles(ep.getLocalFilePath());
+                    }
+                    db.downloadedAnimeDao().deleteEpisodeById(episodeId);
+                    if (animeId != null) {
+                        int count = db.downloadedAnimeDao().getEpisodeCountForAnime(animeId);
+                        if (count == 0) {
+                            DownloadedAnimeEntity anime = db.downloadedAnimeDao().getAnimeByIdSync(animeId);
+                            if (anime != null) {
+                                com.example.animelib.util.FileUtils.deleteLocalPosterAndEmptyDir(anime.getPosterUrl());
+                            }
+                            db.downloadedAnimeDao().deleteAnimeById(animeId);
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to delete downloaded episode: " + episodeId, e);
+                }
+            });
         }
-        executor.execute(() -> {
-            try {
-                DownloadedEpisodeEntity ep = db.downloadedAnimeDao().getEpisodeById(episodeId);
-                if (ep != null) {
-                    com.example.animelib.util.FileUtils.deleteDownloadedEpisodeFiles(ep.getLocalFilePath());
-                }
-                db.downloadedAnimeDao().deleteEpisodeById(episodeId);
-                if (animeId != null) {
-                    int count = db.downloadedAnimeDao().getEpisodeCountForAnime(animeId);
-                    if (count == 0) {
-                        DownloadedAnimeEntity anime = db.downloadedAnimeDao().getAnimeByIdSync(animeId);
-                        if (anime != null) {
-                            com.example.animelib.util.FileUtils.deleteLocalPosterAndEmptyDir(anime.getPosterUrl());
-                        }
-                        db.downloadedAnimeDao().deleteAnimeById(animeId);
-                    }
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to delete downloaded episode: " + episodeId, e);
-            }
-        });
     }
 
     public void deleteDownloadedAnime(String animeId) {
         if (animeId == null) return;
         synchronized (downloadsCacheLock) {
-            if (downloadsCacheLoaded) {
-                cachedDownloadedAnimeById.remove(animeId);
-                cachedEpisodesById.entrySet().removeIf(entry ->
-                        entry.getValue() != null && animeId.equals(entry.getValue().getAnimeId()));
-                rebuildEpisodesByPathLocked();
-            }
-        }
-        executor.execute(() -> {
-            try {
-                DownloadedAnimeEntity anime = db.downloadedAnimeDao().getAnimeByIdSync(animeId);
-                List<DownloadedEpisodeEntity> episodes = db.downloadedAnimeDao().getEpisodesForAnimeSync(animeId);
-                for (DownloadedEpisodeEntity ep : episodes) {
-                    if (ep != null) {
-                        com.example.animelib.util.FileUtils.deleteDownloadedEpisodeFiles(ep.getLocalFilePath());
+            cachedDownloadedAnimeById.remove(animeId);
+            cachedEpisodesById.entrySet().removeIf(entry ->
+                    entry.getValue() != null && animeId.equals(entry.getValue().getAnimeId()));
+            rebuildEpisodesByPathLocked();
+            executor.execute(() -> {
+                try {
+                    DownloadedAnimeEntity anime = db.downloadedAnimeDao().getAnimeByIdSync(animeId);
+                    List<DownloadedEpisodeEntity> episodes = db.downloadedAnimeDao().getEpisodesForAnimeSync(animeId);
+                    for (DownloadedEpisodeEntity ep : episodes) {
+                        if (ep != null) {
+                            com.example.animelib.util.FileUtils.deleteDownloadedEpisodeFiles(ep.getLocalFilePath());
+                        }
                     }
+                    if (anime != null) {
+                        com.example.animelib.util.FileUtils.deleteLocalPosterAndEmptyDir(anime.getPosterUrl());
+                    }
+                    db.downloadedAnimeDao().deleteEpisodesForAnime(animeId);
+                    db.downloadedAnimeDao().deleteAnimeById(animeId);
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to delete downloaded anime: " + animeId, e);
                 }
-                if (anime != null) {
-                    com.example.animelib.util.FileUtils.deleteLocalPosterAndEmptyDir(anime.getPosterUrl());
-                }
-                db.downloadedAnimeDao().deleteEpisodesForAnime(animeId);
-                db.downloadedAnimeDao().deleteAnimeById(animeId);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to delete downloaded anime: " + animeId, e);
-            }
-        });
+            });
+        }
     }
 
     // ========== Offline Bookmarks операции ==========

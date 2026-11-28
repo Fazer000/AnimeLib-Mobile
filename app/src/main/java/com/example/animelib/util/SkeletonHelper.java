@@ -47,6 +47,12 @@ public class SkeletonHelper {
         }
 
         private void startAnimation() {
+            if (animator != null) {
+                if (!animator.isStarted()) {
+                    animator.start();
+                }
+                return;
+            }
             animator = ValueAnimator.ofFloat(-1.2f, 2.2f);
             animator.setDuration(1200);
             animator.setRepeatCount(ValueAnimator.INFINITE);
@@ -58,11 +64,29 @@ public class SkeletonHelper {
             animator.start();
         }
 
+        public void ensureStarted() {
+            if (isVisible()) {
+                startAnimation();
+            }
+        }
+
         public void stopAnimation() {
             if (animator != null) {
+                animator.removeAllUpdateListeners();
                 animator.cancel();
                 animator = null;
             }
+        }
+
+        @Override
+        public boolean setVisible(boolean visible, boolean restart) {
+            boolean changed = super.setVisible(visible, restart);
+            if (visible) {
+                startAnimation();
+            } else {
+                stopAnimation();
+            }
+            return changed;
         }
 
         @Override
@@ -106,6 +130,27 @@ public class SkeletonHelper {
         }
     }
 
+    private static final android.view.View.OnAttachStateChangeListener SKELETON_ATTACH_LISTENER =
+            new android.view.View.OnAttachStateChangeListener() {
+                @Override
+                public void onViewAttachedToWindow(@NonNull android.view.View v) {
+                    if (Boolean.TRUE.equals(v.getTag(R.id.tag_skeleton_active))) {
+                        Drawable bg = v.getBackground();
+                        if (bg instanceof SkeletonShimmerDrawable) {
+                            ((SkeletonShimmerDrawable) bg).ensureStarted();
+                        }
+                    }
+                }
+
+                @Override
+                public void onViewDetachedFromWindow(@NonNull android.view.View v) {
+                    Drawable bg = v.getBackground();
+                    if (bg instanceof SkeletonShimmerDrawable) {
+                        ((SkeletonShimmerDrawable) bg).stopAnimation();
+                    }
+                }
+            };
+
     /**
      * Показывает скелетон-анимацию на TextView или любом другом View (ImageView, etc.)
      */
@@ -123,8 +168,12 @@ public class SkeletonHelper {
         view.animate().cancel();
         view.setAlpha(1.0f);
 
-        // Если скелетон уже запущен, пропускаем
+        // Если скелетон уже запущен, убеждаемся что анимация активна и выходим
         if (Boolean.TRUE.equals(view.getTag(R.id.tag_skeleton_active))) {
+            Drawable currentBg = view.getBackground();
+            if (currentBg instanceof SkeletonShimmerDrawable && view.isAttachedToWindow()) {
+                ((SkeletonShimmerDrawable) currentBg).ensureStarted();
+            }
             return;
         }
 
@@ -155,6 +204,11 @@ public class SkeletonHelper {
         }
 
         SkeletonShimmerDrawable drawable = new SkeletonShimmerDrawable(cornerRadiusDp, isDark);
+        if (!view.isAttachedToWindow()) {
+            drawable.stopAnimation();
+        }
+        view.removeOnAttachStateChangeListener(SKELETON_ATTACH_LISTENER);
+        view.addOnAttachStateChangeListener(SKELETON_ATTACH_LISTENER);
         view.setBackground(drawable);
     }
 
@@ -172,6 +226,7 @@ public class SkeletonHelper {
         if (view == null) return;
 
         view.animate().cancel();
+        view.removeOnAttachStateChangeListener(SKELETON_ATTACH_LISTENER);
 
         if (!Boolean.TRUE.equals(view.getTag(R.id.tag_skeleton_active))) {
             if (view.getAlpha() < 1.0f) {
@@ -195,6 +250,7 @@ public class SkeletonHelper {
         } else {
             view.setBackground(null);
         }
+        view.setTag(R.id.tag_skeleton_bg, null);
 
         if (view instanceof TextView) {
             TextView tv = (TextView) view;
@@ -204,6 +260,7 @@ public class SkeletonHelper {
             } else {
                 tv.setTextColor(0xFFFFFFFF);
             }
+            tv.setTag(R.id.tag_skeleton_color, null);
             tv.setText(actualText != null ? actualText : "");
         } else if (view instanceof android.widget.ImageView) {
             android.widget.ImageView iv = (android.widget.ImageView) view;
@@ -211,6 +268,7 @@ public class SkeletonHelper {
             if (origImg instanceof Drawable) {
                 iv.setImageDrawable((Drawable) origImg);
             }
+            iv.setTag(R.id.tag_skeleton_image_drawable, null);
         }
 
         // Сбрасываем минимальную ширину и активный флаг

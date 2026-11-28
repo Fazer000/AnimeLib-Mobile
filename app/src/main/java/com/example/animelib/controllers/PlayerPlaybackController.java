@@ -615,7 +615,10 @@ public class PlayerPlaybackController {
         Context playerContext = callback != null ? callback.getPlayerContext() : context;
         if (playerContext == null) playerContext = context;
 
-        DefaultRenderersFactory rf = new DefaultRenderersFactory(playerContext);
+        PlayerAudioController audioController = callback != null ? callback.getPlayerAudioController() : null;
+        SurroundRenderersFactory rf = new SurroundRenderersFactory(
+                playerContext,
+                audioController != null ? audioController.getSurroundAudioProcessor() : null);
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
                 .setBufferDurationsMs(2_500, 10_000, 500, 1_000)
                 .setPrioritizeTimeOverSizeThresholds(true)

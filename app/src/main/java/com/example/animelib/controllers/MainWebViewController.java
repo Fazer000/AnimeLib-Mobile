@@ -263,11 +263,19 @@ public class MainWebViewController {
 
             @Override
             public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) {
-                if (error != null) {
-                    Log.w(TAG, "WebView SSL error: primary=" + error.getPrimaryError() + ", url=" + error.getUrl());
-                }
+                String failingUrl = error != null ? error.getUrl() : null;
+                int primaryError = error != null ? error.getPrimaryError() : -1;
+                Log.w(TAG, "WebView SSL error blocked: primary=" + primaryError + ", url=" + failingUrl);
                 if (handler != null) {
-                    handler.proceed();
+                    handler.cancel();
+                }
+                String currentMainUrl = view != null ? view.getUrl() : lastRequestedUrl;
+                if (failingUrl != null && (failingUrl.equals(currentMainUrl) || failingUrl.equals(lastRequestedUrl))) {
+                    showCustomErrorPage(
+                            failingUrl,
+                            "Ошибка защищённого соединения (SSL)",
+                            "Сертификат безопасности сайта не прошёл проверку. Проверьте дату/время на устройстве и настройки сети."
+                    );
                 }
             }
 

@@ -72,6 +72,7 @@ public class SearchFragment extends Fragment {
 
     private SearchResultsAdapter adapter;
     private ApiService apiService;
+    private ApiClientCore.RequestHandle activeSearchHandle;
     private Handler searchHandler;
     private Runnable searchRunnable;
     private String currentQuery = "";
@@ -118,17 +119,26 @@ public class SearchFragment extends Fragment {
         openKeyboard();
     }
 
+    private void cancelActiveSearchRequest() {
+        if (activeSearchHandle != null) {
+            activeSearchHandle.cancel();
+            activeSearchHandle = null;
+        }
+    }
+
     @Override
     public void onDestroyView() {
-        super.onDestroyView();
+        cancelActiveSearchRequest();
         if (searchHandler != null) {
             searchHandler.removeCallbacksAndMessages(null);
         }
         closeKeyboard();
+        super.onDestroyView();
     }
 
     @Override
     public void onDestroy() {
+        cancelActiveSearchRequest();
         if (apiService != null) {
             apiService.shutdown();
             apiService = null;
@@ -166,10 +176,10 @@ public class SearchFragment extends Fragment {
      * Открывает клавиатуру и устанавливает фокус на поле поиска
      */
     private void openKeyboard() {
-        if (searchInput != null) {
+        if (searchInput != null && searchHandler != null) {
             searchInput.requestFocus();
-            searchInput.postDelayed(() -> {
-                if (getContext() == null) return;
+            searchHandler.postDelayed(() -> {
+                if (getContext() == null || !isAdded() || searchInput == null) return;
                 InputMethodManager imm = (InputMethodManager) requireContext()
                         .getSystemService(Context.INPUT_METHOD_SERVICE);
                 if (imm != null) {
@@ -287,6 +297,7 @@ public class SearchFragment extends Fragment {
                 if (searchRunnable != null) {
                     searchHandler.removeCallbacks(searchRunnable);
                 }
+                cancelActiveSearchRequest();
 
                 String query = searchInput != null ? searchInput.getText().toString().trim() : "";
                 currentQuery = query;
@@ -399,6 +410,7 @@ public class SearchFragment extends Fragment {
 
         // Clear button
         clearButton.setOnClickListener(v -> {
+            cancelActiveSearchRequest();
             searchInput.setText("");
             searchInput.requestFocus();
             adapter.clearItems();
@@ -427,6 +439,7 @@ public class SearchFragment extends Fragment {
                     searchRunnable = () -> performSearch(query);
                     searchHandler.postDelayed(searchRunnable, SEARCH_DELAY_MS);
                 } else {
+                    cancelActiveSearchRequest();
                     adapter.clearItems();
                     showEmptyState();
                 }
@@ -473,6 +486,7 @@ public class SearchFragment extends Fragment {
     }
 
     private void performSearch(String query) {
+        cancelActiveSearchRequest();
         if (query.trim().isEmpty()) {
             showEmptyState();
             return;
@@ -485,13 +499,13 @@ public class SearchFragment extends Fragment {
         ApiService.SearchCallback callback = new ApiService.SearchCallback() {
             @Override
             public void onSearchResults(SearchResponse response) {
-                if (getActivity() == null || !isAdded()) return;
+                if (getActivity() == null || !isAdded() || getView() == null) return;
 
                 getActivity().runOnUiThread(() -> {
-                    if (requestedTab != currentTabPosition) {
+                    if (!isAdded() || getView() == null || requestedTab != currentTabPosition) {
                         return;
                     }
-                    String activeInput = searchInput.getText().toString().trim();
+                    String activeInput = searchInput != null ? searchInput.getText().toString().trim() : "";
                     if (!activeInput.isEmpty() && !activeInput.equalsIgnoreCase(query)) {
                         return;
                     }
@@ -519,10 +533,10 @@ public class SearchFragment extends Fragment {
 
             @Override
             public void onError(String error) {
-                if (getActivity() == null || !isAdded()) return;
+                if (getActivity() == null || !isAdded() || getView() == null) return;
 
                 getActivity().runOnUiThread(() -> {
-                    if (requestedTab != currentTabPosition) {
+                    if (!isAdded() || getView() == null || requestedTab != currentTabPosition) {
                         return;
                     }
                     Log.e(TAG, "Search error: " + error);
@@ -533,9 +547,9 @@ public class SearchFragment extends Fragment {
         };
 
         if (requestedTab == TAB_ANIME) {
-            apiService.searchAnime(query, callback);
+            activeSearchHandle = apiService.searchAnime(query, callback);
         } else {
-            apiService.searchMangaAndRanobe(query, callback);
+            activeSearchHandle = apiService.searchMangaAndRanobe(query, callback);
         }
     }
 

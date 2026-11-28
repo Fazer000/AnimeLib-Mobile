@@ -93,18 +93,19 @@ public class AmbientLightManager {
     // Покадровая синхронизация с VideoFrameMetadataListener + SurfaceTexture + Choreographer
     private final AtomicLong latestVideoFrameSeq = new AtomicLong(0L);
     private final AtomicBoolean pausedWakeupPosted = new AtomicBoolean(false);
-    private long consumedVideoFrameSeq = 0L;
-    private long lastSampledSurfaceTs = Long.MIN_VALUE;
-    private long lastUpdateUptimeMs = 0L;
-    private long seekWatchUntilUptimeMs = 0L;
+    private volatile long consumedVideoFrameSeq = 0L;
+    private volatile long lastSampledSurfaceTs = Long.MIN_VALUE;
+    private volatile long lastUpdateUptimeMs = 0L;
+    private volatile long seekWatchUntilUptimeMs = 0L;
     private int sameFrameRetryCount = 0;
-    private boolean forceCapturePending = false;
+    private volatile boolean forceCapturePending = false;
 
     private volatile boolean isEnabled = true;
     private volatile boolean isSuspended = false;
     private volatile boolean isFrozen = false;
     private volatile boolean isVsyncLoopActive = false;
-    private boolean isPanelTransitioning = false;
+    private volatile boolean isPanelTransitioning = false;
+    private volatile boolean isReleased = false;
     private final Runnable resetTransitionSafetyRunnable = () -> setPanelTransitioning(false);
 
     private float currentScale = 1.0f;
@@ -329,7 +330,11 @@ public class AmbientLightManager {
     }
 
     private void ensureVsyncLoopStarted() {
-        if (isVsyncLoopActive || !isEnabled || isSuspended || isFrozen || mainPlayer == null) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(this::ensureVsyncLoopStarted);
+            return;
+        }
+        if (isReleased || isVsyncLoopActive || !isEnabled || isSuspended || isFrozen || mainPlayer == null) {
             return;
         }
         isVsyncLoopActive = true;
@@ -810,7 +815,8 @@ public class AmbientLightManager {
     }
 
     public void cleanup() {
-        mainHandler.removeCallbacks(resetTransitionSafetyRunnable);
+        isReleased = true;
+        mainHandler.removeCallbacksAndMessages(null);
         releaseAmbientPlayer();
         if (mainPlayerView != null && playerLayoutChangeListener != null) {
             mainPlayerView.removeOnLayoutChangeListener(playerLayoutChangeListener);
@@ -823,6 +829,7 @@ public class AmbientLightManager {
 
     public void onConfigurationChanged() {
         mainHandler.postDelayed(() -> {
+            if (isReleased) return;
             updateBoundsFromPlayer();
             if (isEnabled && !isSuspended && !isFrozen) {
                 fastBlurUtils.resetHistory();

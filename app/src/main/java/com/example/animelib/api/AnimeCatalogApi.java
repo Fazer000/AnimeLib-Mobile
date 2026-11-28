@@ -53,11 +53,11 @@ public class AnimeCatalogApi {
         this.core = core;
     }
 
-    public void fetchAnimeInfo(String animeSlugOrId, ApiService.AnimeInfoCallback callback) {
+    public ApiClientCore.RequestHandle fetchAnimeInfo(String animeSlugOrId, ApiService.AnimeInfoCallback callback) {
         String cleaned = ApiClientCore.cleanUrlSegment(animeSlugOrId);
         if (cleaned.isEmpty()) {
             if (callback != null) callback.onError("Пустой slug или ID");
-            return;
+            return new ApiClientCore.RequestHandle();
         }
 
         final String cacheKey = cleaned.toLowerCase(Locale.ROOT);
@@ -70,11 +70,11 @@ public class AnimeCatalogApi {
         }
         if (cached != null) {
             if (callback != null) callback.onAnimeInfoReceived(cached);
-            return;
+            return new ApiClientCore.RequestHandle();
         }
 
         String apiUrl = ApiClientCore.API_BASE_HAPI + "/anime/" + cacheKey + ANIME_INFO_FIELDS;
-        core.executeCachedGet(
+        return core.executeCachedGetWithHandle(
                 ApiCacheManager.ANIME_INFO,
                 cacheKey,
                 cacheKey,
@@ -173,10 +173,10 @@ public class AnimeCatalogApi {
         }
     }
 
-    public void searchAnime(String query, ApiService.SearchCallback callback) {
+    public ApiClientCore.RequestHandle searchAnime(String query, ApiService.SearchCallback callback) {
         if (query == null || query.trim().isEmpty()) {
             if (callback != null) callback.onError("Пустой поисковый запрос");
-            return;
+            return new ApiClientCore.RequestHandle();
         }
 
         final String trimmedQuery = query.trim();
@@ -185,7 +185,7 @@ public class AnimeCatalogApi {
         SearchResponse cached = ApiCacheManager.SEARCH.getValid(cacheKey, SEARCH_CACHE_TTL_MS);
         if (cached != null) {
             if (callback != null) callback.onSearchResults(cached);
-            return;
+            return new ApiClientCore.RequestHandle();
         }
 
         final String encodedUrl;
@@ -194,10 +194,10 @@ public class AnimeCatalogApi {
                     + URLEncoder.encode(trimmedQuery, "UTF-8");
         } catch (Exception e) {
             if (callback != null) callback.onError("Ошибка кодирования запроса: " + e.getMessage());
-            return;
+            return new ApiClientCore.RequestHandle();
         }
 
-        core.executeCachedGet(
+        return core.executeCachedGetWithHandle(
                 ApiCacheManager.SEARCH,
                 cacheKey,
                 cacheKey,
@@ -228,10 +228,10 @@ public class AnimeCatalogApi {
         );
     }
 
-    public void searchMangaAndRanobe(String query, ApiService.SearchCallback callback) {
+    public ApiClientCore.RequestHandle searchMangaAndRanobe(String query, ApiService.SearchCallback callback) {
         if (query == null || query.trim().isEmpty()) {
             if (callback != null) callback.onError("Пустой поисковый запрос");
-            return;
+            return new ApiClientCore.RequestHandle();
         }
 
         final String trimmedQuery = query.trim();
@@ -240,7 +240,7 @@ public class AnimeCatalogApi {
         SearchResponse cached = ApiCacheManager.SEARCH.getValid(cacheKey, SEARCH_CACHE_TTL_MS);
         if (cached != null) {
             if (callback != null) callback.onSearchResults(cached);
-            return;
+            return new ApiClientCore.RequestHandle();
         }
 
         final String encodedUrl;
@@ -249,10 +249,10 @@ public class AnimeCatalogApi {
                     + URLEncoder.encode(trimmedQuery, "UTF-8");
         } catch (Exception e) {
             if (callback != null) callback.onError("Ошибка кодирования запроса: " + e.getMessage());
-            return;
+            return new ApiClientCore.RequestHandle();
         }
 
-        core.executeCachedGet(
+        return core.executeCachedGetWithHandle(
                 ApiCacheManager.SEARCH,
                 cacheKey,
                 cacheKey,
@@ -311,21 +311,21 @@ public class AnimeCatalogApi {
         }
     }
 
-    public void fetchEpisodesList(String animeId, ApiService.EpisodesCallback callback) {
+    public ApiClientCore.RequestHandle fetchEpisodesList(String animeId, ApiService.EpisodesCallback callback) {
         if (animeId == null || animeId.trim().isEmpty()) {
             if (callback != null) callback.onError("Пустой animeId");
-            return;
+            return new ApiClientCore.RequestHandle();
         }
 
         final String cacheKey = animeId.trim();
         EpisodesListResponse cached = ApiCacheManager.EPISODES_LIST.getValid(cacheKey, EPISODES_LIST_TTL_MS);
         if (cached != null) {
             if (callback != null) callback.onEpisodesReceived(cached);
-            return;
+            return new ApiClientCore.RequestHandle();
         }
 
         String apiUrl = ApiClientCore.API_BASE_HAPI + "/episodes?anime_id=" + cacheKey;
-        core.executeCachedGet(
+        return core.executeCachedGetWithHandle(
                 ApiCacheManager.EPISODES_LIST,
                 cacheKey,
                 cacheKey,
@@ -385,20 +385,20 @@ public class AnimeCatalogApi {
         return null;
     }
 
-    public void fetchEpisodeData(int episodeId, ApiService.EpisodeDataCallback callback) {
+    public ApiClientCore.RequestHandle fetchEpisodeData(int episodeId, ApiService.EpisodeDataCallback callback) {
         if (episodeId <= 0) {
             if (callback != null) callback.onError("Неверный ID эпизода");
-            return;
+            return new ApiClientCore.RequestHandle();
         }
 
         EpisodeResponse cached = ApiCacheManager.EPISODE_DATA.getValid(episodeId, EPISODE_DATA_TTL_MS);
         if (cached != null) {
             if (callback != null) callback.onEpisodeDataReceived(cached);
-            return;
+            return new ApiClientCore.RequestHandle();
         }
 
         String apiUrl = ApiClientCore.API_BASE_HAPI + "/episodes/" + episodeId;
-        core.executeCachedGet(
+        return core.executeCachedGetWithHandle(
                 ApiCacheManager.EPISODE_DATA,
                 episodeId,
                 episodeId,
@@ -489,10 +489,11 @@ public class AnimeCatalogApi {
         ApiCacheManager.KODIK_LINKS.remove(kodikSrc.trim());
     }
 
-    public void fetchKodikVideoLinks(String kodikSrc, boolean forceRefresh, ApiService.KodikVideoCallback callback) {
+    public ApiClientCore.RequestHandle fetchKodikVideoLinks(String kodikSrc, boolean forceRefresh, ApiService.KodikVideoCallback callback) {
+        final ApiClientCore.RequestHandle handle = new ApiClientCore.RequestHandle();
         if (kodikSrc == null || kodikSrc.trim().isEmpty()) {
             if (callback != null) callback.onError("Пустая ссылка Kodik");
-            return;
+            return handle;
         }
 
         final String cacheKey = KodikLinksExtractor.normalizeCacheKey(kodikSrc);
@@ -503,25 +504,32 @@ public class AnimeCatalogApi {
             KodikResponse cached = ApiCacheManager.KODIK_LINKS.getValid(cacheKey, KODIK_CACHE_TTL_MS);
             if (cached != null) {
                 if (callback != null) callback.onKodikVideoReceived(cached);
-                return;
+                return handle;
             }
         }
 
         final String pendingKey = forceRefresh ? (cacheKey + "#refresh") : cacheKey;
-        boolean shouldStart = ApiCacheManager.KODIK_LINKS.registerOrAttach(pendingKey, new ApiCacheManager.CallbackNotifier<KodikResponse>() {
+        final ApiCacheManager.CallbackNotifier<KodikResponse> guardedNotifier = new ApiCacheManager.CallbackNotifier<KodikResponse>() {
             @Override
             public void onSuccess(KodikResponse data) {
-                if (callback != null) callback.onKodikVideoReceived(data);
+                if (!handle.isCancelled() && callback != null) callback.onKodikVideoReceived(data);
             }
 
             @Override
             public void onError(String error) {
-                if (callback != null) callback.onError(error);
+                if (!handle.isCancelled() && callback != null) callback.onError(error);
             }
-        });
-        if (!shouldStart) return;
+        };
+        handle.setDetachAction(() -> ApiCacheManager.KODIK_LINKS.detachPendingNotifier(pendingKey, guardedNotifier));
+
+        boolean shouldStart = ApiCacheManager.KODIK_LINKS.registerOrAttach(pendingKey, guardedNotifier);
+        if (!shouldStart) return handle;
 
         Runnable task = () -> {
+            if (handle.isCancelled()) {
+                ApiCacheManager.KODIK_LINKS.detachPendingNotifier(pendingKey, guardedNotifier);
+                return;
+            }
             try {
                 KodikResponse kodikResponse = core.getKodikLinksExtractor().getLinks(cacheKey, forceRefresh);
                 if (kodikResponse != null && kodikResponse.isSuccess()
@@ -548,13 +556,14 @@ public class AnimeCatalogApi {
             Log.e(TAG, "Failed to schedule Kodik extraction", e);
             ApiCacheManager.KODIK_LINKS.dispatchError(pendingKey, "Ошибка планировщика Kodik: " + e.getMessage());
         }
+        return handle;
     }
 
-    public void getRelatedTitles(String animeSlug, ApiService.RelatedTitlesCallback callback) {
+    public ApiClientCore.RequestHandle getRelatedTitles(String animeSlug, ApiService.RelatedTitlesCallback callback) {
         String cleaned = ApiClientCore.cleanUrlSegment(animeSlug);
         if (cleaned.isEmpty()) {
             if (callback != null) core.safeRunOnUiThread(() -> callback.onError("Пустой slug"));
-            return;
+            return new ApiClientCore.RequestHandle();
         }
 
         final String cacheKey = cleaned.toLowerCase(Locale.ROOT);
@@ -568,11 +577,11 @@ public class AnimeCatalogApi {
         if (cached != null) {
             final RelatedTitlesResponse finalCached = cached;
             if (callback != null) core.safeRunOnUiThread(() -> callback.onRelatedTitlesReceived(finalCached));
-            return;
+            return new ApiClientCore.RequestHandle();
         }
 
         String url = ApiClientCore.API_BASE_HAPI + "/anime/" + cacheKey + "/relations";
-        core.executeCachedGet(
+        return core.executeCachedGetWithHandle(
                 ApiCacheManager.RELATED_TITLES,
                 cacheKey,
                 cacheKey,

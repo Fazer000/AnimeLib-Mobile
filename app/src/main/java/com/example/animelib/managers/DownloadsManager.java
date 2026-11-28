@@ -132,6 +132,12 @@ public class DownloadsManager {
         int totalEpisodes;
     }
 
+    private static final ExecutorService DOWNLOAD_IO_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "downloads-manager-worker");
+        t.setDaemon(true);
+        return t;
+    });
+
     private final Context context;
     private final OkHttpClient client;
     private final ExecutorService executor;
@@ -143,6 +149,7 @@ public class DownloadsManager {
     private final Map<String, ResolvedDownloadSource> resolvedSourceCache = new ConcurrentHashMap<>();
     private final Object taskStateLock = new Object();
     private final Set<Call> activeCalls = ConcurrentHashMap.newKeySet();
+    private volatile ApiClientCore.RequestHandle activeEpisodeDataHandle;
 
     private volatile boolean running;
     private volatile AtomicBoolean activeCancelFlag = new AtomicBoolean(false);
@@ -150,11 +157,7 @@ public class DownloadsManager {
 
     public DownloadsManager(Context context) {
         this.context = context.getApplicationContext();
-        this.executor = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "downloads-manager-worker");
-            t.setDaemon(true);
-            return t;
-        });
+        this.executor = DOWNLOAD_IO_EXECUTOR;
         this.client = ApiClientCore.getSharedHttpClient().newBuilder()
                 .connectTimeout(20, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
@@ -163,6 +166,26 @@ public class DownloadsManager {
         this.apiService = new ApiService(this.context);
         this.databaseManager = DatabaseManager.getInstance(this.context);
         this.kodikExtractor = new KodikLinksExtractor(this.client, ApiClientCore.getSharedGson());
+    }
+
+    /**
+     * Планирует удаление временных файлов (.part, _segs, .tmp) в том же последовательном
+     * рабочем потоке, что и задачи скачивания, исключая гонку с открытым FileOutputStream.
+     */
+    public static void scheduleTempFilesCleanup(@Nullable Context context, @Nullable List<DownloadTask> tasks) {
+        if (context == null || tasks == null || tasks.isEmpty()) return;
+        final Context appCtx = context.getApplicationContext();
+        final List<DownloadTask> tasksCopy = new ArrayList<>(tasks);
+        DOWNLOAD_IO_EXECUTOR.execute(() -> {
+            for (DownloadTask t : tasksCopy) {
+                if (t == null) continue;
+                try {
+                    File outFile = resolveOutputFileForTask(appCtx, t);
+                    FileUtils.deleteDownloadTempFiles(outFile.getAbsolutePath());
+                } catch (Exception ignored) {
+                }
+            }
+        });
     }
 
     public boolean isRunning() {
@@ -189,6 +212,14 @@ public class DownloadsManager {
     }
 
     private void cancelActiveHttpCalls() {
+        ApiClientCore.RequestHandle handle = activeEpisodeDataHandle;
+        if (handle != null) {
+            activeEpisodeDataHandle = null;
+            try {
+                handle.cancel();
+            } catch (Exception ignored) {
+            }
+        }
         for (Call call : activeCalls) {
             try {
                 call.cancel();
@@ -515,10 +546,13 @@ public class DownloadsManager {
         final String taskPlayerType = task.getPlayerType();
         final String taskTeamName = task.getTeamName();
 
-        apiService.fetchEpisodeData(task.getEpisodeId(), new ApiService.EpisodeDataCallback() {
+        activeEpisodeDataHandle = apiService.fetchEpisodeData(task.getEpisodeId(), new ApiService.EpisodeDataCallback() {
             @Override
             public void onEpisodeDataReceived(EpisodeResponse response) {
                 try {
+                    if (cancelFlag != null && cancelFlag.get()) {
+                        return;
+                    }
                     if (response == null || response.getData() == null || response.getData().getPlayers() == null) {
                         return;
                     }
@@ -621,9 +655,29 @@ public class DownloadsManager {
             }
         });
 
-        boolean completed = latch.await(25, TimeUnit.SECONDS);
-        if (!completed) {
-            throw new IOException("Таймаут получения данных серии");
+        try {
+            long waitedMs = 0L;
+            final long timeoutMs = 25000L;
+            final long stepMs = 200L;
+            boolean completed = false;
+            while (waitedMs < timeoutMs) {
+                if (cancelFlag != null && cancelFlag.get()) {
+                    return null;
+                }
+                if (latch.await(stepMs, TimeUnit.MILLISECONDS)) {
+                    completed = true;
+                    break;
+                }
+                waitedMs += stepMs;
+            }
+            if (cancelFlag != null && cancelFlag.get()) {
+                return null;
+            }
+            if (!completed) {
+                throw new IOException("Таймаут получения данных серии");
+            }
+        } finally {
+            activeEpisodeDataHandle = null;
         }
         if (errorRef.get() != null) {
             throw errorRef.get();
@@ -1738,9 +1792,6 @@ public class DownloadsManager {
             pause();
         } else {
             cancelActiveHttpCalls();
-        }
-        if (!executor.isShutdown()) {
-            executor.shutdownNow();
         }
         apiService.shutdown();
     }

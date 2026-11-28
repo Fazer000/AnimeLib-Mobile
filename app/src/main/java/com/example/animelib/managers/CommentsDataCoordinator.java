@@ -95,17 +95,22 @@ public class CommentsDataCoordinator {
         }
     }
 
+    private final Object dataLock = new Object();
     private final List<CommentsResponse.CommentItem> loadedStickyComments = new ArrayList<>();
     private final List<CommentsResponse> loadedPageResponses = new ArrayList<>();
     private final Map<Long, CommentHtmlProcessor.ParsedCommentContent> sharedParsedCache = new ConcurrentHashMap<>();
     private volatile PreparedTreeSnapshot latestPreparedSnapshot;
 
     public List<CommentsResponse.CommentItem> getLoadedStickyComments() {
-        return loadedStickyComments;
+        synchronized (dataLock) {
+            return new ArrayList<>(loadedStickyComments);
+        }
     }
 
     public List<CommentsResponse> getLoadedPageResponses() {
-        return loadedPageResponses;
+        synchronized (dataLock) {
+            return new ArrayList<>(loadedPageResponses);
+        }
     }
 
     public Map<Long, CommentHtmlProcessor.ParsedCommentContent> getSharedParsedCache() {
@@ -126,8 +131,10 @@ public class CommentsDataCoordinator {
     }
 
     public void clearAll(boolean clearParsedCache) {
-        loadedStickyComments.clear();
-        loadedPageResponses.clear();
+        synchronized (dataLock) {
+            loadedStickyComments.clear();
+            loadedPageResponses.clear();
+        }
         latestPreparedSnapshot = null;
         if (clearParsedCache) {
             sharedParsedCache.clear();
@@ -135,47 +142,59 @@ public class CommentsDataCoordinator {
     }
 
     public boolean isPagesEmpty() {
-        return loadedPageResponses.isEmpty();
+        synchronized (dataLock) {
+            return loadedPageResponses.isEmpty();
+        }
     }
 
     public boolean hasAnyComments() {
-        if (!loadedStickyComments.isEmpty()) {
-            return true;
-        }
-        for (CommentsResponse resp : loadedPageResponses) {
-            if (resp != null && resp.getData() != null) {
-                if ((resp.getData().getRoot() != null && !resp.getData().getRoot().isEmpty())
-                        || (resp.getData().getReplies() != null && !resp.getData().getReplies().isEmpty())) {
-                    return true;
+        synchronized (dataLock) {
+            if (!loadedStickyComments.isEmpty()) {
+                return true;
+            }
+            for (CommentsResponse resp : loadedPageResponses) {
+                if (resp != null && resp.getData() != null) {
+                    List<CommentsResponse.CommentItem> roots = resp.getData().getRoot();
+                    List<CommentsResponse.CommentItem> replies = resp.getData().getReplies();
+                    if ((roots != null && !roots.isEmpty())
+                            || (replies != null && !replies.isEmpty())) {
+                        return true;
+                    }
                 }
             }
+            return false;
         }
-        return false;
     }
 
     public void setStickyComments(List<CommentsResponse.CommentItem> stickyComments) {
-        loadedStickyComments.clear();
-        if (stickyComments == null) return;
-        for (CommentsResponse.CommentItem item : stickyComments) {
-            if (item != null) {
-                item.setSticky(true);
-                loadedStickyComments.add(item);
+        synchronized (dataLock) {
+            loadedStickyComments.clear();
+            if (stickyComments == null) return;
+            for (CommentsResponse.CommentItem item : stickyComments) {
+                if (item != null) {
+                    item.setSticky(true);
+                    loadedStickyComments.add(item);
+                }
             }
         }
     }
 
     public void recordLoadedPage(CommentsResponse response, boolean isInitialPage) {
-        if (isInitialPage) {
-            loadedPageResponses.clear();
-        }
-        if (response != null) {
-            loadedPageResponses.add(response);
+        synchronized (dataLock) {
+            if (isInitialPage) {
+                loadedPageResponses.clear();
+            }
+            if (response != null) {
+                loadedPageResponses.add(response);
+            }
         }
     }
 
     public void addSyntheticEmptyPageIfNeeded() {
-        if (loadedPageResponses.isEmpty()) {
-            loadedPageResponses.add(new CommentsResponse());
+        synchronized (dataLock) {
+            if (loadedPageResponses.isEmpty()) {
+                loadedPageResponses.add(new CommentsResponse());
+            }
         }
     }
 
@@ -234,17 +253,23 @@ public class CommentsDataCoordinator {
         if (targetAdapter == null) return;
         targetAdapter.putParsedContentMap(sharedParsedCache);
         PreparedTreeSnapshot snapshot = latestPreparedSnapshot;
-        if (snapshot != null && loadedPageResponses.size() <= 1) {
+        List<CommentsResponse.CommentItem> stickyCopy;
+        List<CommentsResponse> pagesCopy;
+        synchronized (dataLock) {
+            stickyCopy = new ArrayList<>(loadedStickyComments);
+            pagesCopy = new ArrayList<>(loadedPageResponses);
+        }
+        if (snapshot != null && pagesCopy.size() <= 1) {
             targetAdapter.applyPreparedSnapshot(snapshot, null);
             return;
         }
-        if (loadedPageResponses.isEmpty()) {
-            if (!loadedStickyComments.isEmpty()) {
-                targetAdapter.setStickyComments(loadedStickyComments);
+        if (pagesCopy.isEmpty()) {
+            if (!stickyCopy.isEmpty()) {
+                targetAdapter.setStickyComments(stickyCopy);
             }
             return;
         }
-        targetAdapter.replacePagesOnRefresh(loadedStickyComments, loadedPageResponses, null, prependRoot);
+        targetAdapter.replacePagesOnRefresh(stickyCopy, pagesCopy, null, prependRoot);
     }
 
     /**
@@ -764,20 +789,30 @@ public class CommentsDataCoordinator {
     public void removeCommentById(long commentId) {
         sharedParsedCache.remove(commentId);
         latestPreparedSnapshot = null;
-        for (int i = loadedStickyComments.size() - 1; i >= 0; i--) {
-            if (loadedStickyComments.get(i).getId() == commentId) {
-                loadedStickyComments.remove(i);
+        synchronized (dataLock) {
+            for (int i = loadedStickyComments.size() - 1; i >= 0; i--) {
+                if (loadedStickyComments.get(i).getId() == commentId) {
+                    loadedStickyComments.remove(i);
+                }
             }
-        }
-        for (CommentsResponse resp : loadedPageResponses) {
-            if (resp == null || resp.getData() == null) continue;
-            if (resp.getData().getRoot() != null) {
-                resp.getData().getRoot().removeIf(item -> item != null && item.getId() == commentId);
-            }
-            if (resp.getData().getReplies() != null) {
-                resp.getData().getReplies().removeIf(item -> item != null && (item.getId() == commentId
-                        || (item.getParent_comment() != null && item.getParent_comment() == commentId)
-                        || (item.getRoot_id() != null && item.getRoot_id() == commentId)));
+            for (CommentsResponse resp : loadedPageResponses) {
+                if (resp == null || resp.getData() == null) continue;
+                List<CommentsResponse.CommentItem> currentRoots = resp.getData().getRoot();
+                if (currentRoots != null && !currentRoots.isEmpty()) {
+                    List<CommentsResponse.CommentItem> updatedRoots = new ArrayList<>(currentRoots);
+                    if (updatedRoots.removeIf(item -> item != null && item.getId() == commentId)) {
+                        resp.getData().setRoot(updatedRoots);
+                    }
+                }
+                List<CommentsResponse.CommentItem> currentReplies = resp.getData().getReplies();
+                if (currentReplies != null && !currentReplies.isEmpty()) {
+                    List<CommentsResponse.CommentItem> updatedReplies = new ArrayList<>(currentReplies);
+                    if (updatedReplies.removeIf(item -> item != null && (item.getId() == commentId
+                            || (item.getParent_comment() != null && item.getParent_comment() == commentId)
+                            || (item.getRoot_id() != null && item.getRoot_id() == commentId)))) {
+                        resp.getData().setReplies(updatedReplies);
+                    }
+                }
             }
         }
     }
@@ -894,27 +929,31 @@ public class CommentsDataCoordinator {
                 ? rootId
                 : ((parentId != null && parentId > 0) ? parentId
                 : (mutatedComment != null ? mutatedComment.getId() : null));
-        if (lookupRootId == null || lookupRootId <= 0 || loadedPageResponses.isEmpty()) {
+        synchronized (dataLock) {
+            if (lookupRootId == null || lookupRootId <= 0 || loadedPageResponses.isEmpty()) {
+                return 1;
+            }
+            for (int i = 0; i < loadedPageResponses.size(); i++) {
+                CommentsResponse resp = loadedPageResponses.get(i);
+                if (responseContainsComment(resp, lookupRootId)) {
+                    return i + 1;
+                }
+            }
             return 1;
         }
-        for (int i = 0; i < loadedPageResponses.size(); i++) {
-            CommentsResponse resp = loadedPageResponses.get(i);
-            if (responseContainsComment(resp, lookupRootId)) {
-                return i + 1;
-            }
-        }
-        return 1;
     }
 
     public static boolean responseContainsComment(CommentsResponse resp, long commentId) {
         if (resp == null || resp.getData() == null || commentId <= 0) return false;
-        if (resp.getData().getRoot() != null) {
-            for (CommentsResponse.CommentItem r : resp.getData().getRoot()) {
+        List<CommentsResponse.CommentItem> roots = resp.getData().getRoot();
+        if (roots != null) {
+            for (CommentsResponse.CommentItem r : roots) {
                 if (r != null && r.getId() == commentId) return true;
             }
         }
-        if (resp.getData().getReplies() != null) {
-            for (CommentsResponse.CommentItem c : resp.getData().getReplies()) {
+        List<CommentsResponse.CommentItem> replies = resp.getData().getReplies();
+        if (replies != null) {
+            for (CommentsResponse.CommentItem c : replies) {
                 if (c != null && c.getId() == commentId) return true;
             }
         }
@@ -925,61 +964,73 @@ public class CommentsDataCoordinator {
         if (item == null || item.getId() <= 0) return;
         latestPreparedSnapshot = null;
 
-        for (CommentsResponse resp : loadedPageResponses) {
-            if (resp == null || resp.getData() == null) continue;
-            if (resp.getData().getRoot() != null) {
-                for (int i = 0; i < resp.getData().getRoot().size(); i++) {
-                    CommentsResponse.CommentItem existing = resp.getData().getRoot().get(i);
-                    if (existing != null && existing.getId() == item.getId()) {
-                        resp.getData().getRoot().set(i, item);
-                        return;
+        synchronized (dataLock) {
+            for (CommentsResponse resp : loadedPageResponses) {
+                if (resp == null || resp.getData() == null) continue;
+                List<CommentsResponse.CommentItem> roots = resp.getData().getRoot();
+                if (roots != null) {
+                    for (int i = 0; i < roots.size(); i++) {
+                        CommentsResponse.CommentItem existing = roots.get(i);
+                        if (existing != null && existing.getId() == item.getId()) {
+                            List<CommentsResponse.CommentItem> updatedRoots = new ArrayList<>(roots);
+                            updatedRoots.set(i, item);
+                            resp.getData().setRoot(updatedRoots);
+                            return;
+                        }
+                    }
+                }
+                List<CommentsResponse.CommentItem> replies = resp.getData().getReplies();
+                if (replies != null) {
+                    for (int i = 0; i < replies.size(); i++) {
+                        CommentsResponse.CommentItem existing = replies.get(i);
+                        if (existing != null && existing.getId() == item.getId()) {
+                            List<CommentsResponse.CommentItem> updatedReplies = new ArrayList<>(replies);
+                            updatedReplies.set(i, item);
+                            resp.getData().setReplies(updatedReplies);
+                            return;
+                        }
                     }
                 }
             }
-            if (resp.getData().getReplies() != null) {
-                for (int i = 0; i < resp.getData().getReplies().size(); i++) {
-                    CommentsResponse.CommentItem existing = resp.getData().getReplies().get(i);
-                    if (existing != null && existing.getId() == item.getId()) {
-                        resp.getData().getReplies().set(i, item);
-                        return;
+
+            if (loadedPageResponses.isEmpty()) {
+                CommentsResponse syntheticPage = new CommentsResponse();
+                CommentsResponse.Data data = new CommentsResponse.Data();
+                data.setRoot(new ArrayList<>());
+                data.setReplies(new ArrayList<>());
+                syntheticPage.setData(data);
+                loadedPageResponses.add(syntheticPage);
+            }
+
+            boolean isReply = isReplyComment(item);
+
+            if (isReply) {
+                Long targetRoot = item.getRoot_id() != null && item.getRoot_id() > 0 ? item.getRoot_id() : item.getParent_comment();
+                CommentsResponse targetResp = loadedPageResponses.get(0);
+                if (targetRoot != null) {
+                    for (CommentsResponse resp : loadedPageResponses) {
+                        if (responseContainsComment(resp, targetRoot)) {
+                            targetResp = resp;
+                            break;
+                        }
                     }
                 }
-            }
-        }
-
-        if (loadedPageResponses.isEmpty()) {
-            CommentsResponse syntheticPage = new CommentsResponse();
-            CommentsResponse.Data data = new CommentsResponse.Data();
-            data.setRoot(new ArrayList<>());
-            data.setReplies(new ArrayList<>());
-            syntheticPage.setData(data);
-            loadedPageResponses.add(syntheticPage);
-        }
-
-        boolean isReply = isReplyComment(item);
-
-        if (isReply) {
-            Long targetRoot = item.getRoot_id() != null && item.getRoot_id() > 0 ? item.getRoot_id() : item.getParent_comment();
-            CommentsResponse targetResp = loadedPageResponses.get(0);
-            if (targetRoot != null) {
-                for (CommentsResponse resp : loadedPageResponses) {
-                    if (responseContainsComment(resp, targetRoot)) {
-                        targetResp = resp;
-                        break;
-                    }
-                }
-            }
-            ensureResponseDataInitialized(targetResp);
-            targetResp.getData().getReplies().add(item);
-        } else {
-            CommentsResponse targetResp = prependRoot
-                    ? loadedPageResponses.get(0)
-                    : loadedPageResponses.get(loadedPageResponses.size() - 1);
-            ensureResponseDataInitialized(targetResp);
-            if (prependRoot) {
-                targetResp.getData().getRoot().add(0, item);
+                ensureResponseDataInitialized(targetResp);
+                List<CommentsResponse.CommentItem> updatedReplies = new ArrayList<>(targetResp.getData().getReplies());
+                updatedReplies.add(item);
+                targetResp.getData().setReplies(updatedReplies);
             } else {
-                targetResp.getData().getRoot().add(item);
+                CommentsResponse targetResp = prependRoot
+                        ? loadedPageResponses.get(0)
+                        : loadedPageResponses.get(loadedPageResponses.size() - 1);
+                ensureResponseDataInitialized(targetResp);
+                List<CommentsResponse.CommentItem> updatedRoots = new ArrayList<>(targetResp.getData().getRoot());
+                if (prependRoot) {
+                    updatedRoots.add(0, item);
+                } else {
+                    updatedRoots.add(item);
+                }
+                targetResp.getData().setRoot(updatedRoots);
             }
         }
     }
@@ -992,27 +1043,29 @@ public class CommentsDataCoordinator {
         boolean hasNextPage = prevHasNextPage;
         latestPreparedSnapshot = null;
 
-        if (targetPage == 1 && loadedPageResponses.size() <= 1) {
-            loadedPageResponses.clear();
-            loadedPageResponses.add(response);
-            if (response.getMeta() != null) {
-                hasNextPage = response.getMeta().isHas_next_page();
-                currentPage = response.getMeta().getPage() > 0 ? response.getMeta().getPage() : 1;
+        synchronized (dataLock) {
+            if (targetPage == 1 && loadedPageResponses.size() <= 1) {
+                loadedPageResponses.clear();
+                loadedPageResponses.add(response);
+                if (response.getMeta() != null) {
+                    hasNextPage = response.getMeta().isHas_next_page();
+                    currentPage = response.getMeta().getPage() > 0 ? response.getMeta().getPage() : 1;
+                } else {
+                    currentPage = 1;
+                    hasNextPage = false;
+                }
+            } else if (targetPage >= 1 && targetPage <= loadedPageResponses.size()) {
+                loadedPageResponses.set(targetPage - 1, response);
+                if (targetPage == loadedPageResponses.size() && response.getMeta() != null) {
+                    hasNextPage = response.getMeta().isHas_next_page();
+                    currentPage = Math.max(currentPage, targetPage);
+                }
             } else {
-                currentPage = 1;
-                hasNextPage = false;
+                loadedPageResponses.clear();
+                loadedPageResponses.add(response);
+                currentPage = targetPage;
+                hasNextPage = response.getMeta() != null && response.getMeta().isHas_next_page();
             }
-        } else if (targetPage >= 1 && targetPage <= loadedPageResponses.size()) {
-            loadedPageResponses.set(targetPage - 1, response);
-            if (targetPage == loadedPageResponses.size() && response.getMeta() != null) {
-                hasNextPage = response.getMeta().isHas_next_page();
-                currentPage = Math.max(currentPage, targetPage);
-            }
-        } else {
-            loadedPageResponses.clear();
-            loadedPageResponses.add(response);
-            currentPage = targetPage;
-            hasNextPage = response.getMeta() != null && response.getMeta().isHas_next_page();
         }
 
         return new PageMetadata(currentPage, hasNextPage);

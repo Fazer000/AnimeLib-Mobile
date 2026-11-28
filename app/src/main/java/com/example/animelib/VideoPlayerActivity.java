@@ -153,18 +153,19 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private boolean isAnimeInfoLoaded = false;
     private boolean isEpisodeAndVoiceoversLoaded = false;
     private boolean shouldAutoHideControls = true;
-    private boolean enableAmbientLight = true;
-    private boolean autoPlay = true;
-    private boolean autoPlayOnPrepare = true;
-    private int longSkipDuration = 85;
-    private boolean autoSkipOpening = false;
-    private boolean autoSkipEnding = false;
-    private boolean autoSkipSplashscreen = false;
-    private boolean autoSkipCompilation = false;
-    private int currentTheme = ThemeUtils.THEME_SYSTEM;
+    private volatile boolean enableAmbientLight = true;
+    private volatile boolean autoPlay = true;
+    private volatile boolean autoPlayOnPrepare = true;
+    private volatile boolean initialAutoPlayConsumed = false;
+    private volatile int longSkipDuration = 85;
+    private volatile boolean autoSkipOpening = false;
+    private volatile boolean autoSkipEnding = false;
+    private volatile boolean autoSkipSplashscreen = false;
+    private volatile boolean autoSkipCompilation = false;
+    private volatile int currentTheme = ThemeUtils.THEME_SYSTEM;
     private boolean wasCommentsVisibleBeforePiP = false;
     private boolean wasPlayingBeforeBackground = false;
-    private boolean isClosingOrFinishing = false;
+    private volatile boolean isClosingOrFinishing = false;
     private boolean suppressUserLeavePip = false;
     private boolean swallowingOutsideNumpadTouch = false;
 
@@ -376,6 +377,9 @@ public class VideoPlayerActivity extends AppCompatActivity {
         }
         if (ambientLightManager != null) {
             ambientLightManager.updateBoundsFromPlayer();
+        }
+        if (playerEpisodesController != null) {
+            playerEpisodesController.setNewEpisodeSelection(true);
         }
         loadAsyncSettings();
 
@@ -894,29 +898,24 @@ public class VideoPlayerActivity extends AppCompatActivity {
 
     private void loadAsyncSettings() {
         executor.execute(() -> {
-            PlayerPreferences savedPrefs = apiService.loadPlayerPreferences();
-            if (savedPrefs != null && savedPrefs.getPreferredQuality() != null && !savedPrefs.getPreferredQuality().trim().isEmpty()) {
-                applyLoadedPreferredQualityIfUnset(savedPrefs.getPreferredQuality());
-            }
-            boolean loaded4K = apiService.load4KSetting();
-            if (playerQualityController != null) {
-                playerQualityController.setEnable4K(loaded4K);
-            }
-            enableAmbientLight = apiService.loadAmbientLightSetting();
+            if (isClosingOrFinishing || isFinishing() || isDestroyed()) return;
+            final PlayerPreferences savedPrefs = apiService.loadPlayerPreferences();
+            final String loadedPrefQuality = (savedPrefs != null && savedPrefs.getPreferredQuality() != null
+                    && !savedPrefs.getPreferredQuality().trim().isEmpty())
+                    ? savedPrefs.getPreferredQuality()
+                    : null;
+            final boolean loaded4K = apiService.load4KSetting();
+            final boolean loadedAmbientLight = apiService.loadAmbientLightSetting();
             if (playerAudioController != null) {
                 playerAudioController.loadSettings(apiService);
             }
-            autoPlay = apiService.loadAutoPlaySetting();
-            if (playerEpisodesController != null) {
-                playerEpisodesController.setNewEpisodeSelection(true);
-            }
-            autoPlayOnPrepare = autoPlay;
-            longSkipDuration = apiService.loadLongSkipDurationSetting();
-            autoSkipOpening = apiService.loadAutoSkipOpeningSetting();
-            autoSkipEnding = apiService.loadAutoSkipEndingSetting();
-            autoSkipSplashscreen = apiService.loadAutoSkipSplashscreenSetting();
-            autoSkipCompilation = apiService.loadAutoSkipCompilationSetting();
-            currentTheme = apiService.loadThemeSetting();
+            final boolean loadedAutoPlay = apiService.loadAutoPlaySetting();
+            final int loadedLongSkip = apiService.loadLongSkipDurationSetting();
+            final boolean loadedSkipOpening = apiService.loadAutoSkipOpeningSetting();
+            final boolean loadedSkipEnding = apiService.loadAutoSkipEndingSetting();
+            final boolean loadedSkipSplash = apiService.loadAutoSkipSplashscreenSetting();
+            final boolean loadedSkipCompilation = apiService.loadAutoSkipCompilationSetting();
+            final int loadedTheme = apiService.loadThemeSetting();
             if (playerSubtitlesController != null) {
                 playerSubtitlesController.loadSettingsFromApi(apiService);
             }
@@ -924,7 +923,31 @@ public class VideoPlayerActivity extends AppCompatActivity {
                 playerFiltersController.loadSettingsFromApi(apiService);
             }
 
-            runOnUiThread(() -> {
+            enableAmbientLight = loadedAmbientLight;
+            autoPlay = loadedAutoPlay;
+            if (!initialAutoPlayConsumed) {
+                autoPlayOnPrepare = loadedAutoPlay;
+            }
+            longSkipDuration = loadedLongSkip;
+            autoSkipOpening = loadedSkipOpening;
+            autoSkipEnding = loadedSkipEnding;
+            autoSkipSplashscreen = loadedSkipSplash;
+            autoSkipCompilation = loadedSkipCompilation;
+            currentTheme = loadedTheme;
+
+            safeRunOnUiThread(() -> {
+                if (loadedPrefQuality != null) {
+                    applyLoadedPreferredQualityIfUnset(loadedPrefQuality);
+                }
+                if (playerQualityController != null) {
+                    playerQualityController.setEnable4K(loaded4K);
+                }
+                if (!loadedAutoPlay && initialAutoPlayConsumed && playerPlaybackController != null) {
+                    ExoPlayer active = playerPlaybackController.getPlayer();
+                    if (active != null && !playerPlaybackController.isFirstFrameRendered()) {
+                        active.setPlayWhenReady(false);
+                    }
+                }
                 if (timecodeManager != null) {
                     timecodeManager.setAutoSkipSettings(autoSkipOpening, autoSkipEnding, autoSkipSplashscreen, autoSkipCompilation);
                 }
@@ -1505,6 +1528,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
             playerProgressController.updateBookmarkButtonColor(true);
         }
         autoPlayOnPrepare = VideoPlayerActivity.this.autoPlay;
+        initialAutoPlayConsumed = true;
         if (playerOfflineController != null
                 && playerOfflineController.tryStartDownloadedEpisodeImmediately(episode, Math.max(0L, bookmarkPositionMs))) {
             return;
@@ -1578,6 +1602,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
     private void selectInitialEpisodeWithoutBookmark() {
         if (playerEpisodesController == null) return;
         autoPlayOnPrepare = VideoPlayerActivity.this.autoPlay;
+        initialAutoPlayConsumed = true;
         playerEpisodesController.loadFirstEpisode();
     }
 
@@ -1585,12 +1610,14 @@ public class VideoPlayerActivity extends AppCompatActivity {
         String url = playerQualityController != null ? playerQualityController.getCurrentVideoUrl() : null;
         if (url == null || playerPlaybackController == null) return;
         long startPos = playerEpisodesController != null ? playerEpisodesController.consumeStartPosition() : 0L;
+        boolean playNow = autoPlayOnPrepare;
+        initialAutoPlayConsumed = true;
         if (playerSubtitlesController != null) {
             playerPlaybackController.initializePlayer(
                     url,
                     playerSubtitlesController.createMediaItemWithSubtitles(url),
                     playerPlaybackController.getCurrentResizeMode(),
-                    autoPlayOnPrepare,
+                    playNow,
                     startPos
             );
         }
@@ -1641,40 +1668,42 @@ public class VideoPlayerActivity extends AppCompatActivity {
         }
 
         // Этап 1 (Приоритет 2): Метаданные тайтла (после получения запускает Этап 3: связанные тайтлы и предзагрузку хронологии)
-        apiService.fetchAnimeInfo(animeSlug, new ApiService.AnimeInfoCallback() {
-            @Override
-            public void onAnimeInfoReceived(AnimeInfoResponse response) {
-                if (response != null && response.getData() != null) {
-                    safeRunOnUiThread(() -> {
-                        if (playerPortraitController != null) {
-                            playerPortraitController.displayAnimeInfo(response);
-                        }
-                    });
-                }
-            }
-
-            @Override
-            public void onError(String errorMessage) {
-                Log.w(TAG, "Failed to fetch anime info in loadAnimeFromUrl: " + errorMessage);
-                safeRunOnUiThread(() -> {
-                    isAnimeInfoLoaded = true;
-                    if (playerSplashScreenController != null && playerSplashScreenController.isShowing()) {
-                        playerSplashScreenController.dismissWithAnimation(null);
-                    }
-                    if (playerAnimeInfoController != null && currentAnimeInfo == null) {
-                        playerAnimeInfoController.showError(() -> {
+        if (playerApiController != null) {
+            playerApiController.fetchAnimeInfo(animeSlug, new ApiService.AnimeInfoCallback() {
+                @Override
+                public void onAnimeInfoReceived(AnimeInfoResponse response) {
+                    if (response != null && response.getData() != null) {
+                        safeRunOnUiThread(() -> {
                             if (playerPortraitController != null) {
-                                playerPortraitController.loadAnimeInfoForPlaceholder();
+                                playerPortraitController.displayAnimeInfo(response);
                             }
                         });
                     }
-                    // Fallback: если метаданные не загрузились, всё равно подгружаем связанные тайтлы
-                    if (playerRelatedTitlesController != null && currentAnimeId != null && !isOfflineMode()) {
-                        playerRelatedTitlesController.loadRelatedTitles(currentAnimeId, animeUrl);
-                    }
-                });
-            }
-        });
+                }
+
+                @Override
+                public void onError(String errorMessage) {
+                    Log.w(TAG, "Failed to fetch anime info in loadAnimeFromUrl: " + errorMessage);
+                    safeRunOnUiThread(() -> {
+                        isAnimeInfoLoaded = true;
+                        if (playerSplashScreenController != null && playerSplashScreenController.isShowing()) {
+                            playerSplashScreenController.dismissWithAnimation(null);
+                        }
+                        if (playerAnimeInfoController != null && currentAnimeInfo == null) {
+                            playerAnimeInfoController.showError(() -> {
+                                if (playerPortraitController != null) {
+                                    playerPortraitController.loadAnimeInfoForPlaceholder();
+                                }
+                            });
+                        }
+                        // Fallback: если метаданные не загрузились, всё равно подгружаем связанные тайтлы
+                        if (playerRelatedTitlesController != null && currentAnimeId != null && !isOfflineMode()) {
+                            playerRelatedTitlesController.loadRelatedTitles(currentAnimeId, animeUrl);
+                        }
+                    });
+                }
+            });
+        }
     }
 
     private void onEpisodeSelected(EpisodesListResponse.EpisodeItem episode, boolean autoPlayRequested) {
@@ -1682,6 +1711,7 @@ public class VideoPlayerActivity extends AppCompatActivity {
         Log.d(TAG, "Episode selected: " + episode.getNumber() + " (ID: " + episode.getId() + ")");
 
         autoPlayOnPrepare = this.autoPlay;
+        initialAutoPlayConsumed = true;
         if (playerNextEpisodeController != null) {
             playerNextEpisodeController.cancelPendingNextEpisodePrefetch();
         }
@@ -1963,16 +1993,15 @@ public class VideoPlayerActivity extends AppCompatActivity {
     }
 
     private void safeRunOnUiThread(Runnable runnable) {
-        if (runnable == null) return;
+        if (runnable == null || isClosingOrFinishing || isFinishing() || isDestroyed()) return;
         try {
-            runOnUiThread(runnable);
+            runOnUiThread(() -> {
+                if (!isClosingOrFinishing && !isFinishing() && !isDestroyed()) {
+                    runnable.run();
+                }
+            });
         } catch (Exception e) {
             Log.e(TAG, "Error calling UI thread", e);
-            try {
-                runnable.run();
-            } catch (Exception ex) {
-                Log.e(TAG, "Error in fallback callback", ex);
-            }
         }
     }
 

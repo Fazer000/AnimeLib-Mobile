@@ -155,6 +155,18 @@ public class FrostedGlassDrawable extends Drawable {
         }
     }
 
+    public void cleanup() {
+        localBackdropShader = null;
+        grainShader = null;
+        runtimeShaderObj = null;
+        agslPaint.setShader(null);
+        backdropPaint.setShader(null);
+        sheenPaint.setShader(null);
+        grainPaint.setShader(null);
+        strokePaint.setShader(null);
+        hostViewRef.clear();
+    }
+
     boolean hasGeometryChangedOnScreen(float videoX, float videoY, float videoW, float videoH) {
         View host = hostViewRef.get();
         if (host == null) return false;

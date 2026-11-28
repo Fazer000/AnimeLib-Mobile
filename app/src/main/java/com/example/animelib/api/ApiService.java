@@ -293,36 +293,36 @@ public class ApiService {
 
     // ======================== Catalog, Episodes & Kodik ========================
 
-    public void fetchAnimeInfo(String animeSlugOrId, AnimeInfoCallback callback) {
-        catalogApi.fetchAnimeInfo(animeSlugOrId, callback);
+    public ApiClientCore.RequestHandle fetchAnimeInfo(String animeSlugOrId, AnimeInfoCallback callback) {
+        return catalogApi.fetchAnimeInfo(animeSlugOrId, callback);
     }
 
     public AnimeInfoSyncResult fetchAnimeInfoSync(String animeSlugOrId) {
         return catalogApi.fetchAnimeInfoSync(animeSlugOrId);
     }
 
-    public void searchAnime(String query, SearchCallback callback) {
-        catalogApi.searchAnime(query, callback);
+    public ApiClientCore.RequestHandle searchAnime(String query, SearchCallback callback) {
+        return catalogApi.searchAnime(query, callback);
     }
 
-    public void searchMangaAndRanobe(String query, SearchCallback callback) {
-        catalogApi.searchMangaAndRanobe(query, callback);
+    public ApiClientCore.RequestHandle searchMangaAndRanobe(String query, SearchCallback callback) {
+        return catalogApi.searchMangaAndRanobe(query, callback);
     }
 
     public SearchSyncResult searchAnimeSync(String query) {
         return catalogApi.searchAnimeSync(query);
     }
 
-    public void fetchEpisodesList(String animeId, EpisodesCallback callback) {
-        catalogApi.fetchEpisodesList(animeId, callback);
+    public ApiClientCore.RequestHandle fetchEpisodesList(String animeId, EpisodesCallback callback) {
+        return catalogApi.fetchEpisodesList(animeId, callback);
     }
 
     public EpisodesListResponse fetchEpisodesListSync(String animeId) {
         return catalogApi.fetchEpisodesListSync(animeId);
     }
 
-    public void fetchEpisodeData(int episodeId, EpisodeDataCallback callback) {
-        catalogApi.fetchEpisodeData(episodeId, callback);
+    public ApiClientCore.RequestHandle fetchEpisodeData(int episodeId, EpisodeDataCallback callback) {
+        return catalogApi.fetchEpisodeData(episodeId, callback);
     }
 
     public EpisodeResponse fetchEpisodeDataSync(int episodeId) {
@@ -337,21 +337,21 @@ public class ApiService {
         catalogApi.invalidateKodikCache(kodikSrc);
     }
 
-    public void fetchKodikVideoLinks(String kodikSrc, KodikVideoCallback callback) {
-        catalogApi.fetchKodikVideoLinks(kodikSrc, false, callback);
+    public ApiClientCore.RequestHandle fetchKodikVideoLinks(String kodikSrc, KodikVideoCallback callback) {
+        return catalogApi.fetchKodikVideoLinks(kodikSrc, false, callback);
     }
 
-    public void fetchKodikVideoLinks(String kodikSrc, boolean forceRefresh, KodikVideoCallback callback) {
-        catalogApi.fetchKodikVideoLinks(kodikSrc, forceRefresh, callback);
+    public ApiClientCore.RequestHandle fetchKodikVideoLinks(String kodikSrc, boolean forceRefresh, KodikVideoCallback callback) {
+        return catalogApi.fetchKodikVideoLinks(kodikSrc, forceRefresh, callback);
     }
 
     @Deprecated
-    public void fetchKodikVideoLinksUnsafe(String kodikSrc, KodikVideoCallback callback) {
-        fetchKodikVideoLinks(kodikSrc, callback);
+    public ApiClientCore.RequestHandle fetchKodikVideoLinksUnsafe(String kodikSrc, KodikVideoCallback callback) {
+        return fetchKodikVideoLinks(kodikSrc, callback);
     }
 
-    public void getRelatedTitles(String animeSlug, RelatedTitlesCallback callback) {
-        catalogApi.getRelatedTitles(animeSlug, callback);
+    public ApiClientCore.RequestHandle getRelatedTitles(String animeSlug, RelatedTitlesCallback callback) {
+        return catalogApi.getRelatedTitles(animeSlug, callback);
     }
 
     public boolean markEpisodeViewedSync(String animeId, int playerId) {
